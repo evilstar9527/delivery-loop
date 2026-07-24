@@ -1,0 +1,30 @@
+name: Validate task contract
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_json:
+        description: TaskEnvelope v1 JSON (contract validation only)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Validate without printing the task body
+        run: pnpm validate:task
+        env:
+          DELIVERY_TASK_JSON: ${{ inputs.task_json }}
+

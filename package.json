@@ -1,0 +1,30 @@
+{
+  "name": "delivery-loop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "verify:docs": "node scripts/verify-doc-links.mjs",
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run verify:docs",
+    "validate:task": "tsx scripts/validate-task-envelope.ts"
+  },
+  "dependencies": {
+    "zod": "^4.0.17"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.32.0",
+    "@types/node": "^24.2.0",
+    "eslint": "^9.32.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.39.0",
+    "vitest": "^3.2.4"
+  }
+}
