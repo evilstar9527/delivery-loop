@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replay-failure-e2e-example",
+  "service": "delivery-loop-control-plane",
+  "generatedAt": "2026-07-28T11:00:00.000Z",
+  "githubRequests": [
+    {
+      "requestId": "github-replay-request-1",
+      "startedAt": "2026-07-28T10:10:00.000Z",
+      "completedAt": "2026-07-28T10:10:00.200Z",
+      "latencyMs": 200,
+      "deliveryId": "12345678-1234-4234-8234-123456789abc",
+      "eventType": "pull_request",
+      "action": "opened",
+      "payloadDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "statusCode": 202,
+      "disposition": "applied"
+    },
+    {
+      "requestId": "github-replay-request-2",
+      "startedAt": "2026-07-28T10:10:01.000Z",
+      "completedAt": "2026-07-28T10:10:01.200Z",
+      "latencyMs": 200,
+      "deliveryId": "12345678-1234-4234-8234-123456789abc",
+      "eventType": "pull_request",
+      "action": "opened",
+      "payloadDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "statusCode": 202,
+      "disposition": "duplicate"
+    },
+    {
+      "requestId": "github-replay-request-3",
+      "startedAt": "2026-07-28T10:10:02.000Z",
+      "completedAt": "2026-07-28T10:10:02.200Z",
+      "latencyMs": 200,
+      "deliveryId": "12345678-1234-4234-8234-123456789abc",
+      "eventType": "pull_request",
+      "action": "opened",
+      "payloadDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "statusCode": 202,
+      "disposition": "duplicate"
+    }
+  ],
+  "queueReplayRequests": [
+    {
+      "requestId": "queue-replay-request-1",
+      "startedAt": "2026-07-28T10:20:00.000Z",
+      "completedAt": "2026-07-28T10:20:00.100Z",
+      "latencyMs": 100,
+      "deadLetterId": "outbox-dlq-example",
+      "outboxId": "outbox-execution-dispatch-example",
+      "replayId": "outbox-dlq-replay-outbox-dlq-example",
+      "expectedOutboxAttemptCount": 3,
+      "reasonCode": "upstream_recovered",
+      "statusCode": 202,
+      "created": true
+    },
+    {
+      "requestId": "queue-replay-request-2",
+      "startedAt": "2026-07-28T10:20:01.000Z",
+      "completedAt": "2026-07-28T10:20:01.100Z",
+      "latencyMs": 100,
+      "deadLetterId": "outbox-dlq-example",
+      "outboxId": "outbox-execution-dispatch-example",
+      "replayId": "outbox-dlq-replay-outbox-dlq-example",
+      "expectedOutboxAttemptCount": 3,
+      "reasonCode": "upstream_recovered",
+      "statusCode": 202,
+      "created": false
+    },
+    {
+      "requestId": "queue-replay-request-3",
+      "startedAt": "2026-07-28T10:20:02.000Z",
+      "completedAt": "2026-07-28T10:20:02.100Z",
+      "latencyMs": 100,
+      "deadLetterId": "outbox-dlq-example",
+      "outboxId": "outbox-execution-dispatch-example",
+      "replayId": "outbox-dlq-replay-outbox-dlq-example",
+      "expectedOutboxAttemptCount": 3,
+      "reasonCode": "upstream_recovered",
+      "statusCode": 202,
+      "created": false
+    }
+  ],
+  "reportDigest": "sha256:6a38617529961383193c736eecee93863d0a699bff371f6645c147057d46ab1d"
+}

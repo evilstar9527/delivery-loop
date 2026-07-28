@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1",
+  "trialId": "replace-with-seven-day-trial-id",
+  "service": "delivery-loop-control-plane",
+  "repository": "example/delivery-pilot",
+  "window": {
+    "startedAt": "2026-07-19T00:00:00.000Z",
+    "endedAt": "2026-07-26T00:00:00.000Z"
+  },
+  "generatedAt": "2026-07-26T00:05:00.000Z",
+  "detectors": {
+    "stuckRun": "active",
+    "runtimeSecret": "active"
+  },
+  "minuteBuckets": {
+    "expected": 10080,
+    "observed": 10080,
+    "missing": 0
+  },
+  "runIds": [
+    "replace-with-observed-run-id"
+  ],
+  "detectedStuckIncidentIds": [],
+  "resolvedStuckIncidentIds": [],
+  "unresolvedKnownStuckRunIds": [],
+  "unknownStuckRunIds": [],
+  "runtimeSecretAlertIds": [],
+  "reportDigest": "sha256:f72a2ce6ddbc86c7165475bbf26774a48984370153ed4a453b95a8e42d3694e1"
+}

@@ -1,0 +1,21 @@
+name: Platform duration probe
+run-name: delivery-loop/platform-duration/${{ inputs.probe_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_id:
+        description: Non-sensitive audit correlation ID
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  probe:
+    name: platform-duration
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Exceed the hosted runner maximum duration
+        run: sleep 22200

@@ -6,6 +6,8 @@
 |---|---|---|
 | 飞书/Meegle 发现需求或 bug | 高 | 公网 webhook、验签、去重、字段映射；监控事件先作为候选 |
 | GitHub Actions 运行 Agent | 高 | 固定 workflow、时长/并发预算、Runner 外 checkpoint |
+| Cloudflare Workflows 编排 Run | 高 | `run_id` 作 instance id、稳定 step、外部事件、D1/R2 长期投影 |
+| 动态 ExecutionPlan/DoD | 高 | 只读 analysis attempt、计划版本化、命令引用白名单、Evidence 关门 |
 | Agent 修改代码并建 PR | 高 | GitHub App、目标仓库 opt-in、分支保护、写租约 |
 | tool-bridge 补充上下文 | 高 | run 级短期 SK、只读默认、调用审计、敏感数据脱敏 |
 | Agent session 恢复 | 中高 | 供应商原生 resume 不是必需；Git + 结构化 checkpoint 是兜底 |
@@ -18,9 +20,10 @@
 | 能力 | 默认选择 | 原因 |
 |---|---|---|
 | HTTP/Worker | Hono | 与 tool-bridge 技术栈一致，可运行于 Worker/Node |
-| 控制面默认宿主 | Cloudflare Worker | 低运维的公网 webhook 与定时任务入口 |
-| 事务状态 | D1（接口可替换 Postgres） | Task/Run/Attempt 关系和唯一约束需要 SQL |
-| 异步派发 | Cloudflare Queues + outbox | webhook 快速响应、重试不重复推进业务状态 |
+| 控制面默认宿主 | Cloudflare Worker + Workflows | 低运维公网入口、持久步骤、外部事件等待和受控 restart |
+| 事务状态 | D1（接口可替换 Postgres） | Task/Run/Plan/Attempt/Evidence 关系、唯一约束和业务查询真源 |
+| 大对象 | R2 | PRD/反馈/结构化对象与raw Agent ciphertext分bucket；raw session/transcript不进入Workflow history或长期backup |
+| 异步派发 | Cloudflare Queues + transactional outbox | webhook 削峰和最终一致投递；不承担 Run 状态机 |
 | Schema | Zod | Task/checkpoint/API 单一运行时契约 |
 | GitHub | GitHub App + Octokit | installation 最小权限、webhook、PR/Actions API |
 | 飞书 | 官方 OpenAPI SDK/原生 HTTP 验签 | 卡片、消息、身份解析；不自造协议模型 |
@@ -30,45 +33,330 @@
 
 版本在实现对应 Phase 时钉死并记录验证，不在设计阶段追逐 `latest`。
 
-## 3. GitHub 平台注意事项
+## 3. Cloudflare Workflows 平台事实
+
+截至 2026-07-25，Cloudflare Workflows 官方能力覆盖 `step.do` 持久步骤、自动重试、`step.sleep`、`step.waitForEvent`、pause/resume/terminate，以及从指定步骤 restart 并复用更早步骤结果。它适合恢复控制流程，不恢复 GitHub Runner 内存或模型隐藏状态。
+
+Paid 计划需要在试点账户实测并入账的当前边界：
+
+- 每 step 默认 30 秒 active CPU，可配置到 5 分钟；等待网络 I/O 的 wall clock 不限，但 Agent 计算仍放 GitHub Actions。
+- 普通 step result 与 Workflow event payload 各不超过 1 MiB；每实例持久状态上限 1 GiB。
+- 默认 10,000 steps，可申请/配置到 25,000；`sleep`/`waitForEvent` 最长 365 天。
+- active Workflow 并发上限当前为 50,000，waiting 实例不计 active concurrency。
+- 已完成 Workflow 状态 Paid 最长保留 30 天；项目的 180 天 checkpoint/evidence 和长期 audit 必须落 D1/R2。
+
+Round 101 将“wait跨Worker发布后继续”收敛为可重跑外部证据契约：`GET /accounts/:account/workflows/:workflow/instances/:id`读取instance version/status/start与step日志，`GET /accounts/:account/workers/scripts/:script/deployments`读取deployment/version traffic；两者均采用Wrangler 4.107.0内置Cloudflare SDK所用官方路径。`WorkflowHibernateEvidenceManifestV1`要求before为wait开始时最后生效的deployment、wait内恰好一个after deployment，并把七条normalized step做canonical digest；随后复用production `GitHubActionsApiClient`和Case 8核对唯一Action/Attempt/outbox。Watt `476e3cd`可直接复用的是`taskId/runId = Workflow instance ID`、稳定`step.do/waitForEvent`、D1业务投影以及显式opt-in/0-1-2门禁；Watt没有Cloudflare REST + D1 + GitHub三方verifier，不能把不存在的业务模块声称为复制。完整流程见[Workflow hibernate / Worker redeploy 真实验收](WorkflowHibernateE2E.md)。
+
+Round 102 将“App只安装到试点repo并实际触发一次固定workflow”收敛为四方证据：GitHub App JWT读取App/installation/repo installation，未按repo二次narrowing的短期installation token读取完整selected repository inventory与immutable workflow/Action/job，控制面Case 8提供Attempt/outbox lineage，installation settings与credential issuance审计补足token provenance。`GitHubAppDispatchEvidenceManifestV1`只保存安全ID、权限/事件白名单、digest和无query链接。Watt `476e3cd`没有GitHub App、installation repository inventory、workflow blob或Actions REST模块；本轮只直接复用其显式opt-in/0-1-2门禁，Action parser继续复用delivery-loop production `GitHubActionsApiClient`，没有伪造Watt来源。完整流程见[GitHub App 单仓库安装与固定 dispatch 真实验收](GitHubAppDispatchE2E.md)。
+
+Round 103 将“真实Action读取反馈/PRD并以锁定Codex产出带Evidence refs的合法Plan且零写入”收敛为`AnalysisActionEvidenceManifestV1`。verifier直接调用Round 102完整dispatch verifier，再读Task/Plan/Case 8和Action exact SHA上的固定Runner source-set；`@openai/codex`必须由package与pnpm lock双重固定，source聚合digest还要匹配manifest外release review记录。workflow最终关口从单一clean检查收紧为exact HEAD、detached HEAD和clean三联检查。Watt固定commit `476e3cdd2490d725fde174e7c697ebf00899edc6`仍直接贡献显式opt-in、仓库外64 KiB manifest、0/1/2退出和不可信内容纪律；Watt没有delivery-loop的Task/ExecutionPlan/Case 8/Runner source contract模块，因此这些核对为本项目新增，没有虚构复制来源。完整流程见[只读 Analysis Action 真实验收](AnalysisActionE2E.md)。
+
+Round 104 将“真实Action连续30～60秒heartbeat、正常写result且控制面/GitHub最终一致”收敛为`RunnerHeartbeatEvidenceManifestV1`。最新`attempts.heartbeat_at`无法证明cadence，因此新增append-only receipt链；每次成功CAS同batch保存generation、前后version/time和90秒lease，表结构没有token或token digest。verifier直接复用Round 103 Analysis Action verifier的GitHub App/Action/API/Runner全链路，只新增D1 receipt/result/final projection与Case 8 signed webhook核对。Watt固定commit仍直接贡献显式opt-in、仓库外64 KiB manifest、0/1/2退出、有界读取和不可信内容纪律；Watt没有heartbeat receipt或GitHub final-state业务模块，未虚构复制来源。完整流程见[Runner heartbeat 与 GitHub 最终状态真实验收](RunnerHeartbeatE2E.md)。
+
+编码纪律：step 可能重试；外部 API/Binding 必须幂等。状态只能来自 `step.do` 返回值或 D1/R2 引用，不依赖 step 外内存。受控 restart 会重跑目标及后续步骤，不能把“成功步骤缓存”误解为外部 exactly-once。锁定 Workers types 约定 restart target 为 `{name, type, count}`（count 1-based）；Round 25 本地 workerd 已从 completed instance 的 `verify-analysis-result/do/count=1` 实际 restart，并以 D1 replay Run version step-execution证明目标重跑、之前 analysis dispatch未重建。试点账户外部 restart 语义仍保留在实测清单。
+
+官方参考：
+
+- <https://developers.cloudflare.com/workflows/>
+- <https://developers.cloudflare.com/workflows/reference/limits/>
+- <https://developers.cloudflare.com/workflows/build/rules-of-workflows/>
+- <https://developers.cloudflare.com/workflows/get-started/durable-agents/>
+
+### D1/R2 备份边界
+
+2026-07-26实读Cloudflare官方文档：D1 production数据库自动启用Time Travel；Free可恢复最近7天、Paid 30天，restore为destructive in-place且会取消在途请求。超过30天必须周期性`wrangler d1 export`或调用同一D1 export API保存SQL dump；官方Workflow示例先POST`{output_format:"polling"}`取得`at_bookmark`，后续POST`{current_bookmark}`直到返回signed URL，再下载并存R2。export期间数据库会阻塞其他请求，所以本项目用独立scheduled Workflow、私有backup bucket和全局restore fence，不把普通Cron/请求处理与export混在同一事务。来源：[D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/)、[D1 import and export](https://developers.cloudflare.com/d1/best-practices/import-export-data/)、[Back up D1 using Workflows](https://developers.cloudflare.com/workflows/examples/backup-d1/)。
+
+R2 descriptor/content digest由应用显式维护；当前官方R2资料没有被本项目当成object versioning保证。源R2 producer先发布digest-addressed immutable对象、后提交D1 ref，因此D1 export后复制两个源bucket包含恢复该export所需对象。完成Workflow历史超过Paid 30天后，审计仍以D1 Task/Run/Plan/Approval/Evidence及workflow status projection为准，backup用于灾备，不从已过期history反推业务状态。
+
+raw Agent正文使用第四个私有`RAW_AGENT_OBJECTS`，与Task/checkpoint/backup bucket隔离，并明确不传给`R2BackupManager`。原因不是假设R2自带TTL，而是控制面以D1 registry、固定30天policy、公平cursor和exact-key delete自行执行；这样短期session/transcript不会被每日backup复制成长期副本。当前execution Codex ephemeral adapter已生产Secret-scanned、AES-256-GCM加密的`raw_transcript`，analysis/session尚不生产raw对象；本地workerd只证明producer/retention契约，不能把测试对象声称为真实Action artifact。
+
+Round 79完整读取Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/gateway/src/secrets/secret-store.ts`。`RawAgentArtifactStore`直接复制其base64url encode/decode、32-byte AES-256 key import、随机12-byte IV、AES-GCM及AAD绑定结构；没有复制Watt面向stable service Secret的KV存取业务。delivery-loop新增Attempt/version/generation/token/scope/Plan/Item fencing、D1 recoverable upload intent、专用私有R2和30天registry，因为Watt没有等价的GitHub Agent transcript producer。Watt也没有本项目的Worker credential全集catalog、Runner结构化日志或Draft PR effect前重扫，相关代码为本项目新增。
+
+Round 80再次直接沿用Watt固定commit`scripts/e2e/lib.ts`的显式消耗门控与退出分层：0=真实事实通过、1=断言/运行事实失败、2=opt-in、credential等前置缺失。Watt的`runE2e/CliFailure`会传播generic stderr且绑定Watt CLI/token，不能直接复制到Agent credential验证；本项目保留相同0/1/2语义，但固定错误码且不输出Codex stderr/model正文。2026-07-26本机`codex-cli 0.145.0`的`login status`显示已保存API key，真实`codex exec --ephemeral --ignore-user-config --sandbox read-only --output-schema`进程随后由provider返回`invalid_api_key`；因此只证明真实进程启动与前置失效，不能勾“已认证模型调用”。
+
+Round 97 为 Agent Adapter 增加 `AgentAdapterEvidenceManifestV1` 安全索引。它复用已有 `AgentSessionResultV1`、checkpoint digest 和固定 Git 命令结果，不复制第二套 Agent 生命周期；新增的只是对真实运行结果的 strict projection、checkpoint/workspace head 绑定和显式 opt-in manifest verifier。`pnpm run e2e:agent-adapter` 仍由 `verify-real-codex-adapter.ts` 执行实际 CLI，默认不调用模型；只有真实认证调用成功、进程/结构化输出/checkpoint/Git clean 全部成立，才可产生 passed manifest。
+
+Round 96继续最大化复用Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的`scripts/e2e/lib.ts`边界：显式 opt-in、仓库外 64 KiB manifest、0/1/2 退出分层、固定安全错误、有界 HTTP、HTTPS origin 校验和分页 fail-closed。Action metadata 直接复用生产`GitHubActionsApiClient`，没有复制第二套 workflow-run parser；本项目新增的只有 Secret safety 两类 case、canary 内存扫描、job/log 上限、Draft PR/zero-PR effect 核对及 Case 8 `secretArtifacts`/outbox 安全投影。真实 R2 ciphertext 和权限仍通过仓库外 `auditUrl` 人工核对，fake GitHub/workerd/示例 manifest 不能替代真实 Action、日志、artifact 或 PR 事实。
+
+## 4. GitHub 平台注意事项
 
 - hosted runner 是短生命周期计算资源，不能把本地 session 文件当作唯一恢复来源。
 - dispatch 只从目标仓库默认分支上的 workflow 定义启动；workflow 版本要进入任务证据。
 - 使用 `GITHUB_TOKEN` 创建的事件可能具有防递归语义，跨仓库和需要继续触发 checks 的路径优先 GitHub App。
+- 2026-07-25 实读 GitHub Actions OIDC discovery：issuer 为 `https://token.actions.githubusercontent.com`，`jwks_uri` 为同域 `/.well-known/jwks`，`id_token_signing_alg_values_supported` 仅 `RS256`；claims 列表包含 `repository`、`workflow_ref`、`job_workflow_ref`、`sha`、`run_id`。实现固定这些元数据，不允许调用方覆盖 issuer/algorithm。来源：[GitHub OIDC discovery](https://token.actions.githubusercontent.com/.well-known/openid-configuration)。
+- 2026-07-25 实读 GitHub webhook event 文档，确认交付标识/签名头为 `X-GitHub-Delivery` 与 `X-Hub-Signature-256`，Actions 状态通过 `workflow_run` 事件提供；实现对 raw body 做 HMAC-SHA256，并在签名后继续核对 D1 绑定。来源：[GitHub webhook events and payloads](https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_run)。
+- 2026-07-25 实读 GitHub REST 文档，确认 `GET /repos/{owner}/{repo}/actions/runs/{run_id}` 可核对单个 workflow run，App 通过 `POST /app/installations/{installation_id}/access_tokens` 获取短期 installation token；实现用后者同时服务 dispatch/reconciliation，并以 repository/permissions 再收窄。来源：[Get a workflow run](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run)、[Create an installation access token](https://docs.github.com/en/rest/apps/apps#create-an-installation-access-token-for-an-app)。
+- 2026-07-25 再核对GitHub官方REST OpenAPI：`DELETE /installation/token`撤销“当前用于认证的installation token”，成功返回204，撤销后token立即invalid；实现以待撤销token自身作Bearer调用，并由D1 lease保证失败可重试。来源：[Revoke an installation access token](https://docs.github.com/en/rest/apps/installations#revoke-an-installation-access-token)及官方`rest-api-description` 2022-11-28 schema。
+- 2026-07-25 实读GitHub Draft PR REST文档：`POST /repos/{owner}/{repo}/pulls`明确接收title/head/base/body/maintainer_can_modify/draft，创建成功为201，422表示validation/spam；实现固定`draft:true`和`maintainer_can_modify:false`，并在POST前以head查询做外部幂等。来源：[Create a pull request](https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request)。
+- 2026-07-25 实读GitHub webhook文档：`pull_request`事件要求App至少具有Pull requests read，action集合含`opened`，payload包含required number与pull_request对象；实现只把签名`opened`解析为创建事实，其他action当前安全ack ignored，review/synchronize由后续独立DoD扩展。来源：[Pull request webhook](https://docs.github.com/en/webhooks/webhook-events-and-payloads#pull_request)。
+- 2026-07-25 实读GitHub `pull_request_review` webhook文档：`submitted` payload包含required `review`与`pull_request`，review对象的`body`、`commit_id`、`submitted_at`可用于把`changes_requested`反馈绑定被审查commit；实现要求`review.commit_id = payload pull_request.head.sha = 控制面当前PR branch head`，不靠评论时间或PR number猜测head。来源：[Pull request review webhook](https://docs.github.com/en/webhooks/webhook-events-and-payloads#pull_request_review)。
+- 2026-07-25 实读GitHub REST ref与compare文档：`GET /repos/{owner}/{repo}/git/ref/{ref}`和`GET /repos/{owner}/{repo}/compare/{basehead}`对GitHub App都只要求Contents read；compare返回`ahead/behind/diverged`及`merge_base_commit`。实现先取exact base ref，再要求compare为ahead、behind_by=0且base/merge-base均等于Run旧base，不能用branch head单点事实推断fast-forward。来源：[Get a reference](https://docs.github.com/en/rest/git/refs#get-a-reference)、[Compare two commits](https://docs.github.com/en/rest/commits/commits#compare-two-commits)。
 - `concurrency` 能取消/串行化 job，但不能替代数据库租约和业务幂等。
 - Action 日志和 artifact 对仓库有读取权限的人可见，不是 Secret 通道。
 - Actions job 时长、并发和计费上限属于外部事实，Phase 1 必须在目标 GitHub 组织实测并写入 `PROGRESS.md`。
+- Phase 0 CI 真实验收使用 `CiEvidenceManifestV1`/`pnpm run e2e:ci`。run metadata 继续复用生产 `GitHubActionsApiClient`，workflow 内容使用 GitHub Contents API 的 exact head SHA，job/log 使用只读 Actions API；Watt 固定 commit `476e3cd` 可直接复用的是显式 opt-in、仓库外 64 KiB manifest、固定 0/1/2、有界 HTTPS、origin 校验和分页 fail-closed，GitHub CI 四类业务绑定与 validation-step/canary 断言为 delivery-loop 新增。步骤见[GitHub CI 外部证据验收](CIE2E.md)。
+- Phase 0 仓库初始化真实验收使用 `RepositoryBootstrapEvidenceManifestV1`/`pnpm run e2e:repository-bootstrap`，只读核对 repository、default branch与applicable branch rules，并用本地固定Git命令交叉核对origin。Watt `476e3cd`没有repository create/bootstrap/branch-rules模块可直接复制；只复用其显式opt-in、仓库外manifest和0/1/2纪律，GitHub 1 MiB/分页边界与固定Git argv来自delivery-loop既有生产原语。用户确认记录仍是外部authority，步骤见[GitHub 仓库初始化外部证据验收](RepositoryBootstrapE2E.md)。
 
-## 4. 飞书平台注意事项
+## 5. 飞书平台注意事项
 
 - webhook challenge、事件加密/签名、重试语义和卡片回调必须用真实应用实测。
 - Meegle 与普通飞书任务/消息不是同一资源模型；adapter 保留来源字段，Normalizer 才统一 TaskEnvelope。
 - 飞书卡片适合状态和人类动作，不是完整执行日志查看器；大日志只给受控链接与摘要。
 - 事件中用户身份与 GitHub/组织角色不是天然同一身份，需要显式映射。
+- 2026-07-26实读飞书官方OpenAPI：发送卡片为`POST /open-apis/im/v1/messages?receive_id_type=chat_id`，`msg_type=interactive`、`content`为序列化JSON，`uuid`在1小时内去重且最长50字符；同用户/群发送频控5 QPS，卡片最大30 KB。更新共享卡片为`PATCH /open-apis/im/v1/messages/:message_id`，前后都必须显式`update_multi=true`，单卡5 QPS且只允许更新14天内的未撤回消息；发送权限可用`im:message:send_as_bot`，更新另需`im:message:update`。来源：[发送消息](https://open.feishu.cn/document/server-docs/im-v1/message/create)、[更新已发送的消息卡片](https://open.feishu.cn/document/server-docs/im-v1/message-card/patch)、[自建应用获取 tenant_access_token](https://open.feishu.cn/document/server-docs/authentication-management/access-token/tenant_access_token_internal)。
+- 2026-07-26按`lark-openapi-explorer`流程先核对`lark-cli im +messages-mget --help/--dry-run`，再实读官方消息文档。单条回读为`GET /open-apis/im/v1/messages/:message_id`，应用身份机器人必须在群内；读取群消息除`im:message`或`im:message:readonly`外还需要`im:message.group_msg`，限流1000次/分钟且50 QPS。`card_msg_content_type=user_card_content`可返回发送时原卡，响应提供message/chat/sender/create/update/deleted/body字段。来源：[获取指定消息的内容](https://open.feishu.cn/document/server-docs/im-v1/message/get)。
+- 出站配置采用`FEISHU_APP_ID`、Secret `FEISHU_APP_SECRET`、`FEISHU_DELIVERY_TENANT_KEY`与`FEISHU_DELIVERY_CHAT_ID`；入站复用同一app/tenant并另用Secret `FEISHU_EVENT_ENCRYPT_KEY`和`FEISHU_EVENT_VERIFICATION_TOKEN`。可选`FEISHU_API_BASE_URL`仅用于测试/受控代理且必须为无userinfo/query/fragment的HTTPS origin。出站四个required值全缺时notifier关闭、部分配置fail-closed；入站缺app/tenant或两种来源校验都未配置时固定503。
+- Round 58直接迁移Watt commit`476e3cd`的interactive card编码骨架、`memoryTokenCache`、7200秒token/60秒刷新边际、99991661/99991663/99991665失效码与create UUID语义。Watt通用sender会把飞书`msg`和捕获异常原文写入error，本项目没有复制这部分；delivery-loop另加D1 presentation/delivery ledger、同message PATCH、14天重建、verified fact projection和固定错误码。
+- Round 74继续直接复用Round 58已迁入的Watt interactive `wide_screen_mode`/`lark_md`结构、isolate token cache、stable UUID与同一create/PATCH/outbox/message ledger，没有创建第二套卡片sender。Watt generic message没有Task revision、ExecutionPlan/DoD progress、GitHub external fact、blocker或approval expiry投影，因此新增strict card v2、v1 rehydration compatibility、D1-only projector、Secret/Markdown summary boundary及`refresh_after`。`lark-im` skill确认interactive是原始card消息类型、bot身份受tenant/chat membership和scope约束，且当前CLI的card event compact conversion不可作为回调真源；本轮未调用真实IM写API。
+- Round 109继续直接复用Watt固定commit`476e3cd`已迁入的interactive renderer、create/PATCH同message ledger、10秒飞书GET边界，以及`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest和0/1/2退出纪律。Watt没有delivery-loop的Run/Plan/DoD安全snapshot、approval expiry source watermark或presentation三方外部证据；`feishu_delivery_card_presentation_lineages`、operations evidence view和展示断言为本项目新增，没有虚构Watt业务复用。
+- Round 75直接复制Watt固定commit`476e3cd`的两段飞书adapter结构：`packages/plugin-feishu/src/adapter/decode.ts`中`card.action.trigger`对`operator.open_id`、`action.value`、`context.open_chat_id`及header event/time的提取，以及`encode.ts`中button的`value={id,signal}`编码。delivery-loop仅补Watt没有的`open_message_id`/受控form字段、strict version-fenced signal、application nonce ledger和current D1/identity authorization；没有复制Watt generic signal/checkpoint业务语义，也没有把raw event带入平台Event或D1。approve/reject/cancel/retry/replay/add-context最终继续调用本项目现有store而非新造状态机。真实飞书tenant的callback字段、scope、旧卡/转发行为与HTTP交互仍保留为外部DoD，本地加密fixture只证明Worker契约。
+- Round 76对Watt固定commit`476e3cd`全树检索approval/approver/lineage/source/correlation。Watt只有generic task checkpoint approve/reject、Agent短期correlation waiter、OAuth device approval及generic AuditStore/EventStore，没有Task/revision/Plan/base/effect-bound的external approval lineage，可直接复制的等价业务代码为零。本项目继续最大化复用Round 51已直接迁入的Watt identity mapper，以及Round 67从Watt AuditStore采用的D1 `prepare+bind`与append-only审计纪律；没有复制Agent correlation，因为其用途是短期结果路由，不是可恢复控制面的长期approval真源。新增部分仅为`approval_lineages`、同事务producer和Case 8安全查询。
+- Round 112继续固定Watt commit`476e3cd`。`pnpm run e2e:approval-lineage`直接复用其显式opt-in、仓库外64 KiB manifest、固定安全错误与0/1/2退出纪律，并沿用本项目既有Watt-derived有界HTTP/canary扫描。Watt没有同一human的Feishu/GitHub approval pair、Task/Run/Plan/base/effect lineage、Case 8/receipt/live review四方核对或event/snapshot隔离，等价业务代码直接复制量为零；新增仅为strict evidence/report schema和只读verifier，没有新增真源表。步骤见[飞书/GitHub审批唯一关联真实验收](ApprovalLineageE2E.md)。
+- Round 78直接复制Watt固定commit`476e3cd`中`packages/gateway/src/event/plugin-sender.ts`的`SEND_TIMEOUT_MS = 10_000`与每次外部send使用`AbortSignal.timeout`的边界，并沿用429/5xx/timeout/network均retryable的分类；继续直接复用Watt-derived fenced outbox“effect成功后settle、失败回pending”语义。Watt没有D1 card revision/delivery单调账本或人工修复控制面，因此新增部分仅为固定安全错误码透传、operations snapshot/CAS refresh API、immutable refresh request和cron恢复，不复制Watt会传播raw `msg/error`的generic sender行为。
 
-## 5. tool-bridge 复用边界
+## 5.1 Phase 5 真实试点工具
+
+Watt commit`476e3cd`的`scripts/e2e/lib.ts`提供成熟的显式消耗门控和exit分层：0表示通过、1表示断言失败、2表示env/token/种子等前置缺失。Round 59直接复用该纪律，但没有复制Watt CLI/HTBP断言，因为它们不能证明delivery-loop的GitHub Deployment、Environment或D1 Evidence。
+
+delivery-loop的`pnpm run e2e:pilot`默认exit 2；opt-in后以GitHub官方只读接口`GET /repos/{owner}/{repo}/actions/runs/{run_id}`、`GET /repos/{owner}/{repo}/deployments/{deployment_id}`与`GET .../statuses`交叉核对控制面安全投影。外部配置、manifest字段、运行顺序与证据边界见[Phase 5真实试点验收](PilotE2E.md)。当前仓库无Git remote且policy为no-deploy，工具通过不等于当前已经具备真实资源。
+
+`pnpm run e2e:test-deployment`专门验收测试部署，不复用生产 deployment manifest。它直接复用现有`GitHubTestDeploymentStatusApiClient`的Deployment identity/latest status parser、`GitHubActionsApiClient`的有界 workflow-run parser和Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的显式opt-in、64 KiB manifest、0/1/2退出骨架；Case 8额外投影test workflow/OIDC attestation与webhook/API observation。test-only role/Secret隔离审计链接仍需真实云/GitHub人工核对，fake API或schema example不能替代外部事实，步骤见[Test deployment外部证据验收](TestDeploymentE2E.md)。
+
+`pnpm run e2e:test-acceptance`直接复用现有`GitHubActionsApiClient.getAcceptanceWorkflowRun()`的`workflow_dispatch`事实解析、独立Actions read credential和Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的显式opt-in、64 KiB manifest、0/1/2退出及有界读取原语；业务层新增的只是Case 8 acceptance/observation投影、Runner/Action双事实裁决和running/passed/failed manifest。Watt没有该项目的test acceptance ledger或Evidence projector，不能把其通用Workflow等待代码当作外部验收事实，步骤见[Test acceptance外部证据验收](TestAcceptanceE2E.md)。
+
+## 5.2 Phase 6 连续七天试运行工具
+
+`pnpm run e2e:seven-day-trial`复用上述Watt-derived 0/1/2与显式opt-in纪律，但增加三个独立只读事实源：digest-bound observability report、逐Run Case 8报告和GitHub完整PR/Deployment inventory。配置、strict schema、10080分钟coverage与最终人工证据见[连续七天试运行验收](SevenDayTrial.md)。当前仓库`git remote -v`为空、`wrangler.jsonc`仍使用D1占位ID，因此默认exit 2是正确的prerequisite状态，不是试运行失败或通过。
+
+## 5.3 Phase 3 Runner 恢复演练工具
+
+`pnpm run e2e:runner-recovery`直接复制项目内已由Watt `scripts/e2e/lib.ts`派生的Pilot命令骨架：显式opt-in、仓库外有界manifest、0/1/2退出层和固定安全错误；业务断言改为控制面Plan/correlation、GitHub Actions run/jobs、commit、branch ref及compare只读事实。Watt没有delivery-loop的Attempt/Plan/Item/checkpoint/GitHub run lineage，因此这些断言不能声称来自Watt。配置、真实强制终止步骤与证据边界见[Runner强制终止恢复验收](RunnerRecoveryE2E.md)；本地fake API测试或默认exit 2都不证明真实恢复。
+
+## 5.4 Phase 3 受控 Replay 演练工具
+
+`pnpm run e2e:controlled-replay`继续直接复制项目内Watt-derived Pilot/Runner recovery命令骨架：显式opt-in、仓库外64 KiB manifest、0/1/2退出与固定安全错误；HTTP流式上限、origin/token隔离和raw零传播复用现有verifier。Watt没有ExecutionPlan Item、effect approval snapshot、external reconciliation或GitHub PR/Deployment stable identity，相关业务断言为delivery-loop新增。配置、真实restart步骤与证据边界见[受控Replay真实验收](ControlledReplayE2E.md)；本地workerd/fake GitHub和默认exit 2不能替代外部事实。
+
+## 5.5 Phase 3 失败 Blocker 卡片验收工具
+
+`pnpm run e2e:failure-blocker-card`继续直接复制Watt `scripts/e2e/lib.ts@476e3cd`经本项目Pilot迁入的显式opt-in、仓库外64 KiB manifest、0/1/2退出和固定安全错误骨架，并直接复用既有有界流式response reader。Watt generic Feishu sender没有delivery-loop的failure fingerprint/retry scope/blocker ledger、strict card presentation或Message GET三方证据业务断言，因此这些部分为本项目新增，没有虚构成Watt复制。配置、真实Runner失败步骤与证据边界见[失败 Blocker 飞书卡片真实验收](FailureBlockerCardE2E.md)；本地fake、示例manifest和默认exit 2都不能证明真实tenant。
+
+## 5.6 Phase 2 飞书 retry/refresh 验收工具
+
+`pnpm run e2e:feishu-retry`直接复用Watt `scripts/e2e/lib.ts@476e3cd`迁入的显式opt-in、仓库外64 KiB manifest、0/1/2退出和固定错误纪律；飞书Message GET复用生产`FeishuDeliveryCardApiClient`，通过短期token cache注入而不复制第二套正文解析。Watt没有D1 retry history、presentation refresh lineage或delivery revision语义，因此`feishu_delivery_card_retry_observations`与三方业务断言为delivery-loop新增。配置和真实错误码/群内唯一卡步骤见[飞书卡片限流/超时与人工刷新真实验收](FeishuRetryE2E.md)；本地fake fetch/workerd和默认exit 2不能替代真实tenant。
+
+## 5.7 Phase 2 飞书卡片展示/过期验收工具
+
+`pnpm run e2e:feishu-card-presentation`直接复用Watt `scripts/e2e/lib.ts@476e3cd`迁入的显式opt-in、仓库外64 KiB manifest、0/1/2退出和固定安全错误纪律；有界response reader和live Message GET安全绑定继续复用已有Feishu evidence实现。Watt generic sender没有Task revision、Plan/DoD snapshot、approval expiry watermark、D1 presentation lineage或完整卡片段落断言，这些为delivery-loop新增。配置、受控时序与人工scope/membership证据见[飞书交付卡片展示与自然过期真实验收](FeishuCardPresentationE2E.md)；本地fake/workerd和默认exit 2不能代替真实tenant。
+
+## 5.7.1 Phase 2 飞书卡片动作鉴权验收工具
+
+`pnpm run e2e:feishu-card-action`继续直接复用Watt `scripts/e2e/lib.ts@476e3cd`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出与有界安全错误纪律；生产callback仍直接复用Round 75从Watt迁入的`card.action.trigger` trusted-field extraction和`button.value={id,signal}`编码。Watt没有delivery-loop的Task/Run/Plan/base/effect fencing、application nonce、D1 action/result lineage、server-derived retry/replay target或18-case真实证据，`FeishuCardActionEvidenceManifestV1`、独立observability report、operations GET和verifier均为本项目新增，没有虚构业务复用。飞书没有历史callback只读API，因此scope、群membership、截图和open_id mapping必须保留人工authority；步骤见[飞书卡片动作鉴权真实验收](FeishuCardActionE2E.md)。
+
+## 5.7.2 补充上下文真实验收复用边界
+
+`pnpm run e2e:supplemental-context`直接复用Watt固定commit `476e3cdd2490d725fde174e7c697ebf00899edc6`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出和有界安全错误骨架。Watt没有supplemental Task/Run/PlanRevision、Meegle mapping lineage、当前Attempt fencing或live card/observer/D1/R2四方核对，相关业务实现直接复制量为零；本项目继续复用此前迁入的content-addressed R2、stable identity和conditional D1 write。strict manifest、operations R2回读、三case verifier及live Message按钮断言均为delivery-loop新增；fake callback、schema example、workerd、manifest自报和默认exit 2不能替代真实tenant。步骤见[补充上下文 revision 与当前 Run 隔离真实验收](SupplementalContextE2E.md)。
+
+## 5.8 监控 adapter 复用边界
+
+Round 77完整读取Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/core/src/event/dedupe.ts`及全部边界测试、`eventbus/hmac.ts`与constants。`src/domain/dedupe.ts`直接复制其`DEFAULT_DEDUPE_WINDOW_MS=24h`、`DedupeStore/InMemoryDedupeStore`和`resolveDedupe`，保持exact edge仍命中、1毫秒过窗才新建的语义；monitor Node测试直接迁移同key/different key/edge/default oracle。`src/monitor/webhook-hmac.ts`直接复制exact-body HMAC-SHA256、lowercase hex解析与常量时间比较，仅把Watt header名适配为本项目monitor专用header。
+
+Watt只有单进程内存dedupe和generic EventStore/webhook adapter，没有跨Worker并发的D1 sliding suppression head、metadata-only monitor candidate/lineage、repository allowlist、Secret-scanned R2 snapshot或“零Task/Run/effect”权限边界。这些由delivery-loop新增；生产并发权威必须是D1 trigger，不能把`InMemoryDedupeStore`误用为多isolate状态真源。当前实现是受控generic HMAC contract，没有宣称兼容Prometheus/Grafana/Sentry原生payload；真实启用某供应商前仍须单独核对其签名、重试、event identity和字段映射。
+
+## 5.8 飞书 webhook 真实验收复用边界
+
+Round 106继续固定Watt commit `476e3cdd2490d725fde174e7c697ebf00899edc6`。生产入口已直接复制其`SHA-256(timestamp + nonce + encryptKey + exact body)`、constant-time compare、AES-256-CBC和challenge短路核心；真实验收CLI再直接沿用`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest与固定`0=pass/1=assertion/2=prerequisite`纪律。
+
+Watt没有delivery-loop的5分钟clock fence、verification token/app/tenant四重绑定、metadata-only nonce/receipt/ingress D1真源、负向零业务写入投影或外部observability/飞书后台/D1三方交叉证据。因此`FeishuWebhookEvidenceManifestV1`、`FeishuWebhookObservabilityReportV1`、operations GET和live verifier为本项目新增。Watt的匿名明文兼容、raw payload持久化及上游错误传播明确不复制；fake fetch、schema示例、本地workerd和默认exit 2不能替代真实tenant。步骤见[飞书 challenge、事件验签与拒绝零写入真实验收](FeishuWebhookE2E.md)。
+
+## 5.9 飞书 ingress 重放与 Queue 真实验收复用边界
+
+Round 107继续固定Watt commit `476e3cdd2490d725fde174e7c697ebf00899edc6`。生产链路直接复用Round 72已迁入的Watt EventStore“dedupe identity命中后不再Queue send”断言结构、Queue sender注入，以及`applyD1Migrations`/content-addressed R2/稳定identity模式；`verify-feishu-ingress-evidence.ts`继续直接沿用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出、有界HTTPS与安全错误纪律，没有复制第二套CLI协议。
+
+Watt的generic event queue只证明KV/EventStore dedupe，保存完整envelope且Queue失败时best-effort delete；它没有Cloudflare Queue message ID/attempt observation ledger、delivery-loop的Task source revision/Run/workflow-create双层幂等、operations安全投影或外部observability/D1/Workflow三方核对。直接复制会弱化本项DoD，因此migration 0057、`FeishuIngressEvidenceManifestV1`、live verifier和Queue/Task业务断言为delivery-loop新增，没有虚构成Watt代码。fake Queue、直接调用normalizer、schema example、本地workerd、dry-run和默认exit 2不能替代真实tenant/Queue事实；步骤见[飞书 ingress 重放、Queue 与 Task revision 真实验收](FeishuIngressE2E.md)。
+
+## 5.10 Meegle 工作项映射真实验收复用边界
+
+Round 108继续固定Watt commit `476e3cdd2490d725fde174e7c697ebf00899edc6`。Watt没有Meegle/Meego work-item mapper、field/role metadata、全字段分页、repository allowlist或snapshot→Task/Run lineage，不能直接复制不存在的业务实现；本轮继续复用此前从Watt迁入的content-addressed R2、稳定identity、D1 conditional write和E2E显式opt-in/仓库外64KiB manifest/固定0-1-2退出纪律。
+
+Meegle authority固定CLI `1.0.16`与官方tag commit `674042f0f58b62962103aff91598c9bc85ccb138`。npm metadata的`gitHead=73f1be359ad2e298e5a1817c13e1f1d82fcdf7d3`无法从公开repo checkout，故不把它冒充可回放源码事实；官方源码确认`--envelope`输出`data/meta/error`，`--auto-paginate`最多200页，并以`auto_paginated/pages_merged/total_items/truncated/stopped_reason`报告结果。`MeegleWorkItemEvidenceManifestV1`、migration 0058、operations R2安全回读与live verifier属于delivery-loop新增。fake runner、本地snapshot、schema example、manifest自报、默认exit 2和故意截断的CLI输出都不能替代真实tenant；步骤见[Meegle工作项映射与triaging真实验收](MeegleWorkItemE2E.md)。
+
+## 6. tool-bridge 复用边界
 
 直接复用：渐进发现、repo/log/database/K8s/Feishu 上下文聚合、scope/effect、调用 trace。
 
 需要新增或外置：GitHub OIDC 到短期 SK 的 broker、run/attempt 绑定、强制 TTL、结构化调用审计的关联字段。若 tool-bridge 暂无 OIDC exchange，先在 delivery-loop 控制面实现 broker adapter，不把该语义硬塞进 Agent prompt。
 
-## 6. 动工前必须验证的外部事实
+Round 26 对 Watt commit `476e3cd` 的源码复用边界：直接迁移 `packages/toolbridge/vendor/tb/types.ts` 的 `ToolEffect`、`packages/core/src/authz/tool-action.ts` 的 scope→action 映射、`packages/gateway/src/http/tools-proxy.ts` / `tools/tool-invoker.ts` 的 Hono PEP→transport 分层与 `{arguments}` envelope、`packages/gateway/src/audit/audit-store.ts` 的 D1 metadata store 写法。Watt 当前 `tool_calls` metric 仍返回空 series，且其 invoker 会保留上游错误 message；因此 duration/result-category/run-attempt trace 由 delivery-loop 新增，上游错误原文传播部分明确不复制。
+
+Round 27 直接复用 Watt `packages/gateway/src/agent/harness/htbp-tools.ts` 的防注入边界：远端 help/skill/tool result只作为 reference material，不内嵌 system prompt，也不得覆盖权限；delivery-loop把同一句纪律扩展到Task、日志和代码注释。Watt没有delivery-loop的ExecutionPlan criterion覆盖、change→verification或双层Plan Secret scan，这三项由本项目补充，不能虚构为复制代码。
+
+Round 28 从 Watt commit `476e3cd` 的 `packages/core/src/agent/expect-schema.ts` 直接复制 `DEFAULT_MAX_ATTEMPTS = 3` 与 `shouldRetry(attempt, maxAttempts)`，保持“首次 + 两次重试”的实现语义。Watt 没有跨 GitHub Attempt 的 retry scope、failure fingerprint、blocker ledger、token revoke、Plan/Item 阻断或卡片安全投影；这些是 delivery-loop 新增，不能声称为 Watt 代码复制。当前本地实现只提供 D1/API/Runner/query projection，真实飞书卡片消费仍须在 Phase 2 另行验证。
+
+Round 98 为测试失败修复循环补充 `RepairLoopEvidenceManifestV1`/`e2e:repair-loop`。直接复用 Watt 固定 commit 的显式 opt-in、64 KiB manifest、0/1/2 退出和 HTTP 边界，以及生产 `GitHubActionsApiClient`；本项目新增的是三类 repair/blocker case、Case 8/Plan 投影绑定和 commit/ref/compare 关系核对。真实试点 Action、锁定 Codex、bot commit 和 blocker 外部事实仍需真实仓库验收，fake Action 或 schema example 不算证据。
+
+Round 29 核对 Watt commit `476e3cd` 的 `packages/toolbridge/vendor/tb/tenant.ts` 与 `packages/gateway/src/tools/tool-invoker.ts`：直接沿用其 Bearer Secret Key 只做 SHA-256 lookup、明文不进入持久化的安全边界；delivery-loop继续复用现有统一SHA-256 digest原语，没有复制出第二套hex格式。Watt当前`apikey:<hash> → tenant`是静态KV映射，`PROXY_SECRET_KEY`也是稳定internal key，不包含run/attempt、TTL、heartbeat rotation或revoke；其JWT signer的受众也不是vendor tool-bridge。因此这些代码不能直接冒充短期SK broker，本项目在D1 Attempt generation/lease上新增用途隔离的run/tool opaque token，并保持upstream internal/Admin Secret不下发。
+
+Round 30继续直接复用Watt `packages/core/src/authz/tool-action.ts`的“mount scope存在则action=scope，否则invoke”单一映射点，以及`packages/gateway/src/http/tools-proxy.ts`的认证→PEP→transport分层和deny不调用upstream结构。delivery-loop的repo/log/trace/K8s/database具体路径与triage grant不是Watt现成目录，因此由本项目固定catalog新增；同时把已知write/destructive capability留在catalog中做显式effect deny，不能用unknown-path拒绝冒充write/destructive policy证据。
+
+Round 31 对 Watt commit `476e3cd` 全库检索 `delivery.yaml`、protected paths、command refs、setup/targeted/verify contract和无 shell command resolver，未发现可直接复制的等价模块，因此本轮该能力的 Watt 代码复制量为零。delivery-loop 复用的是本项目已有 canonical SHA-256 digest、固定参数 Git 子进程和共享 `shell: false` 有界 command runtime；commit-bound policy loader、strict YAML schema、canonical refs和deployment contract为本项目新增，不能虚构为Watt来源。
+
+Round 32 对 Watt commit `476e3cd` 全库检索Plan Item、dependency DAG、ready状态和Attempt claim，仅发现CLI初始化的线性resume skip，没有版本化Plan Item调度或等价D1 claim模块，因此本轮可直接复制代码为零。delivery-loop继续复用此前从Watt迁移的D1 conditional update“零行不是成功”纪律、canonical digest和workerd migration/test harness；active Plan拓扑晋升、`claimed_progress_version`唯一约束、strict claim和protected-skip trigger为本项目新增。
+
+Round 33 对 Watt commit `476e3cd` 全库检索GitHub repo_write、installation access token签发/撤销和approval-bound credential，未发现等价模块，因此本轮Watt直接复制量为零。delivery-loop复用本项目既有GitHub App JWT/provider、Round 25 exact approval查询、Watt-derived digest-only Secret边界及D1 lease/CAS纪律；单仓库write permission profile、AES-GCM durable revoke projection和scheduled external revoker为本项目新增。
+
+Round 34 对 Watt commit `476e3cd` 全库检索Git branch/commit/push、bot identity、protected branch与force gate，只发现CLI自身`--force`确认参数，没有目标仓库writer可复制，因此本轮Watt直接复制量为零。delivery-loop把已有recovery固定Git命令提取到同一`executeGitCommand`供writer复用，并沿用repo_write credential；derived branch、fixed bot identity、host Git env/hook隔离与no-force refspec policy为本项目新增。
+
+Round 35 对 Watt commit `476e3cd` 当前树及全量Git历史检索`protected path`、CODEOWNERS、Git name-status/numstat、diff gate与`awaiting_approval`，没有发现目标仓库高风险diff扫描或审批暂停实现，因此本轮可直接复制代码仍为零。delivery-loop最大化复用的是本项目既有commit-bound`delivery.yaml`、fixed-argv Git executor、Attempt version/generation CAS、run/tool token撤销、repo_write credential revoker、D1 outbox和安全query projection；内建path matcher、staged-tree report、protected gate/entries、HTTPS reporter与Workflow pause为本项目新增，不能虚构为Watt代码。
+
+Round 36 对 Watt commit `476e3cd` 当前树与相关Git历史检索targeted/required verify、command Evidence、duration/head SHA绑定，只发现`scripts/e2e/lib.ts`同步spawn CLI并在失败对象中保留exitCode/stderr，以及人类可读PASS/SKIP日志；没有durable verification suite、head-bound Evidence或Plan command gate可复制。因Watt helper会保留/打印stderr，本轮明确不复制该部分。delivery-loop最大化复用本项目现有`DeliveryCommandRunner`、fixed Git executor、Plan Item command refs、Attempt CAS、Evidence表和安全query projection；ordered runner、suite ledger、duration列与轮换token HTTPS reporter为本项目新增。
+
+Round 37 对 Watt commit `476e3cd` 当前树与Git历史继续检索doneWhen、逐criterion Evidence mapping、plan/head-bound verification decision和required Item passed gate，没有发现等价源码，因此可直接复制量为零。delivery-loop最大化复用本项目已有canonical digest、strict控制面Bearer API、active Plan/Attempt CAS、verification suite/Evidence ledger、token撤销和安全query projection；`plan_item_verifications`、逐doneWhen映射、Evidence immutable trigger与唯一passed verifier为本项目新增，不能虚构为Watt来源。
+
+Round 38 完整读取Watt commit`476e3cd`的`packages/gateway/src/agent/harness/llm.ts`及`packages/core/src/agent/expect-schema.ts`。可直接复用的仍是已在Round 28复制的`DEFAULT_MAX_ATTEMPTS = 3`、`shouldRetry(attempt,maxAttempts)`和“首次+两次重试”边界；Watt的for-loop在单进程内把schema violation反馈给同一模型调用，不含跨GitHub Action的Attempt lineage、failed test Evidence、D1 active Item切换、dispatch outbox或旧token fencing，不能直接复制为durable repair。delivery-loop本轮最大化复用既有Watt-derived outbox/CAS与上述attempt上限；verification fact/repair ledger、execution scope、same-head review_fix Attempt和stale dispatch reconciliation为本项目新增。固定workflow尚未接execution Runner，因此真实repair Action子项保持未完成。
+
+Round 39 对Watt commit`476e3cd`的`packages/gateway/src/agent/harness/`、`packages/core/src/agent/`及tool-bridge目录检索并核对Agent调用、repair、Git branch/commit/push和verification路径。Watt只有Worker内AI SDK harness、schema retry/correlation和只读tool调用边界，没有Codex CLI `workspace-write` adapter、目标仓库writer或targeted→required Git-head-bound Runner，故本轮可直接复制代码为零。delivery-loop最大化复用本项目既有Watt-derived不可信reference纪律、Attempt上限/outbox/CAS，以及已经验证的Git writer、delivery policy、command runtime和Evidence reporter；新增内容只负责本地execution编排与“Agent不能拥有Git effect”的可执行检查，不虚构Watt来源。
+
+Round 40 继续以Watt固定commit`476e3cd`核对固定workflow bootstrap、GitHub OIDC execution exchange、repo credential、Git head CAS及HTTP Evidence reporter，Watt仍没有等价目标仓库Action/Runner路径可直接复制，直接复制量为零。本轮没有复制Watt的Worker内AI SDK harness来冒充GitHub执行面；最大化复用的是delivery-loop已有的Watt-derived D1 CAS/outbox/attempt上限与不可信reference边界，以及现成OIDC exchange、heartbeat、repo credential、Git writer、protected gate、verification reporter和failure store。新增代码只连接execution context/head ledger、串行fencing bootstrap和固定workflow mode路由。
+
+Round 41 对Watt固定commit`476e3cd`检索PR创建、PR body、acceptance criteria、rollback和GitHub pull request API producer；只发现CI中的`pull_request`触发器，没有可直接复制的PR正文renderer、Evidence-backed eligibility、durable body snapshot或外部PR reconciliation实现，因此本轮Watt直接复制量为零。delivery-loop继续最大化复用此前从Watt迁移的D1条件写/幂等收敛、Secret边界和不可信自然语言纪律，以及本项目已有Task digest、Plan verification、head/Evidence ledger；确定性Markdown renderer和四张PR正文snapshot表为本项目新增，不能虚构为Watt来源。
+
+Round 42 再次对Watt固定commit`476e3cd`检索`/pulls`、createPullRequest、Octokit和PR webhook；仍只有`.github/workflows/ci.yml`的`pull_request`触发器，没有GitHub PR API producer、publication ledger或external fact projector可直接复制，因此直接复制量为零。本轮直接复用并扩展的是此前从Watt迁移的pending→delivering→settled fenced outbox/D1条件写纪律，以及delivery-loop已有GitHub App、HMAC delivery去重和API observation模式；PR-only REST adapter、三张publication/observation表与Run projector为本项目新增。
+
+Round 43 对Watt固定commit`476e3cd`全库检索`pull_request_review`、`changes_requested`、review comment、review attempt与PR branch update，没有review webhook producer、head-bound feedback ledger或同PR branch writer可直接复制，因此直接复制量为零。delivery-loop最大化复用此前从Watt迁移的HMAC/delivery digest、D1条件写、稳定identity和fenced outbox纪律，以及本项目现成Task/R2 digest、approval、execution context/head CAS与fixed Git executor；三张review表、feedback projector和`existing_fast_forward`分支模式为本项目新增，不能虚构为Watt代码。
+
+Round 44 对Watt固定commit`476e3cd`全库检索`supersede/replan/plan revision/approval invalidation/plan version`与checkpoint approval组合，没有版本化Plan replacement、旧审批失效ledger或active Plan immutable trigger可直接复制，因此直接复制量为零。delivery-loop最大化复用Watt-derived D1 conditional update、stable identity和outbox模式，以及本项目已有ExecutionPlan validator、Attempt fencing、token/credential revoke和安全query projection；`plan_revision_source_facts/plan_revisions/approval_invalidations`、semantic diff与Plan normalized-table triggers为本项目新增。
+
+Round 45 对Watt固定commit`476e3cd`全库检索`replan/plan revision/review feedback/changes requested/source fact`，唯一近似命中是`watt-task-workflow.ts`的稳定`request-plan-confirmation`步骤；它是人类确认已有计划，不包含签名review lineage、server-derived source fact、旧Attempt/token/approval fencing或immutable Plan replacement，直接复制会混淆安全语义，因此本轮Watt直接复制量为零。delivery-loop继续复用Watt的稳定Workflow步骤/D1持久状态、strict schema和conditional-write模式；GitHub review expected Run snapshot、strict Runner decision/reporter及原子source producer为本项目新增。
+
+Round 46 对Watt固定commit`476e3cd`全库检索Git refs、compare commits、branch head、fast-forward、Contents-read installation token与base reconciliation，没有GitHub repository adapter或base-update source producer可直接复制，因此本轮Watt直接复制量为零。delivery-loop最大化复用Watt-derived stable identity/D1 conditional write与scheduled持久状态模式，并直接复用本项目GitHub App JWT/allowlist、API reconciliation和PlanRevision batch；专用base token、refs+compare parser、`github_base_observations`及原子source producer为本项目新增。
+
+Round 47 对Watt固定commit`476e3cd`全库检索supplemental/add-context/apply-current/Task revision/Plan revision，没有可复制的immutable Task→Plan revision或absorbed Run实现；Watt `applyPatch`会原地替换Context，明确不适用于本项目revision语义。本轮直接复制了`packages/gateway/src/context/providers/object.ts`的R2并发创建条件写模式：先`head`，创建时使用`onlyIf: {etagDoesNotMatch:'*'}`，并发失败者重新核对immutable metadata；本项目在其上增加内容寻址、canonical digest、Task/context双对象和D1 lineage。其余Task revision、absorbed Run、PlanRevision同batch及三类analysis `revisionSource`回读为delivery-loop新增。
+
+Round 48 对Watt固定commit`476e3cd`全库检索rebase、merge conflict、non-fast-forward与branch ancestry，没有Git rebase Runner、GitHub base conflict blocker或approval invalidation union可直接复制；llmdoc中的worktree基线建议不是生产实现，因此本轮Watt直接复制量为零。delivery-loop最大化复用本项目已有fixed Git executor、Attempt派生branch、bot identity、targeted→required verification Runner，以及Watt-derived stable identity/D1 conditional batch/outbox纪律；`BaseRebaseRunner`、`github_base_conflicts`、base-conflict approval ledger和安全query projection为本项目新增。
+
+Round 49 对Watt固定commit`476e3cd`再次检索base-only Plan revision、verified branch replay、rebase Attempt lineage、GitHub workflow rebase dispatch与content-conflict callback，没有可直接复制的生产实现，因此直接复制量为零。本轮最大化复用delivery-loop已有Watt-derived scheduled reconciliation、stable identity、D1 conditional batch/outbox和三态dispatch，并复用既有review-fix OIDC/bootstrap、repo-write broker、fixed no-force writer、head CAS、verification/failure reporter与Attempt revocation ledger；`base_rebase_attempts`、三source互斥context、base-rebase terminal endpoints、终态只读重放校验与approval invalidation ledger为本项目新增。
+
+Round 50 对Watt固定commit`476e3cd`全库检索required checks、branch protection/rules、review decision、ready-to-merge与GitHub merge gate，没有命中可直接复制的生产实现，因此直接复制量为零。本轮最大化复用delivery-loop已有Watt-derived scheduled reconciliation、stable identity、D1 conditional batch和reference-only状态投影，以及现有GitHub App单仓库token/provider、PR publication、base observation、approval/invalidation与TaskQuery原语；GitHub merge只读adapter、`github_merge_gate_observations`、normalized checks、evaluation/decision及ready-to-merge CAS为本项目新增。eligibility刻意不复制或新增merge effect，避免在自动合并策略尚未拍板时越权。
+
+Round 89 对Watt固定commit`476e3cd2490d725fde174e7c697ebf00899edc6`补齐merge gate外部证据门禁。Watt可直接复用的是E2E的显式opt-in、仓库外64 KiB manifest、有界HTTP读取、固定安全错误与0/1/2退出；Watt没有GitHub merge fact、branch rules/check/review聚合或Case 8投影，因此这些业务代码仍由delivery-loop唯一实现。verifier直接复用本项目生产`GitHubMergeGateApiClient`，不再复制第二套GitHub parsing；manifest/schema、六类Case 8/D1绑定、ready/五类rejected判据和zero merge effect是本轮新增。真实试点GitHub refs、review、checks、base与approval事件仍需外部资源后验收。
+
+Round 90 对Watt固定commit`476e3cd2490d725fde174e7c697ebf00899edc6`补齐身份隔离外部证据门禁。直接复用 Watt 的 E2E opt-in、64 KiB manifest、0/1/2 退出和有界读取；同时复用本项目生产 `GitHubMergeGateApiClient` 增加 read-only review actor/head 查询。Watt 的 `identity_mappings/channel_identities/IdentityMapper` 已在前轮直接迁移；本轮新增的是 `approval_identity_rejections` 的 decision/binding snapshot、Case 8 `identityApprovals`、accepted/self-rejected 四路径 manifest/verifier。Feishu signed event 与 tenant/open_id 外部事实没有被 fake 或 manifest 冒充完成。
+
+Round 51 找到并直接迁移Watt固定commit`476e3cd`的身份实现：`packages/gateway/migrations/0001_auth_core.sql`中的`identity_mappings`、`packages/gateway/migrations/0002_channel_identities.sql`中的`channel_identities`与索引，以及`packages/gateway/src/authz/identity-mapper.ts`的`ANONYMOUS_PRINCIPAL`、`resolvePrincipal`、`resolve`、`bindChannelIdentity`和`bind`查询/upsert结构。delivery-loop保持Watt“channel subject先映射principal、roles在决策时实时解析、未映射为anonymous”的语义，并增加输入pattern、roles JSON shape/唯一性验证和GitHub repository/飞书tenant渠道命名。`approval_source_events`、`identity_bound_approvals`、拒绝ledger、`trusted_effect_approvals`、独立adapter API、自批隔离及replay/merge effect重验是本项目在Watt身份原语上的新增，不能倒称为Watt已有审批系统。
+
+Round 52 对Watt固定commit`476e3cd`全库检索OIDC、Environment、deploy、deployment、role和GitHub workflow，没有GitHub Environment test deployment、云OIDC role、Deployments API effect或deployment_status projector的等价生产实现，本轮可直接复制代码为零。delivery-loop最大化复用此前从Watt迁移的stable identity、D1 conditional batch、pending→delivering→settled fenced outbox和reference-only payload纪律，以及本项目现有GitHub App/HMAC/OIDC/Evidence原语；`test_deployments` ledger、deployment-only token、专用OIDC attestation、固定test workflow/Runner与signed status projector为本项目新增，不能虚构为Watt代码。真实Environment、云role和deployment URL仍须外部试点验证。
+
+Round 53 对Watt固定commit`476e3cd`检索E2E、acceptance、smoke、waitFor、deployment后验证、workflow result和可回放事实断言。Watt可参考的是通用E2E CLI/`waitFor`与协议事实断言，没有可直接复制的部署后acceptance producer、GitHub Environment OIDC Runner、D1 lineage或签名`workflow_run` Evidence projector，因此本轮直接复制代码为零。delivery-loop继续最大化复用此前从Watt迁入的stable identity、D1 conditional batch、fenced outbox和reference-only payload模式，以及本项目已有GitHub App/HMAC/OIDC/Plan Item Evidence verifier；`test_acceptances` ledger、第五类outbox、固定workflow/Runner与双事实projector为本项目新增，不能虚构为Watt来源。
+
+Round 54 对Watt固定commit`476e3cd`全库检索merge pull request、`merged_at`、`merge_commit_sha`、`pull_request closed`、merge method/squash/rebase，没有命中GitHub merge producer、签名merge webhook projector、API reconciliation或merge SHA ledger；唯一`rebase`命中仍是worktree文档建议，不是生产实现，因此本轮直接复制代码为零。delivery-loop最大化复用此前从Watt迁入的stable identity、D1 conditional batch、external fact digest/收敛纪律，以及本项目已有HMAC webhook、merge-observation只读token、ready decision、PR publication和TaskQuery原语；`github_merges`、双源observation、merge fact adapter/projector与no-deploy状态裁决为本项目新增，不能虚构为Watt代码。
+
+Round 55 对Watt固定commit`476e3cd`全库检索GitHub Environment reviewer、production deployment、merge SHA approval binding、Deployments API、OIDC role与release ledger。最接近的是`watt-task-workflow.ts`的`confirm-release` checkpoint、`waitForEvent`和signal测试：它证明持久流程可以等待外部人类decision且错误checkpoint不能恢复，但没有GitHub Environment身份、task revision/merge SHA binding、D1 approval lineage、deployment-only token或GitHub producer，直接复制会弱化本项目安全语义，因此本轮Watt直接复制代码为零。本轮最大化复用该“checkpoint只接收外部signal且signal不自证完成”的流程原则、Round 51已直接迁移的Watt identity mapper，以及本项目已有stable identity、D1 conditional batch、fenced outbox、GitHub Deployment/OIDC/policy Runner；`production_release_approval_bindings`、production scheduler/outbox/API/OIDC/fixed workflow为delivery-loop新增。真实Environment required reviewers、真人approval与云role审计仍须外部验证。
+
+Round 56 对Watt固定commit`476e3cd`检索`deployment_status`、GitHub Deployment/status API、platform result projector和external fact reconciliation，仍只有`confirm-release`后由Workflow代码直接`complete-release`的硬编码结果，没有签名平台事实、REST补偿、merge-bound production Evidence或终态CAS可直接复制，因此本轮Watt直接复制代码为零。delivery-loop直接复用本项目Round 52的HMAC deployment parser/projector形态、existing GitHub App token provider与Round 53/54的双源observation/reconciliation模式；production status domain、统一observation ledger、read-only status adapter和post-merge terminal projector为本项目新增。2026-07-26实读GitHub官方文档确认：`deployment_status` webhook需要Deployments read权限；`GET /repos/{owner}/{repo}/deployments/{deployment_id}`与`GET .../statuses`都接受GitHub App installation token的Deployments read权限，status含`updated_at/deployment_url/environment_url`。来源：[deployment_status webhook](https://docs.github.com/en/webhooks/webhook-events-and-payloads#deployment_status)、[Get a deployment](https://docs.github.com/en/rest/deployments/deployments#get-a-deployment)、[List deployment statuses](https://docs.github.com/en/rest/deployments/statuses#list-deployment-statuses)。
+
+Round 57 对Watt固定commit`476e3cd`全树和历史检索rollback/revert/compensation/deployment/workflow。Watt命中的`rollbackDelivery`是Agent correlation投递失败后把`delivering`退回`pending`，`event-bus/task-manager`的compensating delete也是局部写失败补偿；它们不是GitHub/云环境rollback contract。Watt没有失败SHA上的仓库contract读取、deployment/acceptance Evidence lineage、test rollback workflow/OIDC role或平台终态projector，因此本轮可直接复制的业务代码为零；强行复制会把消息重试误称为环境回滚。delivery-loop已最大化复用此前直接迁入的Watt pending→delivering→settled/rollback fencing与stable identity，以及本项目Round 53成熟的acceptance store/outbox/OIDC Runner/双事实projector形态；`test_rollback_contract_observations`、rollback ledger、exact-SHA policy adapter、固定workflow和production fail-closed边界为本项目新增。2026-07-26实读GitHub REST文档确认：exact ref可通过Contents API读取仓库文件，fine-grained/App token需要Contents read；workflow dispatch需要Actions write，workflow run读取需要Actions read。来源：[Get repository content](https://docs.github.com/en/rest/repos/contents#get-repository-content)、[Create a workflow dispatch event](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event)、[Get a workflow run](https://docs.github.com/en/rest/actions/workflow-runs#get-a-workflow-run)。
+
+Round 60 完整读取Watt固定commit`476e3cd`的`packages/core/src/agent/correlation.ts`、`packages/gateway/src/agent/agent-correlation.ts`与`packages/gateway/src/event/event-store.ts`。Watt的`CorrelationTable/AgentCorrelation`是Agent结果等待、超时和定向回送状态机，`correlationId`语义不是delivery-loop跨Task/PR/deployment的长期交付根，直接复制会引入错误状态模型。本轮直接保留Watt `EventStore.list`成熟的allowlisted filter、未知key拒绝、D1参数绑定和每类最多200条边界，并复用其`traceId`可从留痕面定向查询的纪律；delivery-loop据此以`run_id`为root，新增strict typed lookup、repository scope、多Runfail-closed、read-only D1 views与白名单structured log。视图不能复制Watt envelope JSON全扫，因为本项目外部事实已规范化分表且不能新增第二份payload；Watt waiter state machine直接复制量为零。
+
+Round 61 完整读取Watt固定commit`476e3cd`的`watt-task-workflow.ts` checkpoint timeout与`workflow-task.test.ts`故障注入。可直接沿用的是稳定`waitForEvent` timeout、超时后必须持久化安全终态且不能无限waiting，以及测试用平台force timeout证明行为；Watt没有queued/running/awaiting_review/deploying多状态watchdog、heartbeat lease fencing、durable incident或deployment fact reconciliation，业务代码直接复制量为零。delivery-loop把同一“不留僵尸等待”的纪律落为每分钟D1 watchdog，并最大化复用已有Attempt version/generation/token revoke、Workflow cancel、outbox过期lease relay和deployment API reconciliation，而不是复制Watt“人审超时直接failed”的产品策略；本项目的人审只告警升级，部署只重查外部事实。
+
+Round 62 直接迁移Watt固定commit`476e3cd`的Queue可靠投递边界：`wrangler.jsonc`主consumer采用`max_retries=3 + dead_letter_queue`，consumer对畸形毒丸ack、可重试失败retry；队列名按本项目改为`delivery-loop-workflow-outbox(-dlq)`。Watt明确只创建DLQ且“不配consumer”，没有D1 capture、operations查询/授权重放或effect replay测试，因此这些不能复制。本项目在Watt配置上补专用DLQ consumer、immutable dead-letter/replay ledger，并最大化复用已有Watt-derived FencedOutboxProcessor以及GitHub dispatch/PR/deployment reconciliation；重放始终回到原outbox，不创建第二套effect协议。DLQ consumer自身D1失败最多重试100次，之后进入不消费的quarantine queue，避免永久删除。2026-07-26实读Cloudflare官方文档确认：消息达到consumer配置的retry limit后进入DLQ；未配置DLQ则永久删除；DLQ与普通Queue相同，可以独立生产和消费。来源：[Cloudflare Dead Letter Queues](https://developers.cloudflare.com/queues/configuration/dead-letter-queues/)。
+
+Round 63 对Watt固定commit`476e3cd`全库检索Deployments status API、external fact reconciliation、飞书message GET/mget和回调丢失恢复；Watt只有Feishu发送adapter及Workflow自身checkpoint/wait，没有可直接复制的GitHub deployment status或消息回读生产实现，因此本轮Watt业务代码直接复制量为零。delivery-loop继续直接复用Round 58已从Watt迁入的`memoryTokenCache`、token失效码、create UUID与Round 62使用的fenced outbox；GitHub test status adapter逐结构复用本项目production status adapter，飞书GET digest projector与两张immutable observation表为本项目新增，不能倒称为Watt已有能力。
+
+Round 64 完整读取Watt固定commit`476e3cd`的`task-store.ts`、`task-manager.ts`、`watt-task-workflow.ts`及相关Workflow测试。直接复用的是`taskId=instanceId`、D1业务状态不叠加可能误报的engine status、终止已terminal实例视为幂等，以及`waitForEvent`长期等待/测试dispose纪律；Watt没有定期双向status矩阵、immutable mismatch ledger、公平cursor或fenced create/restart/terminate repair，业务代码直接复制量为零。本项目最大化复用上述成熟边界和既有Watt-derived outbox，并新增Workflow reconciliation state/observation与三类repair intent。2026-07-26实读Cloudflare官方Workers API、events与limits Markdown并核对锁定`@cloudflare/workers-types@4.20260702.1`：`status()`枚举为queued/running/paused/errored/terminated/complete/waiting/waitingForPause/unknown；`get(id)`不存在时抛错；waitForEvent timeout范围1秒～365天，waiting不占active concurrency；完成实例history Free保留3天、Paid保留30天。来源：[Workflows Workers API](https://developers.cloudflare.com/workflows/build/workers-api/)、[Events and parameters](https://developers.cloudflare.com/workflows/build/events-and-parameters/)、[Workflows limits](https://developers.cloudflare.com/workflows/reference/limits/)。
+
+Round 65 完整读取Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/gateway/migrations-audit/0001_audit_records.sql`、`src/metrics/usage-store.ts`、`src/agent/agent-instance.ts`、`src/agent/harness/llm.ts`、`anthropic-caller.ts`及usage/observability测试。直接迁移的是“一次真实模型调用一行usage”的schema/store结构、input/output token与可选费用的append-only记账方式，以及重试/多步调用不能遗漏usage的测试纪律；delivery-loop在此基础上增加run/attempt/tenant/repository/user lineage、cached/reasoning token、整数micro-USD、reservation和source digest。Watt没有tenant/repo/user/run多维quota、原子并发/model/tool admission或P0 override，不能把这些新增能力倒称为复制。2026-07-26通过OpenAI官方Codex manual核对：`codex exec --json`的stdout是JSONL，事件包含`thread.started/turn.started/turn.completed/turn.failed/item.*/error`，`turn.completed.usage`提供`input_tokens/cached_input_tokens/output_tokens/reasoning_output_tokens`。本项目只投影这四个标量并立即丢弃其余事件；来源：[Codex exec JSON output](https://learn.chatgpt.com/docs/developer-commands?surface=cli#make-output-machine-readable)。模型价格不是Codex事件字段，必须由受信D1 profile配置，不能在代码里猜测。
+
+Round 66 对Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`全库检索D1 export/Time Travel、R2 backup/versioning、restore fence、token-safe restore和一致性演练，没有等价生产模块可直接复制，直接复制量为零；强行复制Watt的一般R2 provider或Workflow任务模型不能证明D1+R2一致恢复。本轮最大化复用既有Watt-derived稳定Workflow step、D1条件batch、immutable audit/outbox和既有`RepoWriteCredentialRevoker`，新增官方D1 export adapter、第三私有bucket、逐对象descriptor/流式SHA-256、restore generation/serving fence、九类一致性检查及operations API。Watt来源与本项目新增边界保持可审计，未虚构代码归属。
+
+Round 67 完整读取Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的`migrations-audit/0001_audit_records.sql`、`src/audit/audit-store.ts`、platform audit route、CLI audit list和E2E-4 allow/deny断言。直接适配的是每次真实读取用UUID/time/principal/resource digest入账、D1 `prepare+bind`、strict filter/limit和无结果安全返回的实现骨架；`case8_audit_report_accesses`保留同一“查询本身也可审计”纪律。Watt的`CallContext JSON + generic resource/action/decision`无法回答delivery-loop的Task revision、Plan/Evidence、commit/PR/merge/deployment lineage，直接复制会丢失Case 8语义，因此没有复制其表或报告模型。本项目最大化复用现有Watt-derived `CorrelationQueryStore`作为Run/GitHub/trace基础关联，并新增八栏D1 join、canonical report digest、五分钟预算、URL净化和正文/credential物理排除。
+
+Round 68 完整读取Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/core/src/context/ttl.ts`及测试、`packages/gateway/src/context/context-registry.ts`和`context/providers/object.ts`。`src/retention/ttl.ts`及四个inclusive-boundary测试直接复制Watt纯函数/用例，只把namespace用语和TTL值适配为raw 30天；D1 claim继续直接沿用Watt条件UPDATE后以`meta.changes=1`判winner、`prepare+bind`写法。Watt的`purgeNamespace`会list并删除整个prefix，适用于其TTL namespace但不满足本项目Task/checkpoint/Evidence引用保护，因此只借用其bounded cursor思想，改为D1显式registry+服务端exact-key推导；删除审计、strict operations API、专用raw bucket及backup排除为delivery-loop新增，未虚构为Watt能力。
+
+Round 69 对Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`全树检索runbook/incident/outage/Secret leak/disaster/production rollback，未发现通用运营runbook或GitHub/D1/production处置实现；唯一可直接复用的真实事故知识来自`llmdoc/memory/reflections/2026-07-04-feishu-plugintoken-outage.md`。本项目直接吸收其“先查数据真源、health→credential/challenge→无扰假事件→D1分段探测”以及“重签依赖凭据→stdin secret put→立即探测，不等待自然流量、不跑覆盖全配置setup”的纪律。Watt的pluginToken/Root Key产品模型不属于delivery-loop，没有复制其CLI命令、域名、token或部署配置；其余五类incident严格映射本项目现有D1/operations/GitHub/飞书/tool-bridge/rollback边界并显式记录缺失的global pause与production rollback API。
+
+Round 70 完整读取Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/cli/src/metrics.ts`及测试、`packages/gateway/src/metrics/metrics.ts`和observability测试。可直接沿用的是`7d`范围常量、从受控base/token读取live metrics而非采信Agent自报，以及本项目Round 59已从Watt E2E迁入的0/1/2、显式消耗门控和固定错误输出纪律；七天CLI直接复用后者，没有复制第二套退出协议。Watt的`resolveRange`只把缺省查询设为最近7天，invalid range还会回落到7天；gateway返回窗内聚合单点且`cache_hit_rate/tool_calls`仍可为空，无法证明连续10080分钟coverage、runtime Secret detector、未知stuck或GitHub重复PR/Deployment。直接复制该metrics模块会弱化本项DoD，因此本项目新增strict trial/report schema、分钟bucket完整性、Case 8与GitHub inventory三方核对；没有把Watt能力或本地fake冒充真实七天。
+
+Round 71 直接复制Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/plugin-feishu/src/adapter/crypto.ts`核心：constant-time compare、`sha256(timestamp+nonce+encryptKey+exact body)`、base64拆IV与AES-256-CBC解密；Node oracle测试结构也直接迁移。`verify.ts`的加密/明文分流、解密后JSON和challenge提取结构继续复用。Watt生产plugin没有timestamp freshness/tenant/app检查，加密模式也不会再比verification token，且无encrypt key时允许未配置token的匿名明文请求；这些不满足delivery-loop DoD，因此新增300秒时效、解密后token、app/tenant双绑定、strict envelope、metadata-only D1 receipt与独立nonce ledger。Watt把解密事件直接Publish并可能把上游error detail拼入响应，本轮没有复制：Task/队列规范化属于下一DoD，错误固定化且raw payload零持久化。
+
+Round 72 完整读取Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/gateway/src/event/event-store.ts`、`event-bus.ts`及integration-event-flow去重测试。直接复用的是“dedupeKey命中原event ID后不再留痕/不再Queue send”、Queue sender注入和同event重放断言结构；delivery-loop把dedupeKey固定为verified tenant+event identity，并直接复用现有`TaskIntakeStore`的source revision ID/digest/Task+Run+workflow-outbox事务。Watt的EventStore保存完整envelope且`put→queue.send失败→best-effort delete`，会让正文进入D1并在补偿失败时形成丢投递窗口，因此没有复制；本项目改为metadata-only receipt+ingress outbox同D1 batch、fenced relay和专用Queue观察。Task映射不从Queue body或raw event自报，先由下一DoD的飞书/Meegle adapter生成strict TaskEnvelope，再经exact receipt binding与Secret scan进入content-addressed R2。
+
+Round 73 对Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`全树检索Meegle/Meego/work-item/TaskEnvelope/triaging adapter，未发现可直接复制的工作项字段映射实现；Watt的generic event envelope也没有Meegle field metadata、role协议、全字段分页或repository allowlist语义。为最大化真实复用，本轮直接使用此前从Watt复制的`applyD1Migrations`测试入口、content-addressed R2 conditional-write与稳定identity模式，并复用delivery-loop Round 72的`FeishuNormalizedTaskStore`及`TaskIntakeStore`事务，没有新造第二套Task/Run/outbox。新增部分仅限Meegle strict snapshot/profile、role/field映射、固定triage gap和metadata-only ledger；Meegle skill确认`meta-fields/meta-roles`必须先解析合法key、role不是普通field、`fields=["_all"]`存在`next_page_token`时不能宣称快照完整。真实project/type/field/role key与API分页仍需测试tenant外部事实。
+
+Round 85 针对“PR 创建由 GitHub webhook 外部核对；Agent 自报 PR URL 不能推进状态”补齐仓库外 verifier。`scripts/verify-github-pull-request-evidence.ts`直接复用 Watt 固定提交 `476e3cdd2490d725fde174e7c697ebf00899edc6` 及本项目既有 Watt-derived E2E 骨架：显式 opt-in、64 KiB manifest、有界 HTTP 读取、固定错误输出和 0/1/2 退出语义。Watt 没有 publication、webhook/API observation ledger、Case 8 投影或 PR body/head 业务绑定，因此 `GitHubPullRequestEvidenceManifestV1`、`pullRequestObservations` 安全投影和 GitHub PR REST 三方核对是 delivery-loop 新增；没有复制第二套正文解析或把 Agent URL 当作事实。真实 App 创建、signed `pull_request opened`、API 补偿和重放不重复 PR 仍需真实试点仓库验收，步骤见[GitHub Draft PR 外部证据验收](GitHubPullRequestE2E.md)。
+
+Round 86 针对 review comment 的 head-bound 外部事实补齐 verifier。直接复用 Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6` 的显式 opt-in、仓库外 64 KiB manifest、有界读取、固定 0/1/2 退出和安全错误骨架；Watt 没有 GitHub review feedback、stale-head projector、review_fix lineage 或 compare/check 业务断言，因此 `GitHubReviewFeedbackEvidenceManifestV1`、Case 8 `reviewObservations` 和 GitHub Review/PR/Action/ref/compare/check-runs 核对是 delivery-loop 新增。验收要求一条 applied review 和一条 `stale_head` ignored review：前者必须绑定 prior/replacement Attempt 与新 bot SHA，后者必须没有 feedback/Attempt/Action。真实真人 review、Action 修复和 required checks 仍需试点仓库外部事实，步骤见[GitHub Review Fix 外部证据验收](GitHubReviewE2E.md)。
+
+Round 87 针对 Plan revision 三类 source 的外部事实契约补齐 `GitHub/Feishu/Meegle` 边界。直接复用 Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6` 的显式 opt-in、仓库外 64 KiB manifest、固定 0/1/2 退出和有界读取；Watt 没有 delivery-loop 的 PlanRevision/approval invalidation/source lineage 或外部 ref/Review/compare 断言。新增 `PlanRevisionEvidenceManifestV1`、Case 8 `planRevisions` 和 `pnpm run e2e:plan-revision`：每个 source kind 都核对 immutable source digest、prior/new Plan、旧/新 approval 和 analysis Action；GitHub review/base 用只读 API，Feishu/Meegle 签名与 identity 保留人工核对。正文、R2 ref、raw response、token 不进入 verifier/Case 8。步骤见[Plan Revision 外部证据验收](PlanRevisionE2E.md)。
+
+## 7. Watt 参考实现的可复用结论
+
+本地 Watt 项目 commit `476e3cd` 已实现并部署过 Cloudflare Workflows Task 闭环。可复用的是模式，不是其硬编码任务模型：
+
+- `taskId = Workflow instanceId` 证明业务主键可直接作实例 ID；delivery-loop 调整为 `runId = instanceId`。
+- 所有副作用进入 `step.do`、Agent 结果经 correlation → `waitForEvent`、D1 作为对外状态投影、Signal/Cancel 和本地 introspection 测试均已有真实代码证据。
+
+Codex CLI 不是 Watt 可直接复制模块。2026-07-25 通过官方 Docs MCP 核对 `codex exec`：它是 CI/脚本用非交互模式，支持 `--ephemeral`、`--sandbox read-only`、`--output-schema`、`--output-last-message`、`--ignore-user-config` 和 stdin prompt；配置参考说明 shell subprocess 默认排除 KEY/SECRET/TOKEN，可用 `shell_environment_policy.exclude` 加强。来源：[Codex developer commands](https://learn.chatgpt.com/docs/developer-commands#codex-exec)、[Codex config reference](https://learn.chatgpt.com/docs/config-file/config-reference#configtoml)。本机 `codex-cli 0.145.0` help 已核对参数，仓库 lockfile 同版本固定；真实计费调用另作 opt-in 证据。
+- 2026-07-25 再次核对本机锁定版 help：`codex exec resume [SESSION_ID]` 存在，但 `--ephemeral` 的官方定义是不保存 session state；两者不能组合成 Runner 丢失后的可靠恢复。官方 App Server 另提供 `thread/resume` 与 `turn/interrupt`，但当前 MVP 未引入常驻 app-server。delivery-loop 因此以 Git + 外部 `AgentCheckpoint v1` 为默认恢复真源，Codex adapter resume 启动新的 ephemeral exec。来源：[Codex glossary](https://learn.chatgpt.com/docs/glossary)、[Codex App Server API overview](https://learn.chatgpt.com/docs/app-server#api-overview) 与仓库锁定 CLI help。
+- delivery-loop 不能照搬 Watt 的硬编码模板、JSON steps、简单 checkpoint approval 和 D1-create/Workflow-create 失败后补偿删除；这里需要版本化 ExecutionPlan、CAS/lease、transactional outbox 和审批快照。
+- 定向测试 `pnpm --filter @watt/gateway exec vitest run test/workflow-task.test.ts` 于 2026-07-25 为 11/11 通过，但 Miniflare 同时输出预期超时/实例清理相关 uncaught exception；本项目测试必须让非预期 unhandled error 失败，不能只看 exit code。
+
+## 8. 动工前必须验证的外部事实
 
 - GitHub 组织是否允许安装 App、创建 PR、触发目标 workflow、使用 Environment reviewer 和 OIDC。
 - 目标仓库的分支保护、required checks、CODEOWNERS 和测试/部署命令。
 - 飞书应用可订阅的事件、卡片回调、Meegle API 权限和测试 tenant。
 - tool-bridge 能否签发带 `expiresAt` 的最小 scope SK、能否按 attempt 撤销、日志返回是否可 schema 脱敏。
-- 选择 Cloudflare D1/Queues 是否满足数据驻留、保留和组织合规；不满足则切 Postgres/现有内部平台。
+- Cloudflare Paid Workflows、D1、Queues、R2 是否满足数据驻留、30 天 Workflow history、180 天 Evidence/Audit 保留和组织合规；不满足则切 Temporal + Postgres/现有内部平台。
+- 试点账户实测 Workflow create/sendEvent/restart、活跃并发、step/event 大小、代码升级中的在途实例行为和本地测试 unhandled error 语义。
 - Agent CLI 在 Actions 上的认证方式、session resume 能力、非交互退出码和许可/费用。
 
-## 7. 尚未拍板的产品决策
+## 9. 尚未拍板的产品决策
 
 这些问题不阻塞仓库初始化，但进入对应 Phase 前必须由用户/团队确认：
 
 1. 首批目标 GitHub 组织与试点仓库，以及 GitHub App 安装负责人。
 2. 飞书入口是群机器人、应用卡片、Meegle workflow，还是三者都要；MVP 推荐 Meegle + 卡片。
-3. 控制面默认部署 Cloudflare 还是公司现有 K8s；MVP 推荐 Cloudflare，合规优先时选现有 K8s + Postgres。
-4. 第一种 Agent adapter 与模型预算上限。
-5. 自动合并策略：MVP 推荐永不自动合并，仅自动推 Draft PR。
-6. 生产部署是否进入首个里程碑；MVP 推荐只到测试环境，生产作为后续 Phase。
+3. 第一种 Agent adapter 与模型预算上限。
+4. 自动合并策略：MVP 推荐永不自动合并，仅自动推 Draft PR。
+5. 生产部署是否进入首个里程碑；MVP 推荐只到测试环境，生产作为后续 Phase。
 
+已拍板：MVP 控制面采用 Cloudflare Worker + Workflows + D1 + Queues/outbox + R2；Temporal + Postgres 仅作为平台边界或合规不满足时的替代宿主。
+
+Round 88 针对 base branch rebase/conflict 外部证据补齐 success/blocked 双路径。直接复用 Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6` 的显式 opt-in、仓库外 64 KiB manifest、固定 0/1/2 退出、有界 HTTP 和安全错误骨架；Watt 没有 GitHub rebase Runner、base conflict ledger、branch ancestry 或 Case 8 lineage，故没有把不存在的业务代码倒称为 Watt 来源。新增 `BaseRebaseEvidenceManifestV1`、Case 8 `baseRebases/baseConflicts` 和 `pnpm run e2e:base-rebase`：passed 路径核对 base/source/target ref、两条 compare、Action、non-force branch update 与 suite/Evidence；blocked 路径核对 immutable conflict、manual rebase、target branch/Action 不存在和零新 effect。GitHub REST 无法证明历史 force-push，真实 push webhook/组织 audit 仍须人工入账，完整步骤见[Base branch rebase / conflict 外部证据验收](BaseRebaseE2E.md)。
+Round 93 针对“合并成功由 GitHub webhook 核对 merge SHA；只在无需部署策略下可直接 `succeeded`”补齐本地外部证据契约。Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6` 可直接复用的是显式 opt-in、仓库外 64 KiB manifest、1 MiB 有界 HTTP、固定安全错误和 0/1/2 退出；Watt 没有 GitHub merge fact、PR closed projector、merge SHA ledger 或 deployment disposition，因此 `MergeEvidenceManifestV1`、Case 8 `mergeObservations`、webhook/API 双源绑定和 no-deploy/部署中状态断言属于 delivery-loop 新增。verifier 复用现有生产 `GitHubMergeStatusApiClient`，不复制第二套 GitHub PR parser；真实真人 merge、漏 webhook/API compensation、closed-unmerged 和分支保护仍需试点外部证据。
+
+Round 124在E2E-7 authority审计中修正了Round 93未覆盖的test终态：test deployment/acceptance只能在`executing`阶段作为merge前required Item运行，仓库没有任何test `deploying → succeeded` projector，因此把`merged_test`留在`deploying`会形成永久stuck Run。状态裁决改为no-deploy/test在merge后`succeeded`、仅production进入`deploying`，并由workerd与Merge evidence共同验收。E2E-7继续最大化复用Watt固定commit的显式opt-in、仓库外64 KiB文件、0/1/2、安全错误、有界HTTPS和分页fail-closed；八份业务authority全部复用delivery-loop既有生产verifier。新增代码只包含双lane canonical-digest组合、共享飞书Message GET/presentation读取和最终完成卡片断言；Watt没有Run/Plan/merge/deployment/卡片lineage，未虚构可复制的业务状态机。完整步骤见[E2E-7合并部署验收](MergeDeploymentE2E.md)。
+
+Round 125以E2E-8为唯一DoD，继续固定Watt commit`476e3cdd2490d725fde174e7c697ebf00899edc6`。新CLI逐结构直接沿用Watt`scripts/e2e/lib.ts`的前置缺失exit 2、断言失败exit 1、成功exit 0纪律，并复用本项目此前从Watt派生的显式opt-in、仓库外64 KiB、有界HTTPS、安全错误和分页fail-closed骨架；为了不传播provider/raw错误，没有直接复制Watt会拼接stderr/`String(err)`的`runE2e`。Watt没有Feishu/GitHub/DLQ replay、Case 8 callback recovery或PR/Deployment inventory，等价业务代码直接复制量为零。组合层完整调用本项目既有Ingress、Feishu Retry、GitHub PR和Controlled Replay四份生产verifier；新增代码只做canonical digest组合、transport report、API-only callback、resolved DLQ和GitHub PR inventory交叉核对，不新增migration、状态表或第二套外部parser。完整步骤见[E2E-8重放与故障验收](ReplayFailureE2E.md)。
+
+Round 94 针对“生产部署必须经过 GitHub Environment reviewer 或等价外部审批；批准绑定 revision + merge SHA + environment”补齐本地 production approval 外部证据契约。Watt 直接复用的是固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6` 的显式 opt-in、64 KiB manifest、有界 HTTP、固定错误和 0/1/2 退出；Watt 没有 production release binding、identity/live-role recheck 或 merge-SHA approval ledger，因此 `ProductionApprovalEvidenceManifestV1`、Case 8 `productionApprovals` 和 zero production effect 断言属于 delivery-loop 新增。verifier 复用现有生产 `GitHubMergeStatusApiClient`，不复制 GitHub parser；真实 Environment reviewer/Feishu event、云 OIDC trust、拒绝/过期和 production job 零 effect 仍须试点外部证据。
+
+Round 95 针对“deployment 成功/失败从平台 API/webhook 核对；Action 末尾 echo `success` 不能替代”补齐本地 production deployment 外部证据契约。Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6` 可直接复用的是 explicit opt-in、仓库外 64 KiB manifest、固定 0/1/2 退出、有界读取和分页 fail-closed；本轮还把同一响应边界补到 production Deployments API adapter。delivery-loop 新增 `ProductionDeploymentEvidenceManifestV1`、Case 8 `productionDeploymentObservations` 和四态 verifier；GitHub Action workflow-run 继续复用既有 parser，生产 status、OIDC/Evidence、双源 observation 和终态 CAS 属于本项目。真实 production Environment 的 in-progress/success/failure/error、漏 webhook/API compensation 与云审计仍须外部试点验收。
+
+Round 105 针对Phase 1平台边界固定两份官方authority：GitHub `github/docs@071ed75ada2d9e80348639adfc7cca5b3902ed16` 的 `content/actions/reference/limits.md`（blob `f492e2ebd2859b4f91546cb2f270c83c7cae669a`）和Cloudflare `cloudflare/cloudflare-docs@862ae7b51ce028a30f1760e46e5d25ae76cc6832` 的 `src/content/docs/workflows/reference/limits.mdx`（blob `926ed4527289522656999bbaa46efd8c4b98e247`）。GitHub官方值为hosted job 6小时、workflow run 35天、matrix 256以及standard Free/Pro/Team/Enterprise 20/40/60/500并发，Support可调整；Cloudflare Paid表格为10MB script、30秒默认/5分钟可配CPU、1MiB result/event、1GB state、365天sleep、10,000/25,000 steps、50,000 active instances、300/s account与100/s workflow create、2,000,000 queued、30天retention及10,000/10,000,000 subrequests。Cloudflare同页后文仍写10,000 active concurrency，验收显式保留冲突。来源：[GitHub Actions limits](https://docs.github.com/en/actions/reference/limits)、[Cloudflare Workflows limits](https://developers.cloudflare.com/workflows/reference/limits/)、[GitHub organization Actions permissions API](https://docs.github.com/en/rest/actions/permissions)、[GitHub enhanced billing usage API](https://docs.github.com/en/rest/billing/enhanced-billing)。
+
+本轮`PlatformLimitsEvidenceManifestV1`与`pnpm run e2e:platform-limits`继续直接复用Watt固定commit `476e3cdd2490d725fde174e7c697ebf00899edc6`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出、有界HTTPS和安全错误模式；Watt没有GitHub组织limits probe、enhanced billing聚合或Cloudflare限制解析，故这些契约是delivery-loop新增。GitHub App/Actions事件不复制parser，直接复用`RunnerHeartbeatEvidence`全链；Cloudflare create/sendEvent/在途升级与restart分别复用`WorkflowHibernateEvidence`和`ControlledReplayEvidence`。两个固定probe workflow默认绝不运行，真实并发/六小时费用、Paid plan与管理面review仍须用户授权后的外部试点证据。
+
+Round 113为optional monitor adapter补齐外部证据契约。Watt固定commit `476e3cdd2490d725fde174e7c697ebf00899edc6`没有Sentry native webhook、Cloudflare Worker settings检查、monitor D1/R2证据投影或enabled/disabled治理分支，等价业务代码直接复制量为零；继续直接复用的是此前迁入的exact-body HMAC/inclusive dedupe，以及`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出与有界安全错误纪律。Sentry官方文档确认Integration Platform webhook使用`Sentry-Hook-Signature`，值为client secret对request body的HMAC-SHA256；来源：[Sentry Integration Platform Webhooks](https://docs.sentry.io/organization/integrations/integration-platform/webhooks/)。delivery-loop固定Sentry为enabled v1 provider；其他provider必须新增原生签名/identity/mapping契约，不能套用generic fixture冒充。完整步骤见[Monitor adapter真实外部证据验收](MonitorAlertE2E.md)。
+
+Round 114继续固定Watt commit`476e3cdd2490d725fde174e7c697ebf00899edc6`。`pnpm run e2e:draft-pr-cases`直接复用其`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定安全错误与0/1/2退出纪律；1 MiB有界HTTPS、分页fail-closed和credential-shaped canary扫描继续沿用本项目既有Watt-derived骨架。Watt没有requirement/bug→ExecutionPlan/DoD→Draft PR业务链、Task/Plan/Case 8/GitHub五方验收或semantic/root-cause review，等价业务代码直接复制量为零；强行复制其generic task会丢失本项目acceptance coverage、commit/test Evidence和PR publication lineage。本轮直接复用项目现有`verifyGitHubPullRequestEvidence`，没有复制第二套PR parser；实现时还把该既有verifier的Case 8 projection从错误的`run.id`/`task.target.repository`修正为生产真实的顶层`runId`/`task.repository`。新增内容仅为strict双case组合schema、只读orchestrating verifier、CLI/example与文档，不新增migration或试点真源。Round 120继续使用同一manifest/verifier作为E2E-3 authority，只给Case 8增加`claimedProgressVersion/credential.createdAt`安全投影并补approval→ready claim→credential→单commit→publication交叉绑定；Watt没有这条业务lineage，故没有可安全复制的额外业务代码，也没有另建E2E-3 wrapper。完整步骤见[requirement / bug 到 Draft PR 的真实外部证据验收](DraftPrCasesE2E.md)。
+
+Round 121继续固定Watt commit`476e3cdd2490d725fde174e7c697ebf00899edc6`，并直接复用Round 86既有`GitHubReviewFeedbackEvidenceManifestV1`、Case 8、`/plan`和`pnpm run e2e:github-review`作为E2E-4 authority，没有新增第二套review manifest、GitHub parser、migration或状态表。Watt可直接复用的仍是显式opt-in、仓库外64 KiB manifest、固定0/1/2、安全错误、有界HTTPS、分页fail-closed及credential-shaped canary扫描；Watt没有reviewed head→same Plan/Item review_fix→commit/test Evidence→new head checks的业务lineage，不能复制generic task冒充authority。本轮修正原verifier对生产Case 8 `runId/task.repository`的错误假设并重算report digest，补同Plan/version/Item、正数claim、单commit、targeted→required、verified Item decision、唯一Action job/固定execution steps和exact全check inventory。GitHub Action `head_sha`固定解释为workflow ref head，reviewed checkout与result commit分别由控制面和Git事实核对。完整步骤见[GitHub Review Fix 外部证据验收](GitHubReviewE2E.md)。
+
+Round 115固定Cloudflare Workers Logs与Telemetry Query API为外部authority：[Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/)说明structured JSON会提取/index、必须显式配置observability、最长保留7天且单条日志最大256 KiB；[Telemetry Query API](https://developers.cloudflare.com/api/resources/workers/subresources/observability/subresources/telemetry/methods/query/)提供`events`与`traces`视图，`dry=true`不持久化query result，events公开metadata/dataset/source而traces公开trace/service/span/time字段。若后续需要跨供应商长期保留，Cloudflare还提供[OpenTelemetry export](https://developers.cloudflare.com/workers/observability/exporting-opentelemetry-data/)，但本轮没有配置外部OTel sink，也不能把其文档当作已导出事实。
+
+Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`只有内部metrics/D1 audit和短期Agent correlation，没有跨Task、PR、deployment的Cloudflare Logs/Traces外部证据链，因此业务代码直接复制量为零。`pnpm run e2e:correlation-platform`最大化复用的是其显式opt-in、仓库外64 KiB manifest、固定0/1/2与安全错误纪律；本项目新增strict十lookup schema、D1/GitHub/Cloudflare四方只读verifier和matched-by安全日志标量，不新增migration。完整步骤见[Correlation 平台日志与 trace 真实外部证据验收](CorrelationPlatformE2E.md)。
+
+Round 116补齐test rollback真实外部证据契约。Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的`rollbackDelivery`仍只是outbox delivery失败后回pending，不是云环境rollback；没有exact-SHA contract、deployment/acceptance failure lineage、test OIDC或Actions终态可直接复制。新CLI最大化复用Watt `scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出和安全固定错误纪律；1 MiB/10秒有界HTTPS、credential-shaped canary parse前扫描及生产`GitHubActionsApiClient.getRollbackWorkflowRun` parser复用本项目既有Watt-derived骨架。新增`TestRollbackEvidenceManifestV1`、Case 8三组安全投影与四case只读verifier，不新增migration或第二套rollback真源；真实云审计/环境恢复和production治理决定继续要求人工review。完整步骤见[Test rollback 真实外部证据验收](TestRollbackE2E.md)。
+
+Round 117补齐Phase 7 E2E-1的组合外部证据契约。Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`没有Meegle PRD→delivery-loop Task/Run→GitHub analysis Plan→飞书exact approval的跨平台lineage，等价业务代码直接复制量为零；强行复制其generic Task/checkpoint approval会丢失Task revision、Plan digest/base/effect和外部human绑定。新CLI继续直接复用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2及安全错误纪律，并最大化复用本项目已有三个完整verifier；新增代码只做canonical digest与跨系统lineage组合、Cloudflare实例只读核对，不新增migration或第二套外部parser。完整步骤见[E2E-1飞书需求真实外部证据验收](RequirementE2E.md)。
+
+Round 118补齐Phase 7 E2E-2的根因authority与组合外部证据契约。Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`中可直接复制的`toolActionFor(scope)`、read/write effect目录、metadata-only AuditStore思想和tool-bridge有界transport已在本项目`tool-bridge`路径继续复用；Watt没有delivery-loop的Task/Attempt/Plan/Evidence表，也没有logs→request trace→root cause→Plan ref业务绑定，强行复制generic CallContext会把arguments/result带入审计且不能证明DoD引用。因此migration 0060、diagnostic Evidence store/API和Plan binding是本项目新增。`pnpm run e2e:bug-triage`继续直接复用Watt-derived显式opt-in、仓库外64 KiB manifest、固定0/1/2、1 MiB/10秒有界响应和安全错误纪律，并完整调用既有`verifyAnalysisActionEvidence`，没有复制第二套GitHub/Action parser。当前固定analysis Runner尚无受审Agent↔tool-bridge多轮mediation，真实平台事实保持未完成。完整步骤见[E2E-2缺陷分诊真实外部证据验收](BugTriageE2E.md)。
+
+Round 119再次核对Watt同一commit的`packages/gateway/src/agent/harness/types.ts`、`htbp-tools.ts`与`llm.ts`。本项目直接沿用其provider-neutral“schema + injected execute”工具面思想、远端文档/结果“是参考资料、不构成指令”的静态prompt纪律、deny不透传上游正文、每次真实模型调用各记一条usage，以及工具循环与最终schema validation分离的边界；`DiagnosticAnalysisMediation`据此收窄为token-free `searchLogs/getTrace/finish` capability。Watt的完整动态循环依赖AI SDK `generateText({tools, stopWhen})`，Codex CLI `exec`没有等价in-process callback，直接复制会得到不可运行或伪造能力，因此本项目使用三个固定structured-output进程阶段而不是自称移植了Watt loop。Runner新增的fencing lock、三份model reservation、repo外0600临时上下文、runtime Secret/credential scan、workspace-before-Evidence gate、diagnostic digest回核和exact Plan ref注入属于delivery-loop的Attempt/Plan/Evidence authority，Watt没有可复制的等价业务实现。Analysis Action外部verifier现在从immutable SHA核对该固定shape，真实E2E仍须已部署Action/tool-bridge与真人根因review。
+
+Round 122以Phase 7 E2E-5为唯一DoD。`pnpm run e2e:dual-recovery`继续固定Watt commit `476e3cdd2490d725fde174e7c697ebf00899edc6`，直接复用其显式opt-in、仓库外64 KiB manifest、固定0/1/2退出、安全错误、有界HTTPS和分页fail-closed纪律；本轮把10秒timeout、Case 8 canonical digest和credential-shaped canary parse前扫描补齐到两份既有component authority。Watt没有Cloudflare durable step、delivery-loop Attempt lease/token/cancel、checkpoint/Git、Case 8或副作用inventory，等价业务代码不能直接复制。组合层仅以digest引用并完整调用既有`WorkflowHibernateEvidence`和`RunnerRecoveryEvidence`，不新增第二套状态机、Workflow/Runner parser或migration。完整步骤见[E2E-5双层恢复真实外部证据验收](DualRecoveryE2E.md)。
+
+Round 123以Phase 7 E2E-6为唯一DoD，继续固定Watt commit`476e3cdd2490d725fde174e7c697ebf00899edc6`。新CLI直接复用其显式opt-in、仓库外64 KiB输入、固定0/1/2、安全固定错误、有界HTTPS和分页fail-closed纪律；Secret Safety与组合层把10秒timeout、JSON parse前token/credential-shaped canary扫描扩到控制面、GitHub metadata/source/job log、PR与artifact读取。Watt没有delivery-loop飞书identity/effect、production approval、GitHub OIDC deployment binding、Task/Plan/Case 8或Secret publication lineage，业务代码直接复制量为零；组合层最大化复用本项目五份完整verifier，没有复制第二套parser或新增状态表。跨repo probe使用GitHub真实OIDC和目标既有attestation入口，未授权卡片observer增加仅限安全枚举的`approve/repo_write`绑定；恶意文本仍按不可信Task数据处理，不使用关键词拒绝。完整步骤见[E2E-6权限与Prompt Injection真实外部证据验收](PermissionInjectionE2E.md)。

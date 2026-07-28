@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replace-dual-recovery-evidence-id",
+  "repository": "example/delivery-target",
+  "recordedAt": "2026-07-27T03:10:00.000Z",
+  "observedWindow": {
+    "startedAt": "2026-07-26T07:00:00.000Z",
+    "endedAt": "2026-07-27T03:00:00.000Z"
+  },
+  "workflowHibernate": {
+    "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "evidenceId": "replace-workflow-hibernate-evidence-id",
+    "runId": "replace-workflow-hibernate-run-id",
+    "actionRunId": "930001"
+  },
+  "runnerRecovery": {
+    "manifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "evidenceId": "replace-runner-recovery-evidence-id",
+    "runId": "replace-runner-recovery-run-id",
+    "lostActionRunId": "930002",
+    "replacementActionRunId": "930003"
+  },
+  "safety": {
+    "canaryDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  }
+}

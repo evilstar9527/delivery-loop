@@ -17,8 +17,10 @@
 
 | 路径 | Phase | 责任 |
 |---|---:|---|
-| `apps/control-plane/` | 1 | Hono API、webhook、Task/Run orchestration |
-| `packages/storage/` | 1 | SQL domain repository、migration、outbox、lease/CAS |
+| `apps/control-plane/` | 1 | Hono API、webhook、Workflow start/signal/query |
+| `packages/workflows/` | 1 | Cloudflare `DeliveryRunWorkflow`、稳定步骤、等待/恢复适配 |
+| `packages/storage/` | 1 | D1 domain repository、migration、outbox、plan/lease/CAS |
+| `packages/artifacts/` | 1/3 | R2 文档、脱敏日志、transcript 与未提交 diff 引用 |
 | `packages/github/` | 1 | GitHub App、dispatch、webhook 外部事实核对 |
 | `packages/feishu/` | 2 | 飞书/Meegle adapter、卡片与身份映射 |
 | `packages/broker/` | 3 | GitHub OIDC 验证、attempt token、tool-bridge grant |
@@ -29,4 +31,3 @@
 | `deploy/` | 1/5 | 控制面与环境部署配置；不得先于宿主决策写死 |
 
 领域层不能 import GitHub、飞书、Cloudflare 或 Agent SDK；平台层通过 adapter 实现领域端口。
-

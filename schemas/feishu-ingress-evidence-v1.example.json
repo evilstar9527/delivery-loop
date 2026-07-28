@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "feishu-ingress-round-107-example",
+  "recordedAt": "2026-07-27T11:10:00.000Z",
+  "tenantKey": "tenant_delivery_loop_pilot",
+  "eventType": "work_item.updated_v1",
+  "observabilityReportUrl": "https://observability.example.com/feishu/ingress-round-107",
+  "observabilityReportDigest": "sha256:0c96b5e23ac58af5109da8d520cb5071adfc79a0146d25de1cb9da2249337b05",
+  "events": {
+    "replayed": {
+      "eventId": "evt_round_107_replayed",
+      "deliveryId": "feishu_webhook_round_107_a",
+      "ingressOutboxId": "feishu_ingress_round_107_a",
+      "eventDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requestDigests": [
+        "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      ],
+      "relayAttemptCount": 1,
+      "queueMessageIdDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "queueObservationCount": 1,
+      "maximumQueueDeliveryAttempt": 1,
+      "enqueuedAt": "2026-07-27T11:04:10.000Z",
+      "queueObservedAt": "2026-07-27T11:04:11.000Z",
+      "settledAt": "2026-07-27T11:04:12.000Z"
+    },
+    "sameRevisionPeer": {
+      "eventId": "evt_round_107_peer",
+      "deliveryId": "feishu_webhook_round_107_b",
+      "ingressOutboxId": "feishu_ingress_round_107_b",
+      "eventDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "requestDigests": [
+        "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      ],
+      "relayAttemptCount": 1,
+      "queueMessageIdDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "queueObservationCount": 1,
+      "maximumQueueDeliveryAttempt": 1,
+      "enqueuedAt": "2026-07-27T11:04:13.000Z",
+      "queueObservedAt": "2026-07-27T11:04:14.000Z",
+      "settledAt": "2026-07-27T11:04:15.000Z"
+    }
+  },
+  "task": {
+    "sourceSystem": "meego",
+    "sourceTaskKey": "project_1/story/work_item_42",
+    "taskRevision": "revision-7",
+    "taskDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "taskId": "task_feishu_revision_7",
+    "runId": "run_feishu_revision_7",
+    "workflowInstanceId": "run_feishu_revision_7",
+    "workflowCreateOutboxId": "outbox_workflow_create_round_107"
+  },
+  "cloudflare": {
+    "accountIdDigest": "sha256:ac874e153f28a0e77e5f7ffff9894326199c740b08f4b2a20bebaa5cc7d78f8b",
+    "queueName": "delivery-loop-feishu-ingress",
+    "queueDashboardUrl": "https://dash.cloudflare.com/account-id/queues/delivery-loop-feishu-ingress",
+    "queueReviewedAt": "2026-07-27T11:06:00.000Z",
+    "workflowName": "delivery-run",
+    "workflowInstanceVersionId": "12345678-1234-4234-8234-123456789abc",
+    "workflowInstanceStatus": "waiting",
+    "workflowInstanceStartedAt": "2026-07-27T11:04:20.000Z",
+    "workflowDashboardUrl": "https://dash.cloudflare.com/account-id/workflows/delivery-run/instances/run_feishu_revision_7"
+  }
+}

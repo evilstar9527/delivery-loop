@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "approval_lineage_round_112",
+  "recordedAt": "2026-07-27T10:00:00.000Z",
+  "controlPlaneOrigin": "https://control.example",
+  "observabilityReportUrl": "https://observer.example/approval-lineage/round-112",
+  "observabilityReportDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "repository": "example/delivery-target",
+  "snapshot": {
+    "taskId": "task_approval_lineage",
+    "taskRevision": "revision-approval-lineage-1",
+    "taskDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "runId": "run_approval_lineage",
+    "runVersion": 7,
+    "planId": "plan_approval_lineage",
+    "planVersion": 2,
+    "planDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "effect": "merge",
+    "decision": "approve"
+  },
+  "identity": {
+    "principal": "user:delivery-reviewer",
+    "principalDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "roles": [
+      "approve:merge",
+      "human"
+    ],
+    "rolesDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "pullRequestAuthorPrincipal": "user:delivery-author",
+    "pullRequestAuthorLogin": "delivery-author",
+    "separationVerified": true
+  },
+  "feishu": {
+    "externalEventId": "evt_feishu_approval_primary",
+    "externalEventDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "sourceId": "approval_source_feishu_primary",
+    "approvalId": "approval_feishu_primary",
+    "lineageId": "approval_lineage_feishu_primary",
+    "sourceOccurredAt": "2026-07-27T09:00:00.000Z",
+    "decisionRecordedAt": "2026-07-27T09:00:01.000Z",
+    "expiresAt": "2026-07-27T11:00:00.000Z",
+    "tenantKey": "tenant_delivery_loop",
+    "appId": "cli_delivery_loop",
+    "deliveryId": "delivery_feishu_primary",
+    "actionReceiptId": "receipt_feishu_primary",
+    "outcomeId": "outcome_feishu_primary",
+    "operatorDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "openIdDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "chatDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "messageId": "om_approval_lineage",
+    "cardId": "card_approval_lineage",
+    "presentationId": "presentation_approval_lineage",
+    "actionId": "action_approve_merge",
+    "requestDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+  },
+  "github": {
+    "externalEventId": "evt_github_approval_primary",
+    "externalEventDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceId": "approval_source_github_primary",
+    "approvalId": "approval_github_primary",
+    "lineageId": "approval_lineage_github_primary",
+    "sourceOccurredAt": "2026-07-27T09:01:00.000Z",
+    "decisionRecordedAt": "2026-07-27T09:01:01.000Z",
+    "expiresAt": "2026-07-27T11:01:00.000Z",
+    "requestDigest": "sha256:0404040404040404040404040404040404040404040404040404040404040404",
+    "reviewerLogin": "delivery-reviewer",
+    "pullRequestNumber": 42,
+    "reviewId": "9001",
+    "headBranch": "codex/approval-lineage",
+    "baseBranch": "main",
+    "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "reviewSubmittedAt": "2026-07-27T09:01:00.000Z"
+  },
+  "isolation": {
+    "feishuDistinctEvent": {
+      "eventId": "evt_feishu_approval_distinct",
+      "eventDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "deliveryId": "delivery_feishu_distinct",
+      "requestDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "expectedReason": "replay_rejected"
+    },
+    "githubSnapshotMutation": {
+      "requestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "expectedReason": "source_conflict"
+    }
+  },
+  "noEffect": {
+    "mergeOutboxes": 0,
+    "merges": 0
+  },
+  "safety": {
+    "canaryDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "review": {
+    "mappingEvidenceUrl": "https://evidence.example/approval-lineage/mapping.json",
+    "feishuEventEvidenceUrl": "https://evidence.example/approval-lineage/feishu-event.json",
+    "githubReviewUrl": "https://github.com/example/delivery-target/pull/42#pullrequestreview-9001",
+    "case8ReportUrl": "https://control.example/v1/runs/run_approval_lineage/audit",
+    "reviewer": "release_owner",
+    "reviewedAt": "2026-07-27T09:30:00.000Z",
+    "sameHumanConfirmed": true
+  }
+}

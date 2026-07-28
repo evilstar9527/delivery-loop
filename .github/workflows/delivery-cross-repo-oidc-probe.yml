@@ -1,0 +1,32 @@
+name: Delivery cross-repository OIDC probe
+run-name: delivery-loop/security/oidc/${{ inputs.deployment_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployment_id:
+        required: true
+        type: string
+      control_plane_url:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  reject-cross-repository-identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout immutable probe source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Require target control plane to reject this repository identity
+        run: node scripts/run-cross-repo-oidc-probe.mjs
+        env:
+          DELIVERY_CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}
+          DELIVERY_CROSS_REPO_TARGET_DEPLOYMENT_ID: ${{ inputs.deployment_id }}

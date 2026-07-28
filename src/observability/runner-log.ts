@@ -1,0 +1,45 @@
+import { isSensitiveFieldName } from '../security/redaction.js';
+import { secureStructuredLogSink } from './structured-log.js';
+
+const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
+
+export type RunnerLogEvent =
+  | 'analysis_attempt_result'
+  | 'execution_attempt_result'
+  | 'test_deployment_result'
+  | 'test_acceptance_result'
+  | 'test_rollback_result'
+  | 'production_deployment_result';
+
+function processSecrets(environment: NodeJS.ProcessEnv): string[] {
+  return [...new Set(Object.entries(environment)
+    .filter(([key, value]) => value !== undefined && (
+      isSensitiveFieldName(key) ||
+      /(?:TOKEN|SECRET|PASSWORD|PRIVATE_KEY|ENCRYPTION_KEY|API_KEY|DATABASE_URL|DSN)$/.test(key)
+    ))
+    .map(([, value]) => value!)
+    .filter((value) => value.length >= 8))];
+}
+
+/** One JSON line for GitHub Action/Runner logs; never accepts free-form output. */
+export function writeRunnerStructuredLog(
+  event: RunnerLogEvent,
+  outcome: 'accepted' | 'passed' | 'failed' | 'blocked' | 'replanning',
+  environment: NodeJS.ProcessEnv = process.env,
+): void {
+  const failed = outcome === 'failed' || outcome === 'blocked';
+  const stream = failed ? process.stderr : process.stdout;
+  secureStructuredLogSink({
+    component: 'runner',
+    level: failed ? 'error' : 'info',
+    secrets: processSecrets(environment),
+    sink: (record) => stream.write(`${JSON.stringify(record)}\n`),
+  })({
+    schemaVersion: '1',
+    event,
+    outcome,
+    ...(ID_PATTERN.test(environment.DELIVERY_ATTEMPT_ID ?? '')
+      ? { attemptId: environment.DELIVERY_ATTEMPT_ID }
+      : {}),
+  });
+}

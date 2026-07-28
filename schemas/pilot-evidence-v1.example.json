@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "1",
+  "pilotId": "replace-with-pilot-id",
+  "repository": "example/delivery-pilot",
+  "recordedAt": "2026-07-26T07:00:00.000Z",
+  "test": {
+    "runId": "replace-test-run",
+    "refSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "deploymentId": "replace-test-deployment",
+    "githubDeploymentId": "101",
+    "deploymentActionRunId": "1001",
+    "deploymentEvidenceId": "replace-test-deployment-evidence",
+    "acceptanceId": "replace-test-acceptance",
+    "acceptanceActionRunId": "1002",
+    "acceptanceEvidenceId": "replace-test-acceptance-evidence",
+    "environmentUrl": "https://test.demo.example/status",
+    "oidcAuditUrl": "https://audit.demo.example/oidc/test",
+    "productionSecretIsolationEvidenceUrl": "https://audit.demo.example/isolation/test"
+  },
+  "productionDemo": {
+    "environment": "production",
+    "isolationEvidenceUrl": "https://audit.demo.example/isolation/production",
+    "reviewerEvidenceUrl": "https://github.com/example/delivery-pilot/deployments/activity_log",
+    "success": {
+      "runId": "replace-production-success-run",
+      "refSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "deploymentId": "replace-production-success-deployment",
+      "githubDeploymentId": "201",
+      "actionRunId": "2001",
+      "approvalId": "replace-production-success-approval",
+      "deploymentEvidenceId": "replace-production-success-evidence",
+      "environmentUrl": "https://production-demo.example/releases/success"
+    },
+    "failure": {
+      "runId": "replace-production-failure-run",
+      "refSha": "cccccccccccccccccccccccccccccccccccccccc",
+      "deploymentId": "replace-production-failure-deployment",
+      "githubDeploymentId": "202",
+      "actionRunId": "2002",
+      "approvalId": "replace-production-failure-approval",
+      "deploymentEvidenceId": "replace-production-failure-evidence",
+      "externalState": "failure",
+      "environmentUrl": "https://production-demo.example/releases/failure"
+    },
+    "rollback": {
+      "mode": "manual",
+      "failedRefSha": "cccccccccccccccccccccccccccccccccccccccc",
+      "restoredRefSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "actionRunId": "2003",
+      "auditUrl": "https://audit.demo.example/rollback/production",
+      "environmentResultUrl": "https://production-demo.example/releases/restored"
+    }
+  }
+}

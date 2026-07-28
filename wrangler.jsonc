@@ -1,0 +1,112 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "delivery-loop-control-plane",
+  "send_metrics": false,
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "invocation_logs": false,
+      "persist": true
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 1,
+      "persist": true
+    }
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB_CONTROL",
+      "database_name": "delivery-loop-control",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "TASK_OBJECTS",
+      "bucket_name": "delivery-loop-task-objects"
+    },
+    {
+      "binding": "CHECKPOINT_OBJECTS",
+      "bucket_name": "delivery-loop-checkpoint-objects"
+    },
+    {
+      "binding": "BACKUP_OBJECTS",
+      "bucket_name": "delivery-loop-backups"
+    },
+    {
+      "binding": "RAW_AGENT_OBJECTS",
+      "bucket_name": "delivery-loop-raw-agent-objects"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "WORKFLOW_OUTBOX_QUEUE",
+        "queue": "delivery-loop-workflow-outbox"
+      },
+      {
+        "binding": "FEISHU_INGRESS_QUEUE",
+        "queue": "delivery-loop-feishu-ingress"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "delivery-loop-workflow-outbox",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "delivery-loop-workflow-outbox-dlq"
+      },
+      {
+        "queue": "delivery-loop-workflow-outbox-dlq",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 100,
+        "retry_delay": 60,
+        "dead_letter_queue": "delivery-loop-workflow-outbox-dlq-quarantine"
+      },
+      {
+        "queue": "delivery-loop-feishu-ingress",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "delivery-loop-feishu-ingress-dlq"
+      },
+      {
+        "queue": "delivery-loop-feishu-ingress-dlq",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 100,
+        "retry_delay": 60,
+        "dead_letter_queue": "delivery-loop-feishu-ingress-dlq-quarantine"
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "name": "delivery-run",
+      "binding": "DELIVERY_RUN",
+      "class_name": "DeliveryRunWorkflow"
+    },
+    {
+      "name": "control-plane-backup",
+      "binding": "CONTROL_PLANE_BACKUP",
+      "class_name": "ControlPlaneBackupWorkflow",
+      "schedules": ["0 2 * * *"],
+      "limits": {
+        "steps": 300
+      }
+    }
+  ]
+}

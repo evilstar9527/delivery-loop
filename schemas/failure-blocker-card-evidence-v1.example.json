@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "failure-blocker-card-evidence-example",
+  "recordedAt": "2026-07-26T12:05:00.000Z",
+  "taskId": "task-failure-blocker-card-example",
+  "runId": "run-failure-blocker-card-example",
+  "repository": "example/delivery-pilot",
+  "blocker": {
+    "blockerId": "blocker-failure-card-example",
+    "reason": "repeated_fingerprint",
+    "fingerprintDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "attemptCount": 2,
+    "consecutiveFingerprintCount": 2,
+    "attempts": [
+      {
+        "attemptId": "attempt-failure-card-1",
+        "ordinal": 1,
+        "pathCodes": [
+          "repository_inspection"
+        ]
+      },
+      {
+        "attemptId": "attempt-failure-card-2",
+        "ordinal": 2,
+        "pathCodes": [
+          "targeted_test"
+        ]
+      }
+    ],
+    "neededHumanInput": "provide_reproduction",
+    "createdAt": "2026-07-26T11:55:00.000Z"
+  },
+  "card": {
+    "presentationId": "feishu-presentation-failure-card-example",
+    "revision": 3,
+    "presentationDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "renderedCardDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "outboxId": "outbox-failure-card-example",
+    "messageId": "om_failure_blocker_card_example",
+    "appId": "cli_delivery_loop",
+    "tenantKey": "tenant_delivery_loop",
+    "chatId": "oc_delivery_loop_pilot",
+    "createdAt": "2026-07-26T12:00:00.000Z",
+    "updatedAt": "2026-07-26T12:01:00.000Z"
+  }
+}

@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replace-repair-loop-evidence",
+  "repository": "example/delivery-pilot",
+  "recordedAt": "2026-07-26T17:00:00.000Z",
+  "cases": [
+    {
+      "outcome": "repair_succeeded",
+      "caseId": "replace-repair-success",
+      "runId": "replace-repair-success-run",
+      "runState": "verifying",
+      "repository": "example/delivery-pilot",
+      "taskRevision": "revision-repair-success",
+      "planId": "replace-repair-success-plan",
+      "planVersion": 1,
+      "planDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "planItemId": "repair-item",
+      "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "workflowPath": ".github/workflows/delivery-agent.yml",
+      "attempts": [
+        {
+          "attemptId": "replace-repair-success-attempt-1",
+          "ordinal": 1,
+          "mode": "implement",
+          "actionRunId": "8101",
+          "actionConclusion": "failure",
+          "workflowHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "branch": "agent/task/replace-repair-success-attempt-1",
+          "checkoutSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resultHeadSha": null,
+          "failureFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        {
+          "attemptId": "replace-repair-success-attempt-2",
+          "ordinal": 2,
+          "mode": "review_fix",
+          "actionRunId": "8102",
+          "actionConclusion": "success",
+          "workflowHeadSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "branch": "agent/task/replace-repair-success-attempt-2",
+          "checkoutSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "resultHeadSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "failureFingerprint": null
+        }
+      ],
+      "evidence": [
+        { "evidenceId": "replace-repair-failed-test", "attemptId": "replace-repair-success-attempt-1", "kind": "test", "status": "failed", "verificationStatus": "verified", "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "evidenceId": "replace-repair-commit", "attemptId": "replace-repair-success-attempt-2", "kind": "commit", "status": "passed", "verificationStatus": "verified", "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "evidenceId": "replace-repair-passed-test", "attemptId": "replace-repair-success-attempt-2", "kind": "test", "status": "passed", "verificationStatus": "verified", "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+      ],
+      "blocker": null,
+      "noDuplicate": { "repairAttempts": 2, "executionDispatches": 2, "commitEvidence": 1 }
+    },
+    {
+      "outcome": "repeated_fingerprint_blocked",
+      "caseId": "replace-repair-repeated",
+      "runId": "replace-repair-repeated-run",
+      "runState": "blocked",
+      "repository": "example/delivery-pilot",
+      "taskRevision": "revision-repair-repeated",
+      "planId": "replace-repair-repeated-plan",
+      "planVersion": 1,
+      "planDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "planItemId": "repair-item",
+      "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "workflowPath": ".github/workflows/delivery-agent.yml",
+      "attempts": [
+        {
+          "attemptId": "replace-repair-repeated-attempt-1", "ordinal": 1, "mode": "implement", "actionRunId": "8201", "actionConclusion": "failure",
+          "workflowHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "branch": "agent/task/replace-repair-repeated-attempt-1", "checkoutSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "resultHeadSha": null,
+          "failureFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        {
+          "attemptId": "replace-repair-repeated-attempt-2", "ordinal": 2, "mode": "review_fix", "actionRunId": "8202", "actionConclusion": "failure",
+          "workflowHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "branch": "agent/task/replace-repair-repeated-attempt-2", "checkoutSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "resultHeadSha": null,
+          "failureFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      ],
+      "evidence": [
+        { "evidenceId": "replace-repair-repeated-failed-1", "attemptId": "replace-repair-repeated-attempt-1", "kind": "test", "status": "failed", "verificationStatus": "verified", "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "evidenceId": "replace-repair-repeated-failed-2", "attemptId": "replace-repair-repeated-attempt-2", "kind": "test", "status": "failed", "verificationStatus": "verified", "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "blocker": { "id": "replace-repair-repeated-blocker", "reason": "repeated_fingerprint", "fingerprintDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444", "attemptCount": 2, "consecutiveFingerprintCount": 2, "neededHumanInputCode": "manual_investigation", "attemptedPaths": ["targeted_test"] },
+      "noDuplicate": { "repairAttempts": 2, "executionDispatches": 2, "commitEvidence": 0 }
+    },
+    {
+      "outcome": "attempt_limit_blocked",
+      "caseId": "replace-repair-limit",
+      "runId": "replace-repair-limit-run",
+      "runState": "blocked",
+      "repository": "example/delivery-pilot",
+      "taskRevision": "revision-repair-limit",
+      "planId": "replace-repair-limit-plan",
+      "planVersion": 1,
+      "planDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "planItemId": "repair-item",
+      "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "workflowPath": ".github/workflows/delivery-agent.yml",
+      "attempts": [
+        { "attemptId": "replace-repair-limit-attempt-1", "ordinal": 1, "mode": "implement", "actionRunId": "8301", "actionConclusion": "failure", "workflowHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "branch": "agent/task/replace-repair-limit-attempt-1", "checkoutSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "resultHeadSha": null, "failureFingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666" },
+        { "attemptId": "replace-repair-limit-attempt-2", "ordinal": 2, "mode": "review_fix", "actionRunId": "8302", "actionConclusion": "failure", "workflowHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "branch": "agent/task/replace-repair-limit-attempt-2", "checkoutSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "resultHeadSha": null, "failureFingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777" },
+        { "attemptId": "replace-repair-limit-attempt-3", "ordinal": 3, "mode": "review_fix", "actionRunId": "8303", "actionConclusion": "failure", "workflowHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "branch": "agent/task/replace-repair-limit-attempt-3", "checkoutSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "resultHeadSha": null, "failureFingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888" }
+      ],
+      "evidence": [
+        { "evidenceId": "replace-repair-limit-failed-1", "attemptId": "replace-repair-limit-attempt-1", "kind": "test", "status": "failed", "verificationStatus": "verified", "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "evidenceId": "replace-repair-limit-failed-2", "attemptId": "replace-repair-limit-attempt-2", "kind": "test", "status": "failed", "verificationStatus": "verified", "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "evidenceId": "replace-repair-limit-failed-3", "attemptId": "replace-repair-limit-attempt-3", "kind": "test", "status": "failed", "verificationStatus": "verified", "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      ],
+      "blocker": { "id": "replace-repair-limit-blocker", "reason": "attempt_limit", "fingerprintDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888", "attemptCount": 3, "consecutiveFingerprintCount": 1, "neededHumanInputCode": "manual_investigation", "attemptedPaths": ["targeted_test"] },
+      "noDuplicate": { "repairAttempts": 3, "executionDispatches": 3, "commitEvidence": 0 }
+    }
+  ]
+}

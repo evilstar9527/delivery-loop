@@ -1,0 +1,140 @@
+name: Delivery Agent
+run-name: delivery-loop/${{ inputs.attempt_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      schema_version:
+        required: true
+        type: string
+      run_id:
+        required: true
+        type: string
+      attempt_id:
+        required: true
+        type: string
+      task_digest:
+        required: true
+        type: string
+      base_sha:
+        required: true
+        type: string
+      checkout_sha:
+        required: true
+        type: string
+      control_plane_url:
+        required: true
+        type: string
+      mode:
+        required: true
+        type: string
+      model_profile_id:
+        required: true
+        type: string
+      plan_version:
+        required: false
+        type: string
+      plan_item_id:
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: delivery-${{ github.repository }}-${{ inputs.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  attempt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout trusted execution snapshot
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.checkout_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate attempt mode bindings
+        shell: bash
+        run: |
+          case "$DELIVERY_ATTEMPT_MODE" in
+            analysis)
+              test -z "$DELIVERY_PLAN_VERSION"
+              test -z "$DELIVERY_PLAN_ITEM_ID"
+              ;;
+            implement|review_fix)
+              test -n "$DELIVERY_PLAN_VERSION"
+              test -n "$DELIVERY_PLAN_ITEM_ID"
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+        env:
+          DELIVERY_ATTEMPT_MODE: ${{ inputs.mode }}
+          DELIVERY_PLAN_VERSION: ${{ inputs.plan_version }}
+          DELIVERY_PLAN_ITEM_ID: ${{ inputs.plan_item_id }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 11.5.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run read-only analysis attempt
+        if: inputs.mode == 'analysis'
+        run: pnpm exec tsx scripts/run-analysis-attempt.ts
+        env:
+          DELIVERY_SCHEMA_VERSION: ${{ inputs.schema_version }}
+          DELIVERY_RUN_ID: ${{ inputs.run_id }}
+          DELIVERY_ATTEMPT_ID: ${{ inputs.attempt_id }}
+          DELIVERY_TASK_DIGEST: ${{ inputs.task_digest }}
+          DELIVERY_BASE_SHA: ${{ inputs.base_sha }}
+          DELIVERY_CHECKOUT_SHA: ${{ inputs.checkout_sha }}
+          DELIVERY_ATTEMPT_MODE: ${{ inputs.mode }}
+          DELIVERY_MODEL_PROFILE_ID: ${{ inputs.model_profile_id }}
+          DELIVERY_CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Run approved execution attempt
+        if: inputs.mode == 'implement' || inputs.mode == 'review_fix'
+        run: pnpm exec tsx scripts/run-execution-attempt.ts
+        env:
+          DELIVERY_SCHEMA_VERSION: ${{ inputs.schema_version }}
+          DELIVERY_RUN_ID: ${{ inputs.run_id }}
+          DELIVERY_ATTEMPT_ID: ${{ inputs.attempt_id }}
+          DELIVERY_TASK_DIGEST: ${{ inputs.task_digest }}
+          DELIVERY_BASE_SHA: ${{ inputs.base_sha }}
+          DELIVERY_CHECKOUT_SHA: ${{ inputs.checkout_sha }}
+          DELIVERY_ATTEMPT_MODE: ${{ inputs.mode }}
+          DELIVERY_MODEL_PROFILE_ID: ${{ inputs.model_profile_id }}
+          DELIVERY_PLAN_VERSION: ${{ inputs.plan_version }}
+          DELIVERY_PLAN_ITEM_ID: ${{ inputs.plan_item_id }}
+          DELIVERY_CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Verify read-only workspace
+        if: always() && inputs.mode == 'analysis'
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$DELIVERY_CHECKOUT_SHA"
+          if git symbolic-ref --quiet --short HEAD >/dev/null; then
+            exit 1
+          else
+            test "$?" -eq 1
+          fi
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+        env:
+          DELIVERY_CHECKOUT_SHA: ${{ inputs.checkout_sha }}

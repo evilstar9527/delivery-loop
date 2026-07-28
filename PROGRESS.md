@@ -4,15 +4,19 @@
 
 ## 当前状态
 
-- **当前 Phase**：Phase 0 — DOD 初始化与可执行契约。
-- **已完成**：本地仓库已创建；规范/DOD/Loop 骨架、TaskEnvelope v1、Run 状态机、CI workflow 已写入；Phase 0 本地 4 项已完成。
-- **未验证外部能力**：远端 GitHub repo、GitHub App、飞书应用、控制面部署、tool-bridge broker、真实 Agent adapter 均未配置。
-- **下一目标**：用户确认远端 owner/name/visibility 后创建 GitHub repo，验证 CI 与手工 Task contract workflow，完成 Phase 0 剩余 3 项。
+- **当前 Phase**：Phase 3 — 安全 Context 与可恢复 Agent Runner（controlled replay已有真实可达terminal Plan Item step、Case 8审计与外部验收器；父项等待真实Cloudflare/GitHub replay演练）。
+- **已完成**：本地仓库已创建；规范/DOD/Loop 骨架、TaskEnvelope v1、Run 状态机、CI workflow 已写入；Phase 0 本地 4 项已完成；Phase 1 已完成 manual Task API、migration/transactional intake、Workflow create/signal outbox、Workflow/D1 本地恢复子项、ExecutionPlan v1 校验、Run/Attempt CAS + generation 写租约、D1-only Task/Plan 安全查询、GitHub OIDC exchange、固定 analysis workflow/Runner bootstrap、GitHub webhook + App API 外部事实 reconciliation，以及双 destination Queue dispatch 生产接线的本地契约；Phase 3 已完成用途隔离的run/tool短期credential exchange、triage五项read/diagnostic scope与write/destructive PEP拒绝、complete/cancel/heartbeat-timeout token撤销、AgentCheckpoint v1/sequence CAS、Workflow callback replay/late-result fencing、tool-bridge metadata trace与prompt-injection对抗DoD，并完成schema-aware redaction/Secret scanner对Task/checkpoint/source、唯一控制面结构化日志sink、固定Runner JSON日志、execution Codex raw transcript双层扫描/AES-256-GCM producer及Draft PR effect前重扫的本地覆盖；Codex session adapter本地已具备start/resume/interrupt/exportCheckpoint与真实子进程中断契约；Runner kill recovery已完成D1/R2/Git本地穿透，并具备交叉核对Plan/correlation、两条Action/job、Git commit和passed Item零重跑的显式opt-in真实验收器；controlled replay已完成D1 approval/effect/reconciliation snapshot、fenced outbox、正常`completed Plan`终态的真实workerd Plan Item verification-step restart、Case 8 digest-verified replay/effect outbox投影，以及交叉核对Action/PR/Deployment零重复的显式opt-in真实验收器；bounded failure policy已完成D1/Runner/API/query安全投影，真实飞书卡片仍待接入。Phase 4 已完成 commit-bound `delivery.yaml v1`、canonical command ref与无shell命令执行边界、ready/dependency/active Plan fencing下的Plan Item首次Attempt领取、exact repo_write approval绑定的单仓库GitHub写凭证签发/撤销、task/attempt derived branch与固定bot/no-force push边界、workflow/CODEOWNERS/Secret/deploy等高风险path的staged-tree审批暂停与安全diff投影，以及targeted→全部required verify的顺序执行与command/exit/duration/head Evidence入账。
+- **未验证外部能力**：远端 GitHub repo、GitHub App、飞书应用、控制面部署、真实 tool-bridge service binding、真实已认证 Agent 模型调用均未配置/执行。
+- **下一目标**：配置真实试点GitHub/Cloudflare与有效Codex credential后，先按`docs/ControlledReplayE2E.md`从真实completed Plan verification step重放并运行`DELIVERY_LOOP_CONTROLLED_REPLAY_E2E=1 pnpm run e2e:controlled-replay`；exit 0、Workflow restart和Action/PR/Deployment URL共同闭环，不能用本地fake替代。
 
 ## Blockers / 待用户决策
 
 - 新远端仓库的 GitHub owner/organization、最终名称与 visibility 未指定；当前只创建本地 `/Users/jishihe/delivery-loop`。
-- 首批试点 repo、飞书入口形态、控制面部署位置、Agent adapter 和 MVP 是否包含测试部署尚未拍板，详见 [Reference §7](docs/Reference.md#7-尚未拍板的产品决策)。
+- 首批试点 repo、飞书入口形态、Agent adapter 和 MVP 是否包含测试部署尚未拍板，详见 [Reference §9](docs/Reference.md#9-尚未拍板的产品决策)；控制面默认 Cloudflare 栈已在 Round 2 拍板。
+- Phase 3 Secret父DoD的剩余证据需要真实试点GitHub repository/App/Actions与已部署Worker/R2；当前仓库无remote、D1 ID仍为占位值，不能产生可信Action log、持久化远端ciphertext registry或真实PR页面。
+- 本机`codex-cli 0.145.0`保存的API key已被provider以`invalid_api_key`拒绝；重新认证属于用户credential authority，仓库代码不能生成、替换或输出该Secret。真实Adapter子项在有效credential前保持未勾。
+- Phase 3真实Runner恢复仍缺试点GitHub remote/App/Actions、已部署控制面D1/R2和有效Agent credential；当前`git remote -v`为空且Wrangler D1 ID为占位值，无法产生两条真实Action、外部checkpoint/result commit或只读live API证据。`pnpm run e2e:runner-recovery`默认exit 2是正确前置状态，不是通过。
+- Phase 3真实controlled replay仍缺同一组试点GitHub/Cloudflare资源与已完成真实PR/deployment Run；当前无法产生Cloudflare restart、live Case 8/correlation或GitHub inventory证据。`pnpm run e2e:controlled-replay`默认exit 2是正确前置状态，不是通过。
 
 ## 外部前置核对
 
@@ -35,3 +39,2736 @@
 - 勾选：Phase 0 本地 verify、TaskEnvelope、Run 状态机、文档边界 4 项。
 - 决策沉淀：默认架构为持久控制面 + 临时 Action attempt + tool-bridge context grant；MVP 推荐止于 Draft PR，生产部署不默认自动化。
 - 遗留：Phase 0 的远端 repo、真实 CI、真实 `validate-task.yml` 仍未完成；等待 GitHub owner/name/visibility。
+
+## Round 2 — 2026-07-25
+- 目标：DOD §1 契约一致——把任务级 DoD、持久编排、回放与 Agent 恢复的既定决策同步到规范/DOD；不提前实现或勾选 Phase 1。
+- 前置与权限：只读检查 Cloudflare 官方文档与本地 Watt commit `476e3cd`；未部署、未触发 GitHub Action、未调用飞书/tool-bridge、未写 Watt。
+- 动作：
+  - 默认控制面确定为 Cloudflare Worker + Workflows + D1 + Queues/transactional outbox + R2；Temporal + Postgres 仅作平台/合规替代。
+  - 新增 `ExecutionPlan v1`、PlanItem/Progress、计划版本/digest/base SHA/effect 审批绑定、Workflow input/signal/replay 契约；`run_id` 直接作为 Workflow instance id。
+  - 将恢复拆为两层：Cloudflare Workflows 恢复控制流并复用成功持久步骤，Git + Agent checkpoint 恢复一次 GitHub attempt；D1 保持对外业务状态和长期审计真源。
+  - 将 Phase 1～7/E2E 验收改为先只读分析生成计划，再按 ready DoD Item 执行并以核对 Evidence 关门；补 pending→delivering→settled、lease generation/fencing、R2 保留和受控 replay 负向要求。
+  - Watt 可复用结论入 Reference：借鉴 Workflow/Signal/correlation/D1 投影和测试接线，不照搬硬编码模板、JSON steps、简单审批或补偿删除。
+- 验证：
+  - 一致性 `rg` 断言（ExecutionPlan、run_id、Cloudflare 默认栈、三态投递存在；旧自研编排/未决 Cloudflare 宿主措辞不存在）+ `git diff --check` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、2 files / 7 tests、Markdown links 全绿。
+  - Watt `pnpm --filter @watt/gateway exec vitest run test/workflow-task.test.ts` → exit 0，1 file / 11 tests；同时观察到 Miniflare 强制超时/实例清理的 uncaught exception 噪声，已转化为本项目“非预期 unhandled error 不得假绿”的外部实测要求。
+- 勾选：无新增；本轮刷新 Phase 0 已有“文档 review”证据，并细化后续 Phase 的未完成判据。
+- 决策沉淀：`docs/{Vision,Architecture,Proto,Security,Reference}.md`、`DOD.md`、`LOOP.md`、llmdoc MUST/code-map 已同步。
+- 遗留：ExecutionPlan/Workflow 仍只有规范、没有可执行 schema/runtime；Phase 0 远端 repo/真实 CI/手工 workflow 仍等待 GitHub owner/name/visibility。
+
+## Round 3 — 2026-07-25
+- 目标：Phase 1 / `DeliveryRunWorkflow` 的副作用全部在稳定命名 `step.do`；强制 hibernate/restart 后复用成功步骤，dispatch 只发生一次，D1 Run 投影仍正确。
+- 前置与权限：仅本地 workerd/Miniflare/D1；读取 Watt commit `476e3cd` 作为实现参考；未部署 Cloudflare、未触发真实 GitHub Action、未创建远端、未调用飞书/tool-bridge。
+- 动作：
+  - 直接复用 Watt 的 `WorkflowEntrypoint`、稳定 `step.do`、`waitForEvent`、事件名净化、D1 migration setup、`cloudflare:test` introspection 与 `await using` 隔离模式；业务层改为规范化 Task/Run/ExecutionPlan/PlanItem/Attempt/outbox，不复制 JSON steps、硬编码模板、Agent Durable Object 或补偿删除。
+  - 新增 `DeliveryRunWorkflow`：`run_id` 作为实例 ID，input 仅传 ID/digest；稳定 analysis attempt/outbox key；result signal 只传 D1 plan ref/digest，计划正文不进入 Workflow history。
+  - 新增首版 D1 migration 与 `RunStore`；Workflow register、attempt+outbox、plan activate/Run projection 写入均位于稳定持久步骤，attempt+outbox 使用 D1 batch 和唯一键幂等。
+  - 钉死 Watt 已验证组合：Wrangler 4.107.0、Workers types 4.20260702.1、vitest-pool-workers 0.18.0、Vitest 4.1.9；`pnpm run verify` 现在同时跑 Node 单测与真实 workerd Workflow 测试。
+  - 初次定向测试在启动前失败：配置 compatibility date `2026-07-25` 超过当前 workerd 支持的 `2026-07-08`；改为 `2026-07-01` 后通过。该失败没有被当作测试成功。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/delivery-run-workflow.test.ts` → exit 0；1 file / 1 test。真实 `restart({from: await-analysis-result})` 前后 attempt/outbox 均为 1，Run version 保持 1；引用事件到达后实例 complete，D1 Run 为 `awaiting_approval`、version 2、active Plan ref/digest 正确。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-dry-run` → exit 0；Worker bundle 成功并识别 `DELIVERY_RUN` Workflow 与 `DB_CONTROL` D1 binding，未发生部署。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 2 files / 7 tests、workerd 1 file / 1 test、Markdown links 全绿；无 unhandled error。
+  - `git diff --check` → exit 0。
+- 勾选：新增 Phase 1 Workflow DoD 的“本地 workerd restart + 单一 dispatch outbox + D1 投影”子项；完整 DoD 保持未勾。
+- 决策沉淀：代码落点采用当前单包 `src/{domain,storage,workflows}`，避免在首个纵向切片提前引入 monorepo；D1 保持业务真源，Workflow event 不承载原始需求或 Plan 正文。
+- 遗留：尚无 GitHub App dispatcher/真实 Action 外部事实，也未在真实 Cloudflare 账户做 Worker restart；因此不能宣称实际 Action dispatch exactly-once，下一轮继续选择不依赖外部账号的 Phase 1 DoD。
+
+## Round 4 — 2026-07-25
+- 目标：Phase 1 / ExecutionPlan v1 校验覆盖 Item ID/依赖无环、至少一条 doneWhen、Evidence 要求、delivery policy command ref、effect 上限、plan version/digest/base SHA 不变量。
+- 前置与权限：仅本地 Node/workerd/D1；无网络、部署、GitHub Action、飞书/tool-bridge 或真实凭证副作用。
+- 动作：
+  - 先写 10 个 ExecutionPlan 正反契约用例；首次定向运行因 `src/domain/plan.ts` 尚不存在而 exit 1，确认测试未误命中旧实现后再实现。
+  - 新增严格 `ExecutionPlan v1`/PlanItem schema、canonical JSON SHA-256 digest、稳定 Item ID、依赖存在/无环、doneWhen/Evidence、验收索引、可信 command ref 与 effect ceiling 校验。
+  - validator 将 Agent 输出限制为 `proposed`，并绑定可信 run/task revision/base SHA/expected version；未知字段、Agent 自报 `approved/active`、旧 digest 与越权 effect 均拒绝。
+  - 新增 `ExecutionPlanStore`：校验通过后才以 `validated` 状态把 Plan、assumption/evidence refs、Item、doneWhen、依赖、effect、command ref、Evidence 要求和 progress 规范化写入 D1；再次核对持久 Run、analysis Attempt、base SHA 与数据库 next version。
+  - Workflow 激活只接受 `validated` Plan；相同 proposal 回调幂等，同 plan/version 更换不可变正文返回 `plan_conflict`。D1 穿透还验证非拓扑数组顺序的合法 DAG 可正确持久化。
+- 验证：
+  - `pnpm exec vitest run test/plan.test.ts` → exit 0；1 file / 10 tests，覆盖本 DoD 全部正反不变量及 Agent 不可自升状态。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/delivery-run-workflow.test.ts` → exit 0；1 file / 1 test，规范化 Plan 入库、幂等/不可变冲突、Workflow restart 与 validated→active 穿透通过，无 unhandled error。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 3 files / 17 tests、workerd 1 file / 1 test、Markdown links 全绿。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 1 `ExecutionPlan v1` 校验 DoD 完整勾选。
+- 决策沉淀：digest 明确排除 `digest/status`、覆盖其余不可变正文；Agent proposal 校验与 D1 持久化分层，`validated` 只表示控制面校验通过，不代表 effect 已批准。
+- 遗留：尚无 analysis callback HTTP 路由和真实 Agent 产出；这属于 Phase 1 intake/Runner/外部 Action 条目，不能用本轮领域与 workerd 测试替代。下一轮继续数据库 migration + transactional intake/outbox 的本地 DoD。
+
+## Round 5 — 2026-07-25
+- 目标：Phase 1 / 数据库 migration 可从空库重跑；唯一约束证明同一 Task revision 只能创建一个 Task，outbox 与状态在同事务落库。
+- 前置与权限：仅本地 workerd/D1；无外部网络、部署、GitHub Action、飞书/tool-bridge 或真实凭证副作用。
+- 动作：
+  - 先写 migration、20 路并发 revision、静默正文替换与事务故障注入测试；首次定向运行因 `TaskIntakeStore` 尚不存在而 exit 1，随后实现。
+  - 提取共用 canonical SHA-256，实现 Task revision digest 与稳定 Task/Run/workflow-create outbox ID；digest 排除 `eventId/occurredAt`，使平台重投与业务 revision 去重分离，revision 正文仍不可原地改写。
+  - 扩充规范化 Task 投影与 policy snapshot；新增 `TaskIntakeStore`，使用单个 D1 batch 原子写 Task、`queued` Run 和 `pending workflow_create` outbox，payload 只含 `d1://runs/<run_id>` 引用。
+  - source tuple 建立显式 SQL UNIQUE；测试除 20 路 store 并发外，还用不同 `task_id` 直接复制同 revision，D1 明确拒绝，避免把稳定主键误当作 source revision 唯一证据。
+  - 用 SQLite trigger 强制 `workflow_create` outbox INSERT abort；D1 batch 抛错后按 source revision 查询 Task/Run/outbox 均为 0，证明真实回滚而非事后补偿删除。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-intake-store.test.ts` → exit 0；1 file / 4 tests，migration 重入、20 路收敛、revision 更新/冲突与事务回滚全部通过。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 3 files / 17 tests、workerd 2 files / 5 tests、Markdown links 全绿，无 unhandled error。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 1 migration/source revision unique/transactional outbox DoD 完整勾选。
+- 决策沉淀：`docs/Proto.md` 明确 event delivery metadata 不进入 revision digest；稳定 hash ID 用于并发收敛，SQL source tuple UNIQUE 仍是业务最终裁决。D1 batch 是 Task/Run/outbox 的唯一提交边界，不实现失败补偿删除。
+- 遗留：尚未实现 `POST /v1/tasks` 的 HTTP Idempotency-Key 语义和 workflow-create outbox consumer；分别属于后续两个 Phase 1 DoD，不能用 store 层测试替代。
+
+## Round 6 — 2026-07-25
+- 目标：Phase 1 / `POST /v1/tasks` 对合法 TaskEnvelope 返回 202；同 `Idempotency-Key` 并发 20 次仅一条业务记录，响应指向同一 task/run。
+- 前置与权限：仅本地 workerd/D1/R2；使用明确的测试 Bearer fixture，不是生产 Secret；未部署、未调用 GitHub/飞书/tool-bridge 或真实外部资源。
+- 动作：
+  - 先写真实 `SELF.fetch` HTTP 正反测试；首次运行 4/4 失败于 `idempotency_keys` 表不存在，随后实现而非修改测试绕过。
+  - 直接复用 Watt 已验证的 Hono 4.12.27 Worker、统一安全错误和 `cloudflare:test` SELF 穿透结构；新增 fail-closed Bearer 服务认证、256 KiB body 上限、TaskEnvelope 规范化和通用 DeliveryError 响应。
+  - 新增只存 key digest 的 idempotency reservation；reservation、Task、queued Run 与 workflow-create outbox 位于同一 D1 batch，后三条 INSERT 仅在 reservation request digest 匹配时执行。同 key 换 payload 返回 409 且不创建第二套记录。
+  - API 成功接受 D1 事务后，把规范化 TaskEnvelope 写入稳定私有 R2 key；D1/outbox/API 只暴露引用、task/run ID 和 digest。R2 失败返回可重试 503，同 key 重试可补写同一对象，不做补偿删除。
+  - Run 的 base SHA 改为 intake 阶段可空：API 不信任客户端自报 SHA；analysis dispatch 前必须由后续受信 GitHub adapter 解析，已有 Workflow test 仍使用固定可信 SHA。
+  - 负向测试覆盖未认证、缺 key、非法 Task、正文 canary 不回显；outbox 故障注入同时证明 idempotency reservation/Task/Run/outbox 全部回滚。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-api.test.ts` → exit 0；1 file / 4 tests，20 路 HTTP 并发、完成重放、key/payload 冲突与安全负向路径通过。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-intake-store.test.ts` → exit 0；1 file / 4 tests，含 idempotency reservation 随 outbox 故障原子回滚。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-dry-run` → exit 0；Hono Worker bundle 成功并识别 Workflow、D1、R2 bindings，未部署。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 3 files / 17 tests、workerd 3 files / 9 tests、Markdown links 全绿，无 unhandled error。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 1 `POST /v1/tasks` + 20 路 Idempotency-Key DoD 完整勾选。
+- 决策沉淀：`docs/Proto.md` 与 `docs/Security.md` 明确服务认证、202/409、key digest、R2 正文边界和 base SHA 信任来源；Idempotency-Key 只约束请求重放，不承担授权。
+- 遗留：workflow-create outbox consumer 尚未实现，且 API Run 暂无 base SHA，不能提前启动 analysis Workflow；下一轮实现可重放 Workflow create 投递，并为受信 base SHA resolution 保留明确阻断。
+
+## Round 7 — 2026-07-25
+- 目标：Phase 1 / Run create outbox 以 `run_id` 幂等创建 Cloudflare Workflow instance；D1 已落库/Workflow create 或 sendEvent 失败可重放，不无条件删除业务记录、不产生重复实例。
+- 前置与权限：仅本地 workerd/Workflows/D1/Queue 模拟；未部署真实 Cloudflare 账户、未调用 GitHub/飞书/tool-bridge，无生产 Secret。
+- 动作：
+  - 先写 Workflow create/signal outbox 的并发、失败、不确定结果和真实 Workflows 穿透测试；首次运行因模块不存在而 exit 1，随后实现。
+  - 直接复用 Watt 的 pending → delivering → settled、投递失败 rollback 模式，并扩展 D1 lease token/expiry/fencing；20 个 consumer 并发 claim 同一 create outbox 时只有一个 attempt，settle 后重放不再触发 effect。
+  - 新增 Cloudflare Workflow effect adapter：`id = run_id` create；create 抛出不确定错误后查 instance status，实例已存在则按幂等成功收敛，status unknown 才重试。
+  - 新增规范化 `workflow_signals` 与 signal outbox；现有 DeliveryRunWorkflow 测试不再直接 `sendEvent`，而是 signal + outbox 落 D1 后由真实 adapter 投递，成功推进 validated Plan。
+  - create/sendEvent 失败均把 outbox 回 pending、保留 Task/Run；过期 delivering lease 可由新 token 接管。API Run 缺受信 base SHA 时不调用 create，记录 `base_sha_unresolved` 等待后续 GitHub resolver。
+  - Worker 增加 Queue producer/consumer 与每分钟 reconciliation relay：relay 只投递 outbox ID，Queue consumer 执行 fenced processor，重复 Queue 消息安全。
+  - 中间一次定向运行首例通过、后续 4 例因测试 cleanup 先删 Run、未先删 Workflow 创建的 Attempt 而 FK 失败；修正测试依赖清理顺序后全部通过，没有把 harness 失败伪装为业务成功。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/workflow-outbox.test.ts` → exit 0；1 file / 6 tests，覆盖 20 路 create、失败重放、base SHA 阻断、过期 lease、ambiguous create reconciliation、sendEvent 重放。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/delivery-run-workflow.test.ts` → exit 0；1 file / 1 test，真实 signal outbox → sendEvent → Workflow complete/D1 projection 穿透通过。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-dry-run` → exit 0；bundle 成功并识别 Workflow、Queue、D1、R2 bindings，未部署。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 3 files / 17 tests、workerd 4 files / 15 tests、Markdown links全绿，无 unhandled error。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 1 Workflow create/sendEvent replay DoD 完整勾选。
+- 决策沉淀：`docs/Architecture.md`/`docs/Proto.md` 明确 Queue relay、lease/fencing、ambiguous create reconciliation、signal outbox 与 base SHA 阻断；普通失败只回 pending，不做业务补偿删除。
+- 遗留：真实 GitHub base SHA resolver、Cloudflare 账户限制实测和真实 Action dispatcher 尚未完成；无 base SHA 的 API Run 会安全保持 pending。下一轮继续本地 CAS/lease generation 并发 DoD。
+
+## Round 8 — 2026-07-25
+- 目标：Phase 1 / 状态迁移使用 compare-and-set；两个并发 worker 争抢同 attempt 时只有一个拿到带 lease generation 的写租约。
+- 前置与权限：仅本地 workerd/D1；读取 Watt commit `476e3cd` 的 D1 条件写和三态投递实现；未部署、未触发 GitHub Action、未调用飞书/tool-bridge，无真实凭证。
+- 动作：
+  - 先写 Run 双 worker CAS、20 路同 attempt 租约竞争、过期 generation 接管/旧 heartbeat fencing、同 Run 不同 write attempt 互斥测试；首次定向运行因 `AttemptLeaseStore` 不存在而 exit 1，随后实现。
+  - 直接复用 Watt D1 provider 的 `UPDATE ... WHERE version = expected` + `meta.changes === 0 → conflict` CAS 骨架，并复用前轮三态投递中的 token/expiry fencing；Watt 没有 attempt lease-generation 模块，未伪装为整模块复制。
+  - `attempts` 增加 version、lease token digest、expiry 与 active write lease 查询索引；领取使用单条条件 UPDATE，同时排除同 Run 其他未过期 write attempt，每次成功领取递增 version 与 generation。
+  - heartbeat 同时校验 status、version、generation、token digest 与未过期边界；明文 token 只返回给胜出 worker，D1 仅保存 SHA-256 digest。过期后新 generation 可接管，旧 Runner 即使按当前 version 重试也因 generation/digest 不符被拒。
+  - `RunStore.transition` 先调用领域状态机校验边，再以 state + version CAS；Workflow register 固定初始 version，Plan 激活 batch 以读取到的 Run version fencing，避免零行更新误报成功。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/lease-cas.test.ts` → 首次 exit 1（模块尚不存在）；实现后 exit 0，1 file / 4 tests。
+  - `pnpm run typecheck` → exit 0；`pnpm run lint` → exit 0。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/delivery-run-workflow.test.ts test/workflow/workflow-outbox.test.ts` → exit 0，2 files / 7 tests，既有 restart/outbox 恢复路径无回归。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 3 files / 17 tests、workerd 5 files / 19 tests、Markdown links 全绿。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 1 Run CAS + attempt lease generation DoD 完整勾选。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 明确 CAS 成功判据、同 Run 单 active write lease、token 摘要与 generation/expiry fencing；按用户要求不额外更新 llmdoc。
+- 遗留：本轮尚未接 Runner HTTP heartbeat/exchange/OIDC；这些仍属于后续 Phase 1/3 条目，不能用 store 测试代替。下一轮选择不依赖外部账号的安全查询 API DoD。
+
+## Round 9 — 2026-07-25
+- 目标：Phase 1 / 飞书尚未接入时，`GET /v1/tasks/:id` 与 `GET /v1/runs/:id/plan` 能返回 run/plan item/attempt/checkpoint/evidence 安全摘要，且不依赖 Workflow `status()` 作为业务真源。
+- 前置与权限：仅本地 workerd/D1/R2 测试 binding；复用 Watt 的 Hono、统一安全错误和 `SELF.fetch` 穿透结构；未部署、未调用 Workflow status、GitHub、飞书/tool-bridge，无真实凭证。
+- 动作：
+  - 先写认证、200/404/非法 ID、空 Plan、完整 Plan/Item/Attempt/checkpoint/Evidence 投影与多处 canary 不泄漏测试；首次定向运行 3/3 因 `evidence` 表不存在而 exit 1，随后补 migration 与查询实现。
+  - 新增 checkpoint/Evidence D1 规范化投影；R2 继续保存完整 payload，D1 只持恢复/核对/查询需要的结构化字段、digest 和 ref。
+  - 新增只依赖 `DB_CONTROL` 的 `TaskQueryStore`：Task 查询不读 R2 正文；Plan 查询返回 Item progress、Attempt 和每个 Attempt 最新 checkpoint；类构造函数没有 Workflow binding，因此不能把 `status()` 当业务真源。
+  - GET 路由复用 Phase 1 fail-closed Bearer 服务认证、Hono 错误形状和 ID 白名单。响应主动排除 Task description/acceptance criteria/actor/R2 ref、checkpoint summary/nextStep/payload ref、Evidence summary/artifact ref、lease token digest；HTTPS 外链移除 query/fragment。
+  - 首次静态检查中 typecheck 因泛型 `optional<T>` 写索引在 TypeScript 5.9 下被拒而 exit 2；收窄为 `Record<string, unknown>` 后通过，没有把 workerd 行为测试替代类型关口。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-query-api.test.ts` → 首次 exit 1（缺 evidence 表）；实现后 exit 0，1 file / 3 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-api.test.ts test/workflow/task-intake-store.test.ts` → exit 0，2 files / 8 tests，既有 intake/事务路径无回归。
+  - `pnpm run typecheck` → 首次 exit 2（TS2862），修正后 exit 0；`pnpm run lint` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 3 files / 17 tests、workerd 6 files / 22 tests、Markdown links 全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-dry-run` → exit 0；Worker bundle 成功识别 Workflow、Queue、D1、R2 bindings，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 1 Task/Plan D1-only 安全查询 DoD 完整勾选。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 明确查询认证、白名单响应、R2/Workflow 排除边界；按用户要求不额外更新 llmdoc。
+- 遗留：checkpoint/Evidence 本轮只有查询投影和测试数据，Runner 写入、sequence CAS、Evidence 外部核对属于 Phase 3/4，不能提前勾选。下一轮只做 GitHub dispatcher 的本地契约切片，真实安装/dispatch 仍需外部前置。
+
+## Round 10 — 2026-07-25
+- 目标：Phase 1 / GitHub OIDC exchange 至少校验 issuer、audience、repository、workflow ref、SHA 和 run ID；伪造/过期/其他 repo token 全部拒绝。
+- 前置与权限：本地 workerd/D1 与测试专用 RSA key/JWKS；只读访问 GitHub 官方 OIDC discovery；未触发 Action、未安装 GitHub App、未部署、未调用飞书/tool-bridge，无真实 token/Secret。
+- 动作：
+  - 先写真实 RS256/JWKS 签验、claims 全绑定、伪造/过期/畸形/跨 repo、lease 过期与一次性重放测试；首次定向运行 3/3 因 `attempt_tokens` 不存在而 exit 1，随后实现。
+  - 直接复用 Watt 生产 OAuth 的 `jose createRemoteJWKSet + jwtVerify` 骨架，固定 GitHub issuer/audience/RS256；测试用本地 JWKS 仍执行真实非对称验签，不手写/伪造 JWT decode。
+  - `attempts` 增加 repository/trusted workflow ref/GitHub run/status 外部事实字段；Workflow 创建 analysis Attempt 时固定目标 repo + `.github/workflows/delivery-agent.yml@refs/heads/<base>`，不从 Runner 请求自报。
+  - exchange 在验签后逐项匹配 D1 repository、`job_workflow_ref ?? workflow_ref`、base SHA、GitHub run ID、analysis mode、starting/running 和 active lease；未绑定 run ID 或任一字段不符均 fail-closed。
+  - 新增 `attempt_tokens`：同 attempt + lease generation 一次交换，OIDC/opaque token 均只存 digest，TTL 取 5 分钟与 lease 剩余时间较小值，响应 no-store；Phase 1 grant 固定 `repo:read`。
+  - 首次静态检查因 `exactOptionalPropertyTypes` 不接受显式 undefined verifier options 而 exit 2；改为 binding 存在才展开字段后通过。
+  - 2026-07-25 实读官方 discovery，确认 issuer/JWKS URI、RS256 及 repository/workflow_ref/job_workflow_ref/sha/run_id claims 与实现一致。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-oidc-exchange.test.ts` → 首次 exit 1（缺 attempt_tokens）；实现后 exit 0，1 file / 3 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/delivery-run-workflow.test.ts test/workflow/task-query-api.test.ts test/workflow/lease-cas.test.ts` → exit 0，3 files / 8 tests。
+  - `pnpm run typecheck` → 首次 exit 2（TS2379），修正后 exit 0；`pnpm run lint` → exit 0。
+  - `curl -fsSL --max-time 15 https://token.actions.githubusercontent.com/.well-known/openid-configuration | jq ...` → exit 0；官方元数据匹配实现。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 3 files / 17 tests、workerd 7 files / 25 tests、Markdown links 全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-dry-run` → exit 0；含 `jose` 的 Worker bundle 成功，bindings 正确，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 1 GitHub OIDC exchange DoD 完整勾选；真实 Action 身份将在“一个真实 Action”条目另行证明。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 明确 GitHub 信任根、D1 绑定、一次性交换和只读 scope；按用户要求不额外更新 llmdoc。
+- 遗留：GitHub run ID 必须先由 dispatcher/webhook/reconciliation 可信绑定；本轮未实现该外部链路，也未签 tool-bridge SK。下一轮做 Runner heartbeat/result 本地契约，真实 Action 仍需远端前置。
+
+## Round 11 — 2026-07-25
+- 目标：Phase 1 / Runner 每 30～60 秒 heartbeat；正常完成写 attempt result，控制面状态与 GitHub run 外部事实一致（本轮只闭环本地控制面子项，完整条目保留未勾）。
+- 前置与权限：仅本地 workerd/D1；复用 Round 8 CAS/generation、Round 10 opaque token 与 Round 7 signal outbox；未触发真实 Action/GitHub API、未部署、未调用飞书/tool-bridge。
+- 动作：
+  - 先写 20 路 heartbeat 并发、token rotation、旧 token/旧 generation/expiry、reference-only complete、untrusted GitHub conclusion canary 和 signal/outbox 原子投影测试；首次定向运行 3/3 因路由不存在返回 404，随后实现。
+  - heartbeat 同时验证 opaque token digest/expiry/revocation、Attempt status/version/generation/lease；D1 batch 以 expected version CAS 更新 heartbeat/90 秒 lease并轮换 token digest，20 路只有一胜者。
+  - complete 只接收 Plan ref/digest/event/sequence 与 fencing 字段；Referenced Plan 必须属于同 Run、由当前 Attempt 创建且已 validated/active。
+  - Attempt result projection、`workflow_signals`、pending outbox、Attempt version 更新和 token revoke 位于单个 D1 batch；成功后 Attempt 仍为 running，GitHub status/conclusion 保持 null，等待 Workflow 和外部事实核对。
+  - strict schema 拒绝 Runner 自报 `githubConclusion`，错误不回显 canary；旧 token 在 heartbeat 成功或 complete 入账后立即失效。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/runner-api.test.ts` → 首次 exit 1（3/3 路由 404）；实现后 exit 0，1 file / 3 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-oidc-exchange.test.ts test/workflow/workflow-outbox.test.ts test/workflow/delivery-run-workflow.test.ts` → exit 0，3 files / 10 tests。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 3 files / 17 tests、workerd 8 files / 28 tests、Markdown links 全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-dry-run` → exit 0；Worker bundle 与 Workflow/Queue/D1/R2 bindings 正确，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：仅新增 Runner heartbeat/result 本地 workerd 子项；完整 DoD 保持未勾，因为没有真实 Action cadence 和 GitHub webhook/API 外部事实。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 明确 token rotation、90 秒 lease、result reported 与 GitHub observed 分离；按用户要求不额外更新 llmdoc。
+- 遗留：需要真实 GitHub repo/App/workflow 才能跑 30～60 秒 cadence、可信绑定 run ID 并核对 status/conclusion；这与 dispatcher/真实 Agent/平台限制条目共享同一外部 blocker。
+
+## Round 12 — 2026-07-25
+- 目标：Phase 1 / GitHub App 只安装到试点仓库；dispatcher 成功触发固定 workflow ref，dispatch payload 经过测试证明无 Secret/任务正文（本轮闭环本地 dispatcher/REST 子项，完整条目保留未勾）。
+- 前置与权限：仅本地 workerd/D1 与 fake GitHub REST；读取 Watt commit `476e3cd`，确认无 GitHub dispatcher 整模块；未安装 App、未调用真实 GitHub write API、未触发 Action、未部署。
+- 动作：
+  - 先写 20 路 dispatcher 竞争、allowlist、固定 workflow ref、payload canary、失败重放/外部 existing reconciliation 测试；首次定向运行因 `github-dispatcher` 模块不存在而 exit 1。
+  - 把 Round 7 从 Watt 复用的 pending → delivering → settled、lease token/expiry、settle/rollback 提取为共享 `FencedOutboxProcessor`；Cloudflare Workflow 与 GitHub dispatcher 使用同一实现，不复制第二套租约协议。
+  - GitHub processor 只从 D1 Attempt/Run/Task 投影构造 inputs，不读取 R2 Task 正文；repository 必须命中 allowlist，workflow 固定 `.github/workflows/delivery-agent.yml@refs/heads/<baseBranch>`，control-plane URL 必须是无 user/query/fragment 的 HTTPS origin。
+  - 20 路 outbox consumer 只调用一次 effect；外部 run ID 经 `ensureDispatch` 返回后才把 Attempt pending→starting、version/generation 递增并创建启动 lease。失败回 pending，不伪造 starting。
+  - 新增 GitHub Actions REST adapter：短期 installation token 只进 Authorization header；dispatch 前按 `run-name = delivery-loop/<attempt_id>` 查询；POST 204 后必须查询到 run ID，existing run 直接复用且不 POST，暂不可见则抛错供 outbox 重试。
+  - REST adapter 测试首次因 class 尚不存在 2/6 失败，随后实现为 6/6 通过。中间 lint 因测试未使用常量 exit 1，删除后通过。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-dispatcher.test.ts` → 首次 exit 1（模块不存在）；领域实现后 4/4，通过新增 REST 测试前 2/6 红灯，最终 exit 0，1 file / 6 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-dispatcher.test.ts test/workflow/workflow-outbox.test.ts` → exit 0，2 files / 10 tests，共享 fencing 无回归。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/workflow-outbox.test.ts test/workflow/delivery-run-workflow.test.ts test/workflow/github-oidc-exchange.test.ts test/workflow/runner-api.test.ts` → exit 0，4 files / 13 tests。
+  - `pnpm run typecheck` → exit 0；`pnpm run lint` → 中间 exit 1（unused test constant），修正后 exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 3 files / 17 tests、workerd 9 files / 34 tests、Markdown links 全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-dry-run` → exit 0；Worker bundle 与 Workflow/Queue/D1/R2 bindings 正确，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：仅新增 GitHub dispatcher 本地 workerd/REST contract 子项；完整 DoD 保持未勾，因为没有真实 App installation 与 Actions run URL/API。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 记录共享 fencing、固定 workflow/run-name、App token 与 reconciliation 边界；按用户要求不额外更新 llmdoc。
+- 遗留：production `GitHubInstallationTokenProvider` 仍需 App id/private key 与试点 installation ID；目标 repo 还需 opt-in workflow。下一轮实现固定 workflow/只读 Runner adapter 的本地契约，外部安装证据待用户输入。
+
+## Round 13 — 2026-07-25
+- 目标：Phase 1 / 一个真实 Action 只读检出目标 repo，Agent 按用户反馈/PRD 分析代码并按需使用只读桩上下文，输出带 Evidence refs 的合法 ExecutionPlan；不创建分支、不写 repo（本轮闭环 Codex adapter 本地子项，完整条目保留未勾）。
+- 前置与权限：只读查询 OpenAI 官方 Codex 文档、本机 `codex-cli 0.145.0 --help`；未调用模型/API、未触发 Action、未部署；新增同版本 lockfile dependency 只用于 Runner 可复现安装。
+- 动作：
+  - 按 `openai-docs` skill 先运行 Codex manual helper；官方 manual HEAD 返回 403，随后按 skill 回退到 OpenAI Docs MCP，核对 `codex exec` 非交互、ephemeral、read-only sandbox、output schema/last message、stdin prompt 与 shell environment policy。
+  - 先写 read-only 命令形状、可信 identity/digest 注入、越权 effect/额外 identity、CLI stderr canary 和 JSON Schema 边界测试；首次定向运行因 adapter 模块不存在而 exit 1。
+  - 新增 `AnalysisPlanContentV1` JSON Schema：Agent 只输出 objective/assumptions/evidenceRefs/items；Runner 注入 plan/run/task/base/attempt identity、计算 canonical digest、固定 proposed，再复用现有 ExecutionPlan validator。
+  - Codex 命令强制 `--ephemeral --ignore-user-config --sandbox read-only`、approval never、`project_doc_max_bytes=0`；不使用 yolo/workspace-write。context 以临时文件路径引用，不把正文放 argv/prompt；stderr 不进入抛出错误。
+  - 保持 shell 默认 KEY/SECRET/TOKEN 排除并追加 PASSWORD；任务、代码、日志与 context 明确为 untrusted data。输出文件必须在 repo workspace 外，防止 adapter 自身修改目标仓库。
+  - 本机 CLI help 确认采用参数存在；`@openai/codex@0.145.0` 写入 devDependency/lockfile，未来 hosted runner 不依赖预装工具。本轮未做计费模型调用，不能冒充真实 Agent 证据。
+- 验证：
+  - `pnpm exec vitest run test/codex-analysis-adapter.test.ts` → 首次 exit 1（模块不存在）；实现后 exit 0，1 file / 4 tests。
+  - `pnpm exec vitest run test/plan.test.ts test/codex-analysis-adapter.test.ts` → exit 0，2 files / 14 tests。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `codex --version && codex exec --help | rg -- ...` → exit 0；`codex-cli 0.145.0` 且六个采用参数存在。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 4 files / 21 tests、workerd 9 files / 34 tests、Markdown links 全绿。
+  - `git diff --check` → exit 0。
+- 勾选：仅新增真实 Action/Agent 条目的本地 Codex adapter contract 子项；完整 DoD 保持未勾，因为没有真实 GitHub Action、模型调用、只读上下文和 Git 零写入外部证据。
+- 决策沉淀：`docs/Proto.md`、`docs/Security.md`、`docs/Reference.md` 记录官方 CLI、read-only/prompt-injection/Secret environment、可信 Plan envelope 边界；`openai-docs` skill 影响了具体 flags 与 shell env policy。按用户要求不额外更新 llmdoc。
+- 遗留：Runner 尚缺 attempt-scoped context/Plan proposal HTTP API、OIDC/bootstrap loop 和固定 workflow；下一轮先完成 context + proposal 控制面契约，再接 workflow。真实 Action 仍需远端前置。
+
+## Round 14 — 2026-07-25
+- 目标：Phase 1 / 一个真实 Action 只读检出目标 repo并输出合法 ExecutionPlan（本轮闭环 attempt-scoped context/Plan API 与 exchange fencing 子项，完整条目保留未勾）。
+- 前置与权限：仅本地 workerd/D1/R2；无模型调用、GitHub Action、外部写入或真实 Secret。
+- 动作：
+  - 先扩展 OIDC 测试，要求 response 返回 attemptVersion/leaseGeneration 且 starting→running；新增 context/Plan API 的 active/wrong token、R2 Task 原文/digest、20 路 proposal、extra identity/repo_write、R2 tamper 测试。首次运行 context/plan 4/4 404，OIDC 2 项缺字段/迁移失败。
+  - 把 `AnalysisPlanContentV1Schema` 从 Node Codex adapter 抽到纯 domain，Worker 与 CLI 共用同一 strict schema，避免 Worker bundle 引入 child_process。
+  - OIDC exchange 把 token insert 与 starting→running/version+1/heartbeat CAS 放进同一 D1 batch，响应返回 heartbeat 所需 version/generation；实现时初次漏 SELECT version 导致 2 项 500，补字段后通过。
+  - `RunnerAttemptStore.authorize` 统一校验 opaque token digest/expiry/revocation、Attempt running/lease/generation 和 scopes；context/Plan/heartbeat/complete 不另造身份协议。
+  - context store 从 D1 ref 读取私有 R2 Task，要求 R2 metadata digest、重新计算 canonical digest、revision/repo/base 全匹配；Runner 无 R2 credential。原始反馈/PRD只在 no-store authenticated response 返回。
+  - Plan API 只收 content；deterministic plan ID、server next version/D1 identity/canonical digest/proposed status 后进入现有 validator/store。20 路相同提交以 SQL immutable constraints + retry-read 收敛为一个 validated Plan；repo_write policy deny，额外 identity 400。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/analysis-attempt-api.test.ts test/workflow/github-oidc-exchange.test.ts` → 首次 exit 1（6 项红灯）；实现中 context 4/4 已绿但 OIDC 2 项因漏取 version 500；修正后与 Runner 回归合计 3 files / 11 tests 全绿。
+  - `pnpm exec vitest run test/codex-analysis-adapter.test.ts test/plan.test.ts` → exit 0，2 files / 14 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/delivery-run-workflow.test.ts test/workflow/github-dispatcher.test.ts` → exit 0，2 files / 7 tests。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 4 files / 21 tests、workerd 10 files / 39 tests、Markdown links 全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-dry-run` → exit 0；Worker bundle 与 Workflow/Queue/D1/R2 bindings 正确，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：新增真实 Action/Agent 条目的本地 attempt context/Plan API 子项；完整 DoD 保持未勾，因为 workflow/bootstrap、真实模型和 GitHub run 尚未执行。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 明确 exchange transition、attempt auth、R2 digest、content-only Plan 与并发收敛；按用户要求不额外更新 llmdoc。
+- 遗留：下一轮实现固定 workflow/bootstrap；bootstrap 必须维护 token rotation/version，context 写 Runner temp，Plan content 提交后再 complete，不在日志打印原文/token。
+
+## Round 15 — 2026-07-25
+- 目标：Phase 1 / 一个真实 Action 只读分析并输出合法 ExecutionPlan，以及 Runner 30～60 秒 heartbeat/result（本轮闭环固定 workflow + bootstrap 本地子项，两个完整条目保留未勾）。
+- 前置与权限：仅本地 Node fake HTTP/Codex 与既有 workerd D1/R2；未请求 GitHub OIDC、未触发 Action、未调用计费模型、未部署、未使用真实 Secret。
+- 动作：
+  - 先写 bootstrap 与 YAML 契约测试；首次定向运行 2 suites 因 Runner 模块和 `yaml` 依赖不存在而 exit 1，保留为红灯证据后实现。
+  - Watt 全库检索未发现可直接复制的 GitHub OIDC/bootstrap/heartbeat 模块；继续复用此前从 Watt 提取的持久 Workflow/fenced outbox，不虚构 Runner 代码来源。新增 `yaml@2.8.1` 仅用于结构化解析 workflow 测试。
+  - 固定 `.github/workflows/delivery-agent.yml`：dispatch 白名单输入、稳定 run-name/concurrency、`contents: read + id-token: write`、exact base SHA、`persist-credentials: false`、60 分钟 timeout，checkout/setup-node/pnpm setup 全部 pin 40 位 SHA。
+  - Runner 从 GitHub runtime API 获取固定 audience OIDC，exchange 后核对 context 的 run/attempt/task digest/base/mode；context/output 位于 repo 外 0700 目录和 0600 文件，不把正文/token 写日志或错误。
+  - Agent 运行期间每 45 秒 heartbeat，响应原子替换内存 token/version/generation；Agent 返回后停止 loop，复验 ExecutionPlan、比较前后 Git status，只有零变化才提交 content-only Plan。控制面 plan ID/version/digest/ref 与本地 proposal 全匹配后，使用最新 fencing 提交 reference-only complete；finally 清理临时目录。
+  - 把 deterministic analysis Plan ID 提取为 Runner/Worker 共享 domain helper，避免客户端与服务端各自复制身份算法。
+- 验证：
+  - `pnpm exec vitest run test/analysis-runner-bootstrap.test.ts test/delivery-agent-workflow.test.ts` → 首次 exit 1（Runner 模块、yaml 依赖缺失）；实现后 exit 0，2 files / 3 tests。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/analysis-attempt-api.test.ts test/workflow/github-oidc-exchange.test.ts test/workflow/runner-api.test.ts test/workflow/github-dispatcher.test.ts` → exit 0，4 files / 17 tests。
+  - `pnpm exec vitest run test/codex-analysis-adapter.test.ts test/plan.test.ts test/analysis-runner-bootstrap.test.ts test/delivery-agent-workflow.test.ts` → exit 0，4 files / 17 tests。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 6 files / 24 tests、workerd 10 files / 39 tests、Markdown links 全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round15` → exit 0；Worker bundle 成功识别 Workflow、Queue、D1、R2 bindings，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：新增真实 Action/Agent 条目的本地固定 workflow/bootstrap 子项，以及 Runner heartbeat/result 的本地 harness 子项；完整条目保持未勾，因为没有真实 GitHub Action、连续 cadence、模型调用和外部 run status/conclusion。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 明确固定 workflow、45 秒 fencing loop、临时文件与 Git 零写入关口；按用户要求不额外更新 llmdoc。
+- 遗留：需真实试点 repo/App/控制面部署后运行 Action 并由 GitHub API/webhook 核对 run ID/status/conclusion；本地仍可继续实现外部事实 reconciliation 与失败撤销契约。
+
+## Round 16 — 2026-07-25
+- 目标：Phase 1 / Runner 正常完成后控制面状态与 GitHub run 外部事实一致（本轮闭环签名 `workflow_run` webhook 本地子项，完整条目保留未勾）。
+- 前置与权限：仅只读访问 GitHub 官方 webhook 文档，并使用本地 workerd/D1 与测试 HMAC Secret；未接收真实 GitHub webhook、未调用 App API、未部署、未使用真实 Secret。
+- 动作：
+  - 先写有效 completed、20 次 delivery replay、错误签名、delivery ID 换 payload、repo/workflow/SHA/title/run ID/run attempt 错绑与乱序回退测试；首次定向运行 4/4 因 `github_webhook_deliveries` 不存在而 exit 1。
+  - 新增 migration：GitHub delivery 仅保存 ID、raw body digest、绑定标量、applied/ignored 与时间，不保存原始 payload；Attempt 增加独立 `github_external_updated_at + github_observation_version`，不复用 Runner heartbeat `version`。
+  - `POST /v1/webhooks/github` 在解析 JSON 前先验证 raw body `X-Hub-Signature-256` HMAC-SHA256，只允许 `workflow_run`；错误签名、非法 event/schema 和错误响应不回显 body/Secret。
+  - 签名通过后继续绑定 D1 的 GitHub run ID、repository、固定 workflow ref/path、base SHA、stable run-name/attempt ID 与 `run_attempt=1`。绑定不符只记 ignored，不污染 Attempt。
+  - GitHub `updated_at` 必须严格更新才前进；旧/同时间事件不能回退 completed。external observation CAS 与 Runner fencing 分栏，因此 webhook 观察不会让正在运行的 heartbeat 使用过期 version。
+  - 2026-07-25 实读 GitHub 官方 webhook 文档，核对 `X-GitHub-Delivery`、`X-Hub-Signature-256` 和 `workflow_run` 事件名；未把本地 HMAC 测试冒充真实 GitHub delivery。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-workflow-run-webhook.test.ts` → 首次 exit 1（4/4 缺 migration 表）；实现后 exit 0，1 file / 4 tests。
+  - `pnpm run typecheck` → 中间 exit 2（WebCrypto `Uint8Array<ArrayBufferLike>` 不满足 `BufferSource`）；改为明确 `ArrayBuffer` 后 exit 0；`pnpm run lint` → exit 0。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-workflow-run-webhook.test.ts test/workflow/github-dispatcher.test.ts test/workflow/github-oidc-exchange.test.ts test/workflow/runner-api.test.ts test/workflow/task-query-api.test.ts` → exit 0，5 files / 20 tests。
+  - `curl ... GitHub webhook docs` + `rg X-Hub-Signature-256/X-GitHub-Delivery/workflow_run` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 6 files / 24 tests、workerd 11 files / 43 tests、Markdown links 全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round16` → exit 0；Worker bundle 与 Workflow/Queue/D1/R2 bindings 正确，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：新增 Runner heartbeat/result 条目的本地 GitHub `workflow_run` 外部事实子项；完整条目保持未勾，因为没有真实 GitHub Action/webhook、连续 cadence 与 App API reconciliation。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 明确 raw HMAC、delivery digest、全绑定、乱序 fencing 与 observation/fencing version 分离；按用户要求不额外更新 llmdoc。
+- 遗留：下一轮实现 GitHub App API reconciliation，覆盖 webhook 丢失；真实外部 run/status/conclusion 仍需试点 repo/App/部署后核对。
+
+## Round 17 — 2026-07-25
+- 目标：Phase 1 / Runner 完成后控制面状态与 GitHub run 外部事实一致（本轮闭环 GitHub App API reconciliation 本地子项，完整条目保留未勾）。
+- 前置与权限：只读访问 GitHub 官方 REST 文档；本地 fake GitHub API、测试 RSA App key 与 workerd/D1。未调用真实 GitHub API、未安装 App、未部署、未使用真实 private key/token。
+- 动作：
+  - 先写 App JWT/installation token、webhook 丢失后 API 修复、同 fact 去重、错绑、旧事实、batch 候选和 REST response strict parse 测试；首次两个 suites 均因 provider/reconciler 模块不存在而 exit 1。
+  - 新增 GitHub App provider：RS256 App JWT 生命周期不超过 10 分钟；installation token 请求以 allowlist 中单 repo 名和 `actions:write + contents:read` 再收窄，token 仅内存缓存到刷新窗口，private key/JWT/token/response body 不写 D1/错误。
+  - 扩展 Actions REST client，使用短 installation token 读取固定 repository/run ID；严格解析 event/status/conclusion/base SHA/branch/path/title/run attempt/updated time/repository，响应错绑或畸形 fail-closed。
+  - 新增 `github_api_observations` migration 和 scheduled reconciler；只选尚无 completed external fact 的 Attempt，API observation ID 由 repo/run/fact digest 稳定派生，重复轮询收敛到一条 reference-only 记录。
+  - 把 Round 16 webhook 的 Attempt projection 抽成共享 projector：webhook/API 都执行相同 run/repo/workflow/base/title/run attempt 绑定与 GitHub `updated_at` 乱序 fencing；API 修复不递增 Runner heartbeat version。
+  - Worker scheduled 在 App 配置全部缺省时不启用 reconciliation，部分配置则 fail-fast；完整配置时与 workflow outbox relay 并行运行。实读 GitHub `get workflow run` 与 `create installation access token` 官方 REST 文档核对端点和授权模式。
+- 验证：
+  - `pnpm exec vitest run test/github-app-installation-token.test.ts` → 首次 exit 1（模块不存在）；实现后测试 fixture 曾因把真实 201 响应写成 200 而 1/2 失败，改为 201 后 exit 0，1 file / 2 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-run-reconciler.test.ts` → 首次 exit 1（模块不存在）；实现后 exit 0，1 file / 5 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-run-reconciler.test.ts test/workflow/github-workflow-run-webhook.test.ts test/workflow/github-dispatcher.test.ts` → exit 0，3 files / 15 tests。
+  - GitHub docs article API + `rg` 核对 `Get a workflow run`、`Create an installation access token for an app`、`run_id/installation_id` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 7 files / 26 tests、workerd 12 files / 48 tests、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round17` → exit 0；含 App JWT/API scheduled reconciliation 的 Worker bundle 成功，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：新增 Runner heartbeat/result 条目的本地 GitHub App API reconciliation 子项；完整条目保持未勾，因为没有真实 installation token、Actions run、webhook/API fact 和连续 heartbeat 外部证据。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 明确 repo-scoped App token、API observation digest、共享 projector 与 scheduled 修复；按用户要求不额外更新 llmdoc。
+- 遗留：GitHub analysis dispatch processor 尚未接入生产 Queue/scheduled 路由；下一轮复用 App provider + fenced processor 补齐接线。真实外部项仍需 owner/repo/App/Cloudflare 配置。
+
+## Round 18 — 2026-07-25
+- 目标：Phase 1 / GitHub App dispatcher 固定 workflow ref 与 reference-only payload（本轮闭环生产 Queue/scheduled 接线子项，完整条目保留未勾）。
+- 前置与权限：仅本地 workerd/D1、fake destination processors 与既有 App runtime；未调用 GitHub、未发送真实 Queue、未部署、未使用真实 Secret。
+- 动作：
+  - 先写双 destination relay、D1 destination 路由、App 未配置、unknown destination、Queue ack/retry 和 runtime 完整配置测试；首次 suite 因 `outbox-queue-consumer` 模块不存在而 exit 1。
+  - 新增 `OutboxDestinationRouter`：Queue payload 只有 outbox ID，consumer 必须回查 D1 destination，再交给 Cloudflare Workflow 或 GitHub fenced processor；消息不能自选 effect。
+  - 新增统一 batch consumer：仅 settled/missing ack；retry/busy/unconfigured/unsupported 或路由异常均 retry，修复旧实现把 GitHub outbox交给 Workflow processor后返回 busy/错误 ack 的接线缺口。
+  - scheduled relay 支持 Workflow + GitHub destination，但 Worker 只有在 App allowlist/private key/installation 与 control-plane origin 完整时才入队 GitHub row；未配置环境不制造每分钟重试风暴，已有消息仍保持 pending/retry。
+  - 抽出共享 GitHub Actions runtime，scheduled reconciliation 与 Queue dispatcher 使用同一 App provider/client/allowlist 配置；Queue consumer 通过 `githubDispatchProcessorFromEnv` 接到此前已验证的 fixed workflow/fenced processor。
+  - Watt 的 pending→delivering→settled 代码继续作为唯一 effect fencing 原语；本轮没有复制第二套 delivery state machine。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/outbox-routing.test.ts` → 首次 exit 1（router 模块不存在）；实现后 exit 0，1 file / 5 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/outbox-routing.test.ts test/workflow/workflow-outbox.test.ts test/workflow/github-dispatcher.test.ts` → exit 0，3 files / 17 tests。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 7 files / 26 tests、workerd 13 files / 53 tests、Markdown links 全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round18` → exit 0；双 destination relay/router 与 GitHub runtime bundle 成功，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：新增 GitHub App dispatcher 条目的本地 Worker production wiring 子项；完整条目保持未勾，因为没有真实 App installation、Queue delivery 与 Actions run URL/API。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 明确 Queue ID 非权限真源、D1 destination 路由、配置感知 relay 与 ack/retry 边界；按用户要求不额外更新 llmdoc。
+- 遗留：Phase 1 剩余项主要需要真实 GitHub/Cloudflare 资源；下一轮实现 Runner 取消/超时 token 撤销与 stuck detection 的本地契约，真实外部证据继续等待 owner/repo/App/账户配置。
+
+## Round 19 — 2026-07-25
+- 目标：Phase 3 / attempt 完成、取消和 heartbeat 超时后 token 在规定窗口内不可用，并有自动化撤销测试。
+- 前置与权限：仅本地 workerd/D1/Workflow fake effect；未取消真实 Action/Workflow、未部署、未使用真实 token。
+- 动作：
+  - 先写 20 路 cancel、旧 Run version、heartbeat timeout、重复扫描、late heartbeat、revocation audit 与 Workflow terminate outbox 测试；首次 suite 因 `attempt-lifecycle-store` 模块不存在而 exit 1。
+  - 新增 `attempt_revocations` migration：只保存 run/attempt、completed/cancelled/heartbeat_timeout reason、被撤销 generation、结果 Attempt version 与时间，不保存 token/digest 原文。
+  - Runner complete 原事务在 result/signal/outbox/token revoke 后写 completed revocation evidence，projection 必须同时看到 token revoked 与 revocation ID才返回成功。
+  - 新增认证 `POST /v1/runs/:runId/cancel {expectedRunVersion}`：只允许 Run 状态机已有 cancel edge；20 路同版本请求收敛。Run/所有 active Attempt、generation/lease/token、未生效 dispatch 与稳定 workflow-cancel outbox 同事务更新；result 已上报或旧 version fail-closed。
+  - 新增每分钟 stuck detector：只扫描 starting/running、lease 已过期且无 result 的 Attempt；以旧 status/version/generation/expiry CAS 置 lost、generation +1、token revoke、Run blocked、revocation evidence 与 workflow-cancel intent。第二次扫描无重复迁移。
+  - `workflow_cancel` 复用既有 Watt-derived fenced outbox；payload 只能是 `d1://runs/<run_id>` 且 D1 Run 已 cancelled/blocked，未知/已终态 Workflow 幂等成功，其余 terminate。
+  - token TTL 仍须 ≤ lease；scheduled scanner定义 lease 过期后一个分钟周期内的持久撤销/业务投影兜底。测试额外放入一个防御性超长 token，证明 scanner仍立即 revoke，旧 Runner heartbeat 返回 401。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/attempt-revocation.test.ts` → 首次 exit 1（lifecycle 模块不存在）；实现后 exit 0，1 file / 3 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/attempt-revocation.test.ts test/workflow/runner-api.test.ts test/workflow/workflow-outbox.test.ts` → exit 0，3 files / 12 tests，complete audit与既有 fencing 无回归。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 7 files / 26 tests、workerd 14 files / 56 tests、Markdown links 全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round19` → exit 0；cancel API、scheduled detector 与 Workflow terminate bundle 成功，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 3 complete/cancel/heartbeat-timeout token 不可用 DoD 完整勾选；本地自动化覆盖三种 reason、CAS、generation fencing、revocation evidence 和 late token 401。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 明确一分钟 scanner窗口、状态机 cancel edge、reference-only revocation 与 fenced Workflow terminate；按用户要求不额外更新 llmdoc。
+- 遗留：本轮只撤销控制面 token/Workflow；真实 GitHub Action cancel API 与外部 conclusion 核对仍需试点 App。下一轮实现 schema-aware redaction 与 canary Secret扫描 DoD。
+
+## Round 20 — 2026-07-25
+- 目标：Phase 3 / 日志、Task、checkpoint、artifact、PR canary Secret 扫描（本轮闭环通用安全原语与现有 Task/CLI/source producer 子项；完整条目保持未勾）。
+- 前置与权限：仅本地 Node/workerd/D1/R2 与非生产 canary；未读取或写入真实 Secret，未上传 artifact/PR，未触发 Action、外部 API 或部署。只读检索本地 Watt，未修改 Watt。
+- 动作：
+  - 先写 header、嵌套 JSON、URL userinfo/query/fragment、命令环境、二进制 artifact 与 finding 安全性测试；首次因 redaction 模块不存在而 exit 1，再实现 `SensitiveDataRedactor + SecretScanner`。registered canary 与 GitHub token/JWT/Bearer/private-key finding 只含安全 `path + kind`，不含命中值。
+  - Task schema 校验后、identity/D1/R2 写入前扫描当前 Worker 配置 Secret 与 credential 形状；首次测试仍返回 202，修正后固定 `policy_denied` 且 Task/Run/outbox/R2 均为 0。成功 intake 反扫 response/D1/R2，认证 token 与 idempotency canary 零泄漏。
+  - Codex command executor 收集敏感环境 key 的值并在返回 stderr 前脱敏；真实子进程初次回显 canary，修正后只返回 `[REDACTED]`，上层仍不传播 stderr。
+  - 新增 production source/workflow/migration/schema 静态 credential scan 并接入 `pnpm run verify`；扫描配置只从环境读取 JSON canary，不把值写进错误。Watt 全库只发现 endpoint/correlation sanitize 与 provider 脱敏投影测试，没有可直接复制的通用 redactor/scanner；沿用已复制的 Hono/error/workerd 测试骨架，没有虚构 Watt 来源。
+  - 额外红灯发现错误响应会反射任意字母数字 `x-correlation-id`；canary 测试先失败，再收紧为仅传播 UUID，其余值由控制面重新生成，合法 UUID 仍可跨系统关联。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-api.test.ts` → correlation canary 红灯时 exit 1（响应原样含 header）；修正后 exit 0，1 file / 6 tests。
+  - `pnpm exec vitest run test/redaction.test.ts test/codex-analysis-adapter.test.ts` → exit 0，2 files / 11 tests，覆盖 `Headers`/record、递归 JSON/cycle、URL、environment、binary scan 与真实子进程 stderr。
+  - `pnpm run typecheck` → 中间因测试 `response.json()` 为 unknown 而 exit 2；显式收窄测试响应后 exit 0。`pnpm run lint` → exit 0。
+  - `pnpm run verify:secrets` → exit 0，50 个生产文件无 credential finding。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 8 files / 33 tests、workerd 14 files / 58 tests、50 个生产文件 Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round20` → exit 0；redaction/Task gate 可随 Workflow、Queue、D1、R2 bindings 正常打包，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 3 Secret scan 完整 DoD 保持未勾；仅新增本地安全原语与现有 producer 子项。checkpoint/artifact/PR producer 和完整结构化日志尚不存在，不能用合成对象扫描冒充外部零泄漏证据。
+- 决策沉淀：`docs/Proto.md`、`docs/Security.md`、`docs/Architecture.md` 明确 redactor/scanner 分工、safe finding、Task pre-persistence gate、stderr 与 correlation ID 边界；按用户要求不额外更新 llmdoc。
+- 遗留：下一轮实现 checkpoint schema/sequence CAS/R2 payload + D1 安全投影，并在真实 checkpoint producer 持久化前接入同一 scanner；后续 artifact/PR producer 各自接入后才能完成本 DoD。
+
+## Round 21 — 2026-07-25
+- 目标：Phase 3 / 每个 checkpoint 含 sequence、plan version/item、head SHA、已完成验收项、evidence refs、summary、nextStep；乱序/重复 sequence 不覆盖新 checkpoint，旧 plan checkpoint 不恢复到新计划。
+- 前置与权限：仅本地 workerd/D1/R2 与非生产 token/canary；未运行模型、未触发 Action/外部 API/部署。只读检索本地 Watt，未修改 Watt。
+- 动作：
+  - 审计确认原仓库只有 nullable checkpoint 表、D1 查询投影和手工测试行，没有 checkpoint 写 API、R2 payload 校验或恢复读取。Watt 的 checkpoint 是人审 signal/waitForEvent，不是 Agent 语义恢复快照；没有可直接复制的 `AgentCheckpoint/sequence CAS`，继续复用 Watt-derived workerd migration harness、Hono 安全错误、D1 条件写和既有 Runner token fencing。
+  - 先写 `PUT /v1/attempts/:id/checkpoint` 的 5 个穿透场景；首次 suite 在导入阶段因 checkpoint store 不存在而 exit 1。实现后扩为 6 项，覆盖完整 v1 字段、R2/D1、恢复回读、20 路并发、乱序/同序冲突、旧 plan、scope、Evidence、Secret 与篡改。
+  - 新增 strict `AgentCheckpointV1Schema`：head SHA 必填；provider/session ref/head branch 受限格式；completed criteria/evidence refs 去重；Evidence ref 只接受 `d1://evidence/<id>`；summary/nextStep/数组都有上限；canonical digest 复用共享 SHA-256 原语。
+  - 新增 migration：Attempt 增加 head branch/SHA，checkpoint 新写入必须带 plan/version/item/head binding，并建立 plan-item recovery 索引。新增独立私有 `CHECKPOINT_OBJECTS` R2 binding，完整 payload 不进入 Workflow history。
+  - checkpoint producer 要求 active opaque token、显式 `checkpoint:write`、Attempt version/generation/lease、Run active plan、active Plan/Item、`in_progress + active_attempt`、head branch/SHA 和同 plan/item Evidence ref 全绑定。当前 token 与 Worker Secret/credential canary 在任何 D1/R2 写入前扫描。
+  - R2 对象以 attempt/sequence/canonical digest 定址并写安全 metadata；D1 只发布 recovery/query 投影。同 sequence + 同 digest 幂等，换内容或低 sequence conflict；20 路相同 PUT 收敛为 1 个 D1/R2 checkpoint。
+  - recovery loader 只查询当前 active plan/version/item，回读时复验 R2 metadata、严格 schema、canonical digest、sequence/plan/item/head/summary/nextStep；plan 被 supersede 后旧 checkpoint 返回 null，payload 篡改 fail-closed。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/checkpoint-api.test.ts` → 首次 exit 1（store 模块不存在）；实现后 exit 0，1 file / 6 tests。
+  - `pnpm run typecheck` / `pnpm run lint` → 中间分别因 Vitest matcher 多余泛型和 type-only import 规则 exit 2/1；修正测试后均 exit 0。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/checkpoint-api.test.ts test/workflow/task-query-api.test.ts test/workflow/runner-api.test.ts test/workflow/attempt-revocation.test.ts test/workflow/task-intake-store.test.ts` → exit 0，5 files / 19 tests，migration/query/token revocation无回归。
+  - `pnpm run verify:secrets` → exit 0，53 个生产文件无 credential finding。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 8 files / 33 tests、workerd 15 files / 64 tests、53 个生产文件 Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round21` → exit 0；Workflow、Queue、D1、Task R2 与新增 checkpoint R2 bindings 可正常打包，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 3 AgentCheckpoint v1/sequence CAS/旧 plan 恢复拒绝 DoD 完整勾选；Secret scan 大项仍保持未勾，但其本地已完成子项扩展到真实 checkpoint D1/R2 producer。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 明确 checkpoint request envelope、独立 scope、双存储发布顺序、幂等/CAS、safe query 和恢复回读验证；按用户要求不额外更新 llmdoc。
+- 遗留：尚未实现 Adapter resume/interrupt/exportCheckpoint 和 Runner kill→新 attempt→Git checkout/resume 穿透；下一轮先补统一 Adapter 契约，再闭环强制 kill 恢复 DoD。并发 D1 发布失败产生的未引用 deterministic R2 对象不参与恢复，后续 retention/reconciliation 负责清理。
+
+## Round 22 — 2026-07-25
+- 目标：Phase 3 / Agent Adapter 的 start/resume/interrupt/exportCheckpoint 契约测试通过；至少接通一个真实非交互 Agent CLI（本轮闭环本地 session/进程契约，完整条目保持未勾）。
+- 前置与权限：只读 OpenAI 官方 Docs MCP、本机锁定 `codex-cli 0.145.0 --help`、本地 Node fake process/真实子进程；未调用计费模型、未发送仓库/Task 内容、未触发 Action或部署。只读检索 Watt，未修改 Watt。
+- 动作：
+  - 按 `openai-docs` skill 先运行 Codex manual helper，官方 manual HEAD 返回 403；按 skill 回退 Docs MCP，核对官方 glossary 中 `codex exec` 非交互与 ephemeral 不保存 session 的定义，以及 App Server 的 `thread/resume + turn/interrupt` 能力。本机锁定版 help 进一步确认 `codex exec resume [SESSION_ID]/--last` 存在。
+  - 裁决：现有安全路径固定 `--ephemeral`，所以不能把存在 `exec resume` 误当成 Runner 丢失后可用的 provider session。当前 Codex adapter resume 固定走外部语义 checkpoint fallback，启动新的受限 exec；未来只有 provider session 经安全外部持久化/核对后才允许 native resume。
+  - 先写 start/resume/interrupt/exportCheckpoint、session ownership、checkpoint sequence/binding、digest/private file、真实子进程中断测试；首次 suite 因 command runtime 模块不存在而 exit 1，随后实现。
+  - 把 analysis adapter 的 spawn/stderr/timeout 提取成共享 bounded command runtime；两种 adapter 共用 8 KiB stderr上限、环境 Secret redaction 与 timeout/interrupt `SIGTERM → 1s grace → SIGKILL`，没有复制第二套进程生命周期。
+  - 新增 `CodexSessionAdapter`：start/resume 均使用 `codex exec --ephemeral --ignore-user-config --sandbox read-only + approval never`；context/checkpoint/output 位于 repo 外，输入文件要求 0600。resume 先核对 checkpoint schema/canonical digest/plan version/item/head SHA，prompt 只引用路径、不内联正文或 summary。
+  - session 绑定 attempt，状态明确；只有创建它的 adapter 可 interrupt/export。Runner-controlled `recordCheckpoint` 只接受 running、同 provider/plan/item/branch、sequence 严格递增的 checkpoint；export 返回 clone，interrupt reason 不传 provider，重复 interrupt 不重复 signal。
+  - Watt 定向检索未发现 `AgentAdapter/exportCheckpoint/resume/interrupt` 可直接复制模块；继续复用此前 Watt-derived 控制面/测试原语，不虚构 Agent adapter 来源。
+- 验证：
+  - `pnpm exec vitest run test/codex-session-adapter.test.ts` → 首次 exit 1（缺 command runtime）；实现后与 analysis adapter合跑 exit 0，2 files / 9 tests。
+  - `pnpm exec vitest run test/codex-session-adapter.test.ts test/codex-analysis-adapter.test.ts test/analysis-runner-bootstrap.test.ts` → exit 0，3 files / 11 tests；真实 Node child 被 adapter runtime 中断退出。
+  - `pnpm exec codex --version` + `codex exec/resume --help | rg ...` → exit 0；锁定版 0.145.0，start 安全参数与 resume SESSION_ID/--last/ephemeral 参数均存在；未调用模型。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 9 files / 37 tests、workerd 15 files / 64 tests、55 个生产文件 Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round22` → exit 0；Worker bindings/bundle 无回归，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Agent Adapter 完整 DoD 保持未勾；新增本地 Codex session adapter 子项。真实 `codex exec` 模型调用仍需显式 opt-in/真实 Action，help、fake launcher和 Node child不能冒充该外部证据。
+- 决策沉淀：`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 明确 ephemeral/native resume 边界、语义 fallback、session ownership、interrupt 与 checkpoint 导出；`openai-docs` skill 直接影响了恢复策略。按用户要求不额外更新 llmdoc。
+- 遗留：下一轮用 session adapter + checkpoint store 实现 Runner 强制 kill 后的新 attempt 恢复穿透；真实 Codex 调用、认证/预算和 Actions 运行仍等待外部前置或显式 opt-in。
+
+## Round 23 — 2026-07-25
+- 目标：Phase 3 / Runner 在一个 DoD Item 执行中强制 kill，新 attempt 能从 Git + checkpoint 继续；供应商原生 resume 不可用时走语义 checkpoint 兜底，已 passed Item 不重复（本轮闭环 D1/R2/Git 本地穿透子项，完整条目保持未勾）。
+- 前置与权限：仅本地 workerd/D1/R2、临时 Git repo 和真实长运行 Node 子进程；未触发 GitHub Action、未调用计费模型、未部署、未写 Watt。定向检索 Watt 只发现用于人工确认的 `pendingCheckpoint/setCheckpoint/clearCheckpoint`，没有 Agent kill/replacement/Git semantic-resume 模块可直接复制；继续复用此前从 Watt 迁移的 Hono、D1 CAS、pending→delivering→settled、workerd migration/test harness 和统一错误原语。
+- 动作：
+  - 先扩展 checkpoint recovery 穿透并新增 Runner Git 恢复测试；workerd 首次因 `recovery-attempt-store` 不存在 exit 1，Node 首次因 `agent-recovery-runner` 不存在 exit 1。连续 replacement 场景首次暴露“checkpoint 必须归属最近 lost Attempt”的错误假设，修正为按 active plan/item 选择全部历史 Attempt 中最新有效 checkpoint。
+  - 新增 migration 0006：Attempt 保存 `recovered_from_attempt_id + recovery_checkpoint_id`；唯一 fencing 是 `(lost attempt, exact checkpoint)`，因此 20 路相同 retry 只创建一个 replacement，而 replacement 尚无新 checkpoint 又失联时可用新的 lost Attempt identity 复用旧 checkpoint。
+  - 新增 `RecoveryAttemptStore`：要求 Run blocked、active Plan/Item、Item in_progress、lost active Attempt、旧 token 已撤销、`workflow_cancel` 已 settled、依赖全 passed；重新回读并验证 R2 schema/digest/binding，再以 D1 batch/CAS 创建 pending replacement、切换 Item active Attempt并把 Run恢复为 executing。passed/skipped Item 固定拒绝。
+  - 新增认证 `POST /v1/runs/:runId/retry`：strict body 为 `expectedRunVersion + planVersion + planItemId`，20 路并发返回同一 reference-only recovery projection。replacement 不继承 token/lease/GitHub run ID，不创建 dispatch outbox，不能借恢复绕过 repo-write effect 审批。
+  - 新增 `AgentRecoveryRunner`：读取 0600/限大小 checkpoint，复验 schema/canonical digest/plan/item；只允许 clean worktree 和固定 `git status/cat-file/checkout --detach/rev-parse` 命令，HEAD 核对后才调用 Adapter resume。测试真实 interrupt 旧进程、从错误 HEAD 恢复 checkpoint commit并启动新的 semantic-resume session；checkpoint summary 与 passed Item 不内联 provider prompt。
+  - `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 同步 recovery API、旧 Workflow/token fencing、stable replacement identity、跨 Attempt checkpoint 复用、固定 Git 命令与“不自动 write dispatch”安全边界；按用户要求不额外更新 llmdoc。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/checkpoint-api.test.ts test/workflow/attempt-revocation.test.ts test/workflow/task-query-api.test.ts test/workflow/lease-cas.test.ts` → exit 0，4 files / 17 tests；覆盖 checkpoint→timeout revoke→Workflow cancel settle→20 路 retry、passed Item拒绝、新 lease 与连续 replacement 复用 checkpoint。
+  - `pnpm exec vitest run test/recovery-runner.test.ts test/codex-session-adapter.test.ts test/codex-analysis-adapter.test.ts` → exit 0，3 files / 11 tests；真实 Git repo/child interrupt/semantic resume 与既有 adapter 无回归。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 10 files / 39 tests、workerd 15 files / 65 tests、58 个生产文件 Secret scan、Markdown links全绿。
+  - 首个 dry-run wrapper 因包含 `/tmp` 清理命令被执行器在启动前拒绝，未作为证据；改为新目录后 `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round23-20260725-1540` → exit 0，Workflow/Queue/D1/双 R2 bindings 与 recovery API bundle 成功，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Runner recovery 完整 DoD 保持未勾；新增“本地 D1/R2/Git 穿透”子项。真实试点 repo 中 old Action kill→new Action/Attempt 恢复仍需外部 Actions run、Git SHA 与逐项 Evidence，不能用本地 Node child 冒充。
+- 决策沉淀：replacement 初始 pending 是权限边界，不是调度缺口；旧 Workflow termination settle 是恢复前置；checkpoint 选择按当前 active plan/item 的全历史 Attempt，而 fencing按本次 lost Attempt + exact checkpoint。规范已同步；按用户要求不更新 llmdoc。
+- 遗留：下一轮只做 Workflow callback pending→delivering→settled 与 late-result fencing。真实 recovery、Codex 模型、GitHub/Cloudflare 外部项继续等待 owner/repo/App/账户配置或显式 opt-in。
+
+## Round 24 — 2026-07-25
+- 目标：Phase 3 / Workflow callback 先以 delivery/event ID 去重并进入 outbox，采用 pending→delivering→settled；sendEvent 故障重放后只推进一次，超时/取消后的晚到结果不复活旧 Attempt。
+- 前置与权限：仅本地 workerd/D1、真实 Cloudflare Workflow 测试 binding 与 fake effect；未调用外部 GitHub/Cloudflare API、未部署、未使用真实 Secret。只读核对 Watt `AgentCorrelation.peekForDelivery/confirmDelivery/rollbackDelivery` 及 timeout 后 late-result drop 逻辑，直接沿用其“先 claim、成功 confirm、失败 rollback、晚到无副作用 settle”纪律；实现继续复用已有 Watt-derived `FencedOutboxProcessor`，没有复制第二套状态机或修改 Watt。
+- 动作：
+  - 审计确认 Runner complete 已把 Attempt result、`workflow_signals`、pending outbox 与 token revoke 原子入账，共享 outbox 也已有 lease/fencing；实际缺口是 signal immutable content 校验不完整、processor effect 前不重查 Run/Attempt/Plan，以及 ambiguous send/late result 没有 terminal reconciliation。
+  - 先新增 4 个 workerd 穿透场景；首次定向运行 exit 1，4/4 红灯：同 event ID 修改 sequence 被错误当成幂等、ambiguous send replay 没有 `already_applied` 证据、cancel/timeout late result 都以普通成功 settle且缺少无副作用原因。
+  - `WorkflowSignalStore` 幂等投影扩为完整比较 event type、Attempt、sequence、payload ref、digest、occurredAt；20 路相同 callback 收敛到一个 signal/outbox，同 event 换任一字段或同 sequence 换 event 均 conflict。
+  - 直接扩展共享 `FencedOutboxProcessor` 的成功 outcome：正常 effect 保持 `last_error_code = null`，reconciliation 证明无需 effect 时以受限格式 terminal code settled；确定失败仍 rollback pending，过期 lease仍可接管。
+  - `WorkflowOutboxProcessor` 在 delivering lease 内重新 JOIN signal → Run → Attempt result projection → referenced Plan。只有 `planning + running + exact result/Plan binding` 调用 `sendEvent`；cancelled/blocked/lost/stale/invalid 分别 terminal settle且不触达旧 Workflow。
+  - 新增真实 ambiguous send 穿透：第一次实际 `sendEvent` 后注入响应错误，outbox 回 pending但 Workflow 已激活 Plan；重放观察 Run/Attempt/active Plan 后以 `already_applied` settle，不发送第二次，Run version 只前进一次。
+  - 更强 contract 使两条旧测试 fixture 变红，因为它们过去直接伪造未被 Attempt 接受的 signal；fixture 改为先写可信 result/Plan binding，没有放宽生产校验。规范同步到 `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`；按用户要求不更新 llmdoc。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/workflow-callback.test.ts` → 首次 exit 1，1 file / 4 tests 全红；实现后 exit 0，1 file / 4 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/workflow-callback.test.ts test/workflow/workflow-outbox.test.ts test/workflow/delivery-run-workflow.test.ts test/workflow/runner-api.test.ts test/workflow/attempt-revocation.test.ts test/workflow/checkpoint-api.test.ts` → exit 0，6 files / 24 tests；既有 Runner complete、outbox restart、cancel/timeout 与 checkpoint 无回归。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 10 files / 39 tests、workerd 16 files / 69 tests、58 个生产文件 Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round24-20260725-1554` → exit 0；Workflow/Queue/D1/双 R2 bindings 与 callback reconciliation bundle 成功，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 3 Workflow callback DoD 完整勾选；证据覆盖完整 identity 去重、显式 pending→delivering→settled、确定失败重放、实际送达后 ambiguous failure reconciliation、cancel/timeout late-result no-effect settle 和单次 D1 业务推进。
+- 决策沉淀：`last_error_code` 在 settled outbox 上也可承载安全 terminal disposition（如 `already_applied/run_cancelled/attempt_lost`），用于区分“effect 成功”和“经 reconciliation 无需 effect”；只有 pending/delivering 才代表仍需投递。规范已同步，llmdoc按用户要求不更新。
+- 遗留：下一轮只做受控 replay expected version/stable target/effect/approval fencing；真实 GitHub/Cloudflare 外部项仍等待 owner/repo/App/账户配置。
+
+## Round 25 — 2026-07-25
+- 目标：Phase 3 / 受控 replay 校验 expected Run version、稳定 step/Plan Item、外部副作用和审批；从 verification step 重跑不会重复 dispatch/PR/deploy（本轮闭环控制面与真实 system verification-step restart 子项，完整条目保持未勾）。
+- 前置与权限：仅本地 workerd/D1、真实 Cloudflare Workflow 测试 binding 与 fake Plan Item restart effect；未调用外部 GitHub/Cloudflare API、未创建 PR/部署、未使用真实审批主体或 Secret。Watt 定向检索未发现 Workflow restart/replay 模块可直接复制；继续直接复用 Watt-derived D1 CAS、pending→delivering→settled、stable step与 workerd introspection结构，没有自造第二套 outbox。
+- 动作：
+  - 先新增 3 个穿透场景；首次定向运行 exit 1，3/3 因 replay/approval/reconciliation tables不存在而红灯。场景覆盖真实 completed Workflow system-step restart、20 路并发、旧 version/任意 step、Plan Item kind、错误 base approval、未 verified PR fact、effect 前 approval expiry及既有 dispatch/PR/deploy计数。
+  - 新增 migration 0007：normalized `approvals`、`workflow_replays`、`workflow_replay_effects`、`workflow_replay_reconciliations` 与 `(run,step,run_version)` step execution。replay投影随 Run/Plan级联清理，避免从属行阻断既有 FK 生命周期；approval nonce只存 digest。
+  - 新增纯领域 stable target：当前 system allowlist只开放实际存在的 `verify-analysis-result/do/count=1`；active verification Plan Item由服务端派生 `plan-v<version>-item-<id>-verify`，客户端不能自报 type/name或直接选择 dispatch/wait step。
+  - 新增认证 `POST /v1/runs/:runId/replay`：strict 4 KiB request、expected Run version CAS、reason仅存 digest；20 路相同请求收敛为一个 replay/outbox，同旧 version换 target/reason conflict，API不直接调用 Workflow。
+  - `WorkflowReplayStore` 从 target position起收集全部下游 effects；每个 repo write/test deploy/merge/production deploy分别要求 exact task revision + plan version/digest + base SHA + effect的最新有效 approve。existing dispatch outbox必须 settled；已有 PR/check/deployment Evidence必须 passed + verified；snapshot保存 approval/ref canonical digest并在 effect前重验。
+  - `WorkflowOutboxProcessor` 新增 `workflow_replay`，继续使用共享 fenced lease；approval过期/失效或 replay stale以 terminal disposition settled且零 effect，reconciliation变化保持 retry/fail-closed。Cloudflare adapter仅对 terminal instance调用 `restart({from:{name,type,count}})`，ambiguous调用以 status观察收敛，成功后写 `restart_observed_at`。
+  - `DeliveryRunWorkflow` 新增稳定 `verify-analysis-result` step：先核对 immutable Plan，再以当前 Run version幂等写 step execution，最后 activation仍由既有 D1幂等/CAS处理。真实 restart后记录 version 3，而 target之前 analysis dispatch/Attempt始终各一条。
+  - 中间 typecheck 因 exact optional与对象属性收窄 exit 2；显式 optional/narrowing后通过。初版 workerd 2/3通过、真实 test超时，因为 restart重建目标后历史而不是追加同名 occurrence；改用 D1 replay-version step execution作为真证据后3/3通过。
+  - 新 replay FK 首次与其他测试清理并跑时2项失败；根因是从属审计行阻断旧 Run/Plan删除。迁移改为父级删除级联、approval ref置空后，7 files / 29 tests通过；没有关闭 foreign_keys或改测试掩盖。
+  - `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 同步 API、target、approval/effect snapshot、terminal Workflow precondition与本地平台实证；按用户要求不更新 llmdoc。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/controlled-replay.test.ts` → 首次 exit 1，1 file / 3 tests（缺 tables）；实现/修正后 exit 0，1 file / 3 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/controlled-replay.test.ts test/workflow/delivery-run-workflow.test.ts test/workflow/workflow-callback.test.ts test/workflow/workflow-outbox.test.ts test/workflow/attempt-revocation.test.ts test/workflow/checkpoint-api.test.ts test/workflow/outbox-routing.test.ts` → exit 0，7 files / 29 tests。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 10 files / 39 tests、workerd 17 files / 72 tests、61 个生产文件 Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round25-20260725-1627` → exit 0；Workflow/Queue/D1/双 R2 bindings、replay API/store/effect bundle成功，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：受控 replay完整 DoD保持未勾；新增本地控制面/workerd子项。真实 system verification replay已证明 analysis dispatch不重复；Plan Item路径已证明 approval与模拟 PR/deploy snapshot不被重新创建，但 Phase 4/5真实 PR/deploy producer尚不存在，不能用 fake restart冒充外部不重复证据。
+- 决策沉淀：replay是版本化管理意图而非直接平台命令；`restart_observed_at`、step execution、outbox/Evidence是不同证据面。只有真实 producer也使用稳定 idempotency/reconciliation后，才能关闭完整“dispatch/PR/deploy不重复”DoD。规范已同步，llmdoc按用户要求不更新。
+- 遗留：下一轮只做 tool-bridge调用 trace本地闭环；真实 replay PR/deploy证据随Phase 4/5 producer回补。
+
+## Round 26 — 2026-07-25
+- 目标：Phase 3 / tool-bridge 调用记录包含 run/attempt、工具路径、effect、duration、结果类别；不记录敏感参数明文。
+- 前置与权限：仅本地 workerd/D1、fake service binding 与 Watt 源码只读核对；未调用真实 tool-bridge、日志/数据库、GitHub Action、计费模型或部署，未修改 Watt。真实 tool-bridge binding/短期 SK仍由 Phase 3 broker/scope条目和全局 E2E约束。
+- 动作：
+  - 完整读取 Watt commit `476e3cd` 的 `tools-proxy.ts`、`tool-invoker.ts`、`audit-sink/store.ts`、`tool-action.ts` 与 tool-bridge `types/registry/help`。直接迁移 `ToolEffect`、scope→action映射、Hono PEP→transport分层、`{arguments}` envelope和 D1 metadata store模式；确认 Watt 当前 `tool_calls` metric仍为空且 invoker传播上游 error message，因此没有虚构可复制的 duration/result trace，错误原文传播也明确不复制。
+  - 先新增 workerd 测试；首次定向运行 exit 1，3/3 因 `tool_call_traces` table不存在红灯。随后加入 migration 0008、受信 exact-path catalog、attempt-scoped tool API、service-binding client与 trace store。
+  - `POST /v1/attempts/:id/tools/call` strict body只接受 `toolPath + arguments`；active token/lease后从服务端 catalog派生 scope/action/effect。当前只允许 read effect，Phase 1仅 `repo:read` 可调用；未知 path、caller自报 effect、旧 token和缺 scope均 fail-closed，已知 scope deny留下 metadata trace且零 upstream call。
+  - trace表物理上只有 trace/run/attempt/path/action/effect/duration/category/time九列，没有 arguments/header/response/error容器。结果固定分类为 success/policy_denied/upstream_error/timeout/unavailable/invalid_response；duration非负且60秒饱和。
+  - transport复用 Watt-compatible `/htbp/<path>` 与 `{arguments}` envelope，15秒 timeout；成功响应以流式256 KiB上限读取且只向授权 Runner no-store返回。上游非2xx正文完全不读，transport/parser异常与注入 adapter抛错只返回固定类别；嵌套参数canary和错误canary均未进入D1或API错误。
+  - `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 同步 endpoint、catalog/PEP、service-binding、trace schema、错误类别和 Watt复用/偏离边界；按用户要求不更新 llmdoc。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/tool-bridge-api.test.ts` → 首次 exit 1，1 file / 3 tests全红（缺 trace table）；实现后 exit 0，1 file / 5 tests，覆盖成功、scope deny、上游错误、timeout、Watt envelope/header与error-body不读取。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/tool-bridge-api.test.ts test/workflow/analysis-attempt-api.test.ts test/workflow/runner-api.test.ts test/workflow/attempt-revocation.test.ts test/workflow/checkpoint-api.test.ts` → exit 0，5 files / 22 tests；现有 context/Plan/heartbeat/complete/revocation/checkpoint无回归。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:secrets`、`pnpm run verify:docs`、`git diff --check` → exit 0；65个生产文件 Secret scan全绿。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 10 files / 39 tests、workerd 18 files / 77 tests、65个生产文件 Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round26-20260725-1652` → exit 0；Workflow/Queue/D1/双R2 bindings与tool API/client/trace bundle成功，未部署。
+- 勾选：Phase 3 tool-bridge调用 trace DoD完整勾选；workerd证据覆盖 run/attempt关联、trusted path/action/effect、duration/result分类和参数/上游错误canary零持久化。真实 tool-bridge服务调用不用于冒充本地DoD，其 E2E仍受全局真实tool-bridge与未完成broker/scope条目约束。
+- 决策沉淀：当前 control-plane PEP proxy是短期最小闭环；未来 Runner直持短期SK时仍须产生相同 metadata trace。Watt help中的 effect只用于发现/一致性核对，不能覆盖本地catalog或提升权限；上游错误正文不进入安全响应。规范已同步，llmdoc按用户要求不更新。
+- 遗留：下一轮只做 prompt injection 对抗用例；真实 tool-bridge binding、logs/trace/K8s/database scope grant与可撤销短期SK随相邻未完成DoD闭环。
+
+## Round 27 — 2026-07-25
+- 目标：Phase 3 / prompt injection 对抗用例：任务/日志/代码注释要求输出 Secret、跳过测试、修改 workflow 时，Agent 拒绝或进入审批，不执行越权动作。
+- 前置与权限：仅本地 Node fake Agent/CLI executor、workerd/D1和Watt源码只读核对；未调用计费模型、真实tool-bridge/日志/数据库、GitHub Action或部署，未修改Watt。真实Codex调用仍由未完成的Agent Adapter外部子项约束，不用fake冒充。
+- 动作：
+  - 审计现有边界确认read-only sandbox、approval never、`project_doc_max_bytes=0`、trusted effect/command ceiling、Git snapshot零写入与Plan激活后`awaiting_approval`已存在；发现真实缺口是Agent Plan文本未做Secret scan，模型可把日志/tool/code中的敏感值复制到objective/assumption并写D1。
+  - 完整读取Watt `packages/gateway/src/agent/harness/htbp-tools.ts`：直接复用“tool help/result是reference material而非instructions、不内嵌system prompt”的边界和静态措辞，并扩展到Task、日志和代码注释；Watt没有本项目的Plan criterion/verification和双层scanner，未虚构复制。
+  - 先写对抗测试。首次Node定向运行exit 1（3 files，3 failed/16 passed）：optional Item跳过验收被接受、prompt缺Watt明确措辞，Runner新fixture的task digest先不匹配；修正fixture使digest与注入Task一致。workerd首次exit 1（1 file，1 failed/4 passed）：包含Worker配置Secret的Plan被201持久化，证明缺口真实。
+  - Runner维护本Attempt全部敏感环境值、OIDC token、初始及heartbeat轮换后的attempt token集合；Agent Plan在任何`/plan`请求前用统一scanner检查。命中只抛固定`analysis Agent output contains sensitive material`，不上传Plan、不complete、不回显值，私有临时目录仍finally清理。
+  - 控制面Plan persistence再独立扫描credential形状、当前attempt token、Task intake/webhook/GitHub App/tool-bridge Worker Secrets；scanner位于`AnalysisPlanProposalStore`写D1前，命中固定403且execution plan/item/assumption均为0。
+  - ExecutionPlan validator新增两条模型外不变量：每条acceptance criterion必须由required Item覆盖；每个change/repo_write必须被下游required verification依赖，且verification引用trusted test/verify/lint/build command分类并要求test/lint/build Evidence。全optional、optional/detached verification、仅diagnostic或用普通allowed command冒充测试均拒绝。
+  - 新对抗场景逐项证明：Task注入诱导复制runtime token在Runner出网前拒绝；log注入诱导复制Worker Secret在D1前拒绝；代码注释诱导修改`.github/workflows/**`只能形成repo_write提议，被analysis effect ceiling拒绝，CLI仍read-only且正文不进system prompt；跳过测试的Plan结构被validator拒绝。
+  - `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`同步双层scan、required criterion覆盖、change→trusted verification和Watt复用边界；按用户要求不更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run test/plan.test.ts test/codex-analysis-adapter.test.ts test/analysis-runner-bootstrap.test.ts` → 修复后exit 0，3 files / 20 tests；覆盖Task/runtime Secret、代码注释/workflow write、prompt正文隔离、skip-test结构和workspace零写入。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/analysis-attempt-api.test.ts` → 修复后exit 0，1 file / 5 tests；Plan Secret固定403、canary不回显且D1 plans/items/assumptions均0。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts` → exit 0，18 files / 78 tests，现有Workflow/D1路径无回归。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 10 files / 42 tests、workerd 18 files / 78 tests、65个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round27-20260725-1706` → exit 0；Workflow/Queue/D1/双R2 bindings和双层Plan gate bundle成功，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 3 prompt injection对抗DoD完整勾选；证据不是断言模型一定听话，而是模拟模型服从恶意Task/log/code后，Secret、skip-test、repo/workflow write仍在Runner/控制面/validator/sandbox边界被拒，合法Plan也只能进入人审。
+- 决策沉淀：prompt injection按不可信数据流处理，不做脆弱关键词检测；静态prompt只降低模型误从概率，真正权限边界是schema、Secret scanner、trusted command/effect、Plan依赖、sandbox、Git snapshot和approval。Watt的reference-not-instruction原语已复用，规范已同步，llmdoc按用户要求不更新。
+- 遗留：下一轮只做同失败指纹/attempt上限进入blocked；真实Agent调用、tool-bridge SK/scope和外部recovery/replay仍按各自未完成DoD回补。
+
+## Round 28 — 2026-07-25
+- 目标：Phase 3 / 同一失败指纹连续 2 次或总 attempt 达 3 次后进入 `blocked`，卡片显示已尝试路径和所需人工输入（本轮闭环本地 D1/Runner/API/query projection 子项，父项因真实飞书卡片尚未接入保持未勾）。
+- 前置与权限：仅本地 Node fake Agent、workerd/D1 与 Watt 源码只读核对；未调用真实飞书、GitHub、tool-bridge、日志/数据库、计费模型或部署，未修改 Watt、未使用真实 Secret。
+- 动作：
+  - 先新增 20 路重复上报、同 fingerprint 第 2 次、不同 fingerprint 第 3 个 Attempt、token撤销、Workflow cancel、安全 blocker query 和 raw message/stack/fingerprint拒绝测试；首次定向运行 exit 1，3/3 因 `run_blockers` 表不存在红灯，随后实现。
+  - 从 Watt commit `476e3cd` 的 `packages/core/src/agent/expect-schema.ts` 直接复制 `DEFAULT_MAX_ATTEMPTS = 3` 和 `shouldRetry`，保持首次 + 两次重试语义。Watt没有跨 Attempt retry scope、failure fingerprint、blocker ledger或卡片投影，这些明确作为 delivery-loop 新增。
+  - 新增固定 failure code/site/path/human-input 目录、服务端 retry scope/fingerprint derivation，以及 `attempt_failures`、`attempt_failure_paths`、`run_blockers` migration；Zod strict body 与 D1 CHECK 双层拒绝未知枚举，表中没有 message/stack/raw error 容器。
+  - 新增认证 `POST /v1/attempts/:id/events`。active token、running status、version/generation/lease和Run状态全部命中后，一个 D1 batch写 terminal failure、Attempt failed、generation +1、清 lease和token revoke；同 fingerprint 第 2 次优先阻断，否则 scope第3个Attempt阻断。
+  - blocker batch同时推进 Run、active Plan、当前 PlanItem为blocked，取消其他active Attempt、撤销token、终结未执行analysis dispatch并创建稳定Workflow cancel outbox；事务后再次核对预期Run/blocker，缺失则fail-closed。未达阈值只返回`retryAllowed`，不伪造自动Workflow retry。
+  - analysis Runner对invalid Agent output、Plan Secret复制和workspace mutation只上报固定枚举，failure reporting best-effort且不替代原始安全错误；测试夹具初次漏接fetch `init`导致1项未观察到body并使typecheck exit 2，修正夹具后3/3通过，生产错误仍不回显token。
+  - Task/Run查询新增卡片可消费的安全 blocker projection：按Attempt展示固定路径label、计数和固定人工输入prompt，不返回原始错误。补 active implement Plan/Item 两次verification失败穿透，证明Run/Plan/Item一致blocked；真实飞书卡片没有实现，未冒充完成。
+  - `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`同步 strict event、服务端指纹、阈值优先级、token撤销、安全投影、非自动retry与Watt复用边界；按用户要求不更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/attempt-failure-policy.test.ts` → 首次exit 1，1 file / 3 tests全红（缺failure/blocker tables）；实现和加固后exit 0，1 file / 4 tests，覆盖analysis与active execution PlanItem、20路重放、两类阈值、token/outbox和D1枚举防线。
+  - `pnpm exec vitest run test/analysis-runner-bootstrap.test.ts` → 修正新增fixture后exit 0，1 file / 3 tests；workspace mutation与Secret复制都只发送固定failure metadata，Plan不提交、临时目录清理。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-query-api.test.ts test/workflow/runner-api.test.ts test/workflow/attempt-revocation.test.ts test/workflow/checkpoint-api.test.ts test/workflow/workflow-callback.test.ts` → exit 0，5 files / 20 tests。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 10 files / 42 tests、workerd 19 files / 82 tests、68个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round28-20260725-1736` → exit 0；Workflow/Queue/D1/双R2 bindings与failure API/store/query bundle成功，未部署。
+- 勾选：父DoD保持未勾；新增本地D1/Runner/API/query projection子项并勾选。真实飞书tenant卡片尚无外部事实，不能用JSON query测试替代。
+- 决策沉淀：失败是受信枚举投影，不是Agent自由文本；fingerprint由控制面按retry scope派生；同fingerprint阈值优先于总attempt阈值；`retryAllowed`只表达策略允许，不是调度证据。规范已同步，llmdoc按用户要求不更新。
+- 遗留：真实飞书卡片需消费同一安全projection并展示路径/人工输入后才能关闭父项；下一轮另选一个未完成DoD，不在本轮扩展飞书应用。
+
+## Round 29 — 2026-07-25
+- 目标：Phase 3 / exchange成功后只返回TTL不超过Attempt lease的run token/tool-bridge SK；token digest入账，明文不落库。
+- 前置与权限：仅本地workerd/D1、Node fake Runner与Watt源码只读核对；未调用真实GitHub、tool-bridge、飞书、计费模型或部署，未修改Watt、未使用真实Secret。
+- 动作：
+  - 先扩充exchange、heartbeat与tool API测试。首次exchange定向运行exit 1（2 failed / 3 passed），证明响应缺tool credential；首次lifecycle定向运行exit 1（9/9因`tool_token_digest`列不存在红灯），随后实现。
+  - 核对Watt commit `476e3cd` 的`packages/toolbridge/vendor/tb/tenant.ts`和`packages/gateway/src/tools/tool-invoker.ts`，沿用其Bearer Secret Key只按SHA-256查找、明文不持久化边界。Watt的`apikey:<hash>→tenant`与`PROXY_SECRET_KEY`是静态KV/internal key，没有run/attempt、TTL、heartbeat rotation或revoke；未把它冒充可直接复制的短期broker，也未复制第二套hex digest。
+  - 新增migration 0010：`attempt_tokens.tool_token_digest`只允许SHA-256 digest、与run-token digest不同并建立唯一索引；列名与表结构没有明文token容器。
+  - OIDC exchange一次生成互不相同的`attemptToken + grant.toolBridgeToken`，TTL共同取`min(5分钟, lease剩余时间)`；20路相同exchange只有一个响应获得明文credential pair，OIDC与两个token都只存digest，响应no-store。
+  - 用途隔离落到实际路由：context/Plan/heartbeat/event/checkpoint/complete只认run token；`/tools/call`只认tool token并复用Attempt status/generation/lease/revocation与scope，run token调用工具、tool token读取context都返回401。上游internal/Admin Secret仍只在Worker service-binding adapter内部使用。
+  - heartbeat在同一CAS中同时轮换run/tool两个token digest与90秒lease，两个旧token都立即失效；Runner把初始和轮换后的tool token加入runtime Secret scanner，不写临时context/output。
+  - complete、人工cancel与heartbeat timeout继续通过共享`revoked_at`原子撤销credential grant；新增HTTP/store回归证明tool token同步失效，stale cancel不撤销健康的run/tool pair。
+  - `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`同步credential pair、用途隔离、TTL/rotation/revoke、PEP proxy与Watt复用边界；按用户要求不更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-oidc-exchange.test.ts` → 实现后exit 0，1 file / 5 tests；覆盖真实RS256 OIDC绑定、20路一次性交换、短lease截断、双digest/不同值D1约束、cross-use拒绝和负向claims。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/runner-api.test.ts test/workflow/tool-bridge-api.test.ts test/workflow/attempt-revocation.test.ts` → exit 0，3 files / 12 tests；覆盖双token heartbeat CAS轮换、run/tool用途隔离、complete/cancel/timeout撤销及Watt-compatible transport。
+  - `pnpm exec vitest run test/analysis-runner-bootstrap.test.ts` → exit 0，1 file / 3 tests；Runner采用并扫描credential pair，现有Plan/heartbeat/failure路径无回归。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+  - 收尾首次`pnpm run verify`在既有checkpoint 20路幂等用例出现一次波动：预期19个200、实际17个，整轮exit 1；立即将`test/workflow/checkpoint-api.test.ts`独立连续运行3次均exit 0（每次7/7），未修改或放宽断言；随后重新跑全量通过。该非本轮路径的单次波动按事实保留，不作为成功证据。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 10 files / 42 tests、workerd 19 files / 84 tests、69个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round29-20260725-1748` → exit 0；Workflow/Queue/D1/双R2 bindings与credential exchange/rotation/PEP bundle成功，未部署。
+- 勾选：Phase 3 exchange短期credential DoD完整勾选；本地证据覆盖TTL、一次性交换、双digest、明文零持久化、用途隔离、rotation与三类撤销。未用fake service binding冒充真实tool-bridge E2E，后者仍受全局真实E2E约束。
+- 决策沉淀：当前“tool-bridge SK”是Runner访问控制面PEP的独立短期Bearer，PEP再以内存中的Worker internal Secret访问上游；这样能立即实现run/tool用途隔离和撤销，又不向Runner暴露Admin SK。未来Runner直连tool-bridge时必须保持相同digest-only、TTL、generation/revoke与trace契约。规范已同步，llmdoc按用户要求不更新。
+- 遗留：下一轮只做分诊Attempt的repo/log/trace/K8s/database-diagnostic read/call scope与write/destructive越界拒绝；真实tool-bridge service binding仍等待外部配置。
+
+## Round 30 — 2026-07-25
+- 目标：Phase 3 / 分诊Attempt只获得允许repo/log/trace/K8s/database-diagnostic的read/call scope；越界path、write、destructive均由tool-bridge/策略层拒绝。
+- 前置与权限：仅本地workerd/D1、fake tool service binding与Watt源码只读核对；未调用真实tool-bridge、GitHub、日志、数据库、K8s、飞书、计费模型或部署，未修改Watt、未使用真实Secret。
+- 动作：
+  - 先扩展exchange与PEP矩阵。首次exchange定向运行exit 1（1 failed / 4 passed），证明grant只有`repo:read`；tool测试首次exit 1（2 failed / 6 passed）：五个安全path均已穿透但测试错误依赖同毫秒trace UUID顺序，改为内容不变的order-independent断言；write/destructive path因不在catalog而没有显式effect deny证据，随后实现。
+  - 继续直接复用Watt commit`476e3cd`的`tool-action.ts`单一scope→action映射，以及`tools-proxy.ts`认证→PEP→transport分层和deny零upstream结构。Watt没有delivery-loop具体repo/log/trace/K8s/database目录，本轮没有虚构路径代码来源。
+  - 把五个安全spec设为catalog单一真源并从中派生canonical grant：`repo/read→repo:read`、`logs/search→logs:read`、`traces/get→trace:read`、`k8s/diagnose→k8s:read`、`database/diagnose→database:diagnostic`；五条POST call的effect均固定为read。
+  - exchange只持久化/返回上述五项且Runner要求exact顺序与全集；JWT claim、body或Agent output不能增减grant。数据库路径只表示受信diagnostic工具，不下发DSN或任意SQL能力。
+  - catalog新增已知deny capability：`repo/write`、`k8s/apply`、`database/execute`、`shell/exec`。测试主动污染D1 scopes加入全部write/destructive action，PEP仍因effect非read返回403、写metadata-only`policy_denied`且零upstream call，证明不是依赖缺scope或unknown path碰巧拒绝。
+  - 未知合法path在进入trace/upstream前403，caller自报effect等额外字段400；known path缺scope留下安全deny trace。参数与上游错误正文继续不持久化，internal/Admin Secret仍不下发Runner。
+  - `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`同步五项grant、call/read语义、已知effect deny和Watt复用边界；按用户要求不更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-oidc-exchange.test.ts test/workflow/tool-bridge-api.test.ts` → exit 0，2 files / 13 tests；覆盖五项grant、五条成功transport、token/scope/path/schema拒绝、scope污染后的write/destructive双门禁及metadata trace。
+  - `pnpm exec vitest run test/analysis-runner-bootstrap.test.ts` → exit 0，1 file / 3 tests；Runner strict解析exact triage grant，既有heartbeat/Plan/failure路径无回归。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 10 files / 42 tests、workerd 19 files / 86 tests、69个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round30-20260725-1758` → exit 0；Workflow/Queue/D1/双R2 bindings与triage catalog/grant/PEP bundle成功，未部署。
+- 勾选：Phase 3 triage read/call scope DoD完整勾选；本地证据覆盖server-derived五项grant、全部allow path、unknown/caller-policy/scope deny和scope污染下write/destructive effect deny。未用fake binding冒充真实tool-bridge外部E2E。
+- 决策沉淀：grant与allow path从同一catalog派生，避免scope清单漂移；scope是必要条件，effect=`read`是独立上限。已知危险capability保留在受信catalog用于可审计显式拒绝，未知不可信path则不进入trace。规范已同步，llmdoc按用户要求不更新。
+- 遗留：真实tool-bridge service binding与实际repo/log/trace/K8s/database diagnostic调用仍受全局E2E约束；下一轮转Phase 4受信delivery policy contract，不在本轮开放任何write能力。
+
+## Round 31 — 2026-07-25
+- 目标：Phase 4 / 目标仓库以受信`delivery.yaml`声明setup、定向测试、全量验证、受保护路径和部署contract；未知命令不能从任务正文直接执行。
+- 前置与权限：仅本地Git临时仓库、Node测试与Watt源码只读核对；未运行policy声明的依赖安装/测试命令，未调用真实GitHub、飞书、tool-bridge、Agent模型或部署，未修改Watt、未使用真实Secret。
+- 动作：
+  - 先写policy parser/commit loader测试；首次定向运行因模块不存在exit 1。实现后新增command runner测试并再次以模块不存在exit 1，再完成执行边界；中间两项测试期望与strict schema不一致按真实契约修正，没有放宽生产校验。
+  - 新增根目录`delivery.yaml v1`：setup/targeted/verify均为命名`argv[] + timeoutSeconds`，保护policy/workflow/CODEOWNERS/wrangler配置，当前仓库明确`deployment.mode=none`。
+  - strict parser限制64 KiB并拒绝alias/merge、重复key、未知字段、NUL、绝对/穿越路径、缺失命令组和不完整deployment contract；GitHub Actions deployment target必须引用同一policy中存在的`verify:*`。合法policy计算canonical digest并递归冻结。
+  - commit-bound loader只接受40位SHA并固定执行`git show <baseSha>:delivery.yaml`；测试先在工作树把verify改成恶意shell字符串，加载结果仍来自可信commit blob。loader与policy/runner API均从公共入口导出。
+  - canonical ref固定为`setup:<id>`、`test:<id>`、`verify:<id>`。`DeliveryCommandRunner`只接收ref，调用者没有argv/stdin/env/后缀参数入口，并复用现有有界`execFile/spawn`、`shell:false` runtime；自然语言命令、suffix、分号和未知ref均在executor前拒绝。
+  - 对Watt commit`476e3cd`全库检索delivery policy、protected paths、command refs和无shellresolver均无结果，本轮可直接复制的Watt代码为零；继续复用delivery-loop已有canonical digest、固定Git命令与共享command runtime，不虚构来源。同步`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`；按用户要求不更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run test/delivery-policy.test.ts test/plan.test.ts test/codex-analysis-adapter.test.ts` → exit 0，3 files / 22 tests；覆盖可信commit blob、工作树篡改、canonical refs、真实executor入参、schema/deployment负向和ExecutionPlan/Codex回归。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round31-20260725-1813` → exit 0；Workflow/Queue/D1/双R2 bindings与现有Worker bundle成功，未部署。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 11 files / 47 tests、workerd 19 files / 86 tests、72个生产文件Secret scan、Markdown links全绿。
+- 勾选：Phase 4受信delivery policy DoD完整勾选；证据覆盖声明、commit来源、解析约束、部署contract、ref-only执行和任务命令拒绝。未将本地contract冒充真实repo write/PR/deploy E2E。
+- 决策沉淀：`delivery.yaml`以可信base commit为策略快照，工作树改写不能改变当前Attempt；Plan只保存canonical ref，执行边界重新解析，policy/deployment声明不替代effect审批。Watt无等价模块时坚持零复制结论，最大化复用限定为有源码证据的直接复制或现有共享原语。
+- 遗留：下一轮实现ready/dependency/required Item领取与状态推进gate；受保护路径命中后的暂停审批、Evidence关门和实际部署producer分别由后续Phase 4/5 DoD闭环。
+
+## Round 32 — 2026-07-25
+- 目标：Phase 4 / 只有依赖已满足且状态为ready的Plan Item能领取Attempt；Agent不得跳过investigation/verification Item或自行把required Item标为passed。
+- 前置与权限：仅本地workerd/D1、Node领域回归与Watt源码只读核对；未签发repo-write token、未创建dispatch/分支/commit/PR，未调用真实GitHub、飞书、tool-bridge、Agent模型或部署，未修改Watt、未使用真实Secret。
+- 动作：
+  - 先写active Plan三项DAG的晋升、20路claim、伪造ready、旧Run version、caller state注入、skip trigger和Runner self-pass测试；首次定向运行exit 1，suite因`plan-item-attempt-store`模块不存在红灯，随后实现。
+  - 新增`PlanItemAttemptStore`：只在`executing + exact Run version + exact active Plan/version/status`上下文晋升Item；仅所有dependency progress均为真实`passed`的pending Item可CAS成为ready，无依赖根Item先行。
+  - claim strict schema只含Run/Plan/Item/progress fencing，不接受status/skip/argv/effect。执行前再次核对`ready + exact progress version + activeAttemptId=null + dependencies passed`，repository/base SHA/fixed workflow ref与mode均从D1受信投影派生。
+  - claim Attempt ID由run/plan/version/item/progress version canonical digest稳定生成；migration 0011增加`claimed_progress_version`及同五元组唯一索引。D1 batch原子插入pending Attempt并把progress置`in_progress/activeAttemptId`，20路相同请求只有一个created，其余返回同一投影。
+  - migration 0011增加insert/update双trigger，required Item及任意investigation/verification Item均不能进入skipped。Runner complete HTTP strict schema拒绝`planItemStatus=passed`并保持progress不变；Agent没有D1 credential，Attempt结论不会自动关闭Item，passed仍保留给后续Evidence verifier。
+  - 对Watt commit`476e3cd`全库检索dependency DAG、ready和Attempt claim，仅发现CLI初始化的线性resume skip，没有可直接复制的等价调度器；本轮Watt代码复制量为零，继续复用此前迁移的D1零行CAS纪律、canonical digest与workerd migration/test harness，不虚构来源。
+  - 同步`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`；按用户要求不更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/plan-item-attempt-store.test.ts test/workflow/checkpoint-api.test.ts test/workflow/attempt-failure-policy.test.ts test/workflow/lease-cas.test.ts test/workflow/controlled-replay.test.ts` → exit 0，5 files / 24 tests；覆盖6项新claim/Agent/D1负向及恢复、失败、租约、replay回归。
+  - `pnpm exec vitest run test/plan.test.ts test/recovery-runner.test.ts` → exit 0，2 files / 13 tests。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round32-20260725-1826` → exit 0；Workflow/Queue/D1/双R2 bindings与现有Worker bundle成功，未部署。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 11 files / 47 tests、workerd 20 files / 92 tests、74个生产文件Secret scan、Markdown links全绿。
+- 勾选：Phase 4 ready/dependency/required Plan Item领取DoD完整勾选；本地证据覆盖拓扑晋升、claim双重核对、20路幂等、strict Agent边界和D1 skip防线。未把pending Attempt冒充repo-write授权或实际Action执行。
+- 决策沉淀：ready是控制面从持久DAG派生的可领取状态，不是Agent自报；领取消费exact progress version并建立唯一Attempt身份。Agent只能上报Attempt事实，不能选择Plan Item终态；required和investigation/verification不可skip，passed必须由独立Evidence gate决定。
+- 遗留：下一轮实现repo_write effect approval与repo-scoped、TTL/revoke GitHub credential；当前claim不创建dispatch、不签token，也不授予任何仓库写能力。
+
+## Round 33 — 2026-07-25
+- 目标：Phase 4 / 未批准`repo_write`时创建分支/commit/PR全部失败；批准后token仅限目标repo且过期可撤销。
+- 前置与权限：仅本地workerd/D1、Node fake GitHub REST与GitHub官方REST/OpenAPI只读核对；未请求真实installation token、未创建远端branch/commit/PR、未触发Action或部署，未修改Watt、未使用真实Secret。
+- 动作：
+  - 先写approval/Task policy拒绝、单仓库签发、AES密文、20路并发、provider失败重领、expiry/cancel/new reject撤销与HTTP穿透测试；首次suite因broker模块不存在exit 1。随后为GitHub provider补write/revoke测试，首次1项因方法不存在红灯；implementation OIDC exchange测试首次返回403红灯，均在实现后转绿。
+  - 复用Round 25`approvals`exact snapshot：broker同时核对Task allow、implement/review_fix、active Attempt lease/generation、Run executing、exact active Plan/version/digest/base、in_progress active Item和repo_write effect；latest exact decision必须approve且未过期。错误base、无审批、expired或更新reject在GitHub调用前403，provider零调用。
+  - implement/review_fix可通过原GitHub OIDC绑定换run/tool credential，但grant只有triage read/diagnostic加`checkpoint:write`，明确不含`repo:write`。写能力只能通过新增认证`POST /v1/attempts/:id/github/write-token`，body仅version/generation且响应no-store。
+  - 扩展同一GitHub App provider而非复制第二套JWT：写profile固定`repositories:[目标repo]`与`contents:write + pull_requests:write`，不含Actions/deploy/admin；write token不缓存、不跨Attempt共享。普通dispatch仍沿用Actions write + contents read缓存profile。
+  - migration 0012新增`github_write_credentials`：identity绑定attempt/generation/effect，D1唯一约束与issuance lease使20路最多一个GitHub请求；provider失败可claim同一row重试。明文token不落D1，只存SHA-256 digest和以credential identity作additional data的AES-256-GCM ciphertext/IV，密钥来自Worker Secret。
+  - authorization TTL取GitHub expiry、approval expiry和Attempt lease最小值。scheduled revoker每分钟重新核对Attempt/token/Run/Plan/Item/Task policy/approval；expiry、更新reject或Attempt cancel/lost/fail/complete后lease-fenced调用`DELETE /installation/token`，成功或GitHub自身expiry后清密文，失败进入`revocation_pending`重试，revoker crash可接管过期lease。
+  - 签发外部调用期间若出现新reject，最终CAS不激活token并立即revoke；revoke暂不可用则先持久化密文供scheduled重试，避免产生无人可撤销的外部token。真实Runner HTTP负向/正向证明未批准拿不到远端branch/commit/PR所需凭证，批准后只得到目标repo profile。
+  - 首次最终全量回归暴露既有checkpoint 20路相同sequence竞态：部分请求首次查不到projection，却在随后MAX(sequence)看到赢家提交，错误返回409。修正为判定out-of-order前重新读取exact sequence并核对immutable projection；没有放宽 changed/lower sequence冲突。
+  - 官方2022-11-28 REST OpenAPI核对`DELETE /installation/token`语义与204响应；Watt commit`476e3cd`无GitHub installation write/revoke或approval-bound credential模块，本轮直接复制量为零，继续复用本项目GitHub App provider、Watt-derived digest-only/lease/CAS原语。同步四份规范，按用户要求不更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/repo-write-credential.test.ts test/workflow/github-oidc-exchange.test.ts test/workflow/attempt-revocation.test.ts test/workflow/attempt-failure-policy.test.ts test/workflow/github-dispatcher.test.ts test/workflow/plan-item-attempt-store.test.ts` → exit 0，6 files / 34 tests；新broker suite 9项覆盖HTTP、approval/policy、并发、密文、竞态、expiry/cancel/reject及revoke重试。
+  - `pnpm exec vitest run test/github-app-installation-token.test.ts test/redaction.test.ts test/plan.test.ts` → exit 0，3 files / 20 tests；GitHub provider写profile与官方revoke形状、Secret redaction和Plan回归通过。
+  - `curl -fsSL --max-time 30 https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.2022-11-28.yaml | rg -n -A 36 -B 4 '/installation/token'` → exit 0；官方schema确认DELETE、撤销后token invalid与204。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round33-20260725-1851` → exit 0；新增broker/revoker与Workflow/Queue/D1/双R2 bindings可正常打包，未部署。
+  - 首次最终`pnpm run verify` → exit 1；既有checkpoint并发用例预期19个200、实际12个，未作为成功证据。修复TOCTOU后`for run in 1 2 3 4 5; do pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/checkpoint-api.test.ts || exit 1; done` → 5轮均exit 0，每轮1 file / 7 tests。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 11 files / 48 tests、workerd 21 files / 102 tests、77个生产文件Secret scan、Markdown links全绿。
+- 勾选：Phase 4 repo_write approval/单仓库token/expiry+revoke DoD完整勾选；本地外部边界证明无审批时provider零调用，批准后权限仅目标repo contents/PR write，过期/取消/reject会撤销。未用fake REST冒充真实GitHub branch/commit/PR E2E，后者仍由Phase 4最终试点条目验证。
+- 决策沉淀：run/tool grant永不携带repo_write；写能力是独立、exact approval绑定的短期GitHub capability。为了Worker重启后仍可真实撤销，token以密钥分离的AES-GCM密文短暂持久化，撤销/expiry后清除；仅“控制面拒绝继续使用”不能替代GitHub外部revoke。
+- 遗留：下一轮实现受信分支命名、bot commit identity、main/受保护分支和force-push拒绝；本轮未开放任意Git命令或实现PR producer。
+
+## Round 34 — 2026-07-25
+- 目标：Phase 4 / 分支命名含task/attempt，commit作者为GitHub App/明确bot；禁止push main和强推受保护分支。
+- 前置与权限：仅本地临时Git工作仓库+bare remote、Node测试和Watt源码只读核对；使用非生产测试credential，未访问真实GitHub、未创建真实branch/commit/PR、未触发Action或部署，未修改Watt、未使用真实Secret。
+- 动作：
+  - 先写真实repo/remote正向与main/base/protected/force/ref-injection/identity负向测试；首次定向运行exit 1，suite因`git-repository-writer`模块不存在红灯。初版实现后正向prepare因Git `show-ref --verify`对缺失嵌套ref返回128而1项失败，改用`--quiet`得到可判定exit 1后转绿；没有放宽push策略。
+  - 新增`GitRepositoryWriter`，构造必须持有未过期、目标repo一致、权限exact为contents/pullRequests write的broker credential；prepare/commit/push每步重新核对expiry。repository/task/attempt/base SHA/base branch/protected branch均strict校验。
+  - branch固定由受信identity派生为`agent/<taskId>/<attemptId>`，不接受模板、prefix或caller refspec。prepare要求clean tree和HEAD=exact base SHA；existing branch只有base仍为ancestor时可重入，否则fail-closed。
+  - commit入口无参数，固定stage all与只含task/attempt的message；author+committer均强制`Delivery Loop Bot <delivery-loop[bot]@users.noreply.github.com>`，提交后从commit对象复验。清除宿主`GIT_*`，关闭hooks/GPG，避免repo/host覆盖身份或执行hook。
+  - push strict body只有targetBranch+force；target必须等于derived branch且不能是main/master/base/受信protected列表，force必须false。固定argv只含同名完整refs，永不出现force/force-with-lease/+refspec；Git默认拒绝non-fast-forward。
+  - approved GitHub token仅经一次性子进程environment的`http.extraHeader`注入，不进入argv；Git stderr不进入policy错误。真实bare remote验证derived ref SHA=bot commit、main ref保持base SHA。
+  - 把recovery原有两套Git调用收敛到writer新增的`executeGitCommand`：统一execFile/shell=false、30秒timeout、64KiB output、no terminal prompt与固定错误，避免复制进程边界。
+  - Watt commit`476e3cd`仅发现CLI自身destructive confirmation的`--force`参数，无目标仓库branch/commit/push writer可复制；本轮Watt直接复制量为零。同步四份规范，按用户要求不更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run test/repository-writer.test.ts test/recovery-runner.test.ts test/github-app-installation-token.test.ts test/delivery-policy.test.ts` → exit 0，4 files / 13 tests；真实Git正向、固定身份/no-force负向、recovery/provider/policy回归通过。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/repo-write-credential.test.ts test/workflow/plan-item-attempt-store.test.ts test/workflow/checkpoint-api.test.ts` → exit 0，3 files / 22 tests；approval/credential、Plan调度和checkpoint无回归。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round34-20260725-1907` → exit 0；Worker/Workflow/Queue/D1/双R2 bindings bundle成功，Node writer未误入Worker runtime，未部署。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 12 files / 51 tests、workerd 21 files / 102 tests、78个生产文件Secret scan、Markdown links全绿。
+- 勾选：Phase 4 derived branch/bot commit/no-main/no-force DoD完整勾选；真实本地Git remote证明行为，负向请求均在spawn前拒绝。未用bare remote冒充真实GitHub branch protection或App外部身份，真实试点证据保留在Phase 4最终E2E条目。
+- 决策沉淀：repository writer不是任意Git代理；branch/refspec/message/identity/force均由Runner固定，Agent只能产生工作树diff。GitHub token走子进程env而非argv，客户端no-force与GitHub branch protection是叠加防线，不能互相替代。
+- 遗留：下一轮实现delivery policy protected paths与内建workflow/CODEOWNERS/Secret/deploy路径diff gate，命中后在commit前持久化`awaiting_approval`及安全diff摘要。
+
+## Round 35 — 2026-07-25
+- 目标：Phase 4 / Agent修改workflow、CODEOWNERS、Secret/部署配置等高风险路径时自动停在`awaiting_approval`并列出diff。
+- 前置与权限：仅本地临时Git仓库+bare remote、workerd/D1与Watt源码/全量Git历史只读核对；使用测试token/ciphertext，未访问真实GitHub、未创建远端commit/PR、未调用飞书/Agent/tool-bridge或部署，未修改Watt、未使用真实Secret。
+- 动作：
+  - 先写真实Git added/deleted/renamed/untracked、普通文件放行、Secret canary不进入report，以及D1/API/CAS/revoke/query/workflow pause正反测试。首次Node定向运行exit 1（1 failed/1 passed）：`ProtectedPathApprovalRequired`尚不存在且高风险改动完成了commit；首次workerd suite因`protected-path-approval-store`模块不存在exit 1、0 tests，红灯对应真实缺口。
+  - 新增`ProtectedPathChangeReport v1`与内建高风险pattern：固定覆盖delivery policy/workflows/任意层CODEOWNERS、`.env*`/`.dev.vars*`/常见secrets文件、Wrangler、Docker Compose、Terraform和常见K8s/Helm/deploy目录，再与可信base commit的`delivery.yaml.protectedPaths`取并集。matcher锚定repo相对路径，拒绝绝对/穿越/反斜杠/控制字符；rename old/new任一命中即拦截。
+  - `GitRepositoryWriter.commitAll`在commit前以NUL分隔`name-status + numstat`解析exact staged tree；报告只含base/tree/policy/diff digest、总文件数与path/previousPath/changeType/line counts。diff digest绑定`baseSha + stagedTreeSha`，不保存patch hunk、文件正文或Git stderr；高风险命中调用必配reporter后固定抛`ProtectedPathApprovalRequired`，commit/push均不可达，普通README改动仍以固定bot成功commit。
+  - 新增`ControlPlaneProtectedPathApprovalReporter`：endpoint/Attempt/CAS均构造时strict校验，Bearer仅进HTTPS header，body只含version/generation与安全report；只有202且响应canonical report完全相同才视为控制面已接收，网络/非202/内容漂移全部固定错误且writer继续拒绝commit。
+  - migration 0013新增`protected_path_change_gates/entries`及Plan Item gate ref。`ProtectedPathApprovalStore`只接受active token已认证后的running repo_write Attempt，逐项核对lease、executing Run/version、exact active Plan/Item/base、Task policy和仍active的单仓库write credential；同`attempt + generation`唯一，report的base/tree/diff不一致或上下文伪造均无状态变化。
+  - 接收gate的同一D1 batch把Run置`awaiting_approval`、Attempt置`cancelled`并version/generation+1、清lease/revoke run+tool token、Item progress绑定gate、write credential置`revocation_pending`并创建稳定`workflow_pause` outbox。consumer二次核对gate/Run/Attempt后调用Workflow terminate；Task/Run查询只列安全diff摘要。相同store report重放收敛，取消后的stale pause安全settle，不把失败/跳过伪装成成功。
+  - `delivery.yaml`补充本仓库Secret/infra protected patterns；Run状态图开放后续exact diff approval后的`awaiting_approval→executing`恢复边，但本轮只实现暂停/请求，不虚构尚未实现的人审decision producer。同步`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`；按用户要求不更新llmdoc。
+  - 对Watt commit`476e3cd`当前树与全量Git历史检索protected path、CODEOWNERS、Git name-status/numstat、diff gate和awaiting approval，无等价实现可复制，本轮Watt直接复制量为零。最大化复用delivery-loop已有commit-bound policy、fixed Git executor、Attempt CAS/token revoke、repo-write revoker、D1 outbox与query projection，不虚构源码来源。
+- 验证：
+  - `pnpm exec vitest run test/repository-writer.test.ts test/protected-path-change-gate.test.ts test/protected-path-approval-reporter.test.ts` → exit 0，3 files / 7 tests；覆盖真实Git普通/高风险路径、rename/delete/untracked、policy+内建pattern、safe report、commit/push阻断与HTTPS reporter绑定。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/protected-path-approval.test.ts` → exit 0，1 file / 3 tests；覆盖store/API exact context、原子awaiting projection、token/credential revoke、safe query、幂等、伪造effect拒绝和真实outbox processor terminate调用。
+  - `pnpm run test:unit` → exit 0，14 files / 55 tests；`pnpm run test:workflow` → exit 0，22 files / 105 tests。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`pnpm run verify:secrets`、`git diff --check` → exit 0；Secret scanner核对82个生产文件。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round35-20260725-1930` → exit 0；Worker/Workflow/Queue/D1/双R2 bindings与新增gate/API/outbox/query bundle成功，未部署。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 14 files / 55 tests、workerd 22 files / 105 tests、82个生产文件Secret scan、Markdown links全绿。
+- 勾选：Phase 4高风险path自动暂停DoD完整勾选；本地真实Git证明commit/push前阻断，workerd/D1证明Run=`awaiting_approval`、Attempt/credential fencing、Workflow terminate与安全diff查询。未把本地fake effect冒充真实GitHub/飞书人审或批准后恢复，后者随Phase 2 approval producer/Phase 4真实试点回补。
+- 决策沉淀：“列出diff”采用content-bound digest + path/type/numstat，而不是持久化raw patch；否则Secret配置本身会被复制进D1/卡片。repo_write effect approval只允许普通仓库写，不等于高风险path审批；命中后撤销当前execution capability并以外部状态恢复，符合控制面可回放模型。
+- 遗留：下一轮只做定向测试→required verify→Evidence闭环；高风险gate的人审decision与批准后replacement由后续approval/调度项实现，不在本轮扩大权限面。
+
+## Round 36 — 2026-07-25
+- 目标：Phase 4 / 先跑与改动相关的定向测试，再跑仓库required verify；命令、exit code、duration、head SHA入Evidence。
+- 前置与权限：仅本地Node fake command/Git/HTTP与workerd/D1；未执行`delivery.yaml`声明的真实目标仓库测试命令，未访问真实GitHub/飞书/tool-bridge/Agent或部署，未修改Watt、未使用真实Secret。
+- 动作：
+  - 先写Runner顺序/targeted失败/required失败/selection/head漂移与D1/API exact manifest/乱序/failure/idempotency/strict body/query测试。首次Node suite因`verification-execution-runner`模块不存在exit 1、0 tests；首次workerd suite因`verification-evidence-store`模块不存在exit 1、0 tests，红灯对应真实执行与持久化缺口。
+  - 新增`VerificationSuiteManifest/CommandResult v1`：manifest只含exact head、policy digest、非空唯一`test:*`与`verify:*`列表；result只含position、phase、canonical ref、0～255 exit code、0～3600000ms duration和head SHA，strict schema物理上没有stdout/stderr/summary/status/verified入口。
+  - 新增`VerificationExecutionRunner`并直接复用`DeliveryCommandRunner`与共享`executeGitCommand`。调用者只能从commit-bound policy targeted map选择至少一个相关`test:*`；Runner按稳定ID自动追加policy verify map的全部`verify:*`，不能由Plan/Agent删减。启动前及每条命令前后复核`HEAD`，head漂移不生成Evidence；duration只覆盖命令窗口，spawn异常固定exit 127且不传播stderr。
+  - 执行顺序固定为selected targeted→全部required verify。任一targeted非0先上报失败Evidence并立即停止，required阶段零执行；任一required非0同样停止剩余required。每次reporter返回的suite状态必须与当前位置/exit推导一致，服务端重排/提前completed也fail-closed。
+  - 增加真实临时Git仓库穿透：不注入command executor，直接由共享spawn runtime依次执行policy中的`node` targeted与required verify，前后Git HEAD不变并生成两条duration-bearing report；因此顺序正向不只由fake executor证明。
+  - 新增`ControlPlaneVerificationEvidenceReporter`：每次start/record动态读取heartbeat轮换后的最新attempt token/version/generation，Bearer只进固定HTTPS header；响应只接受200/201+`Cache-Control:no-store`，start返回的完整command序列必须与本地manifest逐项相同，错误正文不读取。
+  - migration 0014为Evidence增加duration并新增`verification_suites/commands`。`VerificationEvidenceStore`只接受implement/review_fix running lease、executing Run、exact active Plan、required verification Item、in_progress activeAttempt、exact Attempt head、test Evidence声明且无pending protected gate；manifest命令集合必须与Plan Item command refs exact相等，同attempt/generation/head/policy只有一套suite。
+  - result只接受当前first pending命令且全部前序passed；targeted-before-required由position+phase双约束。稳定Evidence ID绑定suite/position，D1写run/attempt/plan version/item、kind=test、server-derived passed/failed与固定summary、command/exit/duration/head，初始`verification_status=unverified`。相同结果幂等，改写或跨Attempt猜测ID拒绝；查询新增durationMs但仍不返回summary/命令输出。
+  - delivery policy每组command上限补到50以匹配有界suite schema。同步`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`；按用户要求不更新llmdoc。
+  - 对Watt commit`476e3cd`当前树与相关Git历史检索targeted/required verify、command Evidence、duration/head SHA绑定，只发现`scripts/e2e/lib.ts`同步CLI spawn、exitCode/stderr失败对象与人类PASS/SKIP日志；无durable suite/Plan gate可复制，且stderr传播不符合本项目安全边界，因此本轮Watt直接复制量为零。最大化复用delivery-loop现有command/Git/Plan/Attempt/Evidence/query原语，不虚构来源。
+- 验证：
+  - `pnpm exec vitest run test/verification-execution-runner.test.ts test/verification-evidence-reporter.test.ts test/delivery-policy.test.ts test/repository-writer.test.ts` → exit 0，4 files / 16 tests；覆盖真实子进程targeted→verify、fake两阶段失败停止、selection、HEAD fencing、duration、stderr隔离、轮换token reporter与policy/Git回归。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/verification-evidence.test.ts test/workflow/plan-item-attempt-store.test.ts test/workflow/checkpoint-api.test.ts` → exit 0，3 files / 17 tests；覆盖suite/Evidence正反、strict HTTP、跨Attempt/idempotency、Plan claim与checkpoint binding回归。
+  - `pnpm run test:unit` → exit 0，16 files / 63 tests；`pnpm run test:workflow` → exit 0，23 files / 109 tests。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`pnpm run verify:secrets`、`git diff --check` → exit 0；Secret scanner核对87个生产文件。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round36-20260725-1951` → exit 0；Worker/Workflow/Queue/D1/双R2 bindings及新增verification API/store/query成功bundle，未部署。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 16 files / 63 tests、workerd 23 files / 109 tests、87个生产文件Secret scan、Markdown links全绿。
+- 勾选：Phase 4 targeted→required verify与Evidence入账DoD完整勾选；Runner顺序和HEAD由Node契约证明，D1/API真实workerd证明command/exit/duration/head安全入账与乱序拒绝。Evidence保持unverified，本轮未冒充下一项doneWhen核对或Item passed。
+- 决策沉淀：相关targeted由版本化Plan Item从受信policy map显式选择，required verify由Runner从同一commit-bound policy自动补全；两者在控制面以exact集合重新绑定。exit 0是原始执行事实而不是“验收通过”，所以Evidence先unverified，下一轮独立verifier才能关门。
+- 遗留：下一轮只实现required Item doneWhen/plan/head Evidence核对与passed gate；失败修复循环仍由其后的独立DoD处理。
+
+## Round 37 — 2026-07-25
+- 目标：Phase 4 / 每个required Plan Item的doneWhen映射到同plan version/item/head SHA的已核对Evidence；required skipped、Agent自报、failed Evidence或旧SHA不能关门。
+- 前置与权限：仅本地workerd/D1与源码/测试；未调用真实GitHub、飞书、tool-bridge、Agent或部署，未使用真实Secret，未修改Watt。对Watt commit`476e3cd`当前树和Git历史检索doneWhen、逐criterion Evidence mapping、plan/head-bound verification decision及required Item passed gate，没有等价源码可直接复制，本轮Watt直接复制量为零；最大化复用delivery-loop既有canonical digest、服务Bearer、Plan/Attempt CAS、verification suite/Evidence ledger、token撤销与query projection。
+- 动作：
+  - 审计生产代码确认此前没有`plan_item_progress.status='passed'`写路径；测试只有`plan-item-attempt-store.test.ts`一处直接UPDATE passed，其他passed均为历史投影fixture。先新增逐doneWhen、failed/旧SHA、direct passed/skipped、Agent token/forged body、query/idempotency测试；首次定向运行因`plan-item-evidence-verifier`模块不存在exit 1、0 tests，红灯对应真实关门缺口。
+  - 新增migration 0015：`plan_item_verifications`绑定exact run/plan version/item/Attempt/head/关闭前progress version/evidence-set digest；`plan_item_done_when_evidence`保存有序逐doneWhen映射。D1 trigger拒绝required progress未经过decision/mapping/verified passed Evidence直接UPDATE passed；已映射verified Evidence关键绑定/结果/SHA不可改，mapping存在时不可删。
+  - 新增唯一生产关门路径`PlanItemEvidenceVerifier`：重新核对Run executing/verifying、active Plan/digest、required in-progress Item、active implement/review_fix Attempt version/generation/lease/head。每条doneWhen必须映射Evidence并逐条覆盖Item声明的kind、command refs与external facts；Evidence必须同run/attempt/plan version/item/head且passed，`test:/verify:` Evidence还必须来自completed suite中的passed command。
+  - verifier以一个D1 batch写稳定decision/mapping和digest、把Evidence置verified、Attempt completed/generation+1、清lease/撤销token、write credential进入revocation pending并以旧progress version推进passed。相同请求重放返回同一decision；缺失/failed/旧SHA/跨Attempt/改写mapping全部fail-closed且无部分推进。
+  - 新增服务认证`POST /v1/runs/:runId/items/:itemId/verify`；strict body只有版本/fencing/head与doneWhen→Evidence ID，不接受status/verified自报，Agent run token返回401。`GET /v1/runs/:runId/plan`为passed Item投影decision ID、head、evidence-set digest、去重Evidence IDs、逐doneWhen mapping和verifiedAt，不读取Evidence正文或Workflow状态。
+  - 移除旧scheduler测试直接UPDATE passed捷径：先真实claim investigation，设置running lease/head，写同Attempt/head diagnostic Evidence，再调用verifier后断言下游ready。同步`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`；按用户要求不额外更新llmdoc。
+  - 首次最终`pnpm run verify`在既有GitHub App token测试exit 1：provider使用固定12:00 UTC生成JWT，但测试中的`jwtVerify`使用真实时钟，当前已越过12:09 UTC expiry。独立复跑仍1/3失败，确认非并行波动；仅给测试verifier注入同一固定`currentDate`后独立3/3和全量均通过，未修改生产token逻辑或放宽验签。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/plan-item-evidence-verifier.test.ts test/workflow/plan-item-attempt-store.test.ts test/workflow/verification-evidence.test.ts test/workflow/task-query-api.test.ts` → exit 0，4 files / 17 tests；覆盖逐doneWhen、exact binding、failed/旧SHA/跨Attempt、direct mutation、Agent/forged HTTP、幂等decision、安全query与scheduler解锁。
+  - `pnpm exec vitest run test/github-app-installation-token.test.ts` → 固定测试时钟后exit 0，1 file / 3 tests。
+  - `pnpm run verify:docs`、`pnpm run verify:secrets`、`git diff --check` → exit 0；Secret scanner核对89个生产文件。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 16 files / 63 tests、workerd 24 files / 113 tests、89个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round37-20260725-2016` → exit 0；Workflow/Queue/D1/双R2 bindings与新增verifier/API/query/migration bundle成功，未部署。
+- 勾选：Phase 4逐doneWhen Evidence关门DoD完整勾选；证据覆盖D1 trigger、服务认证API、exact plan/Attempt/head、suite provenance、原子passed与安全恢复投影。测试中的service-side diagnostic fixture只证明通用Evidence gate，不冒充尚未执行的真实日志/数据库调查或外部试点。
+- 决策沉淀：Evidence passed是单一事实，不等于Item passed；只有版本化逐doneWhen decision才能关闭required Item。Agent只负责产生受限事实，控制面负责把事实核对为状态迁移；decision/mapping/digest进入D1，因此Worker/Workflow重启后无需恢复模型会话即可重放并快速收敛。Watt无等价代码时不做伪复用，继续复用已验证的基础原语。
+- 遗留：下一轮只做测试失败的有界修复循环与同失败指纹去重；真实试点repo的GitHub Action、PR及外部Evidence仍由后续Phase 4条目闭环。
+
+## Round 38 — 2026-07-25
+- 目标：Phase 4 / 测试失败允许有界修复循环；同失败指纹不重复消耗，达到上限进入`blocked`（本轮闭环本地Evidence-bound控制面/dispatch子项；父项因固定workflow尚无execution Runner保持未勾）。
+- 前置与权限：仅本地workerd/D1、fake GitHub dispatch effect与Watt源码只读核对；未调用真实GitHub、Codex模型、飞书、tool-bridge或部署，未使用真实Secret，未修改Watt。完整读取Watt commit`476e3cd`的`packages/gateway/src/agent/harness/llm.ts`与`packages/core/src/agent/expect-schema.ts`；直接可复用量是Round 28已复制的`DEFAULT_MAX_ATTEMPTS=3`、`shouldRetry`及首次+两次重试边界。Watt单进程schema重试没有跨Action Attempt/Evidence/D1/outbox/fencing实现，未虚构复制。
+- 动作：
+  - 审计确认已有`AttemptFailureStore`只返回`retryAllowed`并计数/blocked，不创建replacement或dispatch；`implement`切`review_fix`还会因mode进入不同retry scope而重置预算。现有GitHub dispatcher只允许analysis，固定workflow也只启动analysis Runner。
+  - 先新增真实failed verification suite→repair、20路相同event、同指纹第二次、三个不同指纹、无Evidence自报、stale dispatch和安全query测试。首次定向运行exit 1，1 file / 3 tests全红，响应只有`retryAllowed`而没有repair，证明缺口不是测试夹具。
+  - migration 0016新增`attempt_failure_verification_facts`：只有同active Plan/Item/Attempt generation/head的failed suite+command+Evidence才能写入source suite/Evidence/head/fact digest；digest只含phase/canonical command ref/exit code。对应failed Evidence、suite与command关键字段随后由trigger锁定，不能改写失败为成功或删除命令证据。
+  - 新增`attempt_repairs`保存failure、failed/repair Attempt、Plan/Item、source fact、retry scope/fingerprint。`implement/review_fix`规范化成共享`execution`scope，避免换mode重置Watt三次预算；verification fingerprint再绑定受信phase/ref/exit fact，因此新head上同一命令同一exit仍识别为连续失败，不把head变化误当新根因。
+  - 第一次可信测试失败在同一D1 batch写failure/fact、旧Attempt failed/generation+1、撤销run/tool token、active write credential转revocation pending，创建稳定identity的pending `review_fix` Attempt（base/head为失败head、branch为空、无token/credential）、切换Item activeAttempt并写唯一`execution_dispatch`。20路重放只一条repair/outbox且仅一个response为`created=true`；Agent夹带`retry`字段固定400。
+  - 同fingerprint第二个Attempt直接`repeated_fingerprint` blocked，不创建第三个；三个不同trusted command failure只允许两个repair，在第三个Attempt以`attempt_limit` blocked。阻断仍原子推进Run/Plan/Item、撤销token、settle未执行analysis/execution dispatch并创建Workflow cancel intent。
+  - GitHub dispatch processor扩展`execution_dispatch`但只接受`attempt_repairs`绑定、Run executing/verifying、exact active Plan、in-progress active Item且无protected gate的implement/review_fix Attempt。延迟消息在Plan/block后`repair_dispatch_stale` settle且GitHub零调用；正常fake effect收到reference-only mode/plan/item/失败head并把Attempt置starting。
+  - Task/Run查询为repair Attempt投影repair/failure/source suite/Evidence refs，blocker每个Attempt可附安全verification fact refs/digest，不返回测试输出。cancel/heartbeat-timeout同步settlepending execution dispatch。同步`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`；按用户要求不额外更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/verification-repair-loop.test.ts` → 首次exit 1，3/3因缺repair红灯；实现与加固后exit 0，1 file / 5 tests，覆盖无Evidence自报、20路幂等、fact immutability、same-head dispatch、stale零effect、同指纹和总上限。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/verification-repair-loop.test.ts test/workflow/attempt-failure-policy.test.ts test/workflow/github-dispatcher.test.ts test/workflow/task-query-api.test.ts test/workflow/attempt-revocation.test.ts` → exit 0，5 files / 21 tests；既有failure/blocker、analysis dispatch、query与撤销路径无回归。
+  - `pnpm run verify:docs`、`pnpm run verify:secrets`、`git diff --check` → exit 0；Secret scanner核对90个生产文件。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 16 files / 63 tests、workerd 25 files / 118 tests、90个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round38-20260725-2048` → exit 0；Workflow/Queue/D1/双R2 bindings与新增failure fact/repair/dispatch/query bundle成功，未部署。
+- 勾选：父DoD保持未勾；新增“本地控制面/workerd穿透”子项并勾选。fake GitHub effect只证明fenced dispatch契约，不能证明Action实际修改代码或重新验证；当前`.github/workflows/delivery-agent.yml`仍只调用analysis Runner，不能冒充修复循环完整完成。
+- 决策沉淀：`retryAllowed`不是修复事实；自动repair必须由可信failed Evidence触发。repair是新的最小权限Attempt，不是旧Agent原地续命：继承失败Git head作为起点，但不继承token、write credential或branch，所有effect重新过Plan/approval gate。Watt的进程内for-loop只提供次数边界，durable lineage和外部dispatch必须由控制面持久化。
+- 遗留：下一轮继续同一父DoD，只实现固定workflow的execution Runner穿透：从失败head建立新attempt分支，运行受限Agent修复，重新执行targeted→required verify并让真实Runner failure链路消费本轮repair；在此之前不勾父项，也不进入Draft PR DoD。
+
+## Round 39 — 2026-07-25
+- 目标：Phase 4 / 测试失败有界修复循环下的本地真实Git execution Runner；从repair checkout head建立新分支，受限Agent编辑后由可信Runner提交/push并重新执行targeted→required verify（父项和固定workflow真实Action子项继续保持未勾）。
+- 前置与权限：仅本地真实临时Git仓库/bare remote、Node子进程、fake Agent/reporter与源码测试；未访问真实GitHub、Codex计费模型、Cloudflare、飞书或tool-bridge，未部署，未使用真实Secret。对Watt固定commit`476e3cd`的Agent harness/core/tool-bridge检索并核对；无Codex workspace-write、目标仓库Git writer或head-bound verification Runner可直接复制，本轮Watt直接复制量为零，继续最大化复用本项目已有Watt-derived不可信reference、Attempt上限/outbox/CAS及既有writer/policy/command/Evidence原语。
+- 动作：
+  - 先修正dispatch identity：`base_sha`继续绑定Run base供OIDC/approval/policy使用，新增`checkout_sha`指向repair失败head；dispatcher所有payload携带二者，固定workflow checkout改用`checkout_sha`。对应workflow/dispatcher/repair测试保持全绿，避免把失败head错误冒充Run base。
+  - 先新增`codex-execution-adapter`与`execution-attempt-runner`红灯，首次因模块不存在为2 suites / 0 tests、exit 1。实现非交互`codex exec --ephemeral --sandbox workspace-write + approval-never`，context/output必须是repo外私有常规文件；prompt明确不授予Git、测试、PR、审批或部署authority。
+  - 新增可信本地编排：prepare派生branch→Agent edit→固定bot commit→no-force push→head report→exact-head targeted→全部required verify。真实临时repo/bare remote与真实Node verification子进程证明顺序和远端head；只有verification Runner产出的nonzero command Evidence才发送固定结构化failure。
+  - 审查发现Agent input可缺失并退化到伪造占位路径，先补负向测试得到1/3失败，再改为required exact workspace/context/output/timeout输入。Agent/Git/head/reporter异常保持原错误，不调用verification failure reporter，避免错误消耗repair预算。
+  - prompt不是Git权限边界：`GitRepositoryWriter.commitAll`在Agent后重新核对当前branch及HEAD仍为repair checkout head，bot commit后再核对唯一parent；Agent自行创建commit/移动HEAD即使还有未提交改动也在push前拒绝。同步DOD与Architecture/Proto/Security/Reference；按用户要求不额外更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run test/codex-execution-adapter.test.ts test/execution-attempt-runner.test.ts test/repository-writer.test.ts` → 加固前exit 1，1/3 Runner用例证明缺失Agent input未拒绝；实现后exit 0，3 files / 9 tests，覆盖私有文件、真实Git分支/bot commit/no-force push、targeted→required、可信失败分类及Agent自建commit拒绝。
+  - `pnpm run typecheck`、`pnpm run lint`、`git diff --check` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 18 files / 69 tests、workerd 25 files / 118 tests、92个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round39-20260725` → exit 0；Workflow/Queue/D1/双R2 bindings与当前Worker bundle成功，未部署。
+- 勾选：新增并勾选Phase 4“本地真实Git execution Runner”子项。父DoD与“固定GitHub workflow接入真实execution Runner”保持未勾：当前workflow仍只调用analysis脚本，尚无execution context/head CAS/heartbeat/credential bootstrap、生产HTTP reporters和真实Action连续失败→blocked外部证据。
+- 决策沉淀：`workspace-write`只是文件系统沙箱，不是Git effect授权；Agent prompt只能表达目标，可信Runner必须在Git层验证HEAD lineage并独占commit/push。verification failure预算只消费head-bound command Evidence，Agent进程、Git或transport故障不能伪装成测试失败。Watt没有等价execution路径时直接复制量诚实记零，不为满足“复用”而引入不适配的Worker内LLM harness。
+- 遗留：下一轮仍停留在同一父DoD，只实现固定workflow的execution bootstrap与控制面execution context/head CAS/生产reporter穿透；真实GitHub Action和连续失败blocked证据依赖远端/安装权限，完成前父项不勾。
+
+## Round 40 — 2026-07-25
+- 目标：Phase 4 / 固定GitHub workflow的本地生产execution bootstrap穿透；补齐execution context、bot head CAS、heartbeat/credential/reporters并让真实Git Runner failure链路提交可被repair store消费的Evidence/event（真实试点Action子项与父DoD保持未勾）。
+- 前置与权限：仅本地workerd/D1/R2、fake HTTPS/OIDC/control-plane、真实临时Git仓库/bare remote和真实Node verification子进程；未访问真实GitHub、Codex计费模型、Cloudflare远端、飞书或tool-bridge，未部署、未使用真实Secret。继续核对Watt固定commit`476e3cd`的Agent/workflow/OIDC/Git路径，没有GitHub execution bootstrap、repo credential/head CAS或Evidence reporter可直接复制，本轮Watt直接复制量为零；最大化复用delivery-loop已有Watt-derived CAS/outbox/attempt上限与现成OIDC、heartbeat、credential、writer、protected gate、verification/failure原语。
+- 动作：
+  - 先写workerd execution context/head API测试；首次exit 1，2/2因`attempt_head_updates`不存在红灯。再写workflow mode路由与`runExecutionAttempt`真实Git bootstrap测试；首次Node运行workflow 1/1失败且bootstrap suite因模块不存在0 tests，证明固定workflow仍只有analysis。
+  - migration 0017新增每Attempt generation唯一的`attempt_head_updates`，绑定run/plan/item/parent/head/derived branch与commit Evidence；transition和其关键Evidence字段不可改。`ExecutionHeadStore`在同一D1 batch重新核对running lease、executing/verifying Run、active Plan、in-progress active Item、repo_write effect和无protected gate，写固定summary commit Evidence并把Attempt head/version CAS前进；20路同内容仅一条，branch/parent/head漂移拒绝。
+  - `RunnerAuthorization`增加服务端mode；`GET /context`按analysis/implement/review_fix路由。新增`ExecutionAttemptContextStore`，只返回exact execution scopes、Task allow write、D1/R2 canonical digest一致、active required Item及声明的doneWhen/command/evidence/effects；review_fix必须回查immutable repair source suite/Evidence/head/fact及服务端phase/command/exit，原始测试输出不返回。
+  - 新增`POST /head` strict API，body没有status/verified/commit message等Agent控制字段。新增动态`ControlPlaneExecutionHeadReporter`与fixed failure reporter；head response必须version+1。verification reporter增加token/version在heartbeat竞态后的安全重取，并支持bootstrap的串行authorization gate。
+  - 新增`runExecutionAttempt`与脚本：核对dispatch env/真实checkout HEAD/clean tree、GitHub OIDC和execution exchange、Task digest/base/checkout/repo/plan/item；从Run base SHA读取commit-bound policy，在repo外写0600 context/output并扫描runtime Secret，取得exact approval-bound write token，45秒heartbeat贯穿Agent/Git/verification。共享mutex串行heartbeat rotation、head CAS、Evidence/failure请求；finally清理临时目录。
+  - `ExecutionAttemptRunner`在任何effect前核对policy digest并执行全部trusted setup；随后派生branch、受限Agent edit、固定bot单commit/no-force push、head report、targeted→required。真实nonzero command写failed Evidence后才发送固定failure event；Agent/Git/head/transport错误不消耗repair预算。Agent窗口限制5分钟，超过则由外部checkpoint/replacement Attempt恢复，避免当前lease-bound写token失效后继续push。
+  - 固定`.github/workflows/delivery-agent.yml`改为单attempt job：完整fetch `checkout_sha`且不保留凭证；先校验analysis必须无plan binding、implement/review_fix必须有plan binding，再互斥调用analysis或execution脚本。默认permissions仍仅`contents:read + id-token:write`，写token只由execution bootstrap运行时broker取得。
+  - review_fix workerd穿透增强：真实failed suite→repair dispatch后激活replacement token，再调用生产context API核对source fact与失败head。Node bootstrap分别以真实bot push证明pass Evidence路径和targeted exit 7证明fixed terminal failure body；没有message/stack/测试输出。同步DOD与Architecture/Proto/Security/Reference；按用户要求不额外更新llmdoc。
+  - 首次全量unit在既有analysis heartbeat测试exit 1：并行调度下20ms cadence偶发触发第二次heartbeat，而fake只实现一次轮换。将测试cadence改为500ms，仍真实等待并证明一次轮换，同时消除毫秒级时序依赖；独立analysis+execution 2 files / 5 tests及最终全量均通过，未修改生产analysis heartbeat。
+- 验证：
+  - `pnpm exec vitest run test/execution-runner-bootstrap.test.ts` → exit 0，1 file / 2 tests；覆盖真实Git pass与真实targeted failure、OIDC/context/credential、heartbeat、bot push、head version、ordered Evidence、fixed terminal event和临时文件清理。
+  - `pnpm exec vitest run test/execution-runner-bootstrap.test.ts test/delivery-agent-workflow.test.ts test/codex-execution-adapter.test.ts test/execution-attempt-runner.test.ts test/verification-evidence-reporter.test.ts test/protected-path-approval-reporter.test.ts test/repository-writer.test.ts` → exit 0，7 files / 16 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/execution-attempt-api.test.ts test/workflow/verification-repair-loop.test.ts` → exit 0，2 files / 7 tests；覆盖20路head CAS、strict/forged/stale拒绝、commit Evidence、真实repair context/source fact和既有bounded loop。
+  - `pnpm run typecheck`、`pnpm run lint`、`git diff --check` → exit 0。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 19 files / 71 tests、workerd 26 files / 120 tests、98个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round40-20260725` → exit 0；Workflow/Queue/D1/双R2 bindings与新增API/store成功bundle，未部署；migration 0017的从空库应用由workerd测试证实。
+- 勾选：在“固定GitHub workflow接入真实execution Runner”下新增并勾选“本地固定workflow/生产bootstrap穿透”子项；其父项和“真实试点GitHub Action”保持未勾。本地fake HTTPS与bare Git只证明生产代码接线和D1契约，不能证明GitHub-hosted Runner、真实Codex认证、App token或连续Actions failure→blocked。
+- 决策沉淀：`base_sha`继续绑定Run/OIDC/approval/policy，`checkout_sha`是repair工作区起点；bot head必须通过独立CAS把Attempt从parent推进到新commit，不能由Agent或dispatch自报覆盖。heartbeat和所有mutation共享串行fencing，避免轮换token与head/Evidence请求互相使旧。Watt没有等价执行面时不硬搬Worker内AI SDK harness，复用可证明相同语义的基础原语。
+- 遗留：真实试点Action证据仍需用户确认GitHub owner/repo/visibility并安装App/配置环境后执行；等待外部前置期间，下一轮可继续Phase 4不依赖远端的Draft PR正文生成与Secret scanner本地穿透，父repair DoD继续保持未勾。
+
+## Round 41 — 2026-07-25
+- 目标：Phase 4 / Draft PR正文包含来源任务/revision、验收标准逐条状态、变更摘要、风险、测试证据、未完成项和回滚说明；本轮只冻结可发布正文，不创建GitHub PR或推进`pull_request_open`。
+- 前置与权限：仅本地Node/workerd/D1/R2与源码测试；未访问真实GitHub、Cloudflare远端、Codex计费模型、飞书或tool-bridge，未部署、未使用真实Secret。对Watt固定commit`476e3cd`检索PR创建/body/acceptance/rollback与GitHub pull request producer，只发现CI的`pull_request`触发器，没有等价正文renderer、Evidence eligibility、durable snapshot或外部reconciliation可直接复制，本轮Watt直接复制量为零；最大化复用Watt-derived D1幂等/Secret边界与本项目已有Task digest、Plan decision、head/Evidence ledger。
+- 动作：
+  - 先写确定性renderer测试；首次`pnpm exec vitest run test/pull-request-draft.test.ts test/redaction.test.ts`因模块不存在exit 1、0 tests。再写真实workerd API/store测试；首次3/3因draft tables不存在exit 1，证明此前没有可恢复正文producer而不是fixture缺字段。
+  - 新增`pull-request-draft`领域renderer：固定七个必需章节，来源Task/revision与净化URL、Plan/branch/final head、已完成Item、逐验收标准状态/Evidence、服务端派生风险、test command/exit/duration/head、optional未完成项和按deploy effect派生的回滚说明。Task/Plan自然语言转义Markdown/HTML/`@mention`；source URL含userinfo时不发布，否则移除query/fragment并编码括号。输入和最终Markdown双重Secret scan，UTF-8正文上限65,536 bytes。
+  - migration 0018新增`pull_request_drafts`及criteria/test Evidence/unfinished Item三张规范化子表；snapshot只允许`prepared`，主表与子表禁止UPDATE，stable identity绑定run/plan/version/final head/body digest。
+  - 新增`PullRequestDraftStore`唯一生产路径：只接受`expectedRunVersion + planVersion/digest + headSha`，调用方不能提交body/status/summary/risk。生成前重新核对`verifying` Run、exact active Plan/base、D1/R2 Task canonical digest、最新completed implement/review_fix Attempt、derived branch、immutable head transition/commit Evidence、required Item全部经`plan_item_verifications`关门、无protected gate，以及final head completed suite的verified passed test Evidence；optional未完成Item显式列出。
+  - 新增服务认证`POST /v1/runs/:runId/pull-request-draft`，strict 4KiB请求、`no-store`响应；Agent token和caller-authored正文拒绝，stale Plan/head/Item返回409，Secret命中403，超限413。20路相同请求只有一个`created=true`，全部返回同一draft/body digest/body并复核持久化子快照。
+  - 同步`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`；明确`prepared` snapshot只是后续GitHub producer的durable input，不能冒充PR外部事实；按用户要求不额外更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run test/pull-request-draft.test.ts test/redaction.test.ts` → exit 0，2 files / 8 tests；覆盖章节/确定性/安全文本、URL净化、UTF-8大小与Secret拒绝。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/pull-request-draft.test.ts test/workflow/plan-item-evidence-verifier.test.ts test/workflow/execution-attempt-api.test.ts` → exit 0，3 files / 9 tests；覆盖20路幂等、D1/R2/head/Plan/Evidence gate、immutable snapshot、Agent/forged/stale/incomplete拒绝和损坏Task canary最终扫描。
+  - `pnpm run test:unit` → exit 0，20 files / 73 tests；`pnpm run test:workflow` → exit 0，27 files / 123 tests；`pnpm run typecheck`、`pnpm run lint`、`git diff --check` → exit 0。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 20 files / 73 tests、workerd 27 files / 123 tests、101个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round41-20260725` → exit 0；Workflow/Queue/D1/双R2 bindings与新增API/store/migration成功bundle，未部署。
+- 勾选：Phase 4 Draft PR正文DoD完整勾选；本地真实workerd证明正文从durable verified facts确定生成、持久化和重放收敛。下一条“PR创建由GitHub webhook外部核对”保持未勾，本轮没有PR URL/number/webhook/API外部Evidence，也没有把D1正文snapshot冒充GitHub PR。
+- 决策沉淀：PR正文不是Agent交付文本，而是控制面基于DOD/Evidence的发布投影；先冻结body digest再调用外部平台，才能让Workflow/Queue重放快速恢复且避免不同正文创建重复PR。Task description和Evidence summary/output不进入正文；只有Task验收标准在安全转义与Secret scan后按逐项Evidence状态发布。
+- 遗留：下一轮进入“PR创建由GitHub webhook外部核对”的本地producer/outbox/webhook contract；真实GitHub创建与外部核对仍依赖用户确认owner/repo/visibility、App安装与目标仓库配置，取得真实PR事实前不得勾选。
+
+## Round 42 — 2026-07-25
+- 目标：Phase 4 / PR创建由GitHub webhook外部核对，Agent自报PR URL不能直接推进状态（本轮闭环本地生产producer、signed webhook与API repair契约；父项因无真实GitHub PR事实保持未勾）。
+- 前置与权限：仅本地Node/workerd/D1、fake GitHub REST和测试HMAC；只读核对GitHub官方REST/webhook文档与Watt固定commit`476e3cd`，未访问真实GitHub API、Cloudflare远端、Codex计费模型、飞书或tool-bridge，未部署、未使用真实Secret。Watt再次全库检索`/pulls`、createPullRequest、Octokit与PR webhook，仍只有CI`pull_request`触发器，没有PR producer/publication projector可直接复制，本轮Watt直接复制量为零；最大化复用Watt-derived fenced outbox/D1条件写及本项目现有App token、HMAC delivery和API observation原语。
+- 动作：
+  - 先写GitHub PR REST adapter测试；首次因`github-pull-request`模块不存在exit 1、0 tests。再写workerd scheduler/outbox/webhook/API reconciliation测试；首次同样因模块不存在exit 1、0 tests，红灯证明此前prepared正文没有任何GitHub effect或外部状态入口。
+  - 实读GitHub官方Create a pull request契约，确认`POST /repos/{owner}/{repo}/pulls`的title/head/base/body/draft/maintainer_can_modify与201/403/422；实读`pull_request` webhook action集合、`opened`与App Pull requests读权限。producer固定same-repo、`draft:true`、`maintainer_can_modify:false`，其他action当前安全ack ignored。
+  - migration 0019新增`pull_request_publications`、`github_pull_request_webhook_deliveries`、`github_pull_request_api_observations`：publication snapshot列不可变、状态只能pending→created_unverified→verified，draft/head唯一；webhook/API只保存digest、repo/number、external time和安全disposition，不保存raw body/REST response/token。
+  - 新增service-only strict`POST /v1/runs/:runId/pull-request`：body只有`expectedRunVersion + draftId`，Agent token与夹带URL/number/status拒绝。scheduler重新核对verifying Run、prepared draft、active Plan/digest/final head、最新Attempt、required Item、protected gate、Task policy和exact最新repo_write approval；20路请求只产生一个stable publication和`pull_request + github_api` outbox，不推进Run。
+  - 新增PR-only GitHub App token profile，repository-narrowed且权限只有`pull_requests:write`，与Actions read token、Runner contents-write token隔离并独立缓存。REST adapter先以`state=all + owner:head`查既有PR；exact open Draft/base/head SHA/title/body digest才复用，冲突/closed/多结果fail-closed；POST和查询错误不传播response body/token。
+  - `GitHubPullRequestOutboxProcessor`直接复用共享pending→delivering→settled lease/fencing；20路consumer只一次effect，effect前重新核对Run/Plan/draft/head/approval及更新reject。GitHub create/list响应只写candidate number/净化URL和`created_unverified`，网络不确定回pending并在重试前按head reconciliation，不写Evidence或Run状态。
+  - 扩展`POST /v1/webhooks/github`：raw body先HMAC，再按event路由。`pull_request opened`必须exact same-repo、open Draft、base/head branch、head SHA、server title、prepared body digest与安全HTTPS URL；delivery ID+raw digest去重，同ID换payload冲突，binding mismatch ignored。唯一projector在D1 batch写fixed-summary verified PR Evidence、publication observation version并CAS Run verifying→pull_request_open；Agent自报没有调用路径。
+  - 新增scheduled `GitHubPullRequestReconciler`，只轮询已有candidate number但未verified的publication，GET结果复用同一projector，用于修复missed webhook。Queue/relay新增独立`github_api`destination，未配置App时保持retry；Wrangler production runtime已接线。
+  - 首次全量workerd在既有`plan-item-evidence-verifier` HTTP用例1/4失败：fixture lease固定到当日14:10 UTC，真实时钟已越界导致409。独立复跑仍失败，确认是历史时间炸弹；只把测试lease延到2099后独立4/4与全量全绿，未修改生产verifier或放宽过期检查。
+  - 同步`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`；按用户要求不额外更新llmdoc。
+- 验证：
+  - `pnpm exec vitest run test/github-pull-request-api.test.ts test/github-app-installation-token.test.ts` → exit 0，2 files / 6 tests；覆盖PR-only token权限/缓存、exact list/create/GET、same-head复用、冲突body与安全错误。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-pull-request.test.ts test/workflow/outbox-routing.test.ts test/workflow/github-workflow-run-webhook.test.ts test/workflow/github-run-reconciler.test.ts` → exit 0，4 files / 17 tests；覆盖20路scheduler/effect幂等、approval双检、Agent/forged拒绝、create不推进、签名exact webhook、delivery重放、binding mismatch、API repair、三destination Queue routing及既有workflow facts回归。
+  - `pnpm run test:unit` → exit 0，21 files / 76 tests；`pnpm run test:workflow` → 修正历史test lease后exit 0，28 files / 126 tests。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 21 files / 76 tests、workerd 28 files / 126 tests、107个生产文件Secret scan、Markdown links全绿；`git diff --check` → exit 0。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round42-20260725` → exit 0；Workflow/Queue/D1/双R2 bindings与新增scheduler/outbox/webhook/reconciler/migration成功bundle，未部署。
+- 勾选：父DoD保持未勾；新增并勾选“本地控制面/workerd/REST契约”子项。fake GitHub REST与测试HMAC证明生产代码的权限、幂等和外部事实门槛，但没有真实PR URL/number或GitHub delivery，不能冒充真实App创建/webhook核对。
+- 决策沉淀：PR effect与PR fact必须分层。REST 201只证明某次调用返回候选，不能成为业务真源；publication/outbox负责可恢复effect，signed webhook/API projector负责外部事实，D1 Run只消费后者。PR token进一步从Runner write token拆分为`pull_requests:write`单用途，缓存不等于授权，effect前仍需审批双检。
+- 遗留：真实GitHub父项继续等待owner/repo/visibility、App安装、webhook与目标仓库配置；在不伪造外部证据的前提下，下一轮可继续Phase 4的Review comment/head-SHA-bound`review_fix`本地契约。
+
+## Round 43 — 2026-07-25
+- 目标：Phase 4 / Review comment绑定PR head SHA并创建`review_fix` attempt；已过时评论不误改新代码（本轮闭环本地signed webhook、D1/R2/dispatch/context/head CAS与同PR分支真实Git契约；真实GitHub review父项保持未勾）。
+- 前置与权限：仅本地workerd/D1/R2、测试HMAC和真实临时Git/bare remote；未访问真实GitHub API、Cloudflare远端、Codex计费模型、飞书或tool-bridge，未部署、未使用真实Secret。按用户要求对Watt固定commit`476e3cd`全库检索`pull_request_review`、`changes_requested`、review comment/attempt与PR branch update，没有等价producer、ledger或writer可直接复制，本轮Watt直接复制量为零；最大化复用Watt-derived HMAC/delivery digest、D1 conditional write、stable identity和fenced outbox，以及本项目现有Task/R2 digest、approval、execution context/head CAS与fixed Git executor。
+- 动作：
+  - 先运行已新增workerd契约；首次exit 1，2/2都因`review_feedback_attempts`表不存在红灯。再新增真实Git writer测试；首次exit 1，2/2分别证明writer错误创建当前Attempt branch且不核对远端PR head。
+  - migration 0020新增`github_review_webhook_deliveries`、`github_review_feedbacks`、`review_feedback_attempts`；D1没有自由文本body列，feedback/lineage snapshot不可UPDATE，同review/Attempt唯一。签名`pull_request_review submitted/changes_requested`严格核对review commit=payload PR head、same-repo/base/branch/verified publication及该branch最新immutable bot head。
+  - feedback body在任何D1/R2写入前扫描全部Worker配置Secret与credential形状；通过后只写私有`TASK_OBJECTS/review-feedback/...`，D1保存ref/digest/安全URL/time与Plan lineage。stale head只记ignored delivery且零R2/Attempt；同delivery换payload或同review ID改写content/head/branch返回409，20路相同review收敛为一份feedback/Attempt/outbox。
+  - exact review在一个D1 batch按合法edge推进`pull_request_open v9 → awaiting_review v10 → executing v11`，把原`passed v3` Item重开为`in_progress v4`，保留旧verification decision/Evidence不可变，并创建从reviewed SHA checkout的pending`review_fix` Attempt。dispatcher允许`attempt_repairs`与`review_feedback_attempts`两种互斥source，仍在GitHub effect前重验active Run/Plan/Item/gate，dispatch不含review正文。
+  - execution context为review source新增`reviewFeedback`和受信`targetBranch/targetBranchMode`；从R2回读时复验metadata/schema/feedback ID/body canonical digest/head/branch/URL/time，篡改固定拒绝。verification repair继续只返回`repair`，两种source不能并存；ExecutionHeadStore按source接受派生branch或原PR branch，并维持每generation唯一commit Evidence/head transition。
+  - `GitRepositoryWriter`新增`existing_fast_forward`模式：只允许同task namespace的既有PR branch，clean/exact checkout后用token仅进Git环境的`ls-remote`核对远端head等于reviewed SHA，再从该SHA建立本地branch；bot single commit后固定same-ref non-force push。远端在prepare前或push前推进都拒绝，main不变且不创建当前Attempt branch。
+  - 同步DOD与Architecture/Proto/Security/Reference；真实review/Actions/PR URL和外部bot SHA不存在，因此只勾本地子项，真实试点子项与父项保持未勾；按用户要求不额外更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-review-feedback.test.ts` → exit 1，1 file / 2 failed；缺三张review表。
+  - 红灯`pnpm exec vitest run test/review-fix-repository-writer.test.ts` → exit 1，1 file / 2 failed；错误派生新branch且stale remote未拒绝。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-review-feedback.test.ts` → exit 0，1 file / 3 tests；覆盖20路收敛、Run/Item version、dispatch、D1/R2回读与篡改、same-delivery/review mutation、stale head和Secret零持久化。
+  - `pnpm exec vitest run test/review-fix-repository-writer.test.ts test/repository-writer.test.ts test/execution-runner-bootstrap.test.ts` → exit 0，3 files / 8 tests；覆盖同PR branch fast-forward、main/current-Attempt branch隔离、远端两阶段竞态和既有verification repair bootstrap回归。
+  - `pnpm run typecheck`、`pnpm run lint`、`git diff --check` → exit 0。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 22 files / 78 tests、workerd 29 files / 129 tests、109个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round43-20260725` → exit 0；Workflow/Queue/D1/双R2 bindings与新增webhook/store/migration成功bundle，未部署。
+- 勾选：Phase 4 Review comment DoD下新增并勾选“本地控制面/workerd/真实Git契约”子项；父项及“真实试点GitHub外部事实”保持未勾，本地HMAC/bare Git不冒充真人review、GitHub delivery、Actions run或外部PR branch事实。
+- 决策沉淀：review feedback不是verification failure，两种repair source必须互斥；评论自然语言只是不可信R2数据，不能重置测试失败预算或进入dispatch。review commit/head是第一道fence，Git remote-head核对+non-force push是第二道fence；旧head评论在模型和Git effect之前即被控制面丢弃。同一PR的review fix必须fast-forward原branch，才能让GitHub review/checks继续围绕同一PR恢复，而不是产生不可关联的新Attempt branch。
+- 遗留：完整父DoD仍需用户确认GitHub owner/repo/visibility、安装App并配置webhook/目标workflow后，由真人在试点Draft PR提交Changes requested；需记录review/PR/Actions URL、delivery ID、新bot SHA与required checks，并实证stale review零Action。下一轮可继续同Phase的不依赖远端项“review改变Plan正文/base/effect时创建新Plan版本”，不得提前勾真实外部项。
+
+## Round 44 — 2026-07-25
+- 目标：Phase 4 / review或补充上下文需要改变计划正文、base SHA、effect时创建新Plan版本并使旧审批过期，不原地改写active Plan（本轮闭环本地D1/Store核心；真实review/飞书/Meegle/base source producer与Workflow E2E保持未勾）。
+- 前置与权限：仅本地Node/workerd/D1与fake immutable source fact；未访问真实GitHub、Cloudflare远端、Codex计费模型、飞书、Meegle或tool-bridge，未部署、未使用真实Secret。按用户要求核对Watt固定commit`476e3cd`，全库检索`supersede/replan/plan revision/approval invalidation/plan version`与checkpoint approval组合无匹配实现，本轮Watt直接复制量为零；最大化复用Watt-derived D1 conditional update/stable identity/outbox，以及本项目ExecutionPlan validator、Attempt fencing、token/credential revoke和query projection。
+- 动作：
+  - 先新增`plan-revision` workerd契约；首次因`plan-revision-store`模块不存在exit 1、0 tests，证明规范虽声明Plan版本不可变，运行代码没有revision ledger/approval invalidation/替换路径。
+  - migration 0021新增`plan_revision_source_facts`、`plan_revisions`、`approval_invalidations`。source fact绑定run/旧Plan/version/digest、kind/ref/digest/requested base且不可UPDATE；caller格式正确的ref/digest没有source fact仍零状态变化。revision稳定identity绑定expected Run/旧Plan/source/base，approval原行不改，invalidation另表append-only。
+  - `PlanRevisionStore.begin`仅消费exact source fact；20路并发只创建一个pending analysis Attempt与`analysis_dispatch`，Run从允许的pre-merge状态CAS回`planning/version+1`并固定新base；同batch取消旧Plan active Attempt、generation+1、撤销token、write credential置revocation pending、protected gate superseded、旧execution/PR outbox settled、旧Plan全部approval invalidated。
+  - replacement仍走现有ExecutionPlan schema/DAG/criterion/command/effect/base/digest validator，并必须是strict next version且createdBy绑定revision analysis Attempt。activation从规范化Plan/Item关系重算semantic body/effect digest；body/base/effect至少一项变化才按顺序将旧active Plan置superseded、新validated Plan置active、Run切到`awaiting_approval/version+1`并完成analysis Attempt。
+  - 无变化的proposal不制造v2：new Plan置superseded、revision置rejected、Run恢复旧active Plan的`awaiting_approval`安全门，旧approval仍保持invalidated所以必须重审；重复activation稳定返回`no_change`，不留下planning卡死状态。
+  - migration trigger禁止UPDATE ExecutionPlan identity/objective和normalized Item/criterion/doneWhen/dependency/effect/command/Evidence/external-fact关系，并限制Plan status单调迁移。Run状态机新增所有active pre-merge/blocked状态到planning的显式replan edge，merging/deploying/终态仍拒绝。
+  - repo-write credential issuance/active check、PR scheduler/effect、review feedback projector与controlled replay全部新增`approval_invalidations`排除；`GET /v1/runs/:id/plan`新增reference-only revision摘要，只公开source kind/digest、旧/新Plan refs/base/change flags/time，不公开R2 source ref/正文。
+  - 同步DOD与Architecture/Proto/Security/Reference；只勾本地核心子项，父项与真实source producer/Workflow E2E保持未勾；按用户要求不额外更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/plan-revision.test.ts` → exit 1，1 failed suite / 0 tests；缺`plan-revision-store`生产模块。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/plan-revision.test.ts` → exit 0，1 file / 4 tests；覆盖20路begin、source fact拒绝、旧Attempt/token/outbox/approval fencing、body/base/effect v2原子激活、query恢复投影、no-op拒绝/恢复和Plan normalized-table immutable trigger。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/plan-revision.test.ts test/workflow/repo-write-credential.test.ts test/workflow/controlled-replay.test.ts test/workflow/github-pull-request.test.ts test/workflow/github-review-feedback.test.ts` → exit 0，5 files / 20 tests；覆盖所有现有approval消费者回归。
+  - `pnpm run typecheck`、`pnpm run lint`、`git diff --check` → exit 0。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 22 files / 79 tests、workerd 30 files / 133 tests、111个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round44-20260725` → exit 0；Workflow/Queue/D1/双R2 bindings与新增store/migration/query成功bundle，未部署。
+- 勾选：Phase 4 Plan revision DoD下新增并勾选“本地D1/Store核心契约”子项；父项及“真实source producer与编排”保持未勾。手工seed的source fact只证明下游不可变替换/fencing，不能冒充签名review、飞书/Meegle context revision、GitHub base observation或真实re-analysis Action。
+- 决策沉淀：Plan revision不是对active Plan做patch，而是“source fact→fence旧执行/审批→analysis strict next version→semantic diff→atomic active pointer swap”。approval精确绑定本已阻止跨Plan复用，但独立invalidation ledger让“为什么提前失效”可审计，并避免旧Plan被恢复时未来expiry重新生效。Plan digest含version/identity，不能用digest不同证明业务内容变化；必须从normalized tables重算排除identity/base的semantic digest，并单独比较base/effects。
+- 遗留：下一轮仍在同一父DoD补source producer/生产编排，优先把Round43 verified GitHub review feedback原子投影为`review_feedback` source fact并由受控decision启动re-analysis；飞书/Meegle补充上下文需要先落实Task新revision契约，base change需要GitHub branch observation。三类外部事实未接通前父项不勾；之后再进入base branch冲突/rebase DoD。
+
+## Round 45 — 2026-07-25
+- 目标：Phase 4 / review或补充上下文改变Plan时创建新版本并使旧审批过期——本轮闭环签名GitHub review的本地source producer与Runner受控decision编排；飞书/Meegle、base observation和真实Actions/Workflow外部证据保持未完成。
+- 前置与权限：仅本地Node/workerd/D1/R2、测试HMAC、fake HTTP与临时Git remote；未访问真实GitHub、Cloudflare远端、Codex计费模型、飞书、Meegle或tool-bridge，未部署、未使用真实Secret。按用户要求核对Watt固定commit`476e3cd`，全库检索`replan/plan revision/review feedback/changes requested/source fact`，唯一近似代码是`watt-task-workflow.ts`的稳定`request-plan-confirmation`步骤；该路径只等待人类确认已有Plan，不含签名review lineage、immutable source fact、Attempt/token/approval fencing或Plan replacement，直接复制会混淆安全语义，因此本轮Watt直接复制量为零；继续最大化复用其稳定Workflow步骤、D1持久状态、strict schema和conditional-write模式。
+- 动作：
+  - 先在既有review workerd套件新增strict endpoint契约；首次运行exit 1，5 tests中新增2条均因`POST /v1/attempts/:id/plan-revision`不存在而返回404，旧3条仍通过，证明此前verified review feedback没有生产re-analysis入口。
+  - migration 0020在签名review producer落库时冻结`expected_run_version = review投影完成后的Run version`；migration 0021让source fact同时绑定该版本。聚焦测试第一次实现后发现手工推进Run仍被错误接受（预期409、实际202），据此改为消费冻结版本，而不是把请求时“当前Run version”重新当作可信事实。
+  - 新增Attempt-authenticated strict endpoint，body只有`expectedVersion + leaseGeneration`。只有恰好一条`review_feedback_attempts`、零`attempt_repairs`、active running `review_fix`、exact Plan/Item/publication/head/branch/lease及冻结Run version全部命中才可进入；caller夹带Plan/ref/digest/base/effect由strict schema在source fact前拒绝。
+  - source ref固定为`d1://github-review-feedbacks/<feedbackId>`，source digest只由D1 feedback ID/review ID/body digest/head/branch/URL/time canonical派生，requested base只取Run。source insert作为PlanRevisionStore begin同一D1 batch的首条statement，随后原子创建唯一analysis Attempt/outbox、Run CAS回planning、取消旧review Attempt、generation+1、撤销token并settle旧execution intent；20路并发允许已进入鉴权的请求收敛，撤销后新请求固定401。
+  - 新增Codex execution strict decision schema，仅接受无额外字段的`apply_fix/request_replan` JSON final message。后者只在context含exact GitHub review feedback时开放；普通implement与verification repair固定拒绝。`ExecutionAttemptRunner`收到replan后调用固定`ControlPlanePlanRevisionReporter`，reporter只提交当前Attempt fencing，并在bot commit、push、head Evidence和verification之前返回`replanning`；旧write credential由revision batch进入撤销流程。
+  - 同步DOD与Architecture/Proto/Security/Reference；只勾本地GitHub review producer/Runner子项，父项和飞书/Meegle/base/真实Actions外部子项保持未勾；按用户要求不更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-review-feedback.test.ts` → exit 1，1 file / 5 tests中2 failed；新路由不存在均返回404，旧review测试3 passed。
+  - 红灯`pnpm exec vitest run test/codex-execution-adapter.test.ts test/execution-attempt-runner.test.ts` → exit 1，2 files / 3 failed；adapter仍返回void且Runner错误进入commit，证明没有结构化decision/replan短路。
+  - `pnpm exec vitest run test/codex-execution-adapter.test.ts test/execution-attempt-runner.test.ts test/execution-plan-revision-reporter.test.ts test/execution-runner-bootstrap.test.ts` → exit 0，4 files / 11 tests；覆盖strict output、review-only capability、commit/push/verification短路和reporter exact payload/response。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-review-feedback.test.ts test/workflow/plan-revision.test.ts` → exit 0，2 files / 9 tests；覆盖20路收敛、server-derived fact、旧token撤销、strict payload、stale fencing/head/Run、无review lineage拒绝与Round44核心回归。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 23 files / 83 tests、workerd 30 files / 135 tests、111个生产文件Secret scan、Markdown links全绿；`git diff --check` → exit 0。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round45-20260725-2352` → exit 0；Workflow/Queue/D1/双R2 bindings、新route/store/migration成功bundle，未部署。此前包含临时目录删除的命令被安全策略在进程创建前拒绝，未执行且未删除文件，随后使用全新outdir完成验证。
+- 勾选：Phase 4 Plan revision DoD下新增并勾选“本地GitHub review source producer与Runner编排”子项；父项及“其余真实source与外部编排”保持未勾。本地HMAC/fake HTTP/workerd不能冒充真人review、GitHub Action、新Plan审批、飞书/Meegle revision或base observation。
+- 决策沉淀：`request_replan`是能力，不是模型自由文本。模型只能给二选一decision，控制面仍从签名外部事实派生全部source字段；review事件必须冻结未来合法消费的Run version，否则“服务端派生”仍可能在竞争中错误采信新状态。source fact和begin必须同batch，才能保证stale请求既不启动revision也不留下孤儿事实。
+- 遗留：同一父DoD仍需飞书/Meegle supplemental context的新Task revision producer、GitHub base observation producer，以及真实试点Action中review decision→analysis Action→strict next Plan→新审批的外部Evidence；之后才可勾父项并进入base branch冲突/rebase DoD。
+
+## Round 46 — 2026-07-25
+- 目标：Phase 4 / Plan revision其余真实source与外部编排中的GitHub base observation producer——本轮闭环本地scheduled GitHub refs+compare外部事实到immutable source fact/re-analysis；飞书/Meegle和真实GitHub外部证据保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、fake GitHub REST与测试installation token；只读访问GitHub官方refs/compare文档，未调用真实GitHub组织API、Cloudflare远端、Codex计费模型、飞书、Meegle或tool-bridge，未部署、未使用真实Secret。按用户要求核对Watt固定commit`476e3cd`，全库检索Git refs、compare commits、branch head、fast-forward、Contents-read token和base reconciliation，没有GitHub repository adapter或base-update producer可复制，本轮Watt直接复制量为零；最大化复用Watt-derived stable identity/D1 conditional write/scheduled持久状态模式及本项目现有App JWT/allowlist、API reconciliation、PlanRevision batch。
+- 动作：
+  - 先新增Node API/token与workerd producer契约。首次Node运行exit 1：base API模块不存在、专用token方法不存在，既有4条token测试仍通过；首次workerd运行因reconciler模块不存在而0 tests/failed suite，证明此前没有base observation路径。
+  - 实读GitHub官方Get a reference与Compare two commits契约，确认两者对GitHub App都只需Contents read，compare提供ahead/behind/diverged与merge base。新增独立缓存的`getBaseObservationToken`，installation request严格只有单仓库和`permissions:{contents:'read'}`，不复用Actions write、PR write或repo-write token。
+  - 新增`GitHubBaseApiClient`：先GET exact`git/ref/heads/<Task baseBranch>`并绑定commit SHA；未变化不做第二次查询。变化后GET`compare/<old>...<new>`，只有`status=ahead + ahead_by>0 + behind_by=0 + base_commit=merge_base=old`生成strict fact；behind/diverged/identical不触发replan，ref/compare malformed、超限、非200与transport错误固定失败且不传播token/response body。
+  - migration 0022新增immutable `github_base_observations`，只保存run/expected version/旧Plan、repo/branch、before/after、ahead count和ref/compare/source canonical digests，不保存raw REST或token；同Run version、同before/after均唯一，UPDATE trigger固定拒绝。
+  - `PlanRevisionStore.beginFromBaseObservation`从strict parsed fact派生stable observation ID、`d1://github-base-observations/<id>`和source digest；把observation insert、source fact insert与既有begin/fencing statements放入同一D1 batch。20路外部read可重复，但只创建一个revision/analysis Attempt/outbox并把Run base CAS到新head；旧Attempt/token、approval和pending execution/PR intent复用Round44逻辑同时失效。
+  - 新增scheduled `GitHubBaseObservationReconciler`与production runtime，Worker每轮只扫描active pre-merge/blocked、Run base=active Plan base的候选。unchanged零D1事实；non-fast-forward暂返回固定disposition留给下一条冲突DoD；Run/Plan在两次GitHub read期间变化时observation/source均零写入。
+  - 同步DOD与Architecture/Proto/Security/Reference；新增并勾选本地GitHub base observation子项，父项、飞书/Meegle、真实GitHub refs/compare/Actions/新审批证据保持未勾；按用户要求不更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/github-base-api.test.ts test/github-app-installation-token.test.ts` → exit 1；2 files failed，base API suite 0 tests/模块缺失，token新增1 failed/既有4 passed。
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-base-observation.test.ts` → exit 1；1 failed suite / 0 tests，reconciler生产模块不存在。
+  - `pnpm exec vitest run test/github-base-api.test.ts test/github-app-installation-token.test.ts` → exit 0，2 files / 8 tests；覆盖exact URLs/headers、ref+compare fast-forward、unchanged单请求、diverged、mismatched response安全错误和contents-read-only token/cache。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-base-observation.test.ts test/workflow/plan-revision.test.ts` → exit 0，2 files / 6 tests；覆盖20路收敛、observation/source/Run base、旧Attempt/token/approval fencing、immutable trigger、scheduled batch、unchanged/non-fast-forward/stale/ineligible拒绝及Round44回归。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 24 files / 87 tests、workerd 31 files / 137 tests、114个生产文件Secret scan、Markdown links全绿；`git diff --check` → exit 0。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round46-20260725-0010` → exit 0；Workflow/Queue/D1/双R2 bindings、新scheduled runtime/reconciler/store/migration成功bundle，未部署。
+- 勾选：Phase 4 Plan revision DoD下新增并勾选“本地GitHub base observation producer”子项；父项及“其余真实source与外部编排”继续未勾。官方文档核对和fake REST证明本地契约，不冒充真实installation token、GitHub branch/compare事实、analysis Action、新Plan或新审批。
+- 决策沉淀：base head SHA本身不能证明安全更新；必须把exact ref与commit relationship作为两条独立外部事实，只有旧base是merge base的纯ahead才可自动换base。外部read允许at-least-once，业务变更仍依靠observation/source/begin同一D1 batch与stable identity收敛。权限上base observation是独立`contents:read`能力，不能因为现有Actions token“也能读”就扩大复用范围。
+- 遗留：下一轮继续该父DoD的飞书/Meegle supplemental context新Task revision producer；真实试点仍需App installation、真实refs/compare结果、analysis Actions run、strict next Plan及新审批外部证据。non-fast-forward已安全零source，但尚未实现下一DoD要求的可重放rebase或blocked人工路径。
+
+## Round 47 — 2026-07-26
+- 目标：Phase 2补充上下文revision与Phase 4 Plan revision source——本轮闭环本地Worker/D1/R2的supplemental Task revision producer、默认/显式apply-current语义，以及review/base/supplemental三类re-analysis source真实回读；真实飞书/Meegle身份事件与GitHub Actions/Workflow外部证据保持未完成。
+- 前置与权限：仅本地Node/workerd/D1/R2和本地Watt只读源码；未访问真实GitHub、Cloudflare远端、Codex计费模型、飞书、Meegle、数据库、日志或tool-bridge，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`：全库没有supplemental/add-context/apply-current/immutable Task→Plan revision或absorbed Run等价实现，`applyPatch`因原地覆盖语义明确不复制；直接复制其`ObjectContextProvider`的R2 `head + onlyIf:{etagDoesNotMatch:'*'}`并发创建模式，并适配为内容寻址immutable JSON对象，其他能力继续复用Watt-derived stable identity、D1 conditional write和outbox纪律。
+- 动作：
+  - 先新增`supplemental-context-revision` workerd契约；首次运行exit 1、0 tests，失败原因为生产模块不存在，证明此前只有规范条目和手工seed的supplemental source，没有可调用producer。
+  - migration 0023新增immutable `supplemental_context_revisions`，只保存event digest、prior/new Task与new Run、R2 context ref/digest、apply-current及旧Run/Plan/base绑定；正文无D1列，prior Task单一next child、new Task/Run/context唯一，UPDATE trigger拒绝改写。
+  - 新增strict内部`POST /v1/runs/:runId/context`与`SupplementalContextRevisionStore`。完整新Task和context先统一Secret scan，再分别写内容寻址私有R2并用Watt conditional create-if-absent收窄并发竞态；Task source tuple/target/environment/intent kind/policy必须与prior一致，Task schema及所有嵌套对象改为strict，caller夹带Plan/ref/base/effect或借revision扩大production/repo权限均拒绝。
+  - 默认`applyToCurrentRun=false`只创建一份新Task revision、queued Run和pending workflow-create intent；旧Run state/version、active Attempt、lease/token、approval与outbox逐项零变化。相同revision/context的20路及顺序重放返回同一IDs；同revision改写、从旧prior分叉第二child、Secret和policy变化均无第二条业务lineage。
+  - 显式apply必须绑定路径旧Run、旧Task revision、expected Run version、active Plan version/digest和base。新Task仍留作immutable revision，但其新Run在创建时即`cancelled/version=1`且workflow-create intent固定settled为`supplemental_context_absorbed`；context lineage、source fact、absorbed状态与`PlanRevisionStore.begin`同一D1 batch，旧Run只生成一个re-analysis Attempt/outbox，同时复用既有fencing撤销旧Attempt/token/approval/effect intent，避免新旧两条Run重复执行。
+  - `AnalysisAttemptContextStore`新增strict optional `revisionSource`。review feedback从私有R2回读正文并复算body/source digest；base update从immutable observation重建规范化fact；supplemental分别回读context对象与完整新Task revision，复核D1 ref、R2 metadata/schema、canonical context/task digest及lineage。普通首次analysis可无source；已绑定revision的source缺失、双source或R2篡改fail-closed。Node Runner schema接受并把该untrusted source写入repo外0600 context文件，不由source字段提升effect。
+  - 同步DOD与Architecture/Proto/Security/Reference；只勾本地supplemental producer、默认/显式revision语义和统一source回读子项，Phase 2/4父项及真实飞书/Meegle/GitHub外部子项保持未勾。按用户要求不更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/supplemental-context-revision.test.ts` → exit 1，1 failed suite / 0 tests；缺`src/storage/supplemental-context-revision-store`。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/supplemental-context-revision.test.ts test/workflow/github-review-feedback.test.ts test/workflow/github-base-observation.test.ts test/workflow/plan-revision.test.ts test/workflow/task-intake-store.test.ts test/workflow/analysis-attempt-api.test.ts`与`pnpm exec vitest run test/analysis-runner-bootstrap.test.ts` → exit 0；workerd 6 files / 24 tests、Node 1 file / 3 tests，覆盖20路/顺序重放、默认零打断、显式吸收/fencing、strict API、三类source回读及R2篡改拒绝。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 24 files / 87 tests、workerd 32 files / 141 tests、118个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round47-20260726-0052` → exit 0；Workflow/Queue/D1/双R2 bindings、新route/store/migration/source schema成功bundle，未部署；`git diff --check` → exit 0。
+- 勾选：Phase 2补充上下文DoD下新增并勾选本地Worker/D1/R2子项；Phase 4 Plan revision下新增并勾选本地supplemental producer与统一re-analysis context子项。内部Bearer API、本地R2/workerd和fake source不能冒充飞书验签/open_id授权、真实Meegle revision、GitHub Action、Cloudflare Workflow或新审批外部证据，因此两个父项继续未勾。
+- 决策沉淀：Task ID继续表示具体source revision；默认add-context因此必须产生独立Run。显式apply-current若也保留queued新Run会形成双执行链，所以新Run只作可审计absorbed终态，实际执行仍由旧Run的immutable Plan revision接管。R2与D1无法共享事务，安全顺序是Secret scan→内容寻址conditional R2 write→D1原子lineage/source/begin；失败时保留无引用对象供reconciliation，不能删除可能已被并发相同请求引用的对象。Plan revision Agent必须看到digest-verified source和新Task snapshot，否则“已调度re-analysis”不等于真正消费了触发事实。
+- 遗留：真实飞书/Meegle adapter仍需challenge/验签、open_id+tenant+revision/nonce鉴权和卡片选择，将外部event映射到内部context入口并保存真实event/card证据；真实试点GitHub/Cloudflare还需运行review/base/context→analysis Action→strict next Plan→新审批链路。下一轮可选择同Phase的飞书事件入口，或进入base non-fast-forward的可重放rebase/blocked DoD，不能提前勾父项。
+
+## Round 48 — 2026-07-26
+- 目标：Phase 4 / base branch前进的安全重放与冲突处理——本轮闭环本地真实Git rebase+强制重验，以及GitHub non-fast-forward fact到D1 durable blocker的核心契约；固定GitHub workflow自动调用与真实Actions/PR外部证据保持未完成。
+- 前置与权限：仅本地真实临时Git、Node子进程、workerd/D1和fake GitHub compare fact；未访问真实GitHub组织、Cloudflare远端、Codex计费模型、飞书、Meegle、日志、数据库或tool-bridge，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`并检索rebase/merge conflict/non-fast-forward/branch ancestry；没有Git rebase Runner、base conflict blocker或approval invalidation union可直接复制，llmdoc中的worktree建议不是生产代码，本轮Watt直接复制量为零；最大化复用本项目fixed Git executor、Attempt派生branch、bot identity、verification Runner与Watt-derived stable identity/D1 conditional batch/outbox模式。
+- 动作：
+  - 先写真实临时Git rebase契约。首次`pnpm exec vitest run test/base-rebase-runner.test.ts`因`src/runner/base-rebase-runner`不存在而exit 1/failed suite，证明此前没有安全重放实现。随后单独执行workerd红灯，non-fast-forward 20路结果仍返回旧`non_fast_forward`而非`blocked`，新增case exit 1。
+  - 新增`BaseRebaseRunner`：输入必须绑定absolute repo、Task/source/target Attempt派生branch、old/new/source SHA、parsed policy和targeted refs；clean tree、source ref/head exact、old base同时为new base与source head祖先、source非空线性且author/committer为固定bot全部成立才允许继续。rebase固定禁hooks/GPG/autostash，不含push/force；target是新Attempt branch，source ref始终不改。
+  - rebase成功后重新核对new-base ancestry、commit数、线性bot identity和source patch equivalence，并强制执行targeted→全部required verify；已完成target branch重放仍重新产Evidence。内容冲突只有`rebase --abort`成功、工作树clean且source/target回到原source head后才返回fixed `content_conflict`，零Evidence；相同冲突顺序重放保持稳定。
+  - GitHub base API的non-fast-forward结果升级为strict fact，增加repo/branch、ahead/behind、merge-base、ref/compare canonical digests。migration 0024新增immutable `github_base_conflicts`与base-conflict approval invalidation ledger；`GitHubBaseConflictStore`以Run/version和old Plan绑定的stable identity，在一个D1 batch保持旧base不变并把Run/Plan blocked、取消active Attempt/generation+1、撤销token/写credential、supersede高风险gate、settle旧analysis/execution/PR intent并创建唯一Workflow cancel。20路并发与后续重放均返回blocked，不写Plan source fact。
+  - 新增`invalidated_approvals` union view并把credential、PR、review、replay等所有approval消费者切到统一视图，防止base conflict后的旧repo_write approval因尚未过期而复活。Task/Run查询优先投影白名单化base blocker，只含repo/branch/before/after/relationship/count/merge-base和固定`manual_rebase`提示，不含REST body、token、Git stderr或冲突文件内容。
+  - 同步DOD与Architecture/Proto/Security/Reference；只勾本地Git/D1/workerd核心子项，父项及固定workflow/真实Action子项保持未勾；按用户要求不更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/base-rebase-runner.test.ts` → exit 1，模块不存在；红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-base-observation.test.ts` → exit 1，新增non-fast-forward blocker case失败。
+  - `pnpm exec vitest run test/base-rebase-runner.test.ts test/github-base-api.test.ts` → exit 0，2 files / 5 tests；覆盖真实无冲突rebase、source不变、新base ancestry、无push/force、成功重放重验、冲突abort/零Evidence及冲突重放。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-base-observation.test.ts` → exit 0，1 file / 3 tests；覆盖20路immutable conflict、Run/Plan/Attempt/token/approval/outbox/workflow cancel、零source fact、查询投影与trigger。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 25 files / 89 tests、workerd 32 files / 142 tests、121个生产文件Secret scan、Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round48-20260726-0110` → exit 0；Workflow/Queue/D1/双R2 bindings与新增migration/store/reconciler/query成功bundle，未部署；`git diff --check` → exit 0。
+- 勾选：Phase 4 base conflict DoD新增并勾选“本地Git/D1/workerd核心契约”子项；父项与真实workflow子项保持未勾。本地直接调用生产Runner、fake compare和workerd只能证明安全原语与控制面收敛，不能冒充真实GitHub-hosted Runner自动找到未发布branch、更新PR或产生Actions Evidence。
+- 决策沉淀：必须区分两类冲突：GitHub compare证明base history不是纯fast-forward时，控制面立即blocked且不能创建replan source；base history安全但bot source patch与新base内容冲突时，Git Runner必须abort并请求人工。自动rebase永远产生新的Attempt branch且不push/force，成功也不能继承旧测试结果；approval统一失效视图是权限边界，不只是审计便利。
+- 遗留：下一轮若继续该父项，应把fixed GitHub workflow/控制面与`BaseRebaseRunner`接通：从D1 verified publication/attempt head选择真实未发布source，创建并授权replacement Attempt，在Action中运行rebase和新suite并上报head/Evidence；已发布PR branch或内容冲突不得force-push，需人工选择新branch/PR或放弃。没有这些外部事实前不勾父项。
+
+## Round 49 — 2026-07-26
+- 目标：Phase 4 / base branch安全重放的本地固定workflow与控制面生产接线；把Round 48的可信Git原语接到可恢复的scheduled Attempt、GitHub dispatch、OIDC execution bootstrap和terminal callback，真实GitHub-hosted Actions外部事实继续保持未完成。
+- 前置与权限：仅本地Node/workerd/D1/R2、fake GitHub/control-plane HTTP、真实临时Git仓库与bare remote；未访问真实GitHub组织、Cloudflare远端、Codex计费模型、飞书、Meegle、日志、数据库或tool-bridge，未部署、未使用真实Secret。按用户要求核对Watt固定commit`476e3cd`并检索base-only Plan revision、verified branch replay、rebase Attempt lineage、GitHub workflow dispatch与content-conflict callback，没有可直接复制的生产实现，本轮Watt直接复制量为零；最大化复用delivery-loop已有Watt-derived scheduled reconciliation、stable identity、D1 conditional batch/outbox/三态dispatch，以及现成review-fix OIDC/bootstrap、repo-write broker、fixed no-force writer、head CAS、verification/failure reporter和Attempt revocation ledger。
+- 动作：
+  - 先写`base-rebase-attempt` workerd契约；首次`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/base-rebase-attempt.test.ts`因`src/reconciliation/base-rebase-attempt-reconciler`不存在而exit 1，证明此前只有独立Git runner，没有自动选择source、创建replacement Attempt或dispatch的生产路径。
+  - migration 0025新增immutable `base_rebase_attempts`与`base_rebase_approval_invalidations`，并把统一`invalidated_approvals`视图扩为Plan revision、base history conflict、base rebase content conflict三个ledger。lineage只允许`scheduled→passed/blocked`，冻结old/new Plan/Item、source/rebase Attempt、old/new/source/result SHA、source/target branch、suite和blocker。
+  - 新增scheduled `BaseRebaseAttemptReconciler`与D1 store。候选必须是已activated的`base_update` revision且semantic body/effects未变；旧同ID required verification Item由passed `plan_item_verifications`和completed source Attempt/head关门，source branch必须是其Attempt派生branch；新Item ready、依赖passed、声明repo-write/test/targeted/required refs，且新Plan/base已有latest fresh approval。任何`pull_request_publications`使用过source branch时零Attempt/outbox/effect。stable identity和条件batch让20路调度只创建一份lineage、pending `review_fix` Attempt、Item占用与`execution_dispatch`。
+  - execution dispatch/context/head路径新增第三种`baseRebase` source，并在dispatcher、context store与Runner bootstrap三层都要求verification repair、review feedback、base rebase恰好一个。fixed workflow继续从new base ref加载受信代码/policy，但checkout exact旧verified source head；本地物化source ref后只运行trusted setup与`BaseRebaseRunner`，不调用Codex Agent。
+  - `BaseRebaseRunner`保持no-push职责；成功callback复用现有writer把新Attempt派生branch non-force push，核对返回head/branch后先写source→rebased head CAS，再执行targeted→全部required verify。`complete`只在同Attempt/generation/Plan/Item的head transition与completed all-passed suite都存在时写passed lineage；Plan Item仍由逐doneWhen Evidence verifier最终关门。
+  - 内容冲突必须先abort并核对source/target/clean tree，随后strict endpoint以Attempt/Run/Plan/Item/version/generation/lease共同fence，在一个D1 batch把lineage/Run/Plan/Item置blocked、取消Attempt并提升generation、写reference-only revocation audit、撤销token/write credential、新Plan approval和旧effect intent，并创建唯一Workflow cancel。审查发现终态已提交但HTTP响应丢失时，普通鉴权会因token已撤销而破坏幂等重放；据此新增只读恢复校验，仅同一已撤销token、原expected version/generation且仍在原expiry内可取回`created:false`的同一blocked投影，错误token仍401且不能恢复任何写权限。
+  - 查询新增reference-only base rebase lineage/blocker投影；同步DOD、Architecture、Proto、Security、Reference。只勾本地固定workflow/生产接线子项，父项与真实GitHub外部事实保持未勾；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/base-rebase-attempt.test.ts` → exit 1，production reconciler模块不存在。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/base-rebase-attempt.test.ts` → exit 0，1 file / 4 tests；覆盖20路收敛、fixed workflow dispatch、strict context、已发布branch拒绝、content conflict原子block/撤权/revocation audit、原token终态重放、错误token拒绝及head+suite completion。
+  - `pnpm exec vitest run test/execution-runner-bootstrap.test.ts test/base-rebase-runner.test.ts` → exit 0，2 files / 6 tests；覆盖真实临时Git无冲突rebase、不调用Agent、新branch non-force push、head CAS后targeted→required、complete report，以及真实内容冲突abort、无push/head/Evidence和conflict report。
+  - 首次全量回归捕获新query断言的嵌套asymmetric matcher不稳定，workerd 33 files中1 failed/145 passed；改为按持久化CAS赢家Attempt ID定位后再断言projection，并补齐null类型收窄，聚焦测试恢复4/4。
+  - 最终`pnpm run typecheck`、`pnpm run lint`、`pnpm run verify`、`git diff --check`均exit 0；Node 25 files / 91 tests、workerd 33 files / 146 tests、124个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round49-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings与新增migration/store/reconciler/routes成功bundle，未部署。
+- 勾选：Phase 4 base conflict DoD下“本地固定workflow/生产接线”子项已勾；父项与“真实试点GitHub外部事实”保持未勾。本地bare Git、fake HTTP/workerd和dry-run不能冒充真实App installation、GitHub-hosted Action、远端branch push或Actions Evidence。
+- 决策沉淀：自动rebase不是旧Attempt续跑，而是base-only revision重新批准后的新Attempt；new base负责代码/policy/approval身份，old verified head只负责提供受信patch来源。Git effect必须按non-force push→head CAS→新suite排序，旧Evidence不可继承。终态回放也不能靠重新开放已撤销token：只能为exact已提交事实提供最小只读projection。
+- 遗留：真实试点仍需用户确认owner/repo/visibility，安装GitHub App并配置目标workflow/Cloudflare bindings；之后由真实未发布bot branch触发Action，记录旧/新base、source/derived SHA、App push与新suite Evidence，并分别演练内容冲突和已发布PR branch零force-push。没有这些外部事实前父项不得勾选。
+
+## Round 50 — 2026-07-26
+- 目标：Phase 5 / required checks未完成或失败、review不足、base非最新、approval过期时拒绝merge——本轮闭环本地只读GitHub merge eligibility producer、D1 gate decision与`ready_to_merge` CAS；真实GitHub负向场景和实际merge effect保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、fake GitHub REST与测试installation token；未访问真实GitHub组织、Cloudflare远端、Codex计费模型、飞书、Meegle、日志、数据库或tool-bridge，未部署、未使用真实Secret。按用户要求核对Watt固定commit`476e3cd`并全库检索required checks、branch protection/rules、review decision、ready-to-merge与GitHub merge gate，没有可直接复制的生产实现，本轮Watt直接复制量为零；最大化复用delivery-loop已有Watt-derived scheduled reconciliation、stable identity、D1 conditional batch/reference-only projection，以及现有GitHub App单仓库token/provider、PR publication、base observation、approval/invalidation和TaskQuery原语。
+- 动作：
+  - 先写Node API/token与workerd gate契约。首次`pnpm exec vitest run test/github-merge-gate-api.test.ts test/github-app-installation-token.test.ts`因production reconciler模块不存在而exit 1，新增suite 0 tests、既有token 5 passed；首次workerd运行同样因模块不存在exit 1/0 tests，证明此前只有Run状态名和规范，没有可执行merge eligibility路径。
+  - migration 0026新增immutable `github_merge_gate_observations`、normalized `github_merge_gate_required_checks`、`merge_gate_evaluations`和`merge_gate_decisions`。observation只保存repo/PR/head/base、mergeability/review/check counts、逐required check状态及policy/check/review canonical digest，不保存REST body、review正文或token；evaluation冻结Run/Plan/publication/approval与passed或固定rejection reason；decision只证明资格，不产生merge outbox。
+  - 新增用途隔离、缓存的merge observation installation token，请求严格只有`checks/contents/pull_requests/statuses:read`。`GitHubMergeGateApiClient`依次读取exact PR、base ref、active branch rules、head latest check-runs、combined statuses与reviews；response/status/schema/大小、repo/branch/SHA、分页完整性全部fail-closed，错误不传播token或response body。
+  - branch rules规范化为`context + integrationId`集合及最大required approval count；没有required checks或required review policy固定`policy_unavailable`。check-run只有completed且success/neutral/skipped算passed，legacy status只有success算passed；missing、queued/in-progress、failure/error保持独立状态。review只计算当前head commit上每个actor的最新状态，旧head approval不计，changes requested优先；GitHub merge state继续兜底CODEOWNER/last-push/thread等复合规则。
+  - `MergeGateStore`重新绑定current Run version、active Plan/version/digest/base、verified publication与PR Evidence、同branch最新completed bot head、全部required Item passed和Plan merge effect。latest exact merge approval按createdAt/ID选择；reject、统一invalidation ledger命中或`expiresAt <= now`均`approval_required`，不得回退更旧approve。
+  - 通过路径在最终D1 INSERT/CAS再次核对全部GitHub observation gate、最新bot head、Item、Plan effect与approval，不只依赖进程内预检；20路外部read只形成一个passed evaluation/decision并把Run `pull_request_open|awaiting_review → ready_to_merge/version+1`。资格判断刻意零merge outbox/零GitHub写，避免在自动合并策略尚未拍板时越权。
+  - 负向路径持久化immutable rejected evaluation与固定reason，Run/version不变、零decision/effect。覆盖required check missing/pending/failed、review required/changes requested、base/head漂移、Draft、conflict/unknown mergeability、required policy缺失、merge effect未声明、approval过期/latest reject/invalidated。Task/Run查询只返回SHA、PR number、counts/digests、merge/review状态和固定reason。
+  - production Worker scheduled周期接入merge gate reconciler；与base reconciler并发时最终Run version/Plan/base CAS决定唯一赢家。同步DOD、Architecture、Proto、Security、Reference；只勾本地子项，父项与真实GitHub外部事实保持未勾，按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/github-merge-gate-api.test.ts test/github-app-installation-token.test.ts` → exit 1；merge suite缺production模块/0 tests，既有token 5 passed。
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-merge-gate.test.ts` → exit 1；production module不存在/0 tests。
+  - `pnpm exec vitest run test/github-merge-gate-api.test.ts test/github-app-installation-token.test.ts` → exit 0，2 files / 9 tests；覆盖六类exact只读REST绑定、passing/pending/base-moved facts、malformed/Secret-safe错误与独立最小token/cache。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-merge-gate.test.ts` → exit 0，1 file / 15 tests；覆盖20路决策收敛、ready-to-merge CAS、安全query、四类DoD拒绝及Draft/conflict/unknown/policy/head/effect、latest reject/invalidation不回退和零merge outbox。
+  - 相邻回归`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-merge-gate.test.ts test/workflow/github-pull-request.test.ts test/workflow/github-review-feedback.test.ts test/workflow/github-base-observation.test.ts` → exit 0；4 files / 18 tests（在扩充负向case前执行），PR publication/review/base observation未回退。
+  - 最终`pnpm run typecheck`、`pnpm run lint`、`pnpm run verify`、`git diff --check`均exit 0；Node 26 files / 95 tests、workerd 34 files / 161 tests、129个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round50-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings与新增migration/domain/store/reconciler/runtime成功bundle，未部署。
+- 勾选：Phase 5首条DoD下新增并勾选“本地控制面/workerd契约”子项；父项与“真实试点GitHub外部事实”保持未勾。本地fake REST、workerd和dry-run不能冒充真实branch rules、required checks、review/base事实或GitHub没有收到merge请求的外部证据。
+- 决策沉淀：`ready_to_merge`只表示外部事实与内部审批在一个版本快照上满足，不表示merge API已调用，更不表示PR已合并。eligibility、merge producer、merge webhook/projector必须是三个独立幂等证据面。GitHub aggregate merge state只能兜底复杂规则，不能替代逐required context与head-bound review解析；approval消费者必须选择latest exact decision并排除统一invalidation ledger，不能因新拒绝失效而复活旧批准。
+- 遗留：真实试点需要GitHub App安装和试点repo后，以真实branch rules/required checks/review/base ref形成decision，并分别制造pending/failed check、review不足、base前进与approval过期，记录API/Actions/控制面证据证明零merge请求。下一轮可继续Phase 5第二条本地身份隔离DoD：PR作者/Agent不得批准自己的merge/production effect；实际merge producer仍需自动合并策略拍板后单独实现。
+
+## Round 51 — 2026-07-26
+- 目标：Phase 5 / Agent与PR作者不能批准自己的merge/production effect，审批主体由GitHub/飞书身份映射核对——本轮闭环Watt身份实现的直接迁移、独立approval adapter入口、merge gate及受控replay的live身份重验；真实GitHub/飞书验签和外部effect证据保持未完成。
+- 前置与权限：仅本地workerd/D1、fake GitHub observation与测试adapter credential；未访问真实GitHub组织、Cloudflare远端、Codex计费模型、飞书、Meegle、日志、数据库或tool-bridge，未部署、未使用真实Secret。按用户要求固定读取Watt commit`476e3cd`，直接迁移`packages/gateway/migrations/0001_auth_core.sql`的`identity_mappings`、`packages/gateway/migrations/0002_channel_identities.sql`及索引，以及`packages/gateway/src/authz/identity-mapper.ts`的anonymous/resolve/resolvePrincipal/bindChannelIdentity/bind结构；保留“channel subject→principal、roles实时解析、未映射anonymous”语义，并在本项目增加输入/roles shape验证。
+- 动作：
+  - 先写身份隔离workerd契约；首次运行因`src/storage/identity-bound-approval-store`不存在而exit 1/0 tests，证明此前merge approval只有caller提供的`actor_id`字符串，没有可执行的GitHub/飞书identity binding。随后把Round 50 legacy fixture切到可信视图时passing case变红，证明裸高风险approval已不能推进merge。
+  - migration 0027直接复制Watt双表后新增immutable `approval_source_events`、`identity_bound_approvals`和`approval_identity_rejections`，merge observation补PR作者login。source只保存provider/tenant/event/subject、外部event digest和控制面完整request digest；同event不能换Run/version/effect/decision/expiry重用。accepted/rejected一对一且UPDATE trigger拒绝改写。
+  - `IdentityMapper`以`github:<repository> + login`和`feishu:<tenant> + open_id`隔离渠道并把两者映射到统一principal；未映射为`user:anonymous`。决策时实时读取roles并要求`human + approve:merge|approve:production_deploy`，`agent:*`、`service:*`、缺role、PR作者未映射、跨provider同principal自批和task actor自批均固定拒绝且零approval。
+  - 新增独立`APPROVAL_ADAPTER_TOKEN`和strict `POST /v1/runs/:runId/approvals`。任务入口token与Agent token不能调用；body不含actor、author、task revision、Plan ID/digest、base或roles，控制面从exact Run/active Plan/verified publication/latest PR observation派生。相同source event 20路只创建一个source/binding，完全相同HTTP重放200，换decision返回409；响应/日志不含token或原payload。
+  - `trusted_effect_approvals`对低风险approval保持兼容，但merge/production必须JOIN identity binding、approver/author当前channel mapping和approver live roles，并要求principal分离。`MergeGateStore`预检和最终SQL只允许可信高风险approval；role撤销后固定`approval_identity_unresolved`，不会继承旧role快照。
+  - `WorkflowReplayStore`的调度approval snapshot与restart副作用前重验都切到可信视图。聚焦测试先因legacy merge/production approval得到403而2 cases红灯，再把fixture升级为完整source/channel/principal/binding证据；新增永久断言证明裸高风险approval继续403，可信绑定才可调度，expiry仍在effect前终态阻断。
+  - 同步DOD、Architecture、Proto、Security与Reference；明确逐文件Watt直接复制边界。只勾本地子项，父项与真实GitHub/飞书身份事实保持未勾；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-merge-gate.test.ts` → exit 1/0 tests（production identity store缺失，承接本轮开始前证据）；切换可信视图后旧passing fixture为0个`ready_to_merge`，确认legacy approval失效。
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/controlled-replay.test.ts` → exit 1，1 file / 2 failed；裸merge/production approval使原202/409路径都变成403。
+  - 聚焦`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-merge-gate.test.ts test/workflow/identity-mapper.test.ts test/workflow/controlled-replay.test.ts` → exit 0；3 files / 28 tests，覆盖独立adapter auth/strict body、完整request重放冲突、20路收敛、GitHub/飞书渠道隔离、live role撤销、Agent/缺role/未映射、merge与production跨provider自批、legacy replay拒绝及effect前expiry重验。
+  - `pnpm exec vitest run test/github-merge-gate-api.test.ts` → exit 0，1 file / 3 tests；PR作者login来自GitHub PR响应而非caller request。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 26 files / 95 tests、workerd 35 files / 171 tests、133个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round51-20260726-final`与`git diff --check` → exit 0；Workflow/Queue/D1/双R2 bindings及新增migration/identity/store/API成功bundle，未部署。
+- 勾选：Phase 5第二条DoD下新增并勾选“本地Watt复用/控制面/workerd契约”子项；父项与“真实GitHub/飞书身份事实”保持未勾。本地fake PR author、手工D1 mapping、测试Bearer和workerd不能冒充真实GitHub webhook/App login、飞书验签/open_id、真人审批或外部零merge/deploy事实。
+- 决策沉淀：adapter认证、外部subject、内部principal、live role、PR author和effect approval是六个独立证据层；Bearer服务凭证不能替代人的身份，创建时roles digest也不能替代effect时live lookup。高风险authority必须是可信视图而非裸表行；回放尤其要在调度与副作用前都重验，否则历史snapshot会成为角色撤销后的权限恢复漏洞。Watt双表和mapper可直接复用，delivery-loop只在其上增加exact Plan/effect/source与职责分离。
+- 遗留：真实子项需要配置GitHub App/webhook与飞书adapter验签，建立受管login/open_id→principal映射，由真人reviewer、PR作者和Agent分别提交merge/production decision，记录GitHub/飞书event/delivery、D1 source/binding/rejection和外部零effect证据。实际merge producer仍须等待自动合并策略拍板；下一轮可继续Phase 5“测试部署使用独立OIDC角色/environment”本地契约。
+
+## Round 52 — 2026-07-26
+- 目标：Phase 5 / 测试部署使用独立OIDC角色与Environment，部署结果和URL形成独立Evidence——本轮闭环本地D1/outbox、GitHub Deployments adapter、固定test workflow/Runner、专用OIDC attestation和签名deployment status projector；真实GitHub Environment、云role/Secret隔离与真实URL保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、fake GitHub/OIDC/HTTP和临时Git仓库；未访问真实GitHub组织、Cloudflare远端、云账户、Codex计费模型、飞书、Meegle、日志、数据库或tool-bridge，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`并检索OIDC、Environment、deploy、deployment、role与GitHub workflow，没有可直接复制的GitHub Environment部署、云OIDC role、Deployments API effect或status projector，本轮Watt直接复制量为零；最大化复用此前迁入的stable identity、D1 conditional batch、fenced outbox和reference-only payload模式，以及本项目现有GitHub App/HMAC/OIDC/Evidence原语。
+- 动作：
+  - 先新增固定workflow与GitHub Deployments API红灯。首次Node聚焦运行exit 1：`.github/workflows/delivery-test-deploy.yml`与`src/outbox/github-test-deployment.ts`均不存在；workerd命令因前序`&&`失败未执行，未把占位store测试冒充红灯证据。随后初次typecheck还捕获test fetch mock的`exactOptionalPropertyTypes`错误并修正。
+  - `delivery.yaml` strict schema的deployment target新增环境专属固定workflow、OIDC audience、`test:*|production:*` role ref和结构化deployment command；deployment command不进入Agent Plan refs。migration 0028新增immutable `test_deployments` snapshot、digest-only OIDC attestation与HMAC delivery ledger，状态严格区分`scheduled/created_unverified/in_progress/succeeded/failed`。
+  - scheduled `TestDeploymentReconciler/Store`只接受required delivery Item，要求exact active Run/Plan/progress、依赖passed、Task允许test、test环境、唯一test-deploy写effect、零Plan command ref、deployment Evidence/external fact、至少一条doneWhen、latest completed bot head已有passed Item verification及latest exact approval。20路调用以stable identity+D1 batch只创建一个deploy Attempt、Item占用、deployment snapshot与`github_deployments` outbox。
+  - GitHub App新增独立cache/pending和严格`deployments:write` token。Deployments adapter只发送exact SHA、固定`delivery-loop:test`/`test`及reference-only deployment ID，先GET reconciliation再POST；REST 201只写`created_unverified`。outbox processor在GitHub I/O前重新核对Run/Plan/Item/Attempt与latest approval，延迟reject零外部调用；外部effect后再次以条件SQL提交，创建结果不生成Evidence。
+  - 固定`.github/workflows/delivery-test-deploy.yml`只响应`environment=test + task=delivery-loop:test`，权限为`contents:read + deployments:write + id-token:write`，使用test Environment、exact deployment SHA、`persist-credentials:false`及immutable Actions。Runner从该SHA读取strict policy，请求专用audience并向控制面attest exact repository/workflow/SHA/run/environment subject，核对返回的`test:*` role ref后执行固定argv；命令子进程环境移除GitHub token、OIDC request token和deployment控制ID。
+  - `POST /v1/test-deployments/:id/oidc-attestation`使用GitHub JWKS/RS256和专用audience，只保存JWT digest与白名单claims，通用Agent audience、ref subject、production Environment及错误workflow均拒绝。HMAC `deployment_status` projector再绑定repo、GitHub/delivery-loop deployment ID、SHA、task和test Environment，按external updated_at单调推进并移除URL query/fragment；只有已有attestation的success生成passed deployment Evidence并通过唯一Item verifier关闭deploy Attempt/Item，failure生成verified failed Evidence且Run保持executing。Task query只公开安全deployment ID/status/environment/SHA/role/GitHub ID/URL/Evidence ref，不公开JWT digest或raw payload。
+  - outbox relay/router和Worker scheduled/Queue接入独立`github_deployments` destination；新增runtime配置`TEST_DEPLOY_TARGETS_JSON`并要求目标仓库同时在GitHub App allowlist。同步DOD、Architecture、Proto、Security与Reference；只勾本地子项，父项与真实GitHub/云外部事实保持未勾；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/test-deployment-workflow.test.ts test/github-test-deployment-api.test.ts` → exit 1；缺固定workflow和production Deployments adapter。workerd红灯当时未因shell短路执行，已如实记录。
+  - 聚焦Node `pnpm exec vitest run test/test-deployment-runner.test.ts test/test-deployment-workflow.test.ts test/github-test-deployment-api.test.ts test/github-app-installation-token.test.ts test/delivery-policy.test.ts` → exit 0，5 files / 15 tests；覆盖固定workflow、专用token/API、commit-bound command、OIDC/control token隔离与status上报。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/test-deployment.test.ts test/workflow/outbox-routing.test.ts test/workflow/task-query-api.test.ts` → exit 0，3 files / 15 tests；覆盖20路调度/outbox、latest reject零effect、专用OIDC负向绑定、未attest success零Evidence、20路status重放、failure不成功、HMAC/raw canary、URL清洗、安全query及四destination路由。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 29 files / 99 tests、workerd 36 files / 178 tests、145个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round52-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings及新增migration/API/runtime/runner成功bundle，未部署。
+- 勾选：Phase 5测试部署DoD下新增并勾选“本地控制面/workerd/固定workflow契约”子项；父项与“真实GitHub/云外部事实”保持未勾。本地fake JWT/HMAC/REST、workerd和dry-run不能冒充真实GitHub Environment、云OIDC换证、test-only Secret、Actions run或deployment URL。
+- 决策沉淀：创建Deployment、进入job、OIDC环境身份证明与最终平台status是四个独立事实，只有最后一个在前三个binding成立后才能成为Evidence。test deployment必须拥有自己的workflow、Environment、audience、role、App token和outbox destination，不能借通用Agent/PR/repo-write路径“顺便部署”。部署command来自exact commit policy但仍不能看到GitHub/OIDC控制token；真实云role trust与生产Secret不可达性必须由外部系统证明，控制面本地attestation不能代替。
+- 遗留：真实试点需用户提供目标owner/repo并安装GitHub App，配置`test` Environment、`TEST_DEPLOY_TARGETS_JSON`、webhook和云端`test:*` OIDC trust/最小权限role，放入一个仅test可见与一个仅production可见的canary Secret做隔离验证；记录GitHub Deployment/Actions/Environment URL、OIDC换证审计、D1 Evidence及webhook丢失后的API补偿。下一轮可继续Phase 5“E2E失败返回executing/blocked”，把部署后验收建成独立verification Item，不能用本轮deployment command或status冒充E2E。
+
+## Round 53 — 2026-07-26
+- 目标：Phase 5 / E2E/验收失败返回`executing`或`blocked`，不会因为deployment job启动就标成功——本轮闭环本地独立post-deployment acceptance Item、固定workflow/Runner、D1/outbox、专用OIDC、Runner result与签名/API-reconciled `workflow_run`双事实契约；真实GitHub Actions与测试URL外部事实保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、测试HMAC/JWKS、fake GitHub API/OIDC/HTTP和临时Git仓库；未访问真实GitHub组织、Cloudflare远端、云账户、Codex计费模型、飞书、Meegle、日志、数据库或tool-bridge，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`并检索E2E、acceptance、smoke、waitFor、deployment后验证、workflow result与可回放事实断言；Watt只有通用E2E CLI/`waitFor`和协议事实断言，没有可直接复制的post-deployment producer、GitHub Environment OIDC Runner、D1 lineage或签名workflow projector，本轮直接复制代码为零；最大化复用此前从Watt迁入的stable identity、D1 conditional batch、fenced outbox和reference-only payload模式，以及本项目现有GitHub App/HMAC/OIDC/Plan Item Evidence verifier。
+- 动作：
+  - 先新增固定workflow与workerd契约；首次`pnpm exec vitest run test/test-acceptance-workflow.test.ts`因`.github/workflows/delivery-test-acceptance.yml`不存在而exit 1，首次`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/test-acceptance.test.ts`因`src/storage/test-acceptance-store.js`不存在而exit 1/0 tests，随后实现而非放宽断言。
+  - `delivery.yaml` strict policy新增可选`acceptance`命令组，test deployment target必须引用已声明`acceptance:*`；它不进入change后的pre-deploy required verification集合。migration 0029新增immutable `test_acceptances`、digest-only OIDC attestation和webhook/API统一observation ledger；状态区分`scheduled/dispatched/running/passed/failed`，Runner result、GitHub run与lineage snapshot均有不可改写约束。
+  - `TestAcceptanceReconciler/Store`只调度required verification Item：依赖全部passed，且至少一条直接依赖是succeeded test deployment并具有verified passed deployment Evidence和无query/fragment的HTTPS URL；Item只能有唯一`repo_read`、唯一`acceptance:*`、仅`test` Evidence、零external fact和至少一条doneWhen。20路调用以stable identity+D1 batch只创建一个deploy-mode Acceptance Attempt、Item占用、snapshot与第五类`github_acceptance` outbox。
+  - GitHub App增加独立acceptance cache/pending，权限严格为`actions:write + contents:read`；dispatcher固定`.github/workflows/delivery-test-acceptance.yml`与`delivery-loop/acceptance/<id>`，reference-only inputs及POST 204→GET reconciliation。outbox effect前重新核对active Run/Plan/Item/Attempt和已verified deployment；dispatch后只推进`dispatched/starting`和lease，不能生成Evidence。
+  - 固定acceptance workflow在test Environment以exact deployed SHA运行，权限只有`contents:read + id-token:write`且无deployment/write权限。Runner请求专用audience=`delivery-loop-test-acceptance`，控制面绑定test Environment subject、repo/workflow/SHA/run并只存JWT digest；从exact SHA policy核对`acceptanceCommandRef`后执行固定argv，仅注入清洗后的`DELIVERY_TEST_BASE_URL`并移除GitHub/OIDC/acceptance/control-plane控制值。失败命令也先上报exit/duration，再让Action以非零退出形成外部事实。
+  - Runner result只保存immutable digest/status/exit/duration，不生成Evidence。HMAC `workflow_run`与scheduled GitHub API补偿共用projector，重新绑定repo/run/workflow/title/branch/SHA/run-attempt并按`updated_at`单调推进；requested/in-progress零Evidence。completed success缺Runner result保持received可重试，只有Runner passed/exit 0一致时创建唯一`test + acceptance:*` Evidence并由Plan Item verifier关门；workflow failure、Runner failure或结论冲突均生成verified failed Evidence、失败Attempt/Item且Run保持`executing`。
+  - 通用GitHub run reconciler显式排除acceptance Attempt，Worker接入acceptance HTTP、scheduled scheduler/API reconciliation、第五destination relay与Queue router。Task/Run查询只公开acceptance/deployment/Attempt/ref/command/GitHub run/Evidence/timestamp白名单投影，不公开OIDC/result digest或raw payload。同步DOD与Architecture/Proto/Security/Reference；只勾本地子项，真实GitHub/E2E子项与父项保持未勾；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/test-acceptance-workflow.test.ts` → exit 1；固定acceptance workflow缺失。
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/test-acceptance.test.ts` → exit 1/0 tests；production acceptance store缺失。
+  - 聚焦Node `pnpm exec vitest run test/test-acceptance-runner.test.ts test/test-acceptance-workflow.test.ts test/delivery-policy.test.ts test/github-app-installation-token.test.ts` → exit 0，4 files / 16 tests；覆盖固定workflow、commit-bound argv、专用audience、控制值隔离、失败上报、policy binding和独立token cache。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/test-acceptance.test.ts test/workflow/outbox-routing.test.ts test/workflow/test-deployment.test.ts test/workflow/github-run-reconciler.test.ts test/workflow/github-workflow-run-webhook.test.ts` → exit 0，5 files / 29 tests（随后新增success等待Runner result与通用Agent projector隔离负向断言并由最终全量回归覆盖）；覆盖20路scheduler/outbox、deployment/Runner不提前成功、专用OIDC负向、signed/API success/failure/冲突、raw canary、安全query、五destination路由及通用reconciler隔离。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 31 files / 103 tests、workerd 37 files / 188 tests、157个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round53-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings及新增migration/API/runtime/runner/projector成功bundle，未部署。
+- 勾选：Phase 5 E2E/验收失败DoD下新增并勾选“本地控制面/workerd/固定workflow契约”子项；父项与“真实试点GitHub/E2E外部事实”保持未勾。本地fake JWT/HMAC/REST、workerd和dry-run不能冒充真实Actions run、test Environment、测试URL或外部Run状态。
+- 决策沉淀：test deployment与post-deployment acceptance必须是两个独立required Item；deployment status、acceptance dispatch、OIDC identity、Runner result和GitHub workflow conclusion是五个不同事实，前四个都不能单独宣告成功。Runner result解决“执行了哪条固定命令/exit/duration”，签名/API workflow fact解决“平台最终如何结束”；两者只有在exact lineage上一致时才能生成passed Evidence，冲突一律fail-closed。真实E2E失败预算进入`blocked`属于后续外部/失败策略验证，本轮只证明失败绝不进入`succeeded`且Run安全保持`executing`。
+- 遗留：真实试点需用户提供owner/repo并安装GitHub App，配置`test` Environment、`TEST_DEPLOY_TARGETS_JSON`、`CONTROL_PLANE_URL`、webhook与可访问的测试URL，在目标repo exact deployed SHA声明`acceptance:*`命令；分别记录deployment success但acceptance仍running、acceptance failure、success和webhook漏失/API补偿的Actions URL、测试URL、D1 Evidence/Run投影，证明失败为`executing`或按失败预算进入`blocked`且没有提前`succeeded`。
+
+## Round 54 — 2026-07-26
+- 目标：Phase 5 / 合并成功由GitHub webhook核对merge SHA；只在“无需部署”策略下可直接`succeeded`——本轮闭环本地签名merge fact、API补偿、immutable merge ledger/Evidence与no-deploy状态裁决；真实GitHub merge外部事实保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、测试HMAC和fake GitHub read-only REST；未访问真实GitHub组织、Cloudflare远端、云账户、Codex计费模型、飞书、Meegle、日志、数据库或tool-bridge，未调用merge API、未部署、未使用真实Secret。仓库尚未拍板自动合并，按第一性原理不把“核对外部merge事实”扩权成控制面自动merge。按用户要求固定核对Watt commit`476e3cd`并全库检索merge pull request、`merged_at`、`merge_commit_sha`、`pull_request closed`、merge method/squash/rebase；没有GitHub merge producer、签名projector、API reconciliation或merge SHA ledger可直接复制，唯一rebase命中仍为worktree文档建议，因此本轮直接复制代码为零；最大化复用此前从Watt迁入的stable identity、D1 conditional batch、external fact digest/收敛纪律，以及本项目已有HMAC webhook、merge-observation只读token、ready decision、verified publication与TaskQuery原语。
+- 动作：
+  - 先在既有merge gate suite增加production projector契约；首次`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-merge-gate.test.ts`因`src/storage/github-merge-status-store.js`不存在而exit 1/0 tests，证明此前只有eligibility/ready decision，没有任何merge SHA事实路径。
+  - migration 0030新增immutable `github_merges`与webhook/API统一`github_merge_observations`。merge ledger冻结ready时Run version、decision/publication/Plan、repo/PR、head/base/merge SHA、merged actor/time、deployment disposition和verified Evidence；同Run/decision/publication/repo+PR/repo+merge SHA唯一，raw payload/REST/token无列可落。
+  - 新增strict `GitHubPullRequestMergeFact`与`GitHubMergeStatusStore`。HMAC `pull_request closed`仅在`merged=true`、merge SHA/actor/time合法时进入projector；closed-but-unmerged直接ignored。projector重新绑定Run=`ready_to_merge`、`decision.runVersion + 1`、active Plan/digest、verified publication、repo/PR/URL、head branch/SHA和base branch；gate前、旧head、错误binding与不一致deployment policy均零merge结果。
+  - stable merge identity让20路同observation只生成一条merge/Evidence。webhook与API即使后续PR `updated_at`变化，只要merge core相同仍收敛；不同merge SHA/core固定conflict。merge Evidence保存canonical fact digest与安全PR URL，不使用Agent/CLI自报。
+  - Run以两个CAS合法边推进`ready_to_merge → merging → succeeded|deploying`。直接`succeeded`必须同时满足Task `target_environment=none`、test/production deploy均未授权、active Plan无`test_deploy|production_deploy`；test target必须有allow+test deploy effect、production target必须有allow+production deploy effect，并且两者只到`deploying`。merge成功不复用此前test deployment/acceptance去伪造post-merge部署成功。
+  - 新增`GitHubMergeStatusApiClient/Reconciler`，复用已有只读merge-observation token和`GET /pulls/{number}`，不申请merge写权限；只对exact ready candidate补偿漏失webhook，未合并PR保持pending，响应错误不泄漏token/body。Worker scheduled接入补偿；Task/Run查询新增安全merge投影，不公开fact/payload digest或raw数据。
+  - 同步DOD与Architecture/Proto/Security/Reference；只勾本地子项，真实GitHub子项与父项保持未勾；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-merge-gate.test.ts` → exit 1/0 tests；production merge status store缺失。
+  - 聚焦Node `pnpm exec vitest run test/github-merge-status-api.test.ts test/github-merge-gate-api.test.ts test/github-app-installation-token.test.ts` → exit 0，3 files / 14 tests；覆盖只读token/GET、exact merged fact、unmerged pending、身份漂移和错误零泄漏。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-merge-gate.test.ts test/workflow/github-pull-request.test.ts test/workflow/github-review-feedback.test.ts test/workflow/github-base-observation.test.ts test/workflow/test-deployment.test.ts test/workflow/test-acceptance.test.ts` → exit 0，6 files / 59 tests；覆盖gate前拒绝、20路收敛、signed webhook/raw canary、API补偿/重放、closed-unmerged、旧head、no-deploy succeeded、deploy policy只到deploying、安全query及相邻PR/review/base/deploy/acceptance回归。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 32 files / 106 tests、workerd 37 files / 196 tests、162个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round54-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings及新增migration/domain/store/reconciler/runtime/webhook成功bundle，未部署。
+- 勾选：Phase 5 merge success DoD下新增并勾选“本地控制面/workerd契约”子项；父项与“真实试点GitHub外部事实”保持未勾。本地fake HMAC/REST、workerd和dry-run不能冒充真人merge、GitHub delivery、受保护分支或真实merge SHA。
+- 决策沉淀：merge eligibility、merge mutation和merge external fact是三个独立平面。本轮只实现第三个平面并坚持“没有自动merge产品决策就没有merge写权限”；`ready_to_merge`不是已合并，GitHub `closed`也不是已合并，只有exact `merged=true + merge SHA`可入账。merge成功与deployment成功仍分层：no-deploy是Task allow flags与active Plan deploy effects共同证明的否定事实，任何deployment intent都必须进入`deploying`等待新的平台事实。
+- 遗留：真实试点需用户提供owner/repo并安装GitHub App/webhook，在受保护PR已有真实ready decision后由真人merge；记录signed delivery、PR URL、merge SHA、D1 merge/Evidence/Run投影，并演练closed-unmerged、旧head、webhook漏失/API补偿。分别用真实`target_environment=none`与声明test/production deploy的计划证明前者最终`succeeded`、后者只到`deploying`。自动merge若未来拍板，必须另开DoD实现独立write token、effect前gate重验和幂等merge producer，不能反向把本轮只读projector当作merge权限。
+
+## Round 55 — 2026-07-26
+- 目标：Phase 5 / 生产部署必须经过GitHub Environment reviewer或等价外部审批；批准绑定revision + merge SHA + environment——本轮闭环本地post-merge identity-bound approval、production release lineage、scheduler/outbox/GitHub Deployment producer、固定production workflow/OIDC Runner和安全查询契约；真实GitHub Environment reviewer与云端production effect保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、测试JWK、fake GitHub REST/OIDC/HTTP和临时Git仓库；未访问真实GitHub组织、Cloudflare远端、云账户、飞书、Meegle、日志、数据库、tool-bridge或Codex计费模型，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`并检索GitHub Environment reviewer、production deployment、merge SHA approval binding、Deployments API、OIDC role与release ledger；最接近的是`watt-task-workflow.ts`的`confirm-release + waitForEvent + signal`，可复用其“持久checkpoint等待外部decision且错误signal不能恢复”的流程语义，但没有GitHub Environment身份、revision/merge binding、D1 approval lineage或deployment producer，直接复制会削弱安全契约，因此本轮Watt直接复制代码为零；继续最大化复用Round 51已直接迁移的Watt identity mapper以及本项目已有stable identity、D1 conditional batch、fenced outbox、GitHub Deployment/OIDC/policy Runner模式。
+- 动作：
+  - 先新增固定workflow与workerd生产scheduler契约；首次`pnpm exec vitest run test/production-deployment-workflow.test.ts`因`.github/workflows/delivery-production-deploy.yml`不存在而exit 1，首次`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/production-deployment.test.ts`因`src/storage/production-deployment-store.js`不存在而exit 1/0 tests，证明此前没有production release执行路径。
+  - migration 0031新增immutable `production_release_approval_bindings`、`production_deployments`与digest-only OIDC attestation。production approval现在只接受Run=`deploying`、Task production policy、active Plan effect与exact `github_merges`，并要求external decision时间不早于merge；revision、merge ID/SHA、environment全部由服务端派生，strict body拒绝caller夹带。
+  - 重建`trusted_effect_approvals`：merge继续使用Watt-derived live identity/role/separation；production还必须exact join release binding与immutable merge。裸approval、无merge、旧Run/Plan、self approval、role撤销、reject/过期/invalidation均不能成为production authority。既有controlled replay fixture原来在`target_environment=test`却伪造`production_deploy` effect/outbox，本轮将该无效组合收窄为repo-write/test-deploy/merge，避免测试依靠非法policy通过。
+  - `ProductionDeploymentStore/Reconciler`只扫描merge disposition=production且required Item均已passed的Run。latest exact approval后，20路调度以stable identity只创建一份post-merge deploy Attempt、immutable snapshot与`github_production_deployments` outbox；没有审批时零outbox。Queue effect前再次核对Run/Plan/revision/merge/approval/live role，然后才调用GitHub。
+  - GitHub producer使用独立于test的deployment-only token cache，固定创建`ref=merge SHA + task=delivery-loop:production + environment=production`且payload只含schema/deployment ID；POST/GET reconciliation只推进`created_unverified`和Attempt running，不生成Evidence、不把Run移出`deploying`。Worker scheduled/relay/Queue router接入第六类destination，配置使用strict `PRODUCTION_DEPLOY_TARGETS_JSON`。
+  - 固定`.github/workflows/delivery-production-deploy.yml`绑定GitHub `production` Environment、exact deployment/merge SHA与`contents:read + deployments:write + id-token:write`，不启用test cache。Runner使用独立production audience/subject/`production:*` role，在控制面核对release lineage后只执行merge SHA policy固定argv；GitHub/OIDC及全部production/test控制值从命令环境移除，控制面只保存OIDC digest。Task/Run查询只公开approval principal/ID、revision、merge ID/SHA、environment、状态/URL等白名单，不公开JWT digest/raw payload。
+  - 同步DOD与Architecture/Proto/Security/Reference；只勾本地子项，父项与真实GitHub/云外部子项保持未勾；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/production-deployment-workflow.test.ts` → exit 1；固定production workflow缺失。
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/production-deployment.test.ts` → exit 1/0 tests；production deployment store缺失。
+  - 聚焦Node `pnpm exec vitest run test/production-deployment-workflow.test.ts test/production-deployment-runner.test.ts test/github-production-deployment-api.test.ts test/github-app-installation-token.test.ts` → exit 0，4 files / 13 tests；覆盖fixed Environment、exact merge checkout、policy argv、production OIDC、控制值隔离、reference-only API与独立token cache。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/production-deployment.test.ts test/workflow/github-merge-gate.test.ts test/workflow/outbox-routing.test.ts` → exit 0，3 files / 45 tests；覆盖revision/merge/environment binding、无审批零effect、无merge及merge前decision拒绝、自批拒绝、20路scheduler/outbox、live role effect重验、OIDC负向、安全query、merge gate与六destination路由。
+  - 首次全量`pnpm run verify` → exit 1；2条controlled replay测试因历史fixture把test target与production effect混用，在新trusted view下正确返回403。fixture收窄到其真实test policy后，`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/controlled-replay.test.ts` → exit 0，1 file / 3 tests。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 35 files / 111 tests、workerd 38 files / 205 tests、173个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round55-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings及新增migration/domain/store/reconciler/outbox/runtime/API/OIDC/Runner成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 5 production approval DoD下新增并勾选“本地控制面/workerd/固定workflow契约”子项；父项与“真实GitHub/云外部事实”保持未勾。本地YAML、fake JWT/REST、workerd和dry-run不能证明GitHub `production` Environment已配置required reviewers，也不能冒充真人approval、Actions job或云OIDC审计。
+- 决策沉淀：production release发生在merge之后，因此不能伪装成合并前required Plan Item；ExecutionPlan只预声明`production_deploy` effect，merge后由独立release approval/deployment ledger承接。控制面等价外部审批与GitHub Environment reviewer是两层闸门：前者决定是否创建GitHub Deployment，后者由真实GitHub配置决定job能否启动；任何一层都不等于deployment成功。approval、Deployment create、Environment review/job start、OIDC identity和最终platform status必须分别留账；本轮只关闭前三者的本地契约，最终成功/失败projector属于下一DoD。
+- 遗留：真实试点需用户提供owner/repo并安装GitHub App，配置`production` Environment required reviewers、`PRODUCTION_DEPLOY_TARGETS_JSON`、`CONTROL_PLANE_URL`与云端production OIDC role/trust；由真人在真实merge SHA上分别批准、拒绝、让审批过期和撤销role，记录Environment review、GitHub Deployment/Actions URL、OIDC审计和D1 lineage，并证明未批准/旧SHA均零job/云effect。下一轮继续Phase 5“deployment成功/失败从平台API/webhook核对”，不能使用Runner status POST响应或Action末尾输出冒充最终事实。
+
+## Round 56 — 2026-07-26
+- 目标：Phase 5 / deployment成功/失败从平台API/webhook核对；Action末尾echo `success`不能替代——本轮闭环本地production deployment HMAC webhook、read-only API补偿、统一observation/projector、verified Evidence与Run终态CAS；真实GitHub/云外部事实保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、测试HMAC/JWK、fake GitHub REST/OIDC/HTTP和临时Git仓库；未调用真实GitHub写API、未访问Cloudflare远端、云账户、飞书、Meegle、日志、数据库、tool-bridge或Codex计费模型，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`并检索`deployment_status`、GitHub Deployment/status API、platform result projector与external fact reconciliation；Watt仍只有`confirm-release`后由Workflow代码直接`complete-release`的硬编码结果，没有签名平台事实、REST补偿、merge-bound production Evidence或终态CAS可直接复制，因此本轮Watt直接复制代码为零；最大化复用本项目Round 52的HMAC deployment projector形态、既有GitHub App provider，以及Round 53/54的双源observation/reconciliation模式。
+- 动作：
+  - 先在production suite引入status projector契约；首次`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/production-deployment.test.ts`因`src/storage/github-production-deployment-status-store.js`不存在而exit 1/0 tests，证明此前只有Deployment create/OIDC/Runner status reporter，没有可消费平台终态的生产模块。
+  - migration 0032为`production_deployments`增加external state/updated time/observation version，并新增webhook/API统一`production_deployment_status_observations`；observation identity不可改写，只保存source、fact/payload digest、repo、GitHub/control-plane deployment IDs、external/observed/processed time与固定applied/ignored reason，没有raw payload/REST/token列。
+  - 新增strict production status fact与`GitHubProductionDeploymentStatusStore`。projector重新绑定repo、GitHub/control-plane deployment ID、merge SHA、task/environment、current deploying Run/version、Task revision、active Plan/digest、immutable merge/release approval与running deploy Attempt；GitHub `updated_at`单调推进，错误binding/旧事实只记ignored。
+  - `in_progress`只更新外部投影；Deployment create、Environment job、OIDC和Runner status POST均零Evidence/零Run终态。success必须另有exact production OIDC，才在一个D1 batch创建唯一verified passed deployment Evidence、完成deploy Attempt、把Plan置completed并CAS `deploying→succeeded`。failure/error无需伪装为成功attestation，创建verified failed Evidence、失败Attempt并CAS `deploying→failed`；terminal冻结，failure后晚到success不能复活Run。
+  - HMAC webhook按`delivery-loop:production + production`与reference-only payload路由到production projector；URL去除query/fragment。新增只含`deployments:read`且与production create write-token分离的token cache；API adapter先GET exact Deployment核对ID/SHA/task/environment/deployment ID，再GET statuses并只取真正latest一条，latest pending不会错误采用更旧success。scheduled reconciler使用相同projector补偿漏失webhook，Worker cron接线。
+  - 20路webhook/API重放与两源并发收敛为两条source observation、一条Evidence和一次Run终态；success缺OIDC保持received可重试，错误SHA、乱序、raw canary、failure及安全query均有测试。Task/Run投影新增externalState/externalUpdatedAt白名单，不公开OIDC/fact digest/raw数据。
+  - 2026-07-26实读GitHub官方webhook/REST文档，确认`deployment_status` webhook和Get Deployment/List deployment statuses的Deployments read权限，以及status的`updated_at/deployment_url/environment_url`字段；同步DOD、Architecture、Proto、Security与Reference，只勾本地子项，父项/真实外部子项保持未勾；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/production-deployment.test.ts` → exit 1/0 tests；production status store缺失。
+  - 聚焦Node `pnpm exec vitest run test/github-production-deployment-status-api.test.ts test/github-production-deployment-api.test.ts test/production-deployment-runner.test.ts test/github-app-installation-token.test.ts` → exit 0，4 files / 17 tests；覆盖exact Deployment→latest status双GET、latest pending不复用旧success、身份漂移、错误零泄漏、read/write token cache隔离及Runner回归。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/production-deployment.test.ts test/workflow/test-deployment.test.ts test/workflow/github-merge-gate.test.ts test/workflow/outbox-routing.test.ts` → exit 0，4 files / 59 tests；随后新增webhook/API双源并发断言由最终全量覆盖。覆盖create/in-progress/OIDC/final分层、success/failure、20路双源、缺OIDC retry、乱序/错误binding、raw canary、安全query、test deployment/merge/router相邻回归。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 36 files / 116 tests、workerd 38 files / 213 tests、178个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round56-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings及新增migration/domain/store/reconciler/runtime/webhook成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 5 platform deployment status DoD下新增并勾选“本地控制面/workerd契约”子项；父项与“真实GitHub/云外部事实”保持未勾。本地fake HMAC/REST/JWT、workerd和dry-run不能冒充真实GitHub status、Actions输出、Environment URL或云端部署结果。
+- 决策沉淀：Runner向GitHub POST status只是触发平台事实的候选写，HTTP 201和Action输出都不是控制面成功证据；控制面只消费GitHub HMAC webhook或read-only API回读。生产终态必须同时满足exact post-merge lineage和平台state，success再叠加OIDC；failure不能因缺OIDC被隐藏。API补偿必须核对Deployment本体后读取真正latest status，不能从历史列表挑一个有利的success。终态冻结优先于“最终可能恢复”的乐观推断，失败后的重试必须走后续显式恢复/新Attempt，而不是让晚到success复活旧Run。
+- 遗留：真实试点需在受保护production Environment分别产生in-progress/success/failure/error，记录签名delivery、Get Deployment/List statuses摘要、Actions/Environment URL、D1 observation/Evidence/Run；主动漏失webhook后验证scheduled API补偿，并制造Action末尾输出success但平台status failure，证明Run最终failed。下一轮继续Phase 5 rollback contract，production自动回滚仍必须另行审批，不能因为本轮能识别failure就自动获得回滚权限。
+
+## Round 57 — 2026-07-26
+- 目标：Phase 5 / 仓库提供明确rollback contract时测试环境自动回滚可执行；生产自动回滚策略另行审批并有演练证据——本轮闭环本地exact-SHA test rollback contract observation、verified failure触发、独立ledger/outbox/OIDC Runner、HMAC/API双事实终态和安全查询；真实test云回滚与production决策/审批/演练保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、测试HMAC/JWK、fake GitHub REST/OIDC/HTTP与临时Git仓库；只读访问GitHub官方文档，未调用真实GitHub写API、未访问Cloudflare远端、云账户、飞书、Meegle、日志、数据库、tool-bridge或Codex计费模型，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`并全树/历史检索rollback/revert/compensation/deployment/workflow；Watt的`rollbackDelivery`是correlation消息投递失败后回pending，compensating delete是局部写失败补偿，不是GitHub/云环境rollback contract。Watt没有失败SHA policy读取、deployment/acceptance Evidence lineage、rollback workflow/OIDC或平台终态projector，因此可直接复制的业务代码为零；强行复制会混淆消息重试与环境回滚。本轮最大化复用此前从Watt迁入的pending→delivering→settled fencing/stable identity，以及本项目test acceptance store/outbox/OIDC Runner/双事实projector结构。
+- 动作：
+  - 先新增固定workflow与durable store红灯；首次`pnpm exec vitest run test/test-rollback-workflow.test.ts`得到1 failed/ENOENT，证明rollback workflow不存在；首次`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/test-rollback.test.ts`得到failed suite/0 tests，原因是`src/storage/test-rollback-store.js`不存在，证明此前没有环境rollback执行路径。
+  - 扩展strict `DeliveryPolicy v1`：test target可选声明固定`.github/workflows/delivery-test-rollback.yml`、`environment=test`、`delivery-loop-test-rollback` audience、与deploy role分离的`test:*` role、去重`automaticOn=deployment_failure|acceptance_failure`和结构化argv。rollback command不进入Agent Plan refs；production target strict拒绝rollback字段。
+  - migration 0033新增immutable `test_rollback_contract_observations`、`test_rollbacks`、OIDC attestation与webhook/API observation。scheduler只选择签名平台事实已生成的verified failed test deployment/acceptance Evidence；用独立`contents:read` App token读取exact失败SHA的`delivery.yaml`。policy缺失/非法/未声明trigger保存负向observation，source未verified、Task非test或production failure零记录/零outbox。
+  - declared contract与source Evidence、原deployment/approval、Run/Plan/失败Attempt/SHA、policy/contract digest同一D1 batch冻结，20路调度创建唯一rollback Attempt和`github_test_rollback` outbox。dispatch使用独立`actions:write + contents:read` cache；Queue只携outbox ID并回查D1 destination，effect前重新核对contract/source/Run/Plan；稳定run-name与POST后GET reconciliation避免重复Action。
+  - 固定rollback workflow绑定GitHub `test` Environment、exact失败SHA及`contents:read + id-token:write`，没有deployment/production权限。Runner使用独立audience/subject/role，重新加载exact policy并核对source trigger、policy digest、contract digest后才执行固定argv；命令环境移除GitHub/OIDC/rollback ID/SHA/control-plane身份值，OIDC/result只存digest与白名单标量。
+  - Runner result和GitHub `workflow_run`继续分层：requested/in-progress、OIDC或Runner pass均零Evidence；HMAC webhook为主，独立`actions:read` token的API补偿为辅，两者共用exact repo/run/workflow/title/branch/SHA/run-attempt projector。completed success还需Runner passed/exit 0才写独立verified rollback Evidence并完成Attempt；failure/冲突写failed Evidence且终态冻结。rollback成功不修改原failed Item或把Run标`succeeded`。TaskQuery只公开source引用、digests、role、GitHub run和终态，不公开raw policy/payload/token/result digest。
+  - 20路policy/scheduler/outbox/projector、deployment与acceptance两类source、contract缺失/非法/未声明、unverified source、production隔离、OIDC负向、Runner/GitHub双事实、webhook/API并发、raw canary和安全query均有测试。同步DOD、Architecture、Proto、Security与Reference；父项及真实test/production外部子项保持未勾，按用户要求未更新llmdoc。
+  - 2026-07-26实读GitHub官方文档，确认exact ref的Contents API需要Contents read，workflow dispatch需要Actions write，Get workflow run需要Actions read；实现分别使用三套缓存而非复用高权限token。
+- 验证：
+  - 红灯`pnpm exec vitest run test/test-rollback-workflow.test.ts` → Vitest 1 failed，固定workflow ENOENT。
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/test-rollback.test.ts` → failed suite / 0 tests，rollback store模块缺失。
+  - 聚焦Node `pnpm exec vitest run test/delivery-policy.test.ts test/test-rollback-workflow.test.ts test/test-rollback-runner.test.ts test/github-test-rollback-api.test.ts test/github-app-installation-token.test.ts` → exit 0，5 files / 23 tests；覆盖strict policy/production拒绝、workflow permissions、exact argv/env隔离、Contents/Actions adapter与三token cache。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/test-rollback.test.ts test/workflow/outbox-routing.test.ts` → exit 0，2 files / 14 tests；覆盖两类verified source、负向contract、production零effect、20路scheduler/outbox、OIDC、双事实成功/失败/冻结、HMAC/API收敛、raw canary、安全query和第七destination路由。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 39 files / 124 tests、workerd 39 files / 222 tests、191个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round57-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings及新增migration/domain/store/reconciler/runtime/webhook/OIDC/Runner成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 5 rollback DoD下新增并勾选“本地控制面/workerd/固定workflow契约”子项；父项与“真实GitHub/云外部事实与production决策”保持未勾。本地YAML、fake REST/JWT/HMAC、workerd和dry-run不能冒充真实test Environment、云回滚结果、production审批或演练。
+- 决策沉淀：rollback是失败后的独立外部副作用，不是failure projector内的顺手命令，也不是把原Item改回passed。自动授权来自“原test deploy已获批并发生 + verified外部failure + 失败SHA明确contract”三者交集；contract discovery必须先于Actions write，负向观察同样持久化。test与production的环境、schema、OIDC、role、outbox和审批边界物理分离；production failure本身不授予任何自动补偿权限。
+- 遗留：真实试点需在目标仓库失败SHA声明安全、幂等rollback command，配置test Environment与云端`test:*` rollback role，分别制造deployment/acceptance failure并记录Contents policy SHA、Actions URL、OIDC/cloud审计、外部环境结果和D1 Evidence；另实测未声明contract与production failure零自动job。production是否自动回滚仍需产品/安全决策；若启用，必须另建revision/merge/failure-bound真人或Environment审批、production专属role/outbox/workflow并完成成功/失败/重复/乱序/人工恢复演练。
+
+## Round 58 — 2026-07-26
+- 目标：Phase 5 / 飞书卡片分开展示PR、merge、test deploy、production deploy四种状态与链接——本轮闭环本地安全投影、immutable presentation/delivery ledger、create/PATCH/14天重建、Watt-derived token/UUID与第八类outbox；真实飞书tenant消息事实保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、fake Feishu REST与只读官方文档；未调用飞书发送/更新接口，未访问真实tenant/chat、Cloudflare远端、GitHub写API、云账户、日志、数据库、tool-bridge或Codex计费模型，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`，完整读取`plugin-feishu` encode/send与gateway consumer相关代码；使用`lark-openapi-explorer`只读核实飞书消息模块，没有执行写命令。
+- 动作：
+  - 首次`pnpm exec vitest run test/feishu-delivery-card.test.ts`因`src/domain/feishu-delivery-card.js`不存在而failed suite/0 tests，证明项目此前没有delivery card renderer；随后REST adapter红灯同样因`src/outbox/feishu-delivery-card.js`不存在失败。
+  - 直接迁移Watt interactive card `wide_screen_mode`编码骨架、`memoryTokenCache`、7200秒token/60秒安全边际、99991661/99991663/99991665失效码及create `uuid`语义；按飞书共享卡更新要求补`update_multi=true`。Watt会把上游`msg`/异常正文拼入error，本轮明确不复制，所有错误收窄为固定码。
+  - migration 0034新增每Run唯一`feishu_delivery_cards`、immutable四段`feishu_delivery_card_presentations`和terminal delivery ledger。presentation只存PR/Merge/Test Deploy/Production Deploy枚举与可选净化HTTPS链接，不存在Task/PR正文、Runner输出、raw response或token列。
+  - scheduled reconciler只查询D1 verified fact projection：PR/merge链接要求verified publication，deployment链接要求external observation version前进；create candidate与未核对URL只显示状态。canonical digest/revision/outbox同批写入，20路扫描只生成一份presentation/outbox；source变化生成新revision，旧outbox在effect前以固定stale码settle且零外部调用。
+  - `FeishuDeliveryCardApiClient`首次POST interactive消息并使用最长50字符稳定UUID，成功message ID/time持久化；14天窗口内PATCH同一message，窗口超时或230031重建新卡。230020/230049、HTTP 429/5xx、网络与token失效保持pending重试；其他业务拒绝以`feishu_request_rejected`terminal settle，raw Feishu正文不传播。
+  - Worker cron、relay和Queue router接入`feishu_cards`第八类destination；`FEISHU_APP_ID/APP_SECRET/DELIVERY_TENANT_KEY/DELIVERY_CHAT_ID`全缺时关闭，部分配置fail-closed，可选API base只接受HTTPS origin。同步DOD、Architecture、Proto、Security与Reference，只勾本地子项，父项/真实tenant子项保持未勾；按用户要求未更新llmdoc。
+  - 实读飞书官方发送、更新卡片与tenant token文档，确认create路径/interactive content/1小时UUID、同群5 QPS/30 KB，PATCH exact message ID、前后`update_multi=true`、单卡5 QPS/14天窗口，以及发送与更新权限边界。
+- 验证：
+  - 红灯`pnpm exec vitest run test/feishu-delivery-card.test.ts` → exit 1，renderer模块不存在；REST adapter扩展后再次exit 1，outbox模块不存在。
+  - 聚焦Node `pnpm exec vitest run test/feishu-delivery-card.test.ts` → exit 0，1 file / 6 tests；覆盖四段独立渲染、URL安全边界、verified投影、token cache/UUID、POST/PATCH、token失效、限流、过期和raw错误零传播。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-delivery-card.test.ts` → exit 0，1 file / 2 tests；覆盖20路收敛、旧revision零effect、create→PATCH、任务标题canary隔离、delivery ledger及14天重建。
+  - 全量`pnpm run verify` → exit 0；typecheck、ESLint、Node 40 files / 130 tests、workerd 40 files / 224 tests、196个生产文件Secret scan和Markdown links全绿。文档修改后另行重跑workerd 40/224、Secret scan 196 files和docs links，均exit 0。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round58-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings及migration/domain/reconciler/outbox/runtime成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 5 Feishu delivery card DoD下新增并勾选“本地控制面/workerd契约”子项；父项与“真实飞书tenant外部事实”保持未勾。本地fake REST、workerd与dry-run不能证明机器人已发布、权限已授权、真实群已发卡或同message更新成功。
+- 决策沉淀：飞书卡片是D1外部事实的安全展示面，不是新的状态真源；一个overall Run状态不能代替PR/merge/test/production四段。卡片恢复依靠immutable presentation + outbox + message ledger，不依赖Worker内存；token缓存可以丢，message identity不能丢。飞书只保证UUID一小时create去重且PATCH最多14天，因此本地必须持久化message ID/time并明确重建路径，不能假设一张物理消息永久可更新。
+- 遗留：真实试点需创建/发布自建应用、启用机器人并配置发送/更新权限，把机器人加入目标群并注入tenant/chat/Secret；按真实Run依次推进四类fact，记录首次消息和同message ID更新截图/URL。还需实测5 QPS/超时/token刷新、230031/14天重建、业务拒绝与人工刷新恢复，并审计D1/outbox无token/raw响应后才能勾父项。下一轮继续Phase 5“真实试点仓库跑通测试环境部署；production隔离demo演练”，不得用本地飞书fake替代真实tenant证据。
+
+## Round 59 — 2026-07-26
+- 目标：Phase 5 / 真实试点仓库跑通测试环境部署；生产至少在隔离demo环境演练审批、成功、失败和回滚——本轮闭环不依赖外部资源的显式opt-in evidence manifest/live verifier；真实GitHub/Cloudflare/云试点保持未完成。
+- 前置与权限：只读检查本地Git配置、policy、现有脚本与Watt固定commit`476e3cd`；`git remote -v`为空，当前branch为`main`，`delivery.yaml`为`deployment.mode: none`。未创建远端、未安装GitHub App、未部署Cloudflare、未触发Action/Deployment、未访问云账户/飞书/tool-bridge/日志/数据库或计费模型，未使用真实token。真实试点的owner/repo/visibility/branch protection、Actions预算、控制面origin、GitHub App、test/production Environment及云OIDC role均未提供或授权。
+- 动作：
+  - 先新增`PilotEvidenceManifestV1`与live verifier测试；第一次`pnpm exec vitest run test/pilot-evidence.test.ts`在修正测试自身语法后因`src/domain/pilot-evidence.js`不存在而failed suite/0 tests，证明此前没有外部试点证据契约或一键opt-in入口。
+  - 直接复用Watt`scripts/e2e/lib.ts@476e3cd`的显式消耗门控与退出分层：0=通过、1=事实/断言失败、2=env/token/种子等前置缺失。Watt CLI/HTBP断言与delivery-loop GitHub Deployment/Environment/D1 Evidence不等价，因此未复制其业务步骤。
+  - 新增strict `PilotEvidenceManifestV1`：test必须同时含deployment+独立acceptance；production demo必须以三个不同Run/Deployment/Action记录success、failure/error和rollback，rollback绑定failure SHA并恢复到已知success SHA。ID/SHA/HTTPS链接白名单、禁止userinfo/query/fragment、跨场景identity唯一均由runtime schema强制；示例manifest明确不是证据。
+  - 新增只读live verifier：使用控制面短期token交叉核对三条`GET /v1/runs/:runId/plan`投影中的status/environment/SHA/GitHub ID/approval/Evidence/URL；使用试点仓库Actions/Deployments read token核对五条Action的repo/completed conclusion/head SHA及三个Deployment的SHA/task/environment/latest state。任一candidate未verified或GitHub/D1漂移固定码失败，raw HTTP正文、manifest和token不输出。
+  - 新增`pnpm run e2e:pilot`。默认未设置`DELIVERY_LOOP_PILOT_E2E=1`立即exit 2且零网络；opt-in但manifest/origin/token不完整同样exit 2；schema/live事实失败exit 1；成功仅输出pilot/repo、3/5/3核对计数与固定状态。OIDC、required reviewer、demo隔离和rollback结果因无统一API，只留无query审计URL并要求人工review，不能由exit 0单独关门。
+  - 新增[Phase 5真实试点验收](docs/PilotE2E.md)，写明资源owner前置、test与隔离production demo演练顺序、仓库外manifest、Secret注入、退出码和证据边界；同步DOD、Architecture、Proto、Security与Reference。只勾本地证据关口，父项/真实外部子项保持未勾；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/pilot-evidence.test.ts` → exit 1，failed suite / 0 tests，pilot evidence domain模块不存在。
+  - `pnpm exec vitest run test/pilot-evidence.test.ts` → exit 0，1 file / 4 tests；覆盖示例/strict schema、success/failure/rollback完整性、3条控制面+5条Action+3个Deployment live交叉核对、token零输出、raw响应零传播和platform status不一致fail-closed。
+  - `pnpm run e2e:pilot`（无opt-in）→ exit 2，固定`opt-in missing`且零网络；`DELIVERY_LOOP_PILOT_E2E=1 pnpm run e2e:pilot`（无真实配置）→ exit 2，固定`required pilot configuration is incomplete`且零网络。exit 2是前置缺失，不是skip或通过。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 41 files / 134 tests、workerd 40 files / 224 tests、200个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round59-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings及新增schema/export成功bundle，未部署、未触发外部试点。
+  - `git diff --check` → exit 0；同次`git remote -v`仍无输出，证明真实远端前置未变化。
+- 勾选：Phase 5最终试点DoD下新增并勾选“本地显式opt-in证据关口”子项；父项与“真实GitHub/Cloudflare/云外部事实”保持未勾。schema、fake fetch、示例manifest和exit 2都不能冒充真实Action/Deployment/Environment/OIDC/rollback。
+- 决策沉淀：一份人工填写manifest只能作为外部证据索引，不能作为事实真源；可统一API的GitHub Actions/Deployment与D1投影必须在线交叉核对，不可统一API的OIDC/reviewer/隔离/恢复链接必须人工review。production success、failure和rollback不能复用一个可变Run或Deployment，终态冻结要求独立identity；当前production自动rollback未获授权，demo恢复必须如实标记manual或另行受审contract。
+- 遗留：要完成真实子项，用户至少需要确认GitHub owner/repo/visibility/默认分支保护与Actions预算，并授权创建/使用远端；提供已部署控制面origin、试点App installation、`test`与受保护`production` Environment、隔离demo云账户/namespace及test/production OIDC role/audit。完成真实deployment+acceptance、production success/failure和rollback后，把仓库外manifest路径与短期只读token注入受控环境运行`pnpm run e2e:pilot`；exit 0加人工审计review及PROGRESS外部URL才可勾父项。当前尚可继续Phase 6不依赖这些资源的本地可靠性契约，但不得把它们用于回填Phase 5外部事实。
+
+## Round 60 — 2026-07-26
+- 目标：Phase 6 / Task、Run、Attempt、GitHub run、PR、deployment的correlation ID可在日志和trace中联查——本轮闭环本地D1/workerd安全反查与structured log子项，真实平台日志/trace事实保持未完成。
+- 前置与权限：仅本地Node/workerd/D1与既有fake GitHub producer；未访问或写入真实GitHub、Cloudflare远端、飞书、Meegle、日志平台、数据库或tool-bridge，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`，完整读取core/gateway correlation和EventStore实现；直接保留其allowlisted filter、未知key拒绝、D1参数绑定、200条上限与trace定向查询纪律。Watt的Agent等待/超时/定向回送状态机不是跨交付链关联根，未复制为错误业务模型。
+- 动作：
+  - 先写Task/Run/Attempt/GitHub run/tool trace五种入口、认证/strict scope、PR/test/production producer、URL净化与structured log canary测试。首次定向运行因`src/observability/correlation-log.js`不存在而failed suite/exit 1，证明原项目只有分散foreign key，没有统一反查/日志契约。
+  - `run_id`固定为durable correlation root；HTTP `x-correlation-id`继续只关联单请求。新增`GET /v1/correlations?kind=...&id=...&repository=...`，支持task/run/attempt/trace/github_run/github_pr/test_deployment/production_deployment/github_deployment/test_acceptance/test_rollback。PR与GitHub deployment数字ID必须带repository，其余kind禁止scope；未知/重复参数、非法ID固定400且不回显，多Run命中fail-closed。
+  - 首版用trigger维护materialized links，聚焦回归暴露D1把trigger附加写计入producer `meta.changes`，20路test deployment scheduler因此全部误判`created=false`。删除trigger/materialized表，改为直接读取authoritative ledger的views，避免写放大、漂移和第二状态真源。
+  - 初次read-only view仍因workerd SQLite复合SELECT项数上限报`too many terms in compound SELECT`；拆为每个最多4路UNION的identity/trace-pr/deployments/workflow-runs/deployment-runs五个view。拆分后聚焦测试再以`no such column: correlation_id`红灯发现独立view首SELECT没有显式别名；补齐稳定view schema后全绿。
+  - 查询返回Task/Run、Attempts、GitHub runs、PR、test/production deployments和tool traces白名单安全投影，每类最多200条并给出truncated；HTTPS链接移除query/fragment。成功查询发一条`correlation_lookup`结构化日志，各ID类最多50个且无自由文本、query、URL、正文、R2/artifact ref、token、payload或raw error。同步DOD、Architecture、Proto、Security与Reference，按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/correlation-query.test.ts` → exit 1，correlation log模块不存在；中间producer回归因trigger `meta.changes`漂移exit 1；read-only view又分别以compound SELECT超限和缺`correlation_id`别名exit 1，均按真实失败保留。
+  - 聚焦`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/correlation-query.test.ts test/workflow/github-pull-request.test.ts test/workflow/test-deployment.test.ts test/workflow/production-deployment.test.ts` → exit 0，4 files / 30 tests；覆盖基础ID、真实PR/test/production ledger、repository scope、严格API、URL/raw canary零日志及既有20路producer语义无回归。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 41 files / 134 tests、workerd 41 files / 227 tests、204个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round60-20260726-final` → exit 0；Workflow/Queue/D1/双R2 bindings及新增migration/query/log/API成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 6 correlation DoD下新增并勾选“本地D1/workerd/结构化日志契约”子项；父项与“真实平台日志/trace事实”保持未勾。本地console/workerd、fake GitHub IDs和D1行不能证明部署后日志索引、真实Actions/PR/deployment或tool-bridge trace可联查。
+- 决策沉淀：长期关联身份必须来自业务lineage而不是可由客户端影响的HTTP header；外部数字ID必须用repository消歧。correlation index若靠trigger复制事实会同时污染D1写结果语义并产生漂移风险，只读view更符合控制面真源边界；但workerd SQLite的compound SELECT限制要求把view按语义拆小。Watt可直接复用的是查询/trace纪律，不是等待方correlation状态机。
+- 遗留：真实闭环需要先完成远端/控制面/试点部署，然后在日志平台配置结构化字段索引和保留；用同一真实Run的Task、Attempt、Actions run、PR、test/production deployment与tool trace ID逐项反查并保存平台链接/截图、响应和Secret扫描证据。父项关闭前还应注入一次跨repository相同PR/deployment数字ID，证明scope不会串Run。
+
+## Round 61 — 2026-07-26
+- 目标：Phase 6 / stuck detector对queued/running/awaiting_review/deploying分别有阈值和动作；故障注入能在阈值内告警/恢复。
+- 前置与权限：仅本地workerd/D1、fake时间与既有outbox/reconciliation原语；未访问GitHub、Cloudflare远端、飞书、日志平台、数据库或tool-bridge，未触发Action/消息/部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`的`watt-task-workflow.ts` checkpoint timeout及其平台force-timeout测试；直接沿用“稳定timeout、超时必须落安全终态且不能无限waiting”的纪律。Watt没有多状态watchdog、heartbeat lease fencing、durable incident或deployment projector，业务代码直接复制量为零；其人审超时直接failed不符合本项目策略，未复制。
+- 动作：
+  - 先写四状态exact阈值、阈值前零告警、20路并发、queued outbox rearm、running token/lease/Workflow fencing、safe query/log canary及状态恢复自动结案测试。首次`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/run-stuck-detector.test.ts`因`src/reconciliation/run-stuck-detector.js`不存在而failed suite/0 tests，证明此前仅有running lease timeout，无另外三类状态或durable alert。
+  - migration 0036新增`run_stuck_incidents`及open/run/stuck-scan索引。incident只保存Run/state/version、可选Attempt、阈值、固定action/status/resolution和时间；无Task/PR正文、URL、payload/ref、token、外部响应或raw错误。stable ID绑定non-running Run version或running Attempt lease generation，20路scan只插入一次。
+  - 默认policy固定为queued 300秒、running 90秒、awaiting_review 86400秒、deploying 1800秒；范围严格限制60～604800秒。Run类以同state/version的`updated_at`为无进展anchor；running同时使用heartbeat或lease expiry，并在effect前重验Attempt status/version/generation与Run state/version，修复原scanner只看Attempt、并发loser也可能返回lost的薄弱点。
+  - queued action只把过期delivering `workflow_create`恢复pending并清lease，随后复用既有Watt-derived relay/fenced processor；running在同一D1 batch写incident、Attempt lost/generation+1、token revoke、Run blocked、旧dispatch settle与唯一Workflow cancel。awaiting_review只升级人工处理，deploying只要求既有签名webhook/API reconciliation；二者不因时间自行reject/fail。
+  - scheduled执行顺序改为先watchdog，再在同一Cron周期并行relay、GitHub/PR/deployment/飞书reconciliation和credential revoke，确保queued rearm本周期可投递、deploy alert本周期重查平台事实。后续scan观察Run state/version前进或Attempt fenced后以CAS自动resolved并输出一次安全`run_stuck_resolved`；日志sink失败不回滚durable incident/动作。
+  - `GET /v1/tasks/:id`与`GET /v1/runs/:id/plan`最多投影最近20条incident安全字段。同步DOD、Architecture、Proto、Security与Reference；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/run-stuck-detector.test.ts` → exit 1，failed suite / 0 tests，watchdog模块不存在。
+  - 聚焦`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/run-stuck-detector.test.ts test/workflow/workflow-callback.test.ts test/workflow/task-query-api.test.ts test/workflow/outbox-routing.test.ts test/workflow/test-deployment.test.ts test/workflow/production-deployment.test.ts` → exit 0，6 files / 39 tests；覆盖四阈值、20路收敛、rearm/fence/resolve、晚到callback、查询、router与test/production相邻回归。
+  - 首次`pnpm run typecheck` → exit 2，严格类型指出D1 batch首结果可能`undefined`；增加显式完整性校验后`pnpm run typecheck`与`pnpm run lint`均exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 41 files / 134 tests、workerd 42 files / 230 tests、206个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round61-20260726-final` → exit 0；每分钟Cron、Workflow/Queue/D1/双R2 bindings及新增migration/watchdog/query成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 6 stuck detector DoD完整勾选；可重跑workerd故障注入已经覆盖原文要求的四状态阈值、动作、告警和恢复。真实日志保留/告警通知渠道及连续试运行仍由Phase 6 correlation、runbook和7天DoD独立验收，不能用本轮console替代。
+- 决策沉淀：human wait与deployment慢不是失败事实，watchdog只能告警/升级/重查，不能根据墙钟伪造reject或failed；running lease失联则必须先撤权和终止旧控制流再允许replacement。durable incident是告警真源，structured log只是可丢投影；检测与relay/reconciliation必须在同一scheduled链中有先后关系，不能并发启动后假设本周期一定看到rearm。
+- 遗留：下一轮处理Phase 6 outbox/queue dead-letter可重放；需要先定义terminal失败与重试耗尽边界、DLQ持久身份、管理员replay授权，以及对dispatch/PR/merge/deployment三次重放的外部effect去重证明。
+
+## Round 62 — 2026-07-26
+- 目标：Phase 6 / outbox/queue dead-letter可重放，重放3次不产生重复dispatch、PR、merge或部署。
+- 前置与权限：仅本地Node/workerd/D1、fake Queue与fake external effect；只读访问Cloudflare官方DLQ文档，未创建远端Queue、未调用GitHub/飞书/Cloudflare写API、未触发Action/PR/deployment/merge、未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`的Queue consumer/wrangler/provision：直接迁移`max_retries=3 + dead_letter_queue`及“畸形毒丸ack、暂时失败retry”分流，队列名按本项目调整。Watt明确DLQ不配consumer且没有capture/replay工具，因此其余业务代码不能直接复制。
+- 动作：
+  - 先写DLQ capture、poison ack、三层冻结、独立operations认证、strict replay、相同请求3次、dispatch/PR/deployment Queue各重投3次、merge零记录、settled自动结案与raw canary测试。首次`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/outbox-dead-letter.test.ts`因`src/outbox/outbox-dead-letter.js`不存在而failed suite/0 tests，证明此前普通失败永久回pending、Queue无retry limit/DLQ/replay。
+  - migration 0037新增immutable `outbox_dead_letters`与`outbox_dead_letter_replays`。dead letter保存原outbox/run、受限Queue message ID/attempts、kind/destination/attempt count、固定last error与open/replay_requested/resolved时间；没有message body、payload ref内容、Task/PR正文、token或外部响应。每outbox最多一个open、每dead letter最多一个replay，身份/终态trigger禁止改写。
+  - Wrangler主consumer配置3次retry后转`delivery-loop-workflow-outbox-dlq`；同Worker独立消费DLQ，只有exact`{outboxId}`会回查D1并在ack前capture。畸形/已不存在outbox为不可恢复毒丸ack，D1失败retry；DLQ consumer自身100次失败后转不消费的quarantine queue，避免未配置下被永久删除。
+  - open dead letter通过`NOT EXISTS open`在Cron relay、FencedOutboxProcessor claim/drain和D1 router三层冻结；已在途消息路由为`dead_lettered`后安全ack，不能绕过router直接effect，也不会由Cron无限制造新主队列消息。
+  - 新增`GET /v1/dead-letters`与`POST /v1/dead-letters/:id/replay`，仅独立`OPERATIONS_TOKEN`可用；Task intake/approval/Runner token无权。GET只返回ID/枚举/计数/固定错误/时间且no-store；POST strict只有expected outbox attempt count与三个固定reason，调用方不能提交outbox/kind/destination/payload/effect/actor。固定actor为`service:operations`。
+  - replay只把exact open dead letter置`replay_requested`、写唯一immutable replay并把原outbox恢复pending/清过期lease；不复制outbox或payload。下个relay仍进入原destination processor，重新核对Run/Plan/approval并先走外部reconciliation。三次相同API请求返回一个replay ID；三条重复Queue消息只有第一条取得D1 lease/effect，其余读取settled。outbox settled后scheduled reconciler把相关dead letter置resolved。
+  - Worker按`batch.queue`严格区分primary与DLQ；未知Queue整批ack且不路由。新增Node配置测试锁定Queue/DLQ/quarantine参数，workerd测试覆盖generic destinations并同时回归真实GitHub dispatcher、PR与test/production deployment processors。同步DOD、Architecture、Proto、Security与Reference；按用户要求未更新llmdoc。
+  - 2026-07-26实读Cloudflare官方文档，确认达到consumer retry limit后消息进入DLQ、未配置DLQ会永久删除、DLQ可像普通Queue独立消费；实现与平台语义一致。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/outbox-dead-letter.test.ts` → exit 1，failed suite / 0 tests，DLQ模块不存在。实现后首次suite另因测试自身对已await值错误使用`.resolves`而1/3失败；修正测试表达式后3/3通过，未把测试代码错误归为产品缺陷。
+  - `pnpm exec vitest run test/outbox-dead-letter-config.test.ts` → exit 0，1 file / 1 test；锁定主Queue 3次、DLQ consumer 100次/60秒及quarantine配置。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/outbox-dead-letter.test.ts test/workflow/outbox-routing.test.ts test/workflow/workflow-outbox.test.ts test/workflow/github-dispatcher.test.ts test/workflow/github-pull-request.test.ts test/workflow/test-deployment.test.ts test/workflow/production-deployment.test.ts` → exit 0，7 files / 47 tests；覆盖DLQ全链及相邻真实producer fencing/reconciliation。
+  - 首次`pnpm run typecheck`因同一毒丸/合法混合batch的测试泛型被首项收窄而exit 2；显式建模body为unknown后typecheck通过。随后lint因遗留未使用type import exit 1，删除后`pnpm run typecheck`与`pnpm run lint`均exit 0。
+  - `curl -fsSL --max-time 20 https://developers.cloudflare.com/queues/configuration/dead-letter-queues/ ...` → exit 0；官方页面说明与实现的retry limit/DLQ消费边界一致。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 42 files / 135 tests、workerd 43 files / 233 tests、209个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round62-20260726-final` → exit 0；双Queue consumer、Cron、Workflow/D1/双R2 bindings及新增migration/store/API成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 6 outbox/queue dead-letter DoD完整勾选；可重跑配置和workerd故障注入已证明3次replay/Queue重投不重复dispatch、PR或deployment，merge既无outbox/effect入口也无新增ledger。真实远端Queue创建与平台消息事实仍属于最终部署/试运行外部证据，不能用dry-run冒充。
+- 决策沉淀：DLQ不是第二套业务队列或payload仓库，只是冻结原outbox的durable运营状态；重放必须恢复原identity并重新经过全部authorization/reconciliation，不能让管理员选择effect。只配置平台DLQ但不消费会得到“可见但不可恢复”的堆积；反之消费后未先持久化就ack会永久丢失，因此D1 capture必须先于ack。DLQ consumer本身也需要quarantine，避免数据库长故障最终删除证据。
+- 遗留：下一轮处理Phase 6“reconciliation定期从GitHub/飞书核对外部事实，修复回调丢失但外部已成功”；需要审计现有各自reconciler覆盖矩阵，并补统一调度/结果ledger和飞书漏回调恢复缺口。
+
+## Round 63 — 2026-07-26
+- 目标：Phase 6 / reconciliation定期从GitHub/飞书核对外部事实，修复“回调丢失但外部已成功”的状态。
+- 前置与权限：仅本地Node/workerd/D1、fake GitHub/Feishu REST与官方文档只读访问；未调用真实GitHub/飞书写API，未访问真实repository/tenant/chat、Cloudflare远端、云账户、日志、数据库、tool-bridge或计费模型，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`，全库检索Deployments status、external reconciliation和飞书message GET/mget；Watt只有发送adapter及Workflow checkpoint/wait，没有可直接复制的等价业务实现，本轮Watt业务代码直接复制量为零。继续复用此前直接迁入的`memoryTokenCache`、token失效码、create UUID和fenced outbox；GitHub test adapter逐结构复用本项目production status adapter。
+- 动作：
+  - 先审计每分钟scheduled矩阵：既有GitHub Actions run、PR、merge gate/status、base、production deployment、acceptance/rollback均有API补偿；缺口是test deployment只有signed webhook projector、飞书只有D1→card producer而没有message外部事实回读。先写REST解析、20路missed-callback收敛、lost PATCH response、Cron接线、read/write token隔离和raw canary测试。
+  - 红灯Node `pnpm exec vitest run test/github-test-deployment-status-api.test.ts test/feishu-delivery-card.test.ts` → exit 1，GitHub reconciler模块不存在且`getCardMessage`不存在；workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/test-deployment.test.ts test/workflow/feishu-delivery-card.test.ts` → exit 1，两个新增reconciler模块均不存在，证明此前test deployment webhook丢失与飞书PATCH结果丢失没有恢复入口。
+  - migration 0038新增`github_test_deployment_status_observations`与`feishu_delivery_card_observations`。两者只保存source、canonical fact/card digest、外部identity/time、applied/ignored和固定reason，不保存GitHub REST body、飞书卡片正文/`msg`、token或网络错误；identity字段trigger不可改写。
+  - 新增`GitHubTestDeploymentStatusApiClient/Reconciler`：使用独立于`deployments:write` effect cache的`deployments:read` token，先GET exact Deployment核对repository、numeric ID、ref SHA、`delivery-loop:test`、`test`与reference-only control-plane deployment ID，再GET最多100条status并按`updated_at`选真正最新一条。pending/queued不会借旧success推进；API与webhook共用`GitHubTestDeploymentStatusStore`单调projector、OIDC门槛、Evidence verifier和终态CAS。
+  - 扩展`FeishuDeliveryCardApiClient.getCardMessage`，调用官方`GET /open-apis/im/v1/messages/:message_id?card_msg_content_type=user_card_content`。raw body只在内存解析，输出被收窄为message/chat/sender app/tenant/create/update/deleted/msg type与card digest。`FeishuDeliveryCardMessageReconciler`只扫描已有active message ID且latest presentation未delivery的原outbox；exact tenant/chat/app/message、interactive、未删除和latest renderer digest全部相同才写immutable observation/delivery并settle原outbox。20路重放只形成一条applied observation，错误binding/content不覆盖状态。
+  - 首次POST若外部成功但响应在message ID落D1前丢失，message GET没有安全发现键；本轮明确只依赖飞书最长1小时稳定UUID重试，不通过群历史或相似正文猜测认领消息。已知message ID的PATCH响应丢失则由每分钟GET可靠收敛。该边界同步写入DOD/Architecture/Proto/Security/Reference。
+  - `reconcileTestDeploymentsFromEnv`与`reconcileFeishuDeliveryCardsFromEnv`分别并行运行原调度/projector和新增外部事实reconciler，现有Worker每分钟Cron无需第二套调度器。配置测试同时锁定`* * * * *`、Worker调用点及两个runtime `reconcileBatch(25)`接线。
+  - 按`lark-openapi-explorer`流程先运行`lark-cli im --help`和`+messages-mget --help/--dry-run`确认CLI已有只读能力，再从官方`llms.txt → llms-messaging.txt → message/get.md`逐层实读完整规范；没有调用真实tenant API。官方要求机器人在群内，应用身份群消息需`im:message`或`im:message:readonly`并附加`im:message.group_msg`，限流1000次/分钟且50 QPS。
+- 验证：
+  - 聚焦Node `pnpm exec vitest run test/external-fact-reconciliation-config.test.ts test/github-app-installation-token.test.ts test/github-test-deployment-status-api.test.ts test/feishu-delivery-card.test.ts` → exit 0，4 files / 22 tests；覆盖Cron接线、read/write token cache隔离、GitHub exact/latest解析、飞书digest-only GET和raw错误脱敏。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/test-deployment.test.ts test/workflow/feishu-delivery-card.test.ts test/workflow/outbox-routing.test.ts` → exit 0，3 files / 16 tests；覆盖missed deployment webhook、lost PATCH response、20路D1收敛及runtime相邻回归。tenant exact binding补强后再次运行两个核心suite → exit 0，2 files / 11 tests。
+  - 首次`pnpm run typecheck`因测试fake的`deleted:false`被推断为boolean而exit 2，收窄字面量后通过；首次lint因新增但未使用的message ID pattern exit 1，将其接入外部fact校验后`pnpm run typecheck`与`pnpm run lint`均exit 0。
+  - `curl -fsSL https://open.feishu.cn/document/server-docs/im-v1/message/get.md | rg ...` → exit 0；核实GET路径、权限、50 QPS/1000次每分钟和`user_card_content`原卡返回语义。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 44 files / 140 tests、workerd 43 files / 235 tests、212个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round63-20260726-final` → exit 0；每分钟Cron、Workflow/Queue/D1/双R2 bindings及migration 0038/新增adapter成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 6 GitHub/飞书定期external-fact reconciliation DoD完整勾选；本地故障注入已证明test deployment webhook丢失后API success推进同一Evidence路径，以及飞书已知message PATCH结果丢失后GET exact card收敛原outbox。真实GitHub repo/Feishu tenant事实仍由Phase 5外部试点子项独立验收，未用fake或dry-run冒充。
+- 决策沉淀：reconciliation不是第二套状态机或effect producer；它只把外部已存在且完成exact binding的事实送回原projector/原outbox。GitHub effect/read token必须隔离；飞书正文可以在内存做digest比较，但不能落D1。没有稳定外部identity时宁可继续幂等重试或人工处理，也不能模糊搜索后认领“看起来像”的资源。
+- 遗留：下一轮处理Phase 6“reconciliation同时核对active Cloudflare Workflow与D1 Run投影”；需要定义Workflow complete/terminated/unknown与D1 active/terminal的双向不一致矩阵、只读平台adapter、durable observation及允许的审计修复动作。
+
+## Round 64 — 2026-07-26
+- 目标：Phase 6 / reconciliation同时核对active Cloudflare Workflow与D1 Run投影；Workflow已完成/终止、D1仍active或反向不一致时可审计修复。
+- 前置与权限：仅本地Node/workerd/D1、fake Workflow binding与Cloudflare官方文档只读访问；未调用Cloudflare远端Workflow API，未创建/重启/终止真实实例，未访问GitHub、飞书、云账户、日志、数据库、tool-bridge或计费模型，未部署、未使用真实Secret。按用户要求固定核对Watt commit`476e3cd`，完整读取`task-store.ts`、`task-manager.ts`、`watt-task-workflow.ts`及对应测试；复用`taskId=instanceId`、D1业务真源、terminal terminate幂等、stable waitForEvent与test dispose纪律。Watt没有双向status矩阵、durable mismatch/fair cursor或fenced repair，业务代码直接复制量为零，未虚构复用。
+- 动作：
+  - 先从DOD原文推导状态矩阵，并用官方Markdown与锁定`@cloudflare/workers-types@4.20260702.1`双重核实platform枚举。D1除blocked/failed/succeeded/cancelled外都要求control Workflow active；platform queued/running/paused/waiting/waitingForPause视为active，complete/errored/terminated为terminal，unknown为实例不可确认。
+  - 先写status adapter脱敏、三向不一致、20路scan/processor、stale Run fencing、recreate/restart/terminate effect、controlled replay让路、公平cursor、Cron接线和Task安全查询测试。红灯Node `pnpm exec vitest run test/cloudflare-workflow-status-client.test.ts test/external-fact-reconciliation-config.test.ts` → exit 1，reconciler模块与Cron调用不存在；workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/workflow-instance-reconciler.test.ts` → exit 1，missing module / 0 tests。
+  - migration 0039新增`workflow_instance_reconciliation_state`与immutable `workflow_instance_reconciliation_observations`。latest state只保存Run version/state、官方platform enum、fact digest/check time；observation只保存固定action/open/resolved、repair outbox和时间。没有Workflow output、error name/message、stack、异常正文、token或平台response；batch按最久未检查排序，25条limit不会永久饿死后续Run。
+  - `CloudflareWorkflowStatusClient`只投影官方status，`.get/status`异常统一收窄为unknown。`WorkflowInstanceReconciler`每分钟执行：D1 active+platform terminal写`workflow_reconcile_restart`，D1 active+unknown写同ID `workflow_reconcile_create`，D1 inactive+platform active写`workflow_reconcile_terminate`。关系一致时结案open observation；Run version前进以`run_advanced`结案旧记录；pending controlled replay时自动create/restart不抢terminal instance。
+  - 三类repair都进入现有`cloudflare_workflows` FencedOutboxProcessor。processor从reference-only observation重新绑定原outbox、Run state/version与active/inactive关系，stale/resolved安全settle且零effect。create复用run ID，restart先把已active视为existing，terminate把unknown/terminal视为已收敛；外部effect后D1写失败仍可安全重放。20路scan和Queue消费只产生一条observation/outbox/effect。
+  - 审计发现原`DeliveryRunWorkflow`在Plan激活后立即complete；直接上线reconciler会把正常active Run误判为restart。先修改真实Workflow测试，首次聚焦suite按预期exit 1并显示platform `complete`。实现改为Plan激活后进入固定`await-run-terminal`、最长365天的durable wait；waiting不占active concurrency。D1已inactive时Workflow直接正常结束；active Run重建/重启时`register-run`接受exact persisted binding，有active Plan则跳过analysis并恢复control wait。终态event仍需从D1重新确认，不能自报业务成功。
+  - Worker scheduled顺序改为watchdog→Workflow status reconciliation→relay与其余外部reconciliation，使本轮新repair outbox可被同一Cron relay。Task与Run Plan查询增加latest Workflow status/fact digest/check time及最近20条mismatch/action/outbox/repair/resolution；不返回engine error/output。同步DOD、Architecture、Proto、Security、Reference；按用户要求未更新llmdoc。
+  - 实读Cloudflare官方Workers API、events/parameters与limits：`get(id)`不存在会抛错，`status()`给出九态；waitForEvent timeout允许1秒～365天，waiting不计active concurrency；完成实例history Free仅3天、Paid 30天。因此长期审计以D1 ledger为准，不能依赖平台terminal history永久存在。
+- 验证：
+  - 长期wait红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/delivery-run-workflow.test.ts` → exit 1，Plan激活后实际platform status为`complete`而非active；实现后同命令exit 0，1 file / 1 test。
+  - 聚焦Node `pnpm exec vitest run test/cloudflare-workflow-status-client.test.ts test/external-fact-reconciliation-config.test.ts` → exit 0，2 files / 4 tests；覆盖status/error/output脱敏、terminal-only restart/active retry和Cron接线。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/workflow-instance-reconciler.test.ts test/workflow/task-query-api.test.ts test/workflow/delivery-run-workflow.test.ts test/workflow/workflow-callback.test.ts test/workflow/controlled-replay.test.ts test/workflow/workflow-outbox.test.ts` → exit 0，6 files / 22 tests；覆盖三向矩阵、20路effect收敛、公平cursor、controlled replay、长期wait、callback/replay/outbox相邻回归。显式terminate清理waiting测试实例时workerd打印预期`User called terminate`终止信息，suite无未解释失败。
+  - `pnpm run typecheck`与`pnpm run lint` → exit 0。
+  - 官方文档`curl .../workers-api/index.md|events-and-parameters/index.md|limits/index.md | rg ...` → exit 0；核实status九态、get/create identity、365天timeout、waiting concurrency与3/30天retention。
+  - 首次`pnpm run verify` → exit 1：Node 45 files / 143 tests全绿，workerd 43 files全绿，仅未修改的`execution-attempt-api`第44个文件20路HTTP状态断言一次波动；立即单独`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/execution-attempt-api.test.ts --reporter=verbose` → exit 0，2/2。未修改产品代码或放宽断言，第二次完整verify通过。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 45 files / 143 tests、workerd 44 files / 241 tests、214个生产文件Secret scan和Markdown links全绿。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round64-20260726-final` → exit 0；每分钟Cron、Workflow/Queue/D1/双R2 bindings及migration 0039/新增reconciler成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 6 Cloudflare Workflow↔D1双向reconciliation DoD完整勾选；可重跑故障矩阵证明complete/errored/terminated/unknown与反向active不一致都有durable、fenced、可查询的修复路径。本地binding/fake status不能证明真实Cloudflare账户状态和长时间运行，远端证据继续由部署/连续试运行DoD独立验收。
+- 决策沉淀：Workflow status只能决定控制流修复，不能覆盖D1业务状态。长期会话通过waiting保持active，但业务终态仍只来自D1的审批/Evidence/platform projector；reconciliation create/restart/terminate不重放Agent隐藏状态、token、lease、approval或GitHub/飞书/deployment effect。平台history最多30天，因此审计长期真源必须是D1 observation而非Workflow dashboard。
+- 遗留：下一轮处理Phase 6“每tenant/repo/user/run有并发、attempt、token、模型费用和tool调用限额；P0 override仍需审计”；需要先盘点已有Attempt/retry/token/tool trace/usage原语，定义多维原子reserve/release与P0人工override边界。
+
+## Round 65 — 2026-07-26
+- 目标：Phase 6 / 每tenant/repo/user/run有并发、attempt、token、模型费用和tool调用限额；P0 override仍需审计。
+- 前置与权限：仅本地Node/workerd/D1/fake GitHub effect、锁定Codex JSONL契约与OpenAI官方文档只读核对；未调用真实Codex计费模型，未访问真实GitHub/飞书/Cloudflare远端、云账户、日志、数据库或tool-bridge，未部署、未使用真实Secret。按用户要求固定读取Watt`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`的usage migration/store、Agent/LLM/Anthropic caller及usage/observability测试；直接迁移“一次真实模型调用一行usage”的schema/store结构、input/output token+可选费用append-only记账和重试/多步调用不遗漏usage的测试纪律。Watt没有四scope quota、reservation或P0 override，未虚构复用。
+- 动作：
+  - migration 0040新增tenant/repository/user/run四scope与`concurrency/attempt/model_tokens/model_cost_microusd/tool_call`五资源。exact policy优先wildcard；tenant/repository/user非并发按UTC日，run按生命周期，并发即时，共20条有限默认policy。`quota_run_scopes/effective_policies`是统一D1投影；Attempt `BEFORE INSERT` trigger覆盖全部现有及未来producer，stable attempt ID重放不重复计数。
+  - 并发使用stable Attempt reservation，analysis/execution dispatch、test deployment、acceptance、rollback及production deployment都在真实GitHub effect前原子reserve。release后的同Attempt retry重新通过所有scope并re-arm；terminal/TTL由Cron reconcile。审计发现外部timeout可能已成功，五个producer改为ambiguous结果不提前release，直到stable reconciliation、Attempt终态或TTL，避免短暂低估真实Action。
+  - tool endpoint在upstream调用前使用控制面生成trace ID和接收时间admit；超额写metadata-only denial。模型在Codex进程前按D1 model profile最大input/output与最坏uncached价格同时预留token和micro-USD，完成后按cached/uncached/output实际用量结算。profile identity/model/上界/价格immutable且cached价格不得高于uncached；改价新增profile ID，旧profile只可disable，不能在调用中途重定价。
+  - `codex exec --json` stdout改为逐行stream且不保留；只投影官方单个`turn.completed.usage`的input/cached input/output/reasoning output四个整数，thread/item/message/reasoning/command/tool/file/web/plan事件立即丢弃。analysis/execution Runner预留后才调用Codex，合法usage入账后才继续；raw JSONL、Agent output、prompt和tool内容不进D1/log/artifact。
+  - 模型API body移除Runner自报`occurredAt`，UTC窗口、reservation TTL、override expiry和usage at统一使用控制面接收时间；usage idempotency digest只绑定稳定reservation/usage/Attempt和四个计数。active reservation允许网络重试，settled/expired相同ID固定409，防止二次真实调用；没有合法usage不能记成零费用成功。
+  - P0 priority本身不扩容。新增独立quota override source/outcome：只有approval adapter的验签GitHub/飞书source经channel映射为非Task requester的`human + approve:quota_override`，且exact Run version、资源集合、reason digest、future expiry≤4小时命中，才固定提升指定资源2倍。self、agent/service、缺role、未映射、跨tenant/repository、non-P0和stale version均identity rejection入账或fail-closed；source/outcome immutable。
+  - Task/Run安全查询增加20条effective limit、最近20条override/denial/per-call usage；不返回scope key、prompt/model response、tool参数/result、credential或raw error。Attempt trigger用`RAISE(ABORT)`拒绝，SQLite会回滚同事务，因此该类拒绝只有固定`quota_attempt_exceeded`，未伪称写入`quota_denials`；并发/model/tool denial才有durable ledger。
+  - GitHub workflow与dispatch增加可信`model_profile_id`，Worker运行配置需提供`CODEX_MODEL_PROFILE_ID`；Agent只能使用reservation响应返回的model，价格/上界不从Task或Agent自报。Worker scheduled接入quota reconciliation。同步DOD、Architecture、Proto、Security、Reference；按用户要求未更新llmdoc。
+- 验证：
+  - 初始红灯`pnpm exec vitest run test/codex-usage.test.ts` → exit 1，module不存在；`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/quota-control.test.ts` → exit 1，quota domain不存在。固定workflow新增profile input后`pnpm exec vitest run test/delivery-agent-workflow.test.ts`首次按预期失败，更新可信input契约后通过。
+  - 补强红灯quota suite → exit 1，12项中3项失败：released reservation未re-arm、settled model reservation仍可返回existing、API接受Runner旧时间；实现后12/12通过。GitHub ambiguous response占位测试首次exit 1并显示`effect_failed`已释放，修改五个producer后`github-dispatcher`6/6通过。immutable/worst-case profile测试首次exit 1，migration约束后quota suite最终1 file / 13 tests通过。
+  - 跨scope用例实际证明tenant concurrency、repository tool call、user model token、tenant/repository model cost跨Run累计；Attempt资源循环覆盖四scope，20条policy覆盖完整4×5矩阵。20路并发只admit一个slot，P0 positive及self/service/unauthorized/wrong-tenant/stale negative、API fencing、安全query和raw canary均通过。
+  - Node聚焦`codex-usage/codex-analysis-adapter/codex-execution-adapter/analysis-runner-bootstrap/execution-runner-bootstrap` → exit 0，5 files / 19 tests；workerd配额及相邻Task/GitHub deployment/acceptance/rollback/tool suites → exit 0，8 files / 73 tests；`typecheck`与最终`lint`均exit 0。
+  - 首次完整`pnpm run verify` → exit 1：Node 46 files / 146 tests全绿；workerd仅旧安全断言把新增合法枚举`model_tokens`误判为credential。断言收窄到真实敏感字段`attemptToken/toolBridgeToken/tokenDigest/oidcToken/stack/raw error`后聚焦17/17通过，未移除Secret检查。后续两次完整verify均只在Round 64已记录的`execution-attempt-api`20路状态断言波动；单独verbose 2/2、完整workflow 45 files / 254 tests通过，保持200/201原判据并把失败输出改为具体unexpected status数组，未修改产品语义或放宽状态码。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 46 files / 146 tests、workerd 45 files / 254 tests、219个生产文件Secret scan和Markdown links全绿。Workflow测试清理waiting实例时仍打印预期`User called terminate`，无失败suite。
+  - 首次`pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round65-20260726-final`完成2235.92 KiB/gzip 368.83 KiB bundle并打印`--dry-run: exiting now`，但父进程未退出，人工终止exit 130，不能算成功证据。`CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round65-20260726-final-retry` → exit 0；Workflow/Queue/D1/双R2 bindings、migration 0040及新增quota/usage代码成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 6多维成本/速率限制DoD完整勾选；可重跑D1/HTTP/Runner/GitHub effect测试证明四scope五资源、调用前原子admission、结算、恢复、P0人工override和安全查询。模型费用来自测试profile/fake JSONL，不能冒充真实Codex账单或Cloudflare/GitHub平台并发事实；本项验收的是控制面强制契约，不扩张其他真实试点DoD。
+- 决策沉淀：D1是quota policy/reservation/usage/override真源，GitHub Actions concurrency与供应商账单是外部核对层；先按最大值reserve再按真实usage settle，失败时宁可短时保守占用也不能在外部effect不确定时低估。P0只能有限、限时、独立人审，不能变成priority隐式无限预算。Watt usage结构可直接复用，多维限额和身份override必须由delivery-loop新增；Codex事件契约来自官方文档，模型价格必须由版本化运维profile配置而不是代码猜测。
+- 遗留：下一轮只处理Phase 6“D1/R2备份恢复演练后，Task/Run/Plan/Approval/Evidence/Audit一致，active token全部强制撤销后再恢复；Cloudflare已完成Workflow超过30天仍可审计”。需要先定义备份manifest/digest、一致性快照边界、restore generation/token全撤销和长期Workflow-independent audit校验；不能用本地文件复制冒充真实远端备份演练。
+
+## Round 66 — 2026-07-26
+- 目标：Phase 6 / D1/R2备份恢复后Task/Run/Plan/Approval/Evidence/Audit一致，active token及外部write credential撤销后才恢复服务；已完成Workflow超过30天仍可审计。
+- 前置与权限：仅本地Node/workerd/D1/三个Miniflare R2 bucket、fake Cloudflare export响应和fake GitHub credential provider；未访问真实Cloudflare/GitHub/飞书/数据库/日志/tool-bridge，未部署、未执行远端D1 Time Travel/import/export、未使用真实Secret。固定检索Watt`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`的D1/R2/Workflow/audit实现；没有D1 export、R2 backup/versioning、restore fence或token-safe一致恢复模块可直接复制，业务代码直接复制量为零。最大化复用既有Watt-derived稳定Workflow step、D1条件batch、immutable audit/fenced outbox纪律及项目现成`RepoWriteCredentialRevoker`，未虚构来源。
+- 动作：
+  - 先写D1官方export adapter、双R2备份/篡改、20路restore/token撤销/31天审计测试。三条初始红灯分别因`d1-export-client`、`backup-recovery`、`backup-restore-store`不存在而exit 1，证明此前没有对应生产路径。
+  - 实读Cloudflare官方D1 Time Travel、import/export和Workflow backup示例：production自动开启Time Travel；Free 7天、Paid 30天；restore为取消在途请求的destructive in-place；超过30天需D1 export到R2。实现官方`output_format=polling → at_bookmark → current_bookmark → signed_url`，signed URL只活在单个step callback内，下载请求不携带Cloudflare API Authorization。
+  - 新增第三个私有`BACKUP_OBJECTS`及scheduled`ControlPlaneBackupWorkflow`。D1 SQL dump流式写入；`TASK_OBJECTS/CHECKPOINT_OBJECTS`逐对象复制并保存content SHA-256、size、etag、content-type和有序custom metadata descriptor；descriptor set和manifest均canonical digest。workerd没有Node类型声明中的`DigestStream`，未退化为全量内存buffer，改为依赖零、可增量的SHA-256并用标准空串和跨chunk向量核对。
+  - migration 0041新增immutable `backup_snapshots`、全局`control_plane_recovery_state`、`restore_drills/run_fences/token_revocations/consistency_checks`及D1→R2引用view。Task/checkpoint/review/context producer均先发布immutable R2再提交D1 ref，所以export后复制R2是安全superset；不假设R2自动versioning。
+  - restore strict输入只有restore/backup ID与manifest digest。manifest/dump验证前零fence；合法首请求用一个D1 batch前进generation一次，将active Attempt置lost且generation+1，撤销未过期attempt/tool token，阻断Run/Plan/Item，清delivering outbox和quota lease，把GitHub credential转`revocation_pending`并留下immutable audit。20路相同请求一份状态迁移；旧Attempt token HTTP返回401。
+  - 全局serving fence接入Worker：restoring期间普通HTTP 503、Queue只retry、Cron仅允许运行既有GitHub credential revoker；health和operations备份/恢复接口保持可用。revoker解密并撤销测试中的exact GitHub token后，complete才检查D1 dump、descriptor、恢复对象content/metadata、全部D1 R2 ref、FK和Task/Run/Plan/Approval/Evidence/Audit/token九类判据；缺对象或pending credential保持restoring。
+  - `GET /v1/backups`、`POST /v1/restores/:id/fence|complete`、`GET /v1/restores/:id`只接受`OPERATIONS_TOKEN`，unknown query/body key拒绝，不接受SQL/R2 key/token/state/effect。31天old Run审计只联合D1 Task/Run/active Plan、Approval/Evidence计数与`workflow_instance_reconciliation_state`，不调用Workflow history。
+  - 同步DOD、Architecture、Proto、Security、Reference；记录D1 7/30天、官方polling、R2无versioning假设、R2-before-D1 ref、先撤权后ready和>30天D1审计边界。按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/d1-backup-export.test.ts`、`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/backup-r2.test.ts`、`... backup-restore.test.ts`分别exit 1，均为目标模块不存在；首次`pnpm run typecheck`另以`crypto.DigestStream`类型不存在exit 2。改成全局声明后类型通过但workerd实际`DigestStream is not defined`，据此实现增量SHA-256而非掩盖运行时差异。
+  - 聚焦Node `test/d1-backup-export.test.ts + test/incremental-sha256.test.ts` → exit 0，2 files / 3 tests；覆盖官方API/header/body、signed URL隔离/下载、raw error收窄、unfinished/insecure URL及标准流式digest。
+  - 聚焦workerd `backup-api + backup-r2 + backup-restore` → exit 0，3 files / 5 tests；覆盖三bucket复制/删除后恢复/篡改、strict operations API/503 fence、20路generation、旧token 401、exact GitHub token撤销、九类检查、缺对象/pending credential和31天D1-only audit。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 48 files / 149 tests、workerd 48 files / 259 tests、227个生产文件Secret scan和Markdown links全绿。waiting Workflow清理仍打印已有预期`User called terminate`信息，无失败suite。
+  - 首次准备dry-run时包含删除旧`/tmp`目录的命令被工具删除策略拒绝，未发生删除；改用新空目录后`CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round66-20260726-final-v2` → exit 0，两个Workflow、Queue、D1及Task/Checkpoint/Backup三R2 binding成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 6 D1/R2备份恢复DoD完整勾选。可重跑本地workerd演练证明manifest/content fencing、token/credential撤销、业务隔离、一致性和长期审计契约；dry-run只证明可打包，不能冒充真实Cloudflare远端Time Travel/SQL import、实际bucket retention或灾备RTO证据。
+- 决策沉淀：D1 export/import成功不等于控制面可服务；恢复后的token digest/加密credential ciphertext必须视为潜在active authority，先全局隔离和撤权，再检查业务lineage/R2/FK，最后ready。Workflow history是短期控制流诊断面，超过30天审计必须直接来自D1 ledger。backup manifest不含正文/Secret/signed URL，R2完整性由应用descriptor证明而不是猜测平台versioning。Watt没有等价模块时，最大化复用应落在已验证的Workflow/条件写/outbox/revoker原语，不能复制不匹配代码或倒称新增能力为Watt所有。
+- 遗留：下一轮只处理Phase 6“审计查询能在5分钟内回答Case 8，结果含digest/链接且不暴露Secret”。先定位Case 8问题集和现有Task/Run/correlation投影，定义一键查询/导出与时间预算；不得把本轮`auditLongTermRun`窄查询冒充Case 8完整审计报告。真实Cloudflare远端restore仍可在获授权试点/连续运行阶段补充，但不回写成当前本地证据。
+
+## Round 67 — 2026-07-26
+- 目标：Phase 6 / 审计查询能在5分钟内回答Case 8“谁基于哪个事件、以什么权限、读取了哪些类别上下文、改了什么、哪些检查通过、谁批准、部署到哪里”，结果含digest/链接且不暴露Secret。
+- 前置与权限：仅本地workerd/D1、20路HTTP并发和安全canary；未访问真实Cloudflare/GitHub/飞书/日志/数据库/tool-bridge，未读取R2正文、未部署、未使用真实Secret。固定读取Watt`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`的`migrations-audit/0001_audit_records.sql`、`src/audit/audit-store.ts`、platform audit route、CLI audit list和E2E-4 allow/deny断言；直接适配每次真实读取UUID/time/principal/digest入账、D1 prepare+bind、strict limit和“查询本身也审计”的实现骨架。Watt generic CallContext JSON不能表达本项目Plan/Evidence/commit/deployment lineage，未复制为错误报告模型。
+- 动作：
+  - 从Vision Case 8原文拆成八个不可省略的answer key：`who/sourceEvents/permissions/contextReads/changes/checks/approvals/deployments`。确认已有`GET /v1/correlations`只能定位Run及安全外部ID，Round 66 `auditLongTermRun`只有Task/Plan digest与审批/Evidence计数，两者都不足以回答Case 8。
+  - 先写完整Run fixture、operations授权/未知参数、八栏字段、digest/净化链接、Secret负向、20路稳定digest/access ledger、缺Run、非法scope和五分钟server budget测试。首次聚焦执行因`case8-audit-report-store`不存在而failed suite/0 tests，证明此前无一键报告。
+  - migration 0042新增immutable`case8_audit_report_accesses`，每次成功查询只保存Run、固定`service:operations`、report digest、answer count=8、duration和时间；不复制报告JSON、链接、正文或credential。把backup/dead-letter重复的operations Bearer常量时间比较收敛到共享helper，现有授权语义不变。
+  - 新增D1-only`Case8AuditReportStore`，最大化复用现有Watt-derived `CorrelationQueryStore`的Run/GitHub/trace关联，再并行读取Task/Plan revision/effect、Attempt grant/write credential状态、tool trace、head/protected diff/PR/merge、verification/Evidence/GitHub checks、identity approval与test/production deployment authoritative ledger。每栏最多500，超限拒绝而非截断成伪完整答案。
+  - permissions只返回scope名称/expiry/revocation、Plan effect和credential状态/binding，不选择任何token/OIDC/tool digest或ciphertext。历史合法scope子集按控制面顺序允许；插入`repo:write`等非attempt allowlist值会让整份报告projection conflict。context只把Runner checkout和trusted tool path聚合为repository/logs/traces/k8s/database类别与计数，不输出参数/result/error。
+  - changes只给commit parent/head/branch/Evidence、protected diff/tree/policy digest/计数、PR body digest/链接及merge SHA/actor，不给patch/正文；checks只给command ref/status/policy/evidence-set/fact digest及Evidence白名单，不给summary/log/artifact正文；approval不输出nonce/request digest或按钮payload；deployment给environment/role/SHA/status/Plan digest/approval/Evidence/净化链接。
+  - `reportDigest`覆盖完整安全body但排除generatedAt、duration和access row，因此同一D1业务状态20路读取一致；response带`Server-Timing`且服务端单调计时达到300000ms固定timeout。structured log只有Run、report digest、duration和各栏count。API只接受`OPERATIONS_TOKEN + Run ID`，全部query key拒绝并`no-store`。
+  - 初次实现后的真实SQL聚焦测试暴露`invalidated_approvals`只投影`approval_id`、没有`invalidated_at`；未吞掉异常，改为安全boolean并保留具体红灯。同步Architecture、Proto、Security、Reference与DOD；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts` → exit 1，failed suite / 0 tests，目标store模块不存在。
+  - 首次实现后同命令 → exit 1，2/2失败；HTTP为500且直调明确`no such column: invalidated.invalidated_at`。核对view真实schema并改用`approval_id IS NOT NULL`后，同命令 → exit 0，1 file / 2 tests。
+  - 聚焦相邻回归`case8-audit-report + correlation-query + outbox-dead-letter + backup-api + task-query-api` → exit 0，5 files / 12 tests；typecheck与ESLint均exit 0。
+  - Case 8测试实际执行20路operations GET，八栏完整、report digest唯一、20条immutable access、净化source/check/deployment链接、服务端duration<300000ms；Task title/Plan objective/doneWhen/Evidence summary及URL query中的同一Secret canary、三种token/OIDC/tool digest和nonce字样均不在report/log。非法`repo:write` grant、未知query、无权限、缺Run与模拟300001ms均拒绝且无成功access。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 48 files / 149 tests、workerd 49 files / 261 tests、232个生产文件Secret scan和Markdown links全绿。waiting Workflow清理仍打印已有预期`User called terminate`信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round67-20260726-final` → exit 0；两个Workflow、Queue、D1、三R2 binding及新增audit migration/store/API成功bundle，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 6 Case 8审计查询DoD完整勾选。可重跑本地D1/workerd证明一键八栏答案、稳定digest、链接净化、五分钟预算、读取审计及Secret物理排除；本地fake URL和elapsed不冒充真实平台日志索引、外部GitHub/飞书/云审计事实，后者继续由correlation真实平台子项和最终E2E验收。
+- 决策沉淀：Case 8不是“把所有日志导出”，而是从各事实真源生成最小、可核对、可digest的权限与交付证明。报告不能复制Task/Evidence正文，也不能只给计数；必须给actor/event/scope/effect/commit/check/approval/environment的exact lineage。报告digest与访问审计分离，才能让并发读稳定同时证明谁读过。Watt的通用审计store适合直接复用访问入账骨架，但业务报告必须join delivery-loop规范化ledger；复制CallContext JSON会产生第二真源且丢失交付语义。
+- 遗留：下一轮只处理Phase 6“数据保留任务按Security约定清除原始session、保留结构化证据并记录删除审计”。先盘点当前实际存在的R2正文/session/transcript producer与保留要求，定义dry-run/批次/cursor、引用保护和immutable deletion ledger；不能删除Task/checkpoint/Evidence结构化投影或用测试bucket清空冒充生产retention。
+
+## Round 68 — 2026-07-26
+- 目标：Phase 6 / 数据保留任务按Security约定删除到期raw Agent session/transcript，保留Task/checkpoint/Evidence/backup结构化事实，并留下无正文删除审计。
+- 前置与权限：仅本地Node/workerd/D1/四个Miniflare R2 bucket与Wrangler dry-run；未访问真实Cloudflare/GitHub/飞书/数据库/日志/tool-bridge，未部署、未删除用户文件或远端对象、未使用真实Secret。权威盘点确认当前Codex adapter固定`--ephemeral`且不导出raw session/transcript，现有R2 producer只有Task/review/context、checkpoint和backup；因此本轮没有把这些对象假装成raw，也没有用测试bucket全清空冒充production retention。
+- Watt复用：固定读取`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/core/src/context/ttl.ts`及测试、`packages/gateway/src/context/context-registry.ts`和`context/providers/object.ts`。`src/retention/ttl.ts`与inclusive-boundary用例直接复制纯函数/测试结构，只适配raw 30天policy；D1领取沿用Watt条件UPDATE后`meta.changes=1`判winner和`prepare+bind`骨架。Watt的`purgeNamespace`会按prefix批量删除，无法证明本项目引用保护，故未直接复制；只把其cursor思想适配成D1显式registry与服务端exact-key推导，来源边界未虚构。
+- 动作：
+  - 先写dry-run/execute、Task/checkpoint/backup/Evidence保护、20路并发、metadata/存储不确定、cursor公平、strict operations API测试。首次`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/data-retention.test.ts`按预期exit 1，failed suite / 0 tests，错误为`data-retention-store`模块不存在。
+  - migration 0043新增`raw_agent_artifacts`、公平`data_retention_cursor`、scan ledger与append-only deletion audit。raw类别只有session/transcript，policy固定`security-v1-raw-30d`；registry identity/metadata不可改，deleted终态不可改，每对象只有一个completed audit。audit物理上没有object key/body/raw error列。
+  - 新增专用私有`RAW_AGENT_OBJECTS`第四R2 binding，key只由category+UUID生成。未来producer必须写AES-256-GCM ciphertext metadata并显式登记；当前Codex ephemeral没有producer。`R2BackupManager`仍只接Task/checkpoint两源和专用backup目标，raw bucket明确不进入长期backup。
+  - 每分钟Cron在restore serving active时固定执行25条。`expires_at + object_id`cursor尾部回绕；每对象先以5分钟D1 claim领取，20路只有一个winner可调用R2。删除前核对etag/size及schema/category/object/digest/encryption metadata，删除后再head；确认null才以D1 batch写deleted audit和终态。R2已删而D1未结算时下一轮写`already_absent`且零二次delete；ambiguous storage、metadata/policy或verification failure只写固定码并释放retry，不保存异常正文。
+  - 新增`POST /v1/data-retention/scans`，只接受`OPERATIONS_TOKEN + strict {mode:dry_run|execute}`；拒绝query、bucket/key/prefix/before/limit。dry-run只计数，零claim、零cursor、零delete；execute也不能改变服务端fixed batch/time/key边界。
+  - 同步Architecture、Proto、Security、Reference和DOD；记录当前无raw producer、四bucket隔离、30天policy、claim/cursor/crash recovery、audit物理字段和Watt直接复制/不复制边界。按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/data-retention.test.ts` → exit 1，目标store模块不存在；实现中首次4/4失败暴露null cursor判断，修正后新增崩溃恢复与immutable audit用例。
+  - 聚焦workerd `data-retention + backup-r2 + backup-restore + backup-api` → exit 0，4 files / 10 tests；覆盖dry-run、两类到期raw、未到期raw、三结构化bucket、D1 Evidence、20路单effect、永久metadata冲突不饿死后续对象、ambiguous retry、already-absent crash recovery、strict API及备份隔离。
+  - 聚焦Node `data-retention-ttl + data-retention-config` → exit 0，2 files / 5 tests；直接复用的Watt TTL在30天前/边界/边界后及undefined语义全通过，并静态证明一分钟Cron、第四bucket和backup排除接线。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 50 files / 154 tests、workerd 50 files / 266 tests、236个生产文件Secret scan与Markdown links全绿。Workflow清理仍输出已有预期`User called terminate`信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round68-20260726-final` → exit 0；bundle 2338.52 KiB / gzip 389.81 KiB，两个Workflow、Queue、D1与Task/Checkpoint/Backup/Raw-Agent四R2 binding均成功识别，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 6数据保留DoD完整勾选。可重跑本地workerd证明显式registry raw对象的30天删除、引用保护、并发fencing、失败恢复、strict operations边界和删除审计；Wrangler dry-run只证明可打包，不冒充真实Cloudflare Cron/R2删除或组织数据保留合规证据。
+- 决策沉淀：raw retention不是“按prefix扫R2再猜什么能删”，而是独立bucket、显式policy registry、exact-key推导和删除后验证；结构化D1 Evidence与恢复checkpoint必须从删除候选模型上物理排除。当前没有raw producer时应保留零对象，而不是为了展示清理能力主动持久化Codex JSONL。Watt的纯TTL/CAS原语可直接复制，其namespace purge语义不能跨业务边界照搬。
+- 遗留：下一轮只处理Phase 6“运营runbook覆盖GitHub、飞书、tool-bridge、数据库、Secret泄漏和错误生产部署”。先盘点现有恢复/撤权/reconciliation/rollback入口与实际operations API，runbook必须给出触发判据、只读诊断、授权动作、回滚与证据，不得把未实现的生产操作写成可执行事实。
+
+## Round 69 — 2026-07-26
+- 目标：Phase 6 / 运营runbook覆盖GitHub故障、飞书故障、tool-bridge故障、数据库故障、Secret泄漏和错误生产部署。
+- 前置与权限：仅本地源码/规范/Watt事故复盘读取、Node测试和Wrangler dry-run；未访问或修改真实Cloudflare/GitHub/飞书/tool-bridge/数据库/日志/部署环境，未发送消息、轮换Secret、取消Run、重放DLQ、恢复D1或执行production rollback。固定盘点当前所有HTTP operations/read/recovery路由及scheduled reconciliation/revoker/rollback边界，不能把文档愿望当成已实现authority。
+- Watt复用：对`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`全树检索runbook/incident/outage/Secret leak/disaster/production rollback，未发现通用runbook或GitHub/D1/production处置实现，可复制业务代码为零。直接复用其真实`2026-07-04-feishu-plugintoken-outage`复盘中的“先查数据真源、health→credential/challenge→无扰假事件→D1分段定位”和“重签依赖凭据→stdin secret put→立即探测，不等待自然流量、不运行覆盖完整配置setup”纪律；没有复制Watt域名、token、CLI产品模型或线上配置。
+- 动作：
+  - 先写`test/operations-runbook.test.ts`，固定`IR-GITHUB/FEISHU/TOOL-BRIDGE/DATABASE/SECRET/WRONG-PRODUCTION-DEPLOYMENT`六类及触发与分级、只读诊断、止损与授权、恢复、验证与结案、证据、禁止项七阶段。首次`pnpm exec vitest run test/operations-runbook.test.ts`按预期exit 1，failed suite / 0 tests，明确`docs/OperationsRunbook.md`不存在。
+  - 新增`docs/OperationsRunbook.md`：统一IC/Operator/Reviewer/Evidence Keeper、SEV-0/1/2、双人复核、token隐藏stdin、证据最小化和外部事实结案纪律；提供health、Plan/Case 8/correlation、DLQ list/replay、version-bound cancel、backup/restore的可复制命令，numeric/reason/Secret name均本地allowlist校验。
+  - GitHub故障按outage/401-403/duplicate effect分流，先correlation+D1+GitHub read fact，再等待Cron或逐条exact DLQ replay；飞书区分入站、presentation、未知POST和已知PATCH响应丢失，禁止模糊认领message；tool-bridge区分policy denial与upstream/config，永不因outage扩read为write/Admin；D1区分短时outage与corruption，只有外部traffic isolation+Time Travel/import后才进入manifest-bound fence/撤权/九类complete。
+  - Secret泄漏按operations/task/approval/GitHub/Feishu/tool/D1 backup/model authority分类，固定provider先撤销、stdin更新、分段canary、旧值失效证明；GitHub encryption key必须在旧key驱动revoker撤销write token后才轮换。错误production部署固定SEV-0、外部Environment/云平台双人止损与已演练rollback或新Task forward-fix；当前没有production rollback API，test rollback/restore fence/cancel均不能冒充云回滚。
+  - 机器契约逐项核对runbook中11个HTTP method/path在对应Hono源码真实存在，六类每节长度与七阶段完整，无TODO；提取全部shell block执行`bash -n`，所有curl必须`--fail-with-body`且Bearer只引用隐藏环境变量；静态禁止硬编码token、`wrangler d1 execute`、R2 object delete和D1状态改写。新增`pnpm run verify:runbook`直接入口，完整verify也会通过Node suite覆盖。
+  - 同步Architecture、Proto、Security、Reference和DOD，明确runbook不创建第二状态机、healthz/D1/provider事实边界、external-only pause/import/production rollback authority及Watt直接复用范围。按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/operations-runbook.test.ts` → exit 1，failed suite / 0 tests，ENOENT `docs/OperationsRunbook.md`。
+  - `pnpm run verify:runbook` → exit 0，1 file / 5 tests；覆盖六类×七阶段、SEV/结案、11个真实route method/path、unsupported boundary、stdin/argv/SQL/R2安全和全部shell Bash语法。
+  - 聚焦后`pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`均exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 51 files / 159 tests、workerd 50 files / 266 tests、236个生产文件Secret scan和Markdown links全绿。Workflow清理仍输出已有预期`User called terminate`信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round69-20260726-final` → exit 0；bundle 2338.52 KiB / gzip 389.81 KiB，两个Workflow、Queue、D1和四R2 binding全部成功识别，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 6运营runbook DoD完整勾选。可重跑机器契约证明六类事故的完整处置结构、命令与当前源码一致、安全边界和缺失能力没有被文档掩盖；本地测试/dry-run只证明runbook与构建契约，不冒充真实Secret轮换、D1恢复、provider outage或production rollback演练。
+- 决策沉淀：runbook的价值不是列出更多高权限命令，而是让Operator知道何时只能读、谁有止损authority、哪个外部事实才能结案以及当前系统做不到什么。当前无global provider pause/production rollback API时，正确做法是显式外部平台人工处置和独立能力DoD，不能误用restore fence、test rollback、伪造webhook或D1手写修复。Watt真实事故证明轮换若不立即分段验证会形成静默断链，因此依赖凭据轮换必须把旧值失效和无扰canary作为同一次动作的完成判据。
+- 遗留：下一轮审计Phase 6“连续7天试运行”所需真实部署、试点Run、日志/指标与Secret告警前置；若外部环境仍未配置，按LOOP记录精确blocker并选择可在本地继续推进的下一项，不能用测试循环或历史单测冒充7天运行。
+
+## Round 70 — 2026-07-26
+- 目标：Phase 6 / 为“连续7天试运行无未知stuck、无重复PR/部署、无Secret告警；指标报告入账”建立可重跑的本地证据关口，并如实确认真实七天外部前置；父DoD在真实窗口完成前保持未勾。
+- 前置与权限：仅本地源码、Watt固定commit、Node fake HTTP测试、规范与Wrangler dry-run；未访问或修改真实Cloudflare/GitHub/日志/metrics/告警平台，未部署、未触发Action/PR/Deployment、未读取真实数据库或Secret。`git remote -v`为空，`wrangler.jsonc`的D1 ID仍为全零占位值；没有真实Worker deployment、试点repository inventory或七天观测窗口。
+- Watt复用：完整读取`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/cli/src/metrics.ts`及测试、`packages/gateway/src/metrics/metrics.ts`和observability测试。七天命令直接沿用Round 59已从Watt E2E迁入的0=pass/1=fact failure/2=prerequisite missing、显式opt-in、live read-only核对和固定错误输出纪律，没有复制第二套CLI协议。Watt可直接复用的业务模块为零：其`7d`只是默认range，invalid range会回落7天，gateway只返回窗内聚合单点且部分metric允许空series，不能证明10080分钟连续coverage、runtime Secret detector、unknown stuck或外部重复PR/Deployment；强行复制会弱化本项完成判据。
+- 动作：
+  - 先写`test/seven-day-trial-evidence.test.ts`，覆盖exact七天、安全链接/report digest、三方成功核对、重复PR/Deployment、metrics缺口、unknown/unresolved stuck、Secret alert、GitHub分页和raw canary；首次`pnpm exec vitest run test/seven-day-trial-evidence.test.ts`按预期exit 1，failed suite / 0 tests，错误为缺`seven-day-trial-evidence`模块。
+  - 新增strict `SevenDayTrialEvidenceManifestV1`与`SevenDayTrialObservabilityReportV1`、两个schema示例和canonical digest。窗口必须分钟对齐且恰好604800000ms；report固定10080个minute bucket、两个detector active、至少一个Run、known incident全部resolved且unknown/unresolved/Secret alert为空。manifest URL不能自行决定token投递目标，受控`SEVEN_DAY_TRIAL_OBSERVABILITY_URL`必须与其精确相等。
+  - 新增只读verifier与`pnpm run e2e:seven-day-trial`：先读取digest-bound observability report，再对每个Run读取Case 8报告，最后列出固定App actor在窗口内的GitHub PR和带control-plane stable ID的Deployment。控制面与GitHub inventory逐项相等；同head多个PR、同stable ID多个Deployment、任一多/少或`Link rel=next`均fail-closed。summary与错误只含固定字段/code，不传播token、manifest或raw response。
+  - 新增[连续七天试运行验收](docs/SevenDayTrial.md)，同步Architecture、Proto、Security、Reference和DOD，明确三个独立事实源、最小权限、最终人工review及当前外部阻塞；按用户要求未更新llmdoc。
+  - 首次全量verify时，已有`test-acceptance`夹具的固定`03:00Z`已经越过30分钟Attempt lease，OIDC API按生产逻辑正确返回403，导致2个测试失败。只把测试基准改为进程启动时的分钟边界，未修改生产租约或鉴权；聚焦10/10和最终全量回归随后通过，没有把首次失败伪装为绿。
+- 验证：
+  - 红灯`pnpm exec vitest run test/seven-day-trial-evidence.test.ts` → exit 1，目标domain模块不存在；实现后exit 0，1 file / 5 tests。
+  - `pnpm run e2e:seven-day-trial` → exit 2，明确缺`DELIVERY_LOOP_SEVEN_DAY_TRIAL_E2E=1`；设置opt-in但只提供受控report URL后仍exit 2并报告配置不完整。两条路径均在fetch/manifest读取前结束，零网络，未把缺前置记为事实失败或成功。
+  - 聚焦`test/workflow/test-acceptance.test.ts`在修正过期测试时钟后exit 0，1 file / 10 tests；`pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`均exit 0。
+  - `pnpm run verify` → 首次exit 1并明确2条过期lease夹具失败；修正后exit 0，typecheck、ESLint、Node 52 files / 164 tests、workerd 50 files / 266 tests、241个生产文件Secret scan和Markdown links全绿。Workflow清理仍输出已有预期`User called terminate`信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round70-20260726-final` → exit 0；bundle 2338.52 KiB / gzip 389.81 KiB，两个Workflow、Queue、D1和四R2 binding成功识别，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：只勾Phase 6“连续7天试运行”的本地显式opt-in证据关口；父项与“真实部署连续七天外部事实”保持未勾。本地5个fake用例、示例manifest、10080计数和Wrangler dry-run都没有冒充真实七日运行。
+- 决策沉淀：连续运行证明不能来自控制面单方自报，也不能把“查询range=7d”当成持续覆盖。最小可信闭环是外部observability coverage/report digest、控制面逐Run Case 8 lineage和GitHub完整effect inventory三方相等，再由人review永久查询链接。Watt的E2E退出纪律可以直接复用，其聚合metrics语义不能越界复制为本项目可靠性证据。
+- Blocker：这是本项第1轮外部阻塞。开始真实窗口至少需要用户/资源owner确认GitHub owner/repo/visibility/branch protection/Actions预算，配置远端与最小GitHub App，提供真实Cloudflare Paid账户及D1/R2/Queue/Workflow部署、日志/metrics保留和runtime Secret detector。窗口开始后还必须等待完整七个自然日；在这些外部状态变化前不能勾父项，也不会盲重试或访问未经授权的真实平台。
+
+## Round 71 — 2026-07-26
+- 目标：Phase 2 / 为“真实飞书应用challenge和一条真实事件验签通过；错误签名、过期timestamp、错误tenant被拒且无业务记录”建立本地Worker/D1加密回调契约；真实tenant完成前父DoD保持未勾。
+- 前置与权限：仅本地Node/Web Crypto、workerd/D1测试binding、Watt固定commit和Wrangler dry-run；未访问飞书开放平台、未创建/发布应用、未配置真实回调域名、未发送消息或事件，未使用真实app/tenant/token/encrypt key。测试只使用仓库测试配置中的合成值，raw测试消息不进入生产源码/PROGRESS。
+- Watt复用：完整读取`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/plugin-feishu/src/adapter/crypto.ts`、`verify.ts`、`worker.ts`及crypto/verify/worker测试。`src/feishu/webhook-crypto.ts`直接复制constant-time compare、`sha256(timestamp+nonce+encryptKey+exact body)`、base64前16字节IV与`SHA-256(encryptKey)` AES-256-CBC解密；Node `node:crypto`独立oracle测试结构也直接迁移。verifier继续复用Watt的加密/明文分流、解密后JSON和challenge提取结构。Watt没有timestamp freshness、tenant/app绑定，加密后不重验verification token，且无encrypt key时允许未配置token的匿名明文；这些不满足本项目DoD，因此未照搬弱边界。
+- 动作：
+  - 先新增`test/feishu-webhook-crypto.test.ts`与`test/workflow/feishu-webhook.test.ts`，固定signature/AES oracle、认证challenge、exact tenant event、错误签名、301秒旧timestamp、错误tenant/app/token、同event新nonce收敛、同nonce换event拒绝及receipt/Task/Run/outbox零写入判据。首次两条聚焦命令均按预期exit 1，failed suite / 0 tests，明确缺`src/feishu/webhook-crypto`模块。
+  - 新增`POST /v1/webhooks/feishu`。请求先限256 KiB并保留exact body；加密模式要求三个`X-Lark-*`header、10位秒timestamp与控制面相差最多300秒、64位hex signature，随后AES解密并对顶层/header verification token做常量时间比较。缺app/tenant或两类来源Secret都未正确配置时503，不能退化为匿名入口。
+  - challenge只在验签/解密/token通过后返回`{challenge}`，不写D1。event只接受有界v2 header/event，`app_id + tenant_key`必须精确等于`FEISHU_APP_ID + FEISHU_DELIVERY_TENANT_KEY`；错误来源在digest/store之前固定401/403，响应不传播Zod、解密或上游错误。
+  - migration 0044新增immutable `feishu_webhook_nonces`与`feishu_webhook_deliveries`。每个已认证加密request把nonce只按SHA-256 digest入账；event按tenant+event ID唯一。D1 batch先claim exact nonce，再以该nonce事实guard receipt插入；相同event重新加密/新nonce仍只一份receipt且每个nonce留痕，同nonce更换event/request固定409。两表没有raw/encrypted/decrypted body、token、encrypt key或自由错误列，且本轮不创建Task/Run/outbox。
+  - 接入Worker与Bindings，同步Architecture、Proto、Security、Reference和DOD；记录Watt直接复制和安全加固边界。按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/feishu-webhook-crypto.test.ts`与`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-webhook.test.ts` → 均exit 1，目标crypto模块不存在；实现后分别exit 0，1 file / 4 tests和1 file / 4 tests。
+  - 聚焦Node oracle证明签名与独立`node:crypto`一致、AES密文跨实现可解且错误key拒绝、constant-time/token配置边界；聚焦workerd证明challenge零写、valid event metadata-only、exact/redelivered请求收敛、五类错误零业务写与nonce replay 409。
+  - `pnpm run typecheck`、`pnpm run lint` → 实现中首次分别因narrowing/test Request类型与empty interface失败；只收窄类型/测试transport后最终均exit 0，没有弱化生产校验。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 53 files / 168 tests、workerd 51 files / 270 tests、246个生产文件Secret scan和Markdown links全绿。Workflow清理仍输出已有预期`User called terminate`信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round71-20260726-final` → exit 0；bundle 2356.88 KiB / gzip 393.80 KiB，两个Workflow、Queue、D1和四R2 binding成功识别，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：只勾Phase 2飞书challenge/验签DoD的本地Worker/D1子项；父项和真实tenant外部事实保持未勾。Node oracle、workerd fake密文和dry-run都没有冒充真实应用订阅成功。
+- 决策沉淀：飞书签名是纯SHA-256拼接而非GitHub式HMAC，raw body不能重序列化。Watt成熟crypto应直接复制，但其宽松兼容模式不能带入高权限交付控制面；来源认证必须是signature/timestamp/decryption/token/app/tenant的服务端组合。transport nonce与业务event ID是两层不同去重键，拆表后才能同时允许平台安全重投并拒绝nonce换事件。
+- 遗留：下一轮只处理Phase 2“同一飞书event重放3次只入队一次；不同event指向同task revision仍只创建一个Run”的本地切片。应直接消费本轮verified receipt，先定义无正文R2/ref或规范化输入边界、事务outbox与Task revision唯一约束；不得再次解密、信任caller自报tenant/event/digest，真实飞书重推仍另需tenant外部证据。
+
+## Round 72 — 2026-07-26
+- 目标：Phase 2 / 同一飞书event重放3次只产生一个逻辑ingress outbox；不同event经归一化后指向同一Task source revision时仍只有一个Task、Run和workflow-create intent。
+- 前置与权限：仅本地workerd/D1/R2、fake Queue adapter、Wrangler dry-run与Watt固定commit；未访问飞书/Meegle或真实Cloudflare Queue，未部署、未发送真实事件、未创建Task到外部Workflow。Queue测试body只有stable outbox ID，Task使用合成反馈且无真实Secret。
+- Watt复用：完整读取`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/gateway/src/event/event-store.ts`、`event-bus.ts`和`integration-event-flow.test.ts`。直接复用“dedupeKey命中原event ID后不再留痕/不再Queue send”、可注入Queue sender及同event重放断言结构；Task层直接复用本项目已有`TaskIntakeStore`的source revision稳定ID/digest与Task+Run+workflow-create同事务。Watt保存完整event envelope并用`put→queue.send失败→best-effort delete`补偿，会把正文放D1且补偿失败可能丢投递，因此未复制该存储/effect顺序；delivery-loop继续采用Watt-derived持久outbox/fencing。
+- 动作：
+  - 先新增`test/workflow/feishu-ingress-idempotency.test.ts`，固定三次event重放、20路relay、一次Queue send/consumer观察、确定send失败回pending、两个event同revision、event/tenant/Secret负向与R2/Task/Run/workflow intent计数。首次聚焦按预期exit 1，failed suite / 0 tests，明确缺`src/outbox/feishu-ingress`。
+  - migration 0045新增`feishu_ingress_outbox`：verified delivery/event/tenant/digest immutable，每event一行；状态为pending→delivering→enqueued→queued→settled，另有dead-letter终态。5分钟lease、attempt count、Queue observation与Task/Run/ref/digest绑定均受D1 CHECK/terminal trigger保护。
+  - `FeishuWebhookStore`把receipt和stable ingress outbox放入同一D1 batch；相同event即使换timestamp/nonce/re-encrypt也补齐/复用同一outbox。nonce冲突无法通过exact nonce guard创建receipt/outbox；API响应仍不公开outbox authority。
+  - 新增专用`FEISHU_INGRESS_QUEUE`。scheduled relay用D1条件claim使20路只有一个send；确定失败只退同一outbox pending，send成功标enqueued。consumer只携/回查outbox ID并幂等写queue-observed，重复Queue delivery不产生业务effect；专用DLQ把未settled行写metadata-only dead-letter终态。Wrangler producer/consumer/DLQ与Worker scheduled/queue分支均接线。
+  - 新增内部`FeishuNormalizedTaskStore`，只领取`queued + queueObserved + accepted receipt`，要求Task source为`feishu|meego`、event ID与tenant精确绑定，Secret scan通过后先写content-addressed私有R2，再直接调用`TaskIntakeStore`。Task revision digest排除event ID/occurredAt但覆盖source/actor/target/intent/policy，因此不同event同业务revision收敛；settle中断可重放补账，错误event/tenant/Secret在R2/Task前拒绝。
+  - 同步Architecture、Proto、Security、Reference和DOD，明确“只入队一次”是stable D1逻辑outbox/effect identity，不虚构Cloudflare Queue物理exactly-once。按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-ingress-idempotency.test.ts` → exit 1，目标ingress模块不存在。
+  - 首次实现运行1/3通过、2条失败：测试直接把pending改queued却未写enqueued time，D1 CHECK正确拒绝；改为所有用例真实走relay+consumer后通过，没有放宽schema。最终ingress聚焦exit 0，1 file / 4 tests。
+  - `feishu-webhook + feishu-ingress + task-intake-store`聚焦 → exit 0，3 files / 12 tests；覆盖来源验证→唯一outbox→Queue观察→双event同revision单Run，以及Queue失败重试和Secret/binding负向。
+  - `pnpm run typecheck`、`pnpm run lint` → 首次分别因测试batch可空类型和env inline import style失败；改为安全索引与普通type import后最终exit 0。
+  - `pnpm run verify`的typecheck、ESLint、Node 53 files / 168 tests、workerd 52 files / 274 tests、249个生产文件Secret scan均通过；`pnpm run verify:docs`单独确认exit 0。Workflow清理仍输出已有预期`User called terminate`信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round72-20260726-final` → exit 0；bundle 2364.08 KiB / gzip 394.86 KiB，两个Workflow、原outbox Queue、新`FEISHU_INGRESS_QUEUE`、D1和四R2 binding成功识别，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：新增并勾Phase 2 event/revision幂等的本地D1/R2/Queue子项；父项与真实飞书tenant/Cloudflare Queue外部事实保持未勾。fake Queue send count和直接normalized sink没有冒充真实平台重投或实际Meegle映射。
+- 决策沉淀：平台event ID与业务Task revision是两层独立幂等：前者阻止同delivery重复入队，后者允许不同event安全指向同一Run。Cloudflare Queue是at-least-once，不能把“物理只投递一次”作为可保证语义；D1 outbox、consumer observation和Task/Run稳定identity共同提供effect exactly-once。Watt的dedupe行为值得复制，put后失败delete的补偿模型不适合持久控制面。
+- 遗留：下一轮只处理Phase 2“Meegle工作项映射TaskEnvelope；缺字段进入triaging并列出缺口”。应实现真实adapter端口去读取receipt/outbox对应的受信外部work-item snapshot，复用本轮normalized sink；需要定义owner/repo/revision/acceptance的缺失投影，不能把缺字段的任务伪造成可执行Task或由Queue body提供映射内容。
+
+## Round 73 — 2026-07-26
+- 目标：Phase 2 / Meegle工作项标题、描述、验收标准、owner、目标repo、revision映射为TaskEnvelope；缺字段进入`triaging`并列出缺口——本轮闭环本地strict snapshot/profile、映射、metadata-only triage ledger、Round 72 sink穿透与安全查询；真实Meegle tenant/API证据保持未完成。
+- 前置与权限：仅本地Node/workerd/D1/R2、fake Queue与Wrangler dry-run；未调用真实Meegle/飞书API，未读取业务工作项、日志或数据库，未部署、未发送外部事件、未触发Workflow/GitHub Action。按`meegle` skill完整读取工作项和API示例规范，确认field/role metadata必须先解析、role不是普通field、`fields=["_all"]`仍需按`next_page_token`翻完；没有project key/work-item ID，因此没有无目标地查询真实tenant。
+- Watt复用：固定检索`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`的Meegle/Meego/work-item/TaskEnvelope/triaging实现，Meegle-specific adapter可直接复制代码为零。最大化复用已直接从Watt迁入本项目的`applyD1Migrations`测试入口、content-addressed R2 conditional-write和stable identity模式，并直接复用Round 72 `FeishuNormalizedTaskStore`与`TaskIntakeStore`，没有另造Task/Run/outbox协议；只新增Watt不存在的Meegle snapshot/profile与triage语义。
+- 动作：
+  - 先新增`test/meegle-work-item-mapper.test.ts`与`test/workflow/meegle-work-item-ingress.test.ts`；首次聚焦分别因domain/store模块不存在而failed suite / 0 tests，证明此前没有Meegle映射或triage持久路径。
+  - 新增strict `MeegleWorkItemSnapshotV1`：event/tenant/project/type/item/revision/URL、基础title/description、actor、普通field、独立role、全量分页状态；field/role key不得重复。新增受信`MeegleTaskMappingProfileV1`绑定owner role、acceptance/repository field、kind/base/environment/priority与repository allowlist，工作项不能夹带profile/policy/effect。
+  - 完整story/issue把source固定为`meego`、task key固定为project/type/item；markdown checklist或string-array映射acceptance，Meegle角色owner映射到新增可选`TaskEnvelope.coordination.owner`，GitHub仓库owner/repo仍来自allowlist repository field，两种owner语义不混用。初始policy固定三类write/deploy均false且必须human approval。
+  - migration 0046新增immutable `meegle_triage_candidates/lineage`。未完成全字段分页、缺title/description/acceptance/owner/repo/revision、owner多值或repo非法时不生成TaskEnvelope；D1只保存source/profile identity、digest、固定gap与event lineage，exact snapshot经Secret scan进入私有content-addressed R2。20路同输入收敛为一候选/lineage且Task/Run/outbox为零。
+  - `MeegleWorkItemIngressStore`只领取Round 72已queue-observed且accepted的exact event/tenant，重新绑定profile tenant/project/type后才映射；完整snapshot直接调用既有normalized sink。两个不同event映射同一业务revision时只有一个Task/Run/workflow-create intent、两份settled ingress；错误event/profile/Secret在R2/D1/Task前拒绝。
+  - 五维自审发现完整mapping首次settle后，上层若只接受queued会让同一normalizer顺序重放提前失败；修正为queued/settled均继续交给Round 72 sink核对，新增断言证明settled exact replay返回duplicate且不新增effect。Meegle URL同时改为可空，因为它不是执行契约必填项，不能凭无关字段阻止完整Task。
+  - 新增operations认证`GET /v1/triage/meegle?limit=`，仅返回source metadata、固定gap、profile version、lineage count和时间，不返回description/field value/owner principal/R2 ref/digest。同步Architecture/Proto/Security/Reference与DOD，只勾本地子项；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/meegle-work-item-mapper.test.ts` → exit 1，failed suite / 0 tests，缺`src/domain/meegle-work-item`；红灯workerd ingress suite同样exit 1，缺store。
+  - 聚焦Node `pnpm exec vitest run test/meegle-work-item-mapper.test.ts test/task.test.ts` → exit 0，2 files / 6 tests；覆盖story/issue、role/field隔离、checklist/array、确定性gaps、owner歧义、repo allowlist、strict schema与profile binding。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/meegle-work-item-ingress.test.ts test/workflow/feishu-ingress-idempotency.test.ts test/workflow/task-intake-store.test.ts` → exit 0，3 files / 11 tests；覆盖双event同revision单Run、20路triage、零effect、安全查询、Secret/binding负向及相邻sink/intake回归。
+  - `pnpm run typecheck`、`pnpm run lint` → 实现中lint首次因digest投影unused destructuring exit 1，改为显式业务投影后最终exit 0；没有放宽规则。
+  - 前两次`pnpm run verify`分别在既有`github-review-feedback`20路duplicate计数和`execution-attempt-api`20路CAS出现一次非确定性缺响应/409而exit 1；对应单文件立即复验分别5/5与2/2通过，未修改与本轮无关断言。第三次全量exit 0；五维自审补顺序回放/可空URL后再次最终`pnpm run verify` → exit 0，typecheck、ESLint、Node 54 files / 172 tests、workerd 53 files / 277 tests、253个生产文件Secret scan和Markdown links全绿。workerd仍输出已有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round73-20260726-final-v2` → exit 0；bundle 2372.31 KiB / gzip 396.70 KiB，双Workflow、原outbox Queue、Feishu ingress Queue、D1与四R2 binding成功识别，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 2 Meegle映射DoD下新增并勾选“本地Node/workerd/D1/R2契约”子项；父项与真实Meegle外部事实保持未勾。合成snapshot、fake Queue、workerd和dry-run不能证明真实field/role key、API全量分页或tenant权限。
+- 决策沉淀：可执行Task必须是完整契约，缺字段不能用sentinel填充后启动Run。Meegle owner是协作负责人，不是GitHub repository owner，因此新增`coordination.owner`而不污染`target.owner`。mapping profile是受控策略输入，工作项只是数据；repo allowlist与只读初始policy阻止PRD/反馈正文扩大权限。triage candidate与Run是不同状态模型：前者可以没有Task/Run，避免为了复用Run的`triaging`枚举而伪造Task。
+- 遗留：真实测试需用户提供Meegle测试tenant/project、story/issue type与工作项；adapter先用meta-fields/meta-roles确认验收字段、owner role、repo字段，再把`_all`分页读取到无next token。分别以完整、缺字段、owner多值、repo越allowlist和中断分页工作项记录API/D1/R2安全摘要；真实API adapter/credential配置和事件触发仍未接线，不能用本轮strict snapshot端口冒充外部完成。下一轮按Phase 2顺序处理飞书卡片展示DoD，不扩展本轮Meegle scope。
+
+## Round 74 — 2026-07-26
+- 目标：Phase 2 / 卡片展示状态、task revision、plan version/digest、DoD Item进度、目标repo、本轮目标、Action/PR链接、blocker和批准effects；大日志只显示摘要/受控链接——本轮闭环本地card v2 schema/renderer、D1完整投影、approval到期无事件刷新、v1兼容与既有outbox/create/PATCH/回读穿透；真实飞书tenant消息事实保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、fake Feishu effects、既有fake REST、Wrangler dry-run与Watt固定commit；未调用真实飞书IM API、未取得tenant token、未发送/更新/读取真实消息，未访问业务群、GitHub远端、日志、数据库或tool-bridge，未部署。按`lark-im` skill及其required `lark-shared`规则核对interactive消息、bot identity、tenant/chat membership/scope和raw card event边界；本轮无需认证，未运行`lark-cli`写命令。
+- Watt复用：不创建第二套sender。继续直接复用Round 58已从`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`迁入的interactive `wide_screen_mode/lark_md`骨架、isolate token cache、7200秒/60秒边际、token-invalid集合、stable UUID，以及项目现成fenced outbox、message ID/PATCH/14天重建/GET digest补偿。Watt generic message没有Task/Plan/DoD/GitHub fact/blocker/approval expiry模型，本轮新增仅限这些delivery-loop语义；没有把新增能力倒称为Watt代码。
+- 动作：
+  - 先新增`test/feishu-run-status-card.test.ts`与workerd完整projection用例。Node首次2/2红灯：renderer仍只有4段且v2 schema不存在；workerd首次1/4红灯：D1明确缺`schema_version`列，证明此前Round 58只实现四类delivery状态卡。
+  - `FeishuDeliveryCardPresentationV2` strict schema新增Run state/version、task revision、repo/base、active Plan version/digest、DoD七项计数、本轮goal、可信Action/check/PR/deploy链接、checkpoint/Evidence摘要、blocker与approved effects/expiry；unknown rawLog/effect、unsafe URL和矛盾进度直接拒绝。renderer保留Watt-derived classic interactive格式，所有摘要在固定“不可信数据/摘要”标签下Markdown转义。
+  - migration 0047为卡状态增加`refresh_after`，为immutable presentation增加`schema_version + presentation_json`。D1 trigger把v2 JSON与card/presentation/run/version exact绑定；旧v1行保持NULL JSON并由共享rehydration边界继续渲染，未UPDATE或删除在途presentation/outbox。
+  - scheduled projector只从D1 Task/Run/active Plan/Item progress、可信Attempt observation、verified Evidence、active blocker与exact trusted approvals读取。Action只由safe repo+numeric observed run ID构造；check/Evidence/PR/deploy继续要求各自verified fact。Plan Item title、checkpoint/Evidence summary先截断输入、NFKC单行化、移除control/zero-width/bidi字符并扫描当前Worker配置Secret/credential；命中使用固定隐藏摘要。Task/PR正文、raw log、artifact/R2 ref、Runner error、数据库行和caller URL没有schema/query入口。
+  - approved effects必须exact绑定current task revision/Plan version+digest/base，来自trusted view、未过期、未进入统一invalidation且没有更新reject；identity/role/channel mapping变化也触发重投影。最早有效expiry持久化为`refresh_after`，到时即使D1没有其他写入也生成新revision并移除过期effect；测试证明过期前仅repo_write、过期后空数组。
+  - 完整v2继续通过Round 58同一presentation→outbox→create/PATCH/message ledger发布，20路同snapshot只一presentation/outbox，旧revisioneffect前settle；14天重建、lost PATCH GET digest补偿和outbox router均回归。同步Proto/Architecture/Security/Reference与DOD，只勾本地子项；按用户要求未更新llmdoc。
+- 验证：
+  - 红灯`pnpm exec vitest run test/feishu-run-status-card.test.ts` → exit 1，2/2 failed，旧renderer只有4段且v2 schema未定义；红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-delivery-card.test.ts` → exit 1，新增用例因`schema_version`列不存在失败，其余既有3条通过。
+  - 聚焦Node `pnpm exec vitest run test/feishu-run-status-card.test.ts test/feishu-delivery-card.test.ts` → exit 0，2 files / 10 tests；覆盖完整字段、Markdown/URL/progress/effect strict负向、rawLog无入口、Watt-derived POST/PATCH/token/限流，以及v1 row兼容/非法v1 JSON拒绝。
+  - 聚焦workerd `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-delivery-card.test.ts test/workflow/outbox-routing.test.ts` → exit 0，2 files / 9 tests；覆盖D1全投影、Secret隐藏、Action/check安全链接、blocker paths、approval过期无事件刷新、20路收敛、stale零effect、create→PATCH、14天重建、lost response GET补偿与第八destination路由。
+  - 实现中首次workerd运行4/4因Zod refined schema不允许runtime `.omit()`失败；改为TypeScript core构造且在持久化前完整v2 schema parse后4/4通过，没有跳过runtime校验。随后旧断言仍期望4段而1/4失败，更新为v2固定14段后通过。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → 最终均exit 0；lint中control-range regex被拒后改为显式code-point过滤，没有关闭规则。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 55 files / 175 tests、workerd 53 files / 278 tests、255个生产文件Secret scan和Markdown links全绿。workerd仍输出已有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round74-20260726-final` → exit 0；bundle 2399.85 KiB / gzip 402.77 KiB，双Workflow、原outbox Queue、Feishu ingress Queue、D1与四R2 binding成功识别，未部署。
+- 勾选：Phase 2完整卡片DoD下新增并勾选“本地Node/workerd/D1/outbox契约”子项；父项与真实飞书tenant外部事实保持未勾。fake effects/REST、workerd和dry-run不能证明bot scope、群membership、真实interactive消息或同message PATCH成功。
+- 决策沉淀：卡片是安全只读投影，不是新状态真源或授权面。显示approved effect必须反映当前authority而不是历史approval行，所以expiry、invalidation、reject和live identity role都参与projection。外部自然语言可以被展示但必须固定标成不可信数据、限长、去控制字符、Secret scan并转义；raw日志永远只给verified summary/link。schema升级不能遗弃旧outbox，v1 rehydration与v2 latest并存直到旧投递自然收敛。
+- 遗留：真实验收需发布自建应用并以bot identity加入测试群，最小开通send/update及回读所需scope；用真实Run首次POST v2并在同message ID PATCH，逐项截图/核对全部字段。让approval自然过期且无其他状态写入，观察卡片自动移除effect；再用大日志、Markdown和Secret canary证明消息/D1/outbox零泄漏。需记录message ID/链接、scope/群membership、presentation/delivery安全摘要；当前没有tenant/chat授权，不能把本地卡片JSON冒充外部完成。下一轮按Phase 2顺序处理approve/reject/cancel/retry/replay/add-context服务端身份/revision/nonce鉴权DoD。
+
+## Round 75 — 2026-07-26
+- 目标：Phase 2 / `approve/reject/cancel/retry/replay/add-context`服务端按open_id、tenant、Task/Run revision、Plan version/digest、base SHA、effect和一次性nonce重新鉴权；伪造按钮、重复nonce与旧snapshot全部拒绝。本轮只闭环本地Worker/D1/R2契约，真实tenant点击证据保持未完成。
+- 前置与权限：仅读取本地delivery-loop与Watt固定commit`476e3cd`，使用本地Node/workerd、加密Feishu fixture、D1/R2 binding、Secret scan和Wrangler dry-run。未调用真实飞书API、未发送/更新/读取真实卡片、未查询业务日志/数据库、未触发GitHub Action、未部署、未提交。按用户要求不更新llmdoc；未保存raw webhook、form正文、token、Secret值或数据库行。
+- Watt直接复用：完整读取并迁移`packages/plugin-feishu/src/adapter/decode.ts`的`card.action.trigger`字段提取形状——`header.event_id/create_time`、`operator.open_id`、`action.value`、`context.open_chat_id`；完整复用`encode.ts`的button `value={id,signal}`结构。delivery-loop只补`open_message_id`/受控form context、strict snapshot command与双nonce/权限语义。Watt generic signal、raw Event传播和checkpoint业务模型没有复制，避免把未绑定signal误作控制面authority。
+- 动作：
+  - 新增strict `FeishuCardActionCommand`和Watt-derived decoder。presentation v2可选actions由projector生成；signal冻结card/presentation/task/run/version、task revision安全显示+完整digest、active Plan ID/version/digest/base、command/effect、context mode和application nonce，不存在principal/roles/policy/expiry/R2 ref/caller target字段。Plan effect集合、完整task revision digest及上次action outcome epoch参与presentation identity；失败动作会生成新presentation/nonce。
+  - renderer直接用Watt button mapping输出`id + signal`，add-context增加单个受控input与`new_run/apply_current`两枚冻结按钮。最新卡片最多13枚业务按钮，application nonce由presentation/action稳定派生；服务端不把确定性nonce当Secret，而是以latest presentation membership + D1 binding + operator identity + one-time ledger共同授权。
+  - migration 0048新增immutable `feishu_card_action_receipts/outcomes/approval_bindings`。`tenant+event`和`tenant+application nonce digest`各唯一；receipt只存open_id/principal、安全ID、versions/digests与固定command/effect，outcome只有固定result/reason。重新定义`trusted_effect_approvals`：历史非card低风险approval保持兼容，card产生的repo_write/test_deploy必须每次重新JOINcurrent Feishu channel mapping、live human和`approve:<effect>`；merge/production原identity/release分离分支不变。
+  - webhook在完成signature/timestamp/decrypt/token/app/tenant后专门分流`card.action.trigger`。action只创建metadata webhook receipt，不创建`feishu_ingress_outbox`；exact配置chat、active message、latest immutable presentation、current Task/Run/Plan/base/effect全部重读后，才以`feishu:<tenant> + operator.open_id`实时解析identity。anonymous/service/agent、缺human/role、Task self-approval及既有PR author分离全部fail closed。
+  - `approve/reject`要求`approve:<effect>`；`cancel/retry/replay/add-context`分别要求`operate:cancel|retry|replay`和`context:add`。授权后不另写状态机：高风险approval复用`IdentityBoundApprovalStore`，低风险approval写标准approval+live identity binding；其余直接复用`AttemptLifecycleStore`、`RecoveryAttemptStore`、`WorkflowReplayStore`和`SupplementalContextRevisionStore`。retry Item从blocked+lost+checkpoint+cancel-settled投影推导，replay固定由服务端选择analysis verification restart；payload不能自选target。
+  - add-context只从form取正文；先回读prior Task content-addressed R2并核对task digest/revision/custom metadata，用已验签event ID/time和operator open_id派生新revision/actor，再进入Round 47既有Secret-scanned immutable R2/D1 producer。正文不进入signal/action receipt/outcome/log，且不能改变new-run/apply-current模式、Task target或policy。
+  - Node测试覆盖Watt字段映射、id/signal编码、strict拒绝principal/policy/target与raw零传播。workerd测试以完整加密webhook穿透六类成功路径；20路不同event同application nonce只有一个approve effect，另覆盖reject、cancel、server-derived retry/replay、R2-derived add-context、错误tenant/app/chat/message/open_id、service/agent/缺role、伪造effect/nonce、旧Run/task/Plan/base、无approval replay失败的terminal outcome/零业务部分状态和失败后新nonce。
+  - card scheduled projector增加card action outcome epoch与card low-risk identity/channel authority时间；action失败或live role变更可生成新presentation。相关回归发现两个既有HTTP OIDC测试的固定`NOW`窗口已落在当前真实时钟之前，分别把production deployment与test rollback fixture移到同日稍后时间；产品过期/lease判断未放宽。
+- 验证：
+  - `pnpm exec vitest run test/feishu-card-action.test.ts` → exit 0，1 file / 3 tests；Watt-derived decode/encode、strict authority字段和raw边界通过。初次运行曾因测试期望把同一毫秒时间戳写成错误ISO而1/3失败，修正oracle后通过；这不是产品逻辑红灯，未伪装成先实现后测试的行为证据。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-card-action.test.ts` → exit 0，1 file / 9 tests；六类动作、20路nonce收敛、全部snapshot/identity负向、失败outcome与无Task ingress通过。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-card-action.test.ts test/workflow/feishu-delivery-card.test.ts test/workflow/controlled-replay.test.ts test/workflow/github-merge-gate.test.ts test/workflow/production-deployment.test.ts` → exit 0，5 files / 64 tests；low/high approval view、卡片、replay、merge与production回归通过。workerd输出既有Workflow terminate清理信息，无失败suite。
+  - 首次`pnpm run verify` → exit 1：Node 56 files / 178 tests全绿，workerd 53/54 files已绿但既有test rollback HTTP fixture因真实时钟超过固定lease窗口出现1/287失败；未改产品策略，前移同日fixture后单文件9/9通过。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 56 files / 178 tests、workerd 54 files / 287 tests、258个生产文件Secret scan和Markdown links全绿。workerd仍只有既有预期Workflow terminate清理输出。
+  - 初次dry-run命令因包含环境禁止的`rm -rf /tmp/...`在创建进程前被拒绝，未执行删除或构建；改用新outdir后`CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round75-20260726-final-v2` → exit 0，bundle 2437.84 KiB / gzip 409.98 KiB，双Workflow、两Queue、D1与四R2 binding识别成功，未部署。
+  - `git diff --check` → exit 0。
+- 勾选：Phase 2该DoD下新增并勾选“本地Node/workerd/D1/R2契约”子项；父项与真实飞书tenant外部事实保持未勾。本地fixture不能证明真实卡片callback字段、scope/群membership、open_id目录映射、转发/旧卡平台行为或真人职责分离。
+- 决策沉淀：卡片signal是可验证的冻结intent，不是capability token；确定性nonce也不单独承担认证。安全性来自飞书transport验证、exact tenant/chat/message/latest presentation、current Task/Run/Plan/base/effect、实时human role与one-time application ledger的合取。transport nonce与application nonce必须分表分语义。动作内核继续由既有store拥有，card adapter只做可信字段提取、authorization与dispatch。失败claim不能重用，但action outcome进入下一presentation epoch以恢复可操作性。
+- 遗留：真实测试tenant需发布包含六类按钮/input的latest卡片，用授权/未授权/撤权账号完成点击；受控重复、篡改`value`、旧卡、转发和错误群，记录安全event/message/presentation/receipt/outcome ID及HTTP结果。还需证明真实form callback字段、scope、bot membership、旧卡platform行为、六类effect仅一次及D1/R2/日志零raw/Secret；当前没有外部tenant/chat授权，不能代替。下一轮按Phase 2顺序处理“飞书审批事件、GitHub审批和控制面approval唯一关联记录”DoD；补充上下文外部子项仍依赖同一真实tenant证据。
+
+## Round 76 — 2026-07-26
+- 目标：Phase 2 / 飞书审批事件、GitHub审批和控制面approval形成唯一关联记录，回答谁在何时批准了哪个Task/Plan/base快照的什么effect。本轮闭环本地D1/workerd/Case 8契约；真实飞书/GitHub审批外部事实保持未完成。
+- 前置与权限：仅读取本地delivery-loop与Watt固定commit`476e3cd`，使用本地workerd/D1测试、规范检查、Secret scan和Wrangler dry-run；未访问或修改真实Cloudflare/GitHub/飞书、日志、数据库或tool-bridge，未发送卡片、触发Action/审批/部署、提交代码或使用真实Secret。未保存raw webhook、按钮正文、nonce明文或数据库行；按用户要求未更新llmdoc。
+- Watt复用：全树检索approval/approver/lineage/source/correlation。Watt只有generic task checkpoint approve/reject、Agent短期correlation waiter、OAuth device approval及generic AuditStore/EventStore，没有Task/revision/Plan/base/effect-bound的external approval lineage，可直接复制的等价业务代码为零。本轮继续直接复用Round 51已迁入的Watt identity mapper，以及Round 67从Watt AuditStore采用的D1`prepare+bind`与append-only审计纪律；没有复制Agent correlation，因为它是短期结果路由，不是长期approval真源。
+- 动作：
+  - 审计发现高风险merge/production已有`approval_source_events + identity_bound_approvals + approvals`，低风险飞书card只有`feishu_card_action_receipts + approval_bindings + approvals`；原Case 8只从identity source读取外部审批，因此不能对两类decision给出同一关联答案。
+  - 先在GitHub merge与飞书card suite增加20路唯一lineage断言。首次聚焦执行2 files failed、2 tests failed / 39 passed，均明确`no such table: approval_lineages`，证明此前没有统一事实表。
+  - migration 0049新增`approval_lineages`：每个approval及`provider + tenant + external event`双唯一，冻结source/card receipt、principal/roles、Run/Task/revision、Plan/version/digest、base/effect/decision、source发生时间、control-plane记录时间与expiry。backfill覆盖既有identity-bound和低风险card approval；shape trigger重验exact approval/source/receipt，binding互斥且lineage不可UPDATE；表无raw payload/request/token/nonce/display name字段。
+  - `IdentityBoundApprovalStore`把approval、identity binding、可选exact card receipt与lineage放入同一D1 batch，重复source重新核对同一lineage后返回；candidate显式读取真实Task ID，没有用Run ID猜Task。`FeishuCardActionStore`高风险路径传入受信receipt，低风险repo-write/test-deploy在approval/card binding同batch建立lineage，任一预期insert缺失即fail-closed。
+  - Case 8 approval查询统一LEFT JOIN lineage；external approval返回lineage/source安全ID、provider/event/digest、who、Task/revision、Plan/base/effect、source发生时间与decision记录时间。legacy/internal approval保持actor fallback并把外部lineage字段明确为null，不伪造来源。测试fixture证明飞书lineage进入`sourceEvents + approvals`且八栏报告仍不含正文/credential。
+  - 增加D1负向证据：已形成的GitHub approval lineage尝试改写base SHA，被`approval_lineage_is_immutable` trigger拒绝。同步Proto、Architecture、Security、Reference和DOD；父项拆为已勾本地契约与未勾真实平台事实。
+  - 最终全量复跑暴露既有execution head幂等路径的并发窗口：immutable head row已可见而Attempt CAS尚保持原version/parent/空branch时，重复exact请求被误判409。没有放宽任何identity；`ExecutionHeadStore`只对update/head/branch/generation全部相同且Attempt仍为原snapshot的pending projection继续执行原CAS，任一漂移仍fail-closed。该最小恢复修正使已持久化intent可重放收敛。
+- 验证：
+  - 红灯聚焦`github-merge-gate + feishu-card-action` → exit 1，2 files failed，2 failed / 39 passed，错误均为缺`approval_lineages`表；实现后两文件41 tests全绿。
+  - 最终聚焦`case8-audit-report + github-merge-gate + feishu-card-action + production-deployment + controlled-replay` → exit 0，5 files / 63 tests；覆盖GitHub/飞书20路收敛、approve/reject、Case 8 exact lineage、生产审批与replay回归，以及lineage不可改写。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。
+  - 首次完整`pnpm run verify` → exit 0；追加PROGRESS后两次final复跑分别因既有`execution-attempt-api`的20路exact head中1路、9路返回409而exit 1（287/288），单文件复跑2/2通过，确认只在高并发调度窗口触发。上述pending projection修正后，execution-attempt与本轮五文件联合聚焦exit 0，6 files / 65 tests。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 56 files / 178 tests、workerd 54 files / 288 tests、259个生产文件Secret scan和Markdown links全绿。workerd只输出既有预期Workflow terminate清理信息，无失败suite；随后`git diff --check` exit 0。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round76-20260726-final-v2` → exit 0，bundle 2446.54 KiB / gzip 411.36 KiB，双Workflow、两Queue、D1与四R2 binding识别成功，未部署。
+- 勾选：只勾Phase 2该DoD下“本地D1/workerd/Case 8契约”子项；父项与真实飞书/GitHub外部事实保持未勾。本地fixture、直接D1 fixture和fake GitHub client不能证明平台reviewer、event time、重投行为或真人统一身份。
+- 决策沉淀：approval是权限判定事实，approval lineage是外部decision到该事实的审计关联，两者不能混成一个缓存。lineage冻结当时的who/what/when并保持immutable；effect仍必须通过`trusted_effect_approvals`重验live mapping、role、separation、expiry和invalidation。统一denormalized lineage让Case 8无需按飞书低风险、飞书高风险、GitHub分别猜join路径，也使可回放恢复只需沿稳定ID核对，不依赖Workflow history或Agent session。
+- 遗留：真实测试需要一条已验签飞书审批事件和一条真实GitHub review/Environment审批，各自核对平台安全event/reviewer/time、D1 source/receipt/approval/lineage ID与Case 8报告；相同event重投必须收敛，换event/snapshot不能串联。当前没有外部tenant/repository授权，不能替代。下一轮只处理Phase 2“监控adapter只创建candidate/triage、不自动获得repo write；相同告警指纹在抑制窗口内合并”。
+
+## Round 77 — 2026-07-26
+- 目标：Phase 2 / 监控adapter（若启用）只创建candidate/triage，不自动获得repo write；相同告警指纹在抑制窗口内合并。本轮闭环本地generic HMAC adapter、D1 sliding suppression、私有R2与operations安全查询；真实监控供应商外部事实或明确N/A决策保持未完成。
+- 前置与权限：仅读取本地delivery-loop与Watt固定commit`476e3cd`，使用本地Node/workerd/D1/R2、合成签名alert、Secret canary与Wrangler dry-run。未访问或修改真实Cloudflare、Prometheus/Grafana/Sentry、GitHub、飞书、日志、数据库或tool-bridge，未发送真实告警、创建Task/Run、触发Action/Workflow或部署，未使用真实Secret。按用户要求未更新llmdoc。
+- Watt直接复用：完整读取`packages/core/src/event/dedupe.ts`及全部边界测试、`eventbus/hmac.ts`与constants。直接复制`DEFAULT_DEDUPE_WINDOW_MS=24h`、`DedupeStore/InMemoryDedupeStore/resolveDedupe`及same/different key、exact edge、过1毫秒和default oracle；保持`now-storedAt <= window`仍命中。monitor HMAC直接复制exact-body HMAC-SHA256、lowercase hex解析与常量时间比较，只把header适配为`X-Delivery-Loop-Monitor-Signature`。Watt内存store不是多isolate权威，没有monitor candidate/allowlist/R2/权限边界，生产并发部分由D1新增。
+- 动作：
+  - 先新增Node与workerd验收：受信配置fail-closed、strict body、服务端fingerprint、HMAC、Watt窗口边界、20路不同event合并、三次同event重放、同event换内容、错误签名、未知adapter、越repository allowlist、caller authority、Secret、过期source time、operations查询、candidate防篡改及Task/Run/approval/outbox零行。首次Node按预期failed suite / 0 tests，缺`src/domain/dedupe`；workerd同样failed suite / 0 tests，缺monitor ingress store。
+  - 新增strict `MonitorAlertWebhookV1`：只有event/time/firing及rule/resource/repository/environment/severity/title/description；`fingerprint/policy/effect/Task/approval`因strict schema无入口。受信profile固定generic adapter、tenant、repository allowlist和60秒～24小时窗口；全部配置缺失表示关闭，部分/非法配置503，body不能选择profile或窗口。
+  - HMAC在JSON解析前验证最大256 KiB exact raw body；source time限制过去24小时/未来5分钟。完整规范化snapshot先扫描所有Worker配置Secret，再写`TASK_OBJECTS/monitor-alerts/`私有immutable R2；D1与响应不保存/返回raw body、title、description、resource或Secret finding。
+  - 服务端fingerprint覆盖adapter/tenant/profile digest/rule/resource/repository/environment/severity，排除event ID/time/展示正文。migration 0050新增immutable receipt/lineage、current suppression head与triaging candidate；新receipt trigger在同一D1事务原子upsert head、投影candidate、追加lineage。窗口内candidate occurrence+1/lastSeen单调前进，exact edge仍合并，1毫秒后切新candidate；candidate identity不可UPDATE。
+  - monitor producer物理不调用Task normalizer/intake，也没有Task/Run/policy/effect/approval/outbox列。operations-only `GET /v1/triage/monitor`只返回adapter/tenant/repository/rule/environment/severity、窗口、计数与时间，拒绝未知query且不返回fingerprint/profile/snapshot/resource/R2 ref或正文。新monitor Secret同时注册到Task/context/Plan/checkpoint/review/card等既有正文producer的scanner列表，避免新增Secret从其他出口泄漏。
+  - 初次D1实现后workerd 3/3失败：首个receipt触发器同时写head/candidate/lineage，使SQLite `meta.changes`大于1，代码错误地把非1视为duplicate；改为`changes=0`才是event duplicate，`>0`再按lineage ordinal判created/suppressed，未放宽任何binding。随后3/3通过。
+  - 同步Proto、Architecture、Security、Reference和DOD；本地子项已勾，父项保留“真实供应商启用证据”或“owner明确不启用且生产配置全缺”的外部决策证据。
+- 验证：
+  - 红灯`pnpm exec vitest run test/monitor-alert.test.ts` → exit 1，failed suite / 0 tests，缺Watt-derived dedupe模块；红灯workerd单文件 → exit 1，failed suite / 0 tests，缺monitor ingress store。
+  - 最终Node/相邻聚焦`monitor-alert + task + redaction` → exit 0，3 files / 16 tests；最终workerd/相邻聚焦`monitor + Meegle + Feishu ingress/card + supplemental context + task intake` → exit 0，6 files / 27 tests。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 57 files / 186 tests、workerd 55 files / 291 tests、266个生产文件Secret scan和Markdown links全绿。workerd只输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round77-20260726-final` → exit 0，bundle 2468.16 KiB / gzip 415.35 KiB，双Workflow、两Queue、D1与四R2 binding识别成功，未部署。
+- 勾选：只勾Phase 2该DoD下“本地Node/workerd/D1/R2契约”子项；父项与真实监控供应商/生产N/A决策事实保持未勾。generic HMAC fixture不能证明Prometheus/Grafana/Sentry原生签名、重试和字段映射。
+- 决策沉淀：monitor event receipt与alert fingerprint是两层identity：event去重防同delivery重复计数，fingerprint suppression把不同occurrence合并为一个人工triage候选。candidate不是低权限Task，而是Task之前的独立事实；只要入口不创建Task/Run/Plan，就不存在“先给只读、以后意外继承write”的隐式authority。Watt纯函数适合作为窗口oracle，D1 trigger才是多Worker可恢复并发真源。
+- 遗留：若生产决定启用监控，需先选定一个真实provider并核对原生签名/重试/event identity/字段映射，受控发送同fingerprint三次及过窗一次，记录安全event ID/time、candidate/lineage/count和零Task/Run/effect；若决定不启用，需由owner记录N/A并证明生产四项monitor配置全缺。下一轮只处理Phase 2“飞书API限流/超时触发outbox重试、状态不回退、卡片可人工刷新修复”。
+
+## Round 78 — 2026-07-26
+- 目标：Phase 2 / 飞书API限流或超时触发outbox重试，持久状态不回退，terminal或不可修复的最终卡片可由人工安全刷新。本轮闭环本地Node/workerd/D1/operations契约；真实飞书tenant限流、timeout、token refresh与人工恢复事实保持未完成。
+- 前置与权限：仅读取本地delivery-loop与Watt固定commit`476e3cd`，使用合成fetch、fake Feishu effects、本地workerd/D1、operations测试identity、Secret scan和Wrangler dry-run。未访问或修改真实Cloudflare/GitHub/飞书、日志、数据库或tool-bridge，未发送卡片、调用真实Feishu API、触发Action/Workflow、部署、提交代码或使用真实Secret；未保存raw response、card body、token或数据库行。按用户要求未更新llmdoc。
+- Watt直接复用：完整读取`packages/gateway/src/event/plugin-sender.ts`与`agent-deliverer.ts`以及`packages/plugin-feishu/src/adapter/send.ts`。直接复制`SEND_TIMEOUT_MS = 10_000`和逐request `AbortSignal.timeout`边界，保持429/5xx/timeout/network retryable；继续复用此前已从Watt迁入的token cache/invalid-code/UUID以及fenced outbox“effect成功才settle、失败rollback pending”语义。Watt会传播generic `msg/error`的路径没有复制；Watt也没有D1 card revision/delivery单调账本或人工刷新控制面，这部分由本项目补齐。
+- 动作：
+  - 先写红灯：挂起fetch必须abort并返回固定`feishu_api_timeout`；rate limit与timeout两次失败后同一outbox仍pending且保存各自安全码；latest/delivered revision、active message与delivery count不回退；20路operations刷新只一request/presentation/outbox。首次Node 1/8失败并在5秒test timeout结束，证明此前没有AbortSignal；workerd 6/6因缺refresh request表失败。
+  - `FeishuDeliveryCardApiClient`对token、create、PATCH和message GET均使用生产默认10秒的Watt bound，测试可注入更短正整数；abort/TimeoutError固定分类为`feishu_api_timeout`，不传播异常名。Feishu retryable error在进入共享fenced outbox前转换成固定`OutboxEffectError`，因此D1不再把rate-limit/timeout都压成generic unavailable。
+  - migration 0051新增immutable `feishu_delivery_card_refresh_requests`，只冻结card/Run、expected presentation/revision/digest、固定operations principal和时间；presentation增加唯一、服务端生成且不渲染的`refresh_request_id`。D1 trigger重验snapshot与request绑定并拒绝UPDATE/JSON伪造，没有message/card/destination/effect/reason/正文列。
+  - 新增operations-only `GET /v1/runs/:runId/feishu-card`，只返回latest/delivered presentation/outbox/message安全状态，不返回tenant/chat/card正文；`POST .../refresh` strict接受GET返回的current presentation/revision/digest。稳定request ID与canonical refresh epoch使20路同snapshot收敛；从未请求过的旧snapshot 409，accepted request可幂等回读。新presentation/outbox保留旧rejected delivery；request落库但HTTP中断时，scheduled candidate会继续完成投影。
+  - transient限流/timeout仍只恢复原outbox，不创建refresh；人工refresh限定在terminal business reject或配置/平台修复后必须重建最终卡片。同步Proto、Architecture、Security、Reference、OperationsRunbook和DOD；只勾本地子项，真实tenant子项保持未勾。
+- 验证：
+  - 红灯`pnpm exec vitest run test/feishu-delivery-card.test.ts` → exit 1，1/8 failed，hung request在5秒test timeout结束；红灯workerd单文件 → exit 1，6/6 failed，固定错误`no such table: feishu_delivery_card_refresh_requests`。
+  - 最终聚焦Node `feishu-delivery-card + feishu-run-status-card + operations-runbook` → exit 0，3 files / 16 tests；最终聚焦workerd `feishu-delivery-card + feishu-card-action + outbox-dead-letter + outbox-routing` → exit 0，4 files / 24 tests。覆盖token/API abort、rate-limit/timeout分类、三次同outbox尝试、状态单调、terminal reject刷新、20路收敛、旧snapshot/authority注入拒绝、cron中断恢复与相邻卡片/action/DLQ/route回归。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、operations runbook契约和`git diff --check` → exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 57 files / 187 tests、workerd 55 files / 294 tests、268个生产文件Secret scan和Markdown links全绿。workerd只输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round78-20260726-final` → exit 0，bundle 2482.62 KiB / gzip 417.85 KiB，双Workflow、两Queue、D1与四R2 binding识别成功，未部署。
+- 勾选：只勾Phase 2该DoD下“本地Node/workerd/D1契约”子项；父项与真实飞书tenant外部事实保持未勾。本地fake fetch/effects和workerd不能证明真实5 QPS/平台错误码、网络timeout、token refresh、消息可见性或群内唯一当前卡。
+- 决策沉淀：retry与refresh是两种恢复语义。结果不确定或dependency暂不可用时必须保留同一outbox和幂等键；只有terminal reject/已确认不可修复的presentation才以current snapshot创建新的immutable epoch，旧失败事实不能被改写。人工操作本身也必须先落可回放intent，HTTP会话不是恢复真源；因此cron能从D1继续，而operator永远不需要也不能提交card或message effect。
+- 遗留：真实测试tenant需在受控群实测同群/单卡5 QPS触发230020/230049或429、HTTP timeout、token失效刷新与后续成功，记录安全平台时间/ID、同outbox attempt/固定码和latest/delivered单调投影。再制造业务拒绝或不可修复最终卡，使用operations GET/refresh核对新request/presentation/outbox、最终message与群内唯一当前卡，并确认D1/log无token/raw response/card正文。当前没有外部tenant/chat授权，不能替代；下一轮按Phase顺序进入Phase 3首个仍未闭环的本地/外部证据项。
+
+## Round 79 — 2026-07-26
+- 目标：Phase 3 / 日志、Task、checkpoint、artifact、PR用canary Secret扫描全绿；redaction覆盖header、嵌套JSON、URL query和命令环境变量。本轮闭环控制面/Runner结构化日志、execution raw transcript真实本地producer、Draft PR effect前最终扫描与统一Worker Secret catalog；真实Action日志、远端R2和PR页面事实保持未完成。
+- 前置与权限：仅本地Node/workerd/D1/R2、fake GitHub effect、合成Codex JSONL、Wrangler dry-run与Watt固定commit；未触发真实Action/PR、未调用计费模型、未访问业务日志/数据库/飞书/tool-bridge、未部署、未提交。未保存Secret、raw payload、transcript正文、日志正文或数据库行；按用户要求未更新llmdoc。
+- Watt直接复用：完整读取`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`的`packages/gateway/src/secrets/secret-store.ts`，直接复制base64url encode/decode、32-byte AES-256 key import、随机12-byte IV、AES-GCM与AAD绑定结构。Watt没有Attempt/Plan/Item fencing、D1 recoverable artifact upload、Runner transcript producer、Worker credential全集catalog、结构化Runner日志或PR effect前重扫；这些delivery-loop语义明确为新增，没有把它们倒称为Watt代码。
+- 动作：
+  - 审计发现Task/checkpoint/Feishu/monitor/PR等producer各自手写Secret列表，新增credential可能漏扫；PR只在prepared阶段扫描，GitHub effect前不重验当前配置；`RAW_AGENT_OBJECTS`只有retention fixture无producer；控制面存在多处direct console，六个Runner入口输出非统一文本。
+  - 先补负向测试。首次Node suite因缺`runtime-secrets`直接failed；首次workerd 4 files / 20 tests有4项红灯：checkpoint错误接受Feishu Secret、Task错误接受operations Secret、PR扫描缺失且调用fake GitHub、artifact API 404。实现后统一由`configuredSecrets`覆盖全部Worker plaintext credential，新增配置不再修改各producer列表。
+  - 新增唯一`secureStructuredLogSink`：递归redaction后再次Secret scan，控制面除该文件外direct `console.*`归零；case8/correlation/stuck/dead-letter/Feishu refresh/Worker error均改用固定schema。六个Runner入口只调用`writeRunnerStructuredLog`，event为TypeScript固定集合，输出只有component/level/event/outcome/安全Attempt ID/time的一行JSON，不接受Agent、Task、响应或错误正文。
+  - 新增strict artifact request与`artifact:write` execution scope。`RawAgentArtifactStore`按active running implement/review_fix、exact execution scopes、Attempt version/generation/lease/token、active Plan/Item双层fence；Runner先扫描全部轮换token/敏感环境值，控制面再扫描当前token+唯一Worker catalog。plaintext不入D1；Watt-derived AES-256-GCM ciphertext写专用私有`RAW_AGENT_OBJECTS`，D1只登记ciphertext identity/size/etag/30天policy。
+  - migration 0052新增`raw_agent_artifact_uploads` pending→delivering→complete与30秒lease。恢复性复核发现若把expectedVersion固化为upload identity，R2成功后响应中断再遇heartbeat会永久冲突；最终只固化lease generation，每次请求仍用当前version鉴权。测试证明旧version拒绝，而同generation在heartbeat version前进后可重放同一stable UUID/content并复用唯一ciphertext对象。
+  - `CodexExecutionAdapter`把同一有界JSONL同时送usage accumulator与Runner transcript callback；Runner只接受JSON object line、最多512 KiB，在Agent decision后且commit/push前以当前fencing调用artifact API。集成测试证明transcript正文只出现在专用artifact请求，不进入其他控制面请求或Runner结果日志。
+  - Draft PR processor从runtime注入当前完整Secret catalog，在exact publication/approval/body digest重验后、真正GitHub list/create前再次扫描title/body；命中`pull_request_secret_detected`安全settle且fake GitHub effect为零。同步Proto、Architecture、Security、Reference、OperationsRunbook与DOD；父DoD拆为已勾本地producer契约和未勾真实GitHub事实。
+- 验证：
+  - 首次`pnpm run typecheck` → exit 2，Watt-derived key bytes被TypeScript推断为`Uint8Array<ArrayBufferLike>`而不满足WebCrypto `BufferSource`；将base64url decoder与key变量收紧为真实`ArrayBuffer`后通过，未改变加密实现。
+  - 聚焦Node `operations-runbook + structured-log + redaction + codex-execution-adapter + execution-runner-bootstrap` → exit 0，5 files / 23 tests；聚焦workerd `raw-agent-artifact + github-pull-request + checkpoint-api + task-api + repo-write-credential` → exit 0，5 files / 29 tests。
+  - 第一次全量`pnpm run verify` → exit 1：Node 58 files / 191 tests全绿，workerd仅`repo-write-credential` 9项因旧手写完整execution scope缺`artifact:write`而正确fail-closed；只把该完整scope fixture改为共享`EXECUTION_TOOL_ACTIONS`，保留故意模拟简化checkpoint scope的负向夹具，单文件9/9通过。
+  - 最终`pnpm run verify` → exit 0；typecheck、ESLint、Node 58 files / 192 tests、workerd 56 files / 298 tests、274个生产文件Secret scan与Markdown links全绿。workerd只输出既有预期Workflow terminate清理信息，无失败suite。
+  - 初次dry-run组合命令包含临时目录`rm -rf`而在进程创建前被安全策略拒绝，未执行删除或构建；改用新目录后`CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round79-20260726-final-v2` → exit 0，bundle 2503.92 KiB / gzip 421.94 KiB，双Workflow、两Queue、D1与四R2 binding识别成功，未部署。
+  - `pnpm run verify:docs`、operations runbook契约与`git diff --check` → exit 0。
+- 勾选：Phase 3该DoD下新增并勾选“本地控制面/Runner/producer契约”子项；父项与真实GitHub外部事实保持未勾。本地fake GitHub/workerd/R2、合成JSONL与dry-run不能证明真实Action log、远端ciphertext registry或PR页面零泄漏。
+- 决策沉淀：redactor与scanner职责分离：redactor负责安全输出，scanner负责持久化/发布前fail-closed，日志必须redact后再scan。Secret catalog必须是配置层单一真源，不能让producer各自猜列表。raw transcript是短期加密诊断对象，不是状态真源或恢复checkpoint；Git/checkpoint仍负责恢复。artifact upload identity跨heartbeat稳定但generation不跨Attempt租约；PR prepared快照安全不代表effect时仍安全，因此外部写前必须按当前credential集合再验。
+- 遗留：真实验收需先配置远端试点repo、GitHub App/Actions、部署Worker/D1/R2及`RAW_AGENT_ARTIFACT_ENCRYPTION_KEY`。在受控Action注入canary，核对完整Action log、远端raw ciphertext/registry和D1投影零明文；再产生一份安全Draft PR与一份命中canary的blocked publication，核对真实PR页面/API只有前者且无第二GitHub effect。当前无remote且D1 ID为占位值，不能替代；下一轮若仍无外部资源应明确停在该blocker，不追加fake证据冒充完成。
+
+## Round 80 — 2026-07-26
+- 目标：Phase 3 / Agent Adapter的start/resume/interrupt/exportCheckpoint契约通过并至少接通一个真实非交互Agent CLI。本轮补齐显式opt-in真实Codex验收入口并尝试真实已配置credential调用；provider拒绝现有key，因此真实调用子项保持未完成。
+- 前置与权限：本地Codex CLI、临时只读Git repo、Node测试与Watt固定commit；显式运行真实模型入口但未得到成功采样，未触发GitHub/Cloudflare/飞书/tool-bridge、未读取业务日志/数据库、未写当前仓库、未部署或提交。credential值、provider stderr、模型正文、临时路径和session ID均未写PROGRESS；按用户要求未更新llmdoc。
+- Watt复用：直接沿用Watt`476e3cdd2490d725fde174e7c697ebf00899edc6`的`scripts/e2e/lib.ts`显式消耗门控和0/1/2退出纪律：0=真实事实通过、1=断言/运行事实失败、2=opt-in或credential等前置缺失。Watt的通用`runE2e/CliFailure`会输出Watt CLI stderr且绑定其token/base URL，不适合直接复制到Agent credential路径；本项目保留相同分层但只输出固定错误码，避免传播Codex stderr。
+- 动作：
+  - 先把session adapter测试提升为必须携带`--output-schema`。首次聚焦运行exit 1，1/4 failed，现有argv缺该参数；随后新增strict `AgentSessionResultV1={schemaVersion:'1',status:'checkpoint_ready'}` Zod/JSON Schema，额外字段和自由summary拒绝。
+  - `CodexSessionAdapter`构造时固定trusted output schema路径，start/resume都使用相同`--ephemeral --ignore-user-config --sandbox read-only --approval never --output-schema`，启动前核对schema为有界regular file；prompt只要求返回schema对象。既有start/resume/interrupt/export与recovery测试全部改用同一schema，没有新增provider session依赖。
+  - 新增`pnpm run e2e:codex-adapter`。默认未设置`DELIVERY_LOOP_CODEX_ADAPTER_E2E=1`时在认证/模型前exit 2；opt-in后只创建临时repo/context/output，固定提交一份无业务内容fixture，使用真实`CodexSessionAdapter.start`，立即记录Runner-controlled checkpoint sequence 2并等待provider。成功必须同时满足exit 0、strict final JSON、checkpoint digest、同HEAD和clean tree；stdout只含CLI version、exit、SHA/digest、sequence与布尔值，finally删除本轮临时目录。
+  - `codex login status`显示本机保存了API key，但它不能证明provider接受。首次真实opt-in进程启动后exit 1；一次临时、已由command runtime按敏感环境值脱敏的诊断确认固定失败指纹为`invalid_api_key/401`，随即移除诊断输出。最终实现把该指纹归类为credential前置缺失，只输出`codex_authentication_invalid`并exit 2；没有把进程启动或本地login status冒充成功模型调用。
+  - 同步Proto/Security/Reference/DOD：新增并勾显式opt-in验收入口子项，父DoD与“已认证真实调用”子项保持未勾；更新PROGRESS blocker要求用户重新认证，代码不会自行生成或替换credential。
+- 验证：
+  - 红灯`pnpm exec vitest run test/codex-session-adapter.test.ts` → exit 1，1/4 failed，明确缺`--output-schema`；实现后`codex-session-adapter + recovery-runner + real verifier` → exit 0，3 files / 8 tests。
+  - 默认`pnpm run e2e:codex-adapter` → exit 2，固定`opt-in missing`且零认证/模型调用；最终opt-in`DELIVERY_LOOP_CODEX_ADAPTER_E2E=1 pnpm run e2e:codex-adapter` → exit 2，固定`prerequisite missing codex_authentication_invalid`，没有输出credential/provider stderr/model正文。该结果是可信前置失败，不是通过证据。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 59 files / 194 tests、workerd 56 files / 298 tests、277个生产文件Secret scan与Markdown links全绿。workerd只输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round80-20260726-final` → exit 0，bundle 2503.92 KiB / gzip 421.94 KiB，双Workflow、两Queue、D1与四R2 binding识别成功，未部署。
+  - `git diff --check`与文档链接检查 → exit 0。
+- 勾选：只新增并勾Agent Adapter下“显式opt-in真实CLI验收入口”本地子项；父项和真实已认证调用保持未勾。真实Codex进程启动、CLI help/login status、invalid credential或fake launcher都不能替代exit 0+strict output+checkpoint+clean Git证据。
+- 决策沉淀：credential“已配置”与“当前有效”是两种事实，`login status`不能做认证oracle；唯一成功判据是provider实际采样exit 0。模型最终输出与持久checkpoint也必须分层：JSON Schema证明provider transport结构化，checkpoint只能由Runner单调记录，模型不能直接推进恢复状态。opt-in verifier使用临时只读repo隔离消耗与业务数据，并复用Watt 0/1/2纪律区分事实失败和前置缺失。
+- 遗留：需要用户通过Codex CLI重新登录或配置一个有效API key，且不得把key发到聊天、argv、PROGRESS或仓库。完成后只需重跑`DELIVERY_LOOP_CODEX_ADAPTER_E2E=1 pnpm run e2e:codex-adapter`；exit 0安全JSON摘要可支持勾真实调用子项。真实GitHub Action仍由后续独立外部DoD验收。
+
+## Round 81 — 2026-07-26
+- 目标：Phase 3 / 在真实试点repo强制终止执行中GitHub Action，新Attempt从外部Git commit + checkpoint恢复且不重复已passed Item。本轮补齐真实外部证据契约、一键只读verifier与安全查询投影；因无remote/部署/有效credential，真实Action演练保持未完成。
+- 前置与权限：仅本地Node/workerd/D1/R2 fixture、fake HTTPS response、Watt固定commit、文档检查与Wrangler dry-run；未访问或修改真实GitHub/Cloudflare/飞书/tool-bridge、业务日志或数据库，未触发/取消Action、未调用模型、未部署、未提交。未保存token、raw API/Action log、checkpoint/Agent/Task正文或数据库行；按用户要求未更新llmdoc。
+- Watt直接复用：继续固定`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`。`verify-runner-recovery-evidence.ts`直接复制项目内Round 59从Watt`scripts/e2e/lib.ts`派生的Pilot命令骨架：显式opt-in、仓库外64 KiB manifest、0/1/2退出分层和固定安全错误；response读取直接复用本项目已迁移/强化过的tool-bridge流式上限实现。Watt没有delivery-loop的Attempt/Plan/Item/checkpoint/GitHub run lineage，可直接复制的业务断言为零，没有虚构来源。
+- 动作：
+  - 审计`e2e:pilot`确认它只验test/production deployment、acceptance与rollback，不能证明Runner kill/recovery；保留Pilot manifest v1不做破坏性扩展，新增独立`RunnerRecoveryEvidenceManifestV1`。
+  - 真实验收需要从D1证明replacement来源，但既有Plan查询未公开Attempt branch/head/recovery lineage。先扩展`checkpoint-api`红灯断言；首次聚焦为1/8 failed，明确缺`headBranch/headSha/recovery`。随后`TaskQueryStore`只增加安全标量投影与SQL列，不读取checkpoint R2正文、lease/token或provider session；与task query联合复验11/11。
+  - manifest strict绑定repository、Run/Plan/两个不同Item、lost/replacement Attempt与不同Action、ordinal、workflow SHA、checkpoint ID/sequence/digest/branch/head、result head及verification/Evidence；replacement ordinal必须推进，result SHA不能等于checkpoint SHA，passed Evidence ID唯一，未知字段拒绝。
+  - live verifier有界读取并交叉核对`GET /v1/runs/:runId/plan`、correlation查询、两条GitHub Actions run/jobs、两个commit、branch ref与GitHub compare。旧Attempt必须lost且old Action/job/execution step为cancelled；replacement必须completed/success并精确绑定recovery lineage、checkpoint branch/head和result Evidence；branch必须指向result，checkpoint必须是base/merge-base且result只ahead不behind，拒绝两个无关SHA；lost ordinal之后任何此前passed Item Attempt或replacement Evidence均fail-closed。origin只允许安全HTTPS，错误与summary不传播token/raw response。
+  - 新增`pnpm run e2e:runner-recovery`、example schema与`docs/RunnerRecoveryE2E.md`。命令默认在任何manifest/network前exit 2；opt-in但配置不完整同样是前置缺失。exit 0只验已发生事实，不会执行kill/retry/dispatch，也不能单独关闭真实DoD。
+  - 同步Proto、Architecture、Security、Reference与DOD；只勾“真实外部证据验收契约”本地子项，父项和真实Action子项保持未勾。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/checkpoint-api.test.ts` → exit 1，1/8 failed，缺失安全recovery投影；实现后与`task-query-api`联合 → exit 0，2 files / 11 tests。
+  - `pnpm exec vitest run test/runner-recovery-evidence.test.ts` → exit 0，1 file / 7 tests；覆盖example/strict/cross-field、完整Plan/correlation/Action/job/commit/branch/compare穿透、旧Action/新Action/job错误、branch未指向result/diverged history、passed Item重跑、512 KiB流式上限、raw canary/token零传播及默认exit 2。
+  - `pnpm run e2e:runner-recovery`（无opt-in）→ exit 2，固定`opt-in missing`；`DELIVERY_LOOP_RUNNER_RECOVERY_E2E=1 pnpm run e2e:runner-recovery`（无真实配置）→ exit 2，固定`required recovery configuration is incomplete`。两条路径均在manifest/network前结束，不是skip或成功。
+  - 聚焦后`pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`和`git diff --check`均exit 0。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 60 files / 201 tests、workerd 56 files / 298 tests、281个生产文件Secret scan和Markdown links全绿。workerd只有既有预期Workflow terminate清理输出，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round81-20260726-final-v2` → exit 0，bundle 2504.41 KiB / gzip 422.03 KiB，双Workflow、双Queue、D1与四R2 binding识别成功，未部署。
+- 勾选：Phase 3 Runner kill recovery下新增并勾“真实外部证据验收契约”子项；父项与“在真实试点repo强制终止Action”保持未勾。fake API、schema-valid example、dry-run和默认exit 2都不能替代两条真实Action/Git commit/live D1证据。
+- 决策沉淀：真实恢复与Phase 5 deployment Pilot是不同事实，不能用同一manifest把边界揉在一起。恢复证据必须同时回答control-plane lineage、平台Action结论、Git commit存在和passed Item零重跑；只证明“新Action成功”不足。查询投影是外部可审计契约的一部分，但只能增加恢复所需branch/SHA/ID，不能为验收方便暴露checkpoint正文或credential。verifier保持只读，执行恢复仍走正常权限/审批/dispatcher。
+- 遗留：当前`git remote -v`为空，Wrangler D1 ID仍为占位值，Codex credential仍被provider拒绝。需要用户确认/提供试点GitHub repo与App/Actions权限、已部署控制面origin/D1/R2、有效Agent credential及受控Actions预算；随后按`docs/RunnerRecoveryE2E.md`真实取消old Action、完成replacement Action，把仓库外manifest和短期只读token注入受控环境运行`DELIVERY_LOOP_RUNNER_RECOVERY_E2E=1 pnpm run e2e:runner-recovery`。只有exit 0、Actions/commit URL和人工取消时序审计入账后才能勾真实子项。
+
+## Round 82 — 2026-07-26
+- 目标：Phase 3 / 受控replay校验expected Run version、稳定verification Plan Item、外部副作用和审批；真实重放不得重复dispatch/PR/deploy。本轮修复真实终态Plan Item step不可达问题，并补Case 8安全证据、仓库外manifest与一键只读verifier；真实Cloudflare/GitHub replay保持未完成。
+- 前置与权限：仅本地Node/workerd/D1、fake HTTPS response、Watt固定commit、Wrangler dry-run与文档检查；未访问/修改真实GitHub、Cloudflare账户、飞书、tool-bridge、业务日志或数据库，未触发Action/PR/deployment/restart、未调用模型、未部署或提交。未保存token、raw API/日志、replay reason、PR/Evidence/Task正文或数据库行；按用户要求未更新llmdoc。
+- Watt直接复用：继续固定`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`。`verify-controlled-replay-evidence.ts`直接复制项目内Round 59/81从Watt`scripts/e2e/lib.ts`派生的显式opt-in、仓库外64 KiB manifest、0/1/2退出和固定安全错误骨架；HTTP读取继续直接复用本项目Watt-derived tool-bridge流式上限实现。Watt没有ExecutionPlan Item、effect approval snapshot、external reconciliation或GitHub stable PR/Deployment identity，对应业务断言为delivery-loop新增，没有虚构为Watt代码。
+- 动作：
+  - 审计发现D1已保存`workflow_replays/effects/reconciliations`，但Plan/Case 8/correlation都不公开replay expected version、stable target、effect/approval、snapshot或restart事实。先向Case 8测试加入`checks.replays`；首次聚焦exit 1，1/2 failed，报告明确缺整个replay投影。
+  - Case 8新增D1-only白名单replay投影：ID/version/Plan/Item/target、reason/effect digest、restart time、唯一replay outbox安全状态、effects/approval和reconciliations。每个outbox/Evidence source在读时按生产同一canonical shape重算digest；孤儿/重复replay outbox、source变化、超500行或非法错误码fail-closed。另公开当前全部dispatch/PR/deploy effect outbox的ID/kind/state/time，供验收证明replay前后intent集合精确不增；不选reason正文、payload/dedupe key、Evidence URL/summary或lease。
+  - 审计真实生产SQL发现production success把Plan从`active`置`completed`，而scheduler只接受active；既有fixture错误使用不可达的`succeeded + active Plan`。把fixture改为completed后红灯exit 1，2/3 failed，真实Plan Item replay均409。修复后只新增`succeeded Run + completed Plan + plan_item`边界；completed Plan的analysis system step、failed Run仍409，active Plan既有语义不变。
+  - `DeliveryRunWorkflow`在Run终态后以`load-terminal-verification-steps`从D1读取最多200个`verification + passed progress + current passed decision` Item，再执行稳定`plan-v<version>-item-<id>-verify`。每个step用单条`INSERT ... SELECT`重验Run/Plan/status/progress/decision并记录current Run version，零外部effect。真实workerd初次终态写version 8，replay从Item step restart后写version 9，原dispatch/PR outbox数量不变；因此外部演练target真实存在，不再依赖fake restart client。
+  - 新增strict`ControlledReplayEvidenceManifestV1`：最长七天窗口、post/expected Run version、Plan/Item、按effect排序approval snapshot、全部dispatch outbox、原Agent Actions、单PR和至少一个Deployment；repo-write/deploy effect为必需且mutating effect必须approval。未知字段、重复identity、错误时间/环境/版本拒绝。
+  - live verifier读取Case 8与correlation，重算effect snapshot digest，核对approval在restart时有效、merge/production identity separation、effect outbox/current snapshot集合精确相等、Action/PR/deploy控制面identity无增量；再用GitHub只读API核对七天窗口内每个attempt稳定title只有一个、同head PR只有一个、每个stable deployment ID只有一个且最新status success。分页、额外pending dispatch、过期/非法approval、raw/超1 MiB响应均固定code失败，summary/token零传播。
+  - 新增`pnpm run e2e:controlled-replay`、example schema和`docs/ControlledReplayE2E.md`；默认或缺真实配置均在manifest/network前exit 2。同步Architecture/Proto/Security/Reference/DOD；只勾真实外部证据验收契约子项，父项和真实restart仍未勾。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts` → exit 1，1/2 failed，缺`checks.replays`；实现后exit 0，2/2。
+  - 红灯`pnpm exec vitest run test/controlled-replay-evidence.test.ts` → exit 1，failed suite / 0 tests，目标domain模块不存在；实现后exit 0，1 file / 6 tests。
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/controlled-replay.test.ts`在真实completed Plan fixture下 → exit 1，2/3 failed；修复后与Case 8、基础Workflow联合 → exit 0，3 files / 6 tests。覆盖真实workerd dynamic verification restart、completed/system与failed/Plan Item边界、20路CAS、approval过期、source digest和effect outbox投影。
+  - Node verifier覆盖strict/cross-field/example、success、额外control-plane/Action/PR/Deployment/current dispatch、approval过期/非法时间、GitHub分页、raw canary/1 MiB上限/token零传播及默认CLI exit 2。
+  - `pnpm run e2e:controlled-replay`（无opt-in）→ exit 2，固定`opt-in missing`；`DELIVERY_LOOP_CONTROLLED_REPLAY_E2E=1 pnpm run e2e:controlled-replay`（无真实配置）→ exit 2，固定`required replay configuration is incomplete`。两条均在manifest/network前结束，不是skip或成功。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 61 files / 207 tests、workerd 56 files / 298 tests、285个生产文件Secret scan和Markdown links全绿。workerd只有既有预期Workflow terminate清理输出，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round82-20260726-final` → exit 0，bundle 2517.64 KiB / gzip 424.48 KiB，双Workflow、双Queue、D1与四R2 binding识别成功，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check`均exit 0。
+- 勾选：Phase 3 controlled replay下强化本地workerd子项并新增勾选“真实外部证据验收契约”；父项与Phase 4/5真实PR/deployment replay子项保持未勾。fake GitHub、schema example、local workerd、dry-run与默认exit 2不能替代真实Cloudflare restart和GitHub inventory。
+- 决策沉淀：verifier不能补救不可达的生产路径，必须先从终态producer反查真实Plan状态；“测试构造可运行”不等于真实状态机可达。verification replay step必须位于外部effect之后且自身只读D1，才能让Cloudflare replay缓存语义真正阻止重复副作用。snapshot只证明重启前，current effect outbox集合再与snapshot精确相等才能证明重启后没有新增pending intent。completed Plan不是一般active authority，只为succeeded Run的current verification Item提供最窄replay例外。
+- 遗留：当前无Git remote，Wrangler D1 ID仍为占位值，Codex credential仍无效，也没有真实成功PR/deployment Run。需要用户提供试点repo/App/Actions、已部署当前Worker/Workflow/D1/R2、有效Agent credential和未过期replay approvals；按`docs/ControlledReplayE2E.md`完成真实Run后从verification Item replay，把仓库外manifest与三种用途隔离只读token注入受控环境运行`DELIVERY_LOOP_CONTROLLED_REPLAY_E2E=1 pnpm run e2e:controlled-replay`。只有exit 0、Cloudflare restart/step证据及Action/PR/Deployment URL入账后才能勾真实子项。
+
+## Round 83 — 2026-07-26
+- 目标：Phase 3 / 同一失败指纹连续2次或总Attempt达3次后blocked，真实飞书卡片展示已尝试路径与所需人工输入且不拼接Runner原始错误。本轮只补真实外部证据验收契约和live digest查询；真实tenant演练保持未完成。
+- 前置与权限：仅读取本地delivery-loop与Watt固定commit`476e3cd`，使用本地Node/workerd/D1 fake HTTPS response、文档检查与Wrangler dry-run。未访问/修改真实Cloudflare、飞书、GitHub、tool-bridge、业务日志或数据库，未制造真实Runner失败、发送/PATCH/GET真实卡片、部署、提交或使用真实Secret；按用户要求未更新llmdoc，未保存raw Runner/飞书正文、token、数据库行或截图。
+- Watt直接复用：`verify-failure-blocker-card-evidence.ts`直接复制项目内Round 59/81/82从Watt`scripts/e2e/lib.ts@476e3cd`迁入的显式opt-in、仓库外64 KiB manifest、0/1/2退出分层和固定安全错误骨架；HTTP继续直接复用既有Watt-derived有界流式reader。Watt generic Feishu sender没有failure fingerprint/retry scope/blocker ledger、strict card presentation或Message GET三方证据断言，对应业务核对为delivery-loop新增，没有虚构为Watt复制。
+- 动作：
+  - 审计确认Round 28已实现failure budget和Task/Run安全blocker projection，Round 58卡片v2也从同一D1 ledger投影固定path label/human prompt；缺口不是再次实现blocked，而是operations view只有presentation digest，无法把当前strict presentation与真实飞书card正文密码学绑定。
+  - 先加Node live verifier和workerd operations断言。首次Node聚焦exit 1、failed suite / 0 tests，明确缺`failure-blocker-card-evidence` domain；首次workerd聚焦exit 1、1/7 failed，明确`latest.renderedDigest`为undefined。随后实现，没有把既有本地功能重复写一遍。
+  - 卡片operations view现在从D1 latest immutable row经既有strict rehydrator和renderer重算canonical `renderedDigest`；响应仍只含ID/revision/digest/outbox/delivery安全标量，不返回presentation/card JSON、tenant/chat、正文或token。旧refresh exact三元组语义不变。
+  - 新增strict `FailureBlockerCardEvidenceManifestV1`：冻结Task/Run/repository、blocker ID/reason/fingerprint digest、阈值计数、Attempt ID/ordinal/path code、人工输入code/time，以及presentation/rendered digest/outbox/message/app/tenant/chat/time；attempt数、计数、唯一ID、递增ordinal和两类阈值交叉约束，schema没有Runner error、正文、raw响应或credential入口。
+  - 只读verifier用用途隔离token读取Task query、card operations view与飞书官方Message GET。Task blocker采用strict白名单schema并重验failure class、固定path label和human prompt；出现raw error/message/stack等额外字段即失败。卡片必须latest=delivered、outbox settled/attempt≥1/无error，真实message必须exact绑定interactive/non-deleted message/app/tenant/chat/time并与rendered digest一致。
+  - live卡片只能有一个`Blocker`段，正文由live reason/count、按Attempt顺序去重的固定path label和固定human prompt精确重建；测试额外把manifest与rendered digest一起改成raw error正文，仍以`blocker_content_mismatch`失败，证明manifest不是authority。
+  - 新增`pnpm run e2e:failure-blocker-card`、example manifest与`docs/FailureBlockerCardE2E.md`。命令默认或缺真实配置均在manifest/network前exit 2；exit 0只验已发生事实，不制造失败、不发送/PATCH卡片，也不能单独关闭真实tenant DoD。
+  - 同步Architecture、Proto、Security、Reference和DOD；只勾“真实外部证据验收契约”，父项与真实tenant外部事实保持未勾。
+- 验证：
+  - 红灯Node命令`pnpm exec vitest run test/failure-blocker-card-evidence.test.ts` → exit 1，failed suite / 0 tests，缺domain模块；实现后最终与card renderer联合 → exit 0，2 files / 9 tests。
+  - 红灯workerd命令`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-delivery-card.test.ts` → exit 1，1/7 failed，缺rendered digest；实现后单文件7/7，和failure policy/verification repair联合 → exit 0，3 files / 16 tests。
+  - `pnpm run e2e:failure-blocker-card`（无opt-in）→ exit 2，固定`opt-in missing`；设置opt-in但不提供真实配置 → exit 2，固定`required card configuration is incomplete`。两者均在manifest/network前结束，不是skip或成功。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 62 files / 213 tests、workerd 56 files / 298 tests、289个生产文件Secret scan和Markdown links全绿。workerd只有既有预期Workflow terminate清理输出，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round83-20260726-final` → exit 0，bundle 2518.31 KiB / gzip 424.60 KiB，双Workflow、双Queue、D1与四R2 binding识别成功，未部署。
+  - `pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。聚焦后lint曾因新测试未使用常量exit 1，删除该无用常量后通过；产品逻辑未放宽。
+- 勾选：Phase 3失败阈值DoD下新增并勾“真实外部证据验收契约”；父项和真实飞书tenant子项保持未勾。fake Message GET、schema-valid example、dry-run或默认exit 2都不能替代真实Runner阈值链路、bot消息与tenant权限事实。
+- 决策沉淀：presentation digest证明D1对象，rendered-card digest才绑定实际发送JSON；两者不能混用。manifest只提供预期安全索引，verifier必须回读三个live事实源并从固定目录重建Blocker文案。digest一致仍不足以授权自由文案，因此增加独立语义断言。规范已同步，llmdoc按用户要求不更新。
+- 遗留：当前没有已部署Worker、真实飞书测试tenant/app/chat、message GET scope/群membership或有效真实Runner/Action链路；Git remote仍为空，Wrangler D1 ID仍是占位值，Codex credential仍被provider拒绝。需要这些前置后按`docs/FailureBlockerCardE2E.md`分别完成同fingerprint两次与不同fingerprint第三次失败，记录仓库外manifest和短期用途隔离token，运行`DELIVERY_LOOP_FAILURE_BLOCKER_CARD_E2E=1 pnpm run e2e:failure-blocker-card`。只有exit 0、真实message/scope/membership和人工卡片核对入账后才能勾真实子项与父DoD。
+
+## Round 84 — 2026-07-26
+- 目标：Phase 2 / 飞书 API 限流/超时触发 outbox 重试，状态不回退，最终卡片可人工刷新修复。本轮补齐 retry history 安全投影、refresh lineage 查询和真实外部证据验收契约；真实飞书 tenant 压测/timeout/token refresh 保持未完成。
+- 前置与权限：仅读取本地delivery-loop与Watt固定commit`476e3cd`，使用本地Node/workerd/D1 fake Feishu fetch、文档检查与Wrangler dry-run。未访问/修改真实飞书、Cloudflare、GitHub、tool-bridge、业务日志或数据库，未发送/PATCH真实卡片、触发Action/Workflow、部署、提交或使用真实Secret；未保存raw response、token、卡片正文或数据库行，按用户要求未更新llmdoc。
+- Watt直接复用：`FencedOutboxProcessor`继续保留Watt-derived pending→delivering→settled lease语义；retry callback仅在本次D1 lease成功写回pending后触发。`verify-feishu-retry-evidence.ts`直接复用Watt `scripts/e2e/lib.ts@476e3cd`迁入的显式opt-in、仓库外64 KiB manifest、0/1/2退出和固定错误骨架；真实消息读取复用生产`FeishuDeliveryCardApiClient`与同一Watt-derived token cache，不复制第二套Feishu正文解析。Watt没有D1 retry ledger、delivery revision/refresh lineage或三方业务断言，这些是delivery-loop新增。
+- 动作：
+  - 先写红灯：workerd retry测试因`feishu_delivery_card_retry_observations`表不存在exit 1；Node verifier suite因domain模块不存在failed suite / 0 tests，确认现有`outbox.last_error_code`在最终成功后不足以证明曾发生限流/timeout/token refresh。
+  - 新增migration `0053_feishu_card_retry_observations.sql`：只保存outbox/run/presentation、连续attempt、固定Feishu retry error和时间；`(outbox_id, attempt_count)`唯一，FK/CHECK/immutable trigger拒绝换绑定、未知错误和UPDATE，无HTTP status、上游msg、异常、body或token列。
+  - 扩展通用fenced outbox retry callback，只有拥有lease且`delivering→pending`更新成功才调用；callback失败不改变重试语义。Feishu processor校验固定payload/kind/error后以canonical stable observation ID `INSERT OR IGNORE`写入，token-invalid被记录为可审计的refresh触发事实。
+  - operations card view继续只投影安全标量，新增最多100条按时间/observation ID排序的Run级retry history，以及当前refresh request的expected snapshot、next presentation/digest/outbox/delivery state；旧latest/delivered/rendered digest和refresh POST权限语义不变。查询发现孤儿、非法时间/ID或refresh缺失时fail-closed。
+  - 新增strict `FeishuRetryEvidenceManifestV1`与只读verifier：要求同一初始presentation/outbox的attempt连续，至少覆盖rate-limit、timeout、token-invalid三类；初始retry前后revision/message不回退；refresh必须绑定current expected snapshot并产生新presentation/outbox；最终operations settled/delivered和真实Feishu Message GET的app/tenant/chat/time/card digest必须完全匹配。manifest不能覆盖live历史，raw响应/token不进错误或summary。
+  - 新增`pnpm run e2e:feishu-retry`、example manifest与`docs/FeishuRetryE2E.md`；默认或配置不完整均在manifest/network前exit 2，不执行retry、refresh、send、PATCH或token refresh。
+  - 同步DOD、Proto、Architecture、Security、Reference；只勾本地D1/workerd与外部验收契约子项，真实tenant子项保持未勾。
+- 验证：
+  - 红灯`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-delivery-card.test.ts` → exit 1，1/7 failed，缺retry observation表；实现后exit 0，7/7，覆盖rate-limit/timeout history、immutable trigger、refresh lineage。
+  - 红灯`pnpm exec vitest run test/feishu-retry-evidence.test.ts` → exit 1，failed suite / 0 tests，缺domain模块；实现后exit 0，1 file / 5 tests，覆盖strict/example、三方success、历史/refresh/message漂移、raw/token零传播和CLI入口。
+  - 聚焦`pnpm exec vitest run test/feishu-retry-evidence.test.ts test/failure-blocker-card-evidence.test.ts` → exit 0，2 files / 11 tests；workerd `feishu-delivery-card + feishu-card-action + outbox-routing + outbox-dead-letter` → exit 0，4 files / 24 tests。
+  - `pnpm run e2e:feishu-retry`（无opt-in）→ exit 2，固定`opt-in missing`；设置opt-in但无真实配置 → exit 2，固定`required retry configuration is incomplete`。两条均在manifest/network前结束，不是skip或成功。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 63 files / 218 tests、workerd 56 files / 298 tests、294个生产文件Secret scan和Markdown links全绿。workerd只有既有预期Workflow terminate清理输出，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round84-20260726-final` → exit 0，bundle 2523.67 KiB / gzip 425.50 KiB，双Workflow、双Queue、D1与四R2 binding识别成功，未部署。
+  - `pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。
+- 勾选：Phase 2飞书限流/超时DoD下新增并勾“真实外部证据验收契约”；父项与真实飞书tenant事实保持未勾。fake Feishu、schema example、dry-run和默认exit 2不能替代真实5 QPS/230020或230049、网络timeout、token refresh、群内唯一当前卡和人工refresh事实。
+- 决策沉淀：`last_error_code`是当前状态，不是历史证据；retry observation必须在lease-owned pending CAS之后写入且允许best-effort失败。retry与refresh仍是两种恢复语义：前者复用原outbox/identity，后者只从current snapshot产生新immutable epoch。真实verifier使用生产消息adapter而不是复制正文解析，避免协议漂移；manifest只做索引，三方live事实才是验收真源。
+- 遗留：当前无真实飞书tenant/app/chat、5 QPS或平台错误码权限、HTTP timeout注入能力、message GET scope/群membership，也没有已部署Worker；Git remote为空、Wrangler D1 ID为占位值、Codex credential被provider拒绝。需要用户提供受控tenant和部署前置后，按`docs/FeishuRetryE2E.md`完成限流/timeout/token refresh与业务拒绝→operations refresh，记录仓库外manifest、平台安全ID、D1 retry/refresh摘要和最终Message链接，再运行`DELIVERY_LOOP_FEISHU_RETRY_E2E=1 pnpm run e2e:feishu-retry`。只有exit 0和人工群内唯一卡核对入账后才能勾真实子项与父DoD。
+
+## Round 85 — 2026-07-26
+- 目标：Phase 4 / PR 创建必须由 GitHub webhook/API 外部事实核对，Agent 自报 PR URL、number 或 status 不能推进 `pull_request_open`。本轮补齐 Case 8 安全 observation 投影、仓库外 strict manifest、只读 verifier 和真实验收手册；真实 GitHub App/PR/webhook 外部事实保持未完成。
+- 前置与权限：只使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd 测试、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、tool-bridge、日志或业务数据库，未创建/修改真实 PR、未发送 webhook、未部署、未提交代码或使用真实 Secret；未在本记录保存 token、PR 正文、raw webhook/API response、Runner 输出或数据库行，按用户要求未更新 llmdoc。
+- Watt 直接复用：`scripts/verify-github-pull-request-evidence.ts`沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定 0/1/2 退出和固定安全错误输出；HTTP 读取复用本项目已有 Watt-derived 1 MiB 流式上限。Watt 没有 publication ledger、GitHub webhook/API observation、Case 8 安全投影或 PR body/head 业务绑定；这些是 delivery-loop 新增，没有复制第二套正文解析，也没有把 Agent URL 当作事实。
+- 动作：
+  - 先审计现有 publication/outbox、HMAC `pull_request` webhook、GitHub API reconciliation 和 Case 8 查询，确认 Case 8 原来没有安全公开两类 PR observation；先写红灯测试，分别因缺 `src/domain/github-pull-request-evidence.ts` 和 `checks.pullRequestObservations` 失败。
+  - 新增 strict `GitHubPullRequestEvidenceManifestV1`，冻结 Run/repository、verified publication、webhook applied fact 与 API applied fact，并做 repository/base-head/time/digest 交叉约束；schema 禁止 raw body、payload、REST response 和 token 字段。
+  - 新增只读 verifier：读取 `GET /v1/runs/:runId/audit`，核对 `pull_request` publication 和两条 applied observation；再读取 GitHub `GET /repos/:owner/:repo/pulls/:number`，核对 open/draft、URL/number、base/head repository/ref/SHA 与 canonical body digest。所有响应 1 MiB 有界读取，错误只返回固定 code，不传播 raw response 或 token。
+  - Case 8 新增 `answers.checks.pullRequestObservations` 白名单投影，仅包含 source kind/id、publication、repo、PR number、fact digest、processing state、ignore reason 和 external/observed/processed time；不返回 webhook/REST 正文、PR body、payload、dedupe key 或 token。
+  - 新增 `pnpm run e2e:github-pr`、schema example 和 [`docs/GitHubPullRequestE2E.md`](docs/GitHubPullRequestE2E.md)，说明真实 Draft PR、signed opened webhook、API reconciliation、manifest、退出码和安全边界。默认或缺配置均在 manifest/network 前 exit 2；exit 0 只证明已发生 live facts，不执行创建/修改 PR。
+- 验证：
+  - `pnpm run typecheck` → exit 0；`pnpm exec vitest run test/github-pr-evidence.test.ts` → exit 0，1 file / 5 tests，覆盖 strict/example、publication+webhook+API+GitHub success、缺 fact、stale head、body drift、raw/token 不传播和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts` → exit 0，1 file / 2 tests，覆盖安全 `pullRequestObservations` 投影。
+  - `pnpm run e2e:github-pr`（无 opt-in）→ exit 2，固定 `github-pr-e2e: opt-in missing`；设置 opt-in 但缺配置 → exit 2，固定 `github-pr-e2e: required PR configuration is incomplete`。两条路径都在 manifest/network 前结束。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 64 files / 223 tests、workerd 56 files / 298 tests、298 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round85-20260726-final` → exit 0，bundle 2525.74 KiB / gzip 425.85 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+  - `pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+- 勾选：Phase 4 PR 创建项新增并勾选“真实外部证据验收契约”；真实试点 GitHub App 创建、signed webhook、API 补偿、重放不重复 PR 和父项仍保持未勾。fake GitHub、schema example、dry-run 或默认 exit 2 不能替代真实外部事实。
+- 决策沉淀：publication 是控制面待发布输入，`created_unverified` 不是 PR 成功；Case 8 observation 是安全审计索引，GitHub API/webhook 与控制面三方事实才是验收真源。manifest 只能索引预期绑定，不能覆盖 live 状态；PR body digest 必须从 live GitHub response 重算。Watt 的通用 E2E 门禁可以直接复用，PR 业务 identity/reconciliation 必须保留 delivery-loop 自己的 strict schema。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker/真实 GitHub App、试点 repo 或 PR/webhook/API 外部记录。需要用户提供受控 GitHub 组织/repo、App 安装和部署前置后，按 [`docs/GitHubPullRequestE2E.md`](docs/GitHubPullRequestE2E.md) 完成真实 Draft PR 与 webhook/API 补偿，保存仓库外 manifest、PR/Actions/控制面安全链接并运行 `DELIVERY_LOOP_GITHUB_PR_E2E=1 pnpm run e2e:github-pr`；只有 exit 0 和人工核对入账后才能勾真实子项与父项。
+
+## Round 86 — 2026-07-26
+- 目标：Phase 4 / `Review comment 绑定 PR head SHA 并创建 review_fix attempt；已过时评论不误改新代码`。本轮补齐 Case 8 review observation 安全投影、仓库外 applied/stale manifest、GitHub Review/PR/Action/ref/compare/check-runs 只读 verifier；真实真人 review、Action 修复和 required checks 外部事实保持未完成。
+- 前置与权限：只使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd 测试、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、tool-bridge、日志或业务数据库，未提交代码、未创建真实 review/Action/PR、未部署或使用真实 Secret；未保存 review 正文、raw webhook/API response、R2 内容、token、Runner 输出或数据库行，按用户要求未更新 llmdoc。
+- Watt 直接复用：`scripts/verify-github-review-feedback-evidence.ts`沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定 0/1/2 退出、安全错误输出；HTTP 读取复用本项目已有 Watt-derived 1 MiB 流式上限。Watt 没有 head-bound review feedback、stale-head projector、review_fix lineage 或 GitHub Review/compare/check 断言；这些是 delivery-loop 新增，没有复制第二套 review 正文解析。
+- 动作：
+  - 先写红灯：`test/github-review-evidence.test.ts` 初始 failed suite / 0 tests，缺 `src/domain/github-review-feedback-evidence.ts`；Case 8 测试新增 `checks.reviewObservations` 断言后首次 1/2 failed，报告明确缺该投影。
+  - 新增 strict `GitHubReviewFeedbackEvidenceManifestV1`，同时冻结一条 `changes_requested` applied review、一条 `stale_head` ignored review 和 replacement Attempt/Action/checks；交叉约束 reviewed/result SHA、prior/review_fix Attempt、branch、时间和唯一 check 名称，禁止 raw review body、payload、REST response、R2 ref 和 token。
+  - Case 8 新增 D1-only `reviewObservations` 查询与 fail-closed 校验：只公开 delivery/review/publication ID、repository/PR number、reviewed head、payload/body digest、processing state、固定 reason、时间以及 applied feedback/review_fix lineage 的安全标量；`received`、partial lineage、重复 source、非法 digest/time/URL 不生成部分报告。
+  - 新增 verifier 与 `pnpm run e2e:github-review`：先核对 Case 8 publication、applied/stale review 和 prior/replacement Attempt，再读取 GitHub Review API 重算 body digest/commit/head，读取 PR 当前新 head、Action run、branch ref、compare fast-forward 和 result head check-runs；发现 API 下一页或响应超限即 fail-closed。verifier 只读，不创建 review、Action、branch 或修改状态。
+  - 新增 [`docs/GitHubReviewE2E.md`](docs/GitHubReviewE2E.md)，同步 DOD、Proto、Architecture、Security、Reference，真实外部子项继续保持未勾。
+- 验证：
+  - 红灯 `pnpm exec vitest run test/github-review-evidence.test.ts` → exit 1，failed suite / 0 tests；实现后 `pnpm exec vitest run test/github-review-evidence.test.ts` → exit 0，1 file / 5 tests，覆盖 strict/example、applied+stale success、review/body/head drift、Action/ref/compare/check failure、raw/token 零传播和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts` → exit 0，1 file / 2 tests；`github-review-feedback + case8-audit-report` → exit 0，2 files / 7 tests，既有 20 路 review delivery/CAS/R2/Runner 契约无回归。
+  - `pnpm run e2e:github-review`（无 opt-in）→ exit 2，固定 `github-review-e2e: opt-in missing`；设置 opt-in 但缺配置 → exit 2，固定 `github-review-e2e: required review configuration is incomplete`。两条路径均在 manifest/network 前结束。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 65 files / 228 tests、workerd 56 files / 298 tests、302 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round86-20260726-final` → exit 0，bundle 2530.39 KiB / gzip 426.51 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+- 勾选：Phase 4 review comment 项新增并勾选“真实外部证据验收契约”；真实真人 review、stale review、Action 修复、new SHA、required checks 和父项仍保持未勾。fake GitHub、schema example、dry-run 或默认 exit 2 不能替代真实外部事实。
+- 决策沉淀：review applied 与 stale ignored 是两条不同外部事实；只证明 review body 或 Action 成功不足，必须同时证明 stale review 没有 feedback/Attempt/Action，applied review 的 replacement branch 只从 reviewed SHA fast-forward 到新 SHA，并由 GitHub API 核对 Action/ref/compare/check。Case 8 只做安全索引，manifest 不能覆盖 live projection；Watt 只提供 E2E 门禁原语，head-bound review 业务 identity 保持本项目 strict 实现。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker、真实 GitHub App/试点 repo、真人 review、Action run 或 required checks 外部记录。需要用户提供受控 GitHub 组织/repo、App 安装和部署前置后，按 [`docs/GitHubReviewE2E.md`](docs/GitHubReviewE2E.md) 完成 exact-head review、stale-head review 和新 head checks，保存仓库外 manifest、review/PR/Actions/控制面安全链接并运行 `DELIVERY_LOOP_GITHUB_REVIEW_E2E=1 pnpm run e2e:github-review`；只有 exit 0 和人工核对入账后才能勾真实子项与父项。
+
+## Round 87 — 2026-07-26
+- 目标：Phase 4 / `review/补充上下文需要改变计划正文、base SHA 或 effect 时创建新 Plan 版本并使旧审批过期，不原地改写 active plan`。本轮补齐三类 source 的 Case 8 安全 projection、统一仓库外 manifest/verifier 和真实验收手册；真实 GitHub/Feishu/Meegle source 与外部编排保持未完成。
+- 前置与权限：只使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd 测试、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、Meegle、tool-bridge、日志或业务数据库，未创建真实 Plan/revision/approval/Action、未部署、未提交代码或使用真实 Secret；未保存 Task/PRD/context/review 正文、R2 内容、raw API response、token、Runner 输出或数据库行，按用户要求未更新 llmdoc。
+- Watt 直接复用：`scripts/verify-plan-revision-evidence.ts`沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定 0/1/2 退出、安全错误输出；HTTP 读取复用本项目已有 Watt-derived 1 MiB 流式上限。Watt 没有 PlanRevision、source lineage、approval invalidation、GitHub ref/Review/compare 或 Feishu/Meegle identity 断言；这些是 delivery-loop 新增。
+- 动作：
+  - 先审计现有 `PlanRevisionStore`、`github_base_observations`、`github_review_feedbacks`、`supplemental_context_revisions`、`approval_invalidations` 与 Case 8，确认 D1 已有状态机，但 Case 8 没有安全公开 revision/source-specific lineage；先写红灯，Node suite failed suite / 0 tests 缺 domain，Case 8 新增 `checks.planRevisions` 后首次 1/2 failed。
+  - 新增 strict `PlanRevisionEvidenceManifestV1`，source union 覆盖 `review_feedback`、`base_update`、`supplemental_context`；冻结 revision/analysis Attempt、prior superseded Plan、new active `version + 1` Plan、body/base/effects change flags、旧 approvals invalidation 和新 human/provider approvals。schema 禁止正文、R2 ref/content、raw payload/response 和 token。
+  - Case 8 新增 D1-only `checks.planRevisions` 查询，按 source kind join review/base/context authoritative tables；输出 canonical source digest、base ref/compare digest、review body/commit digest 或 supplemental event/task revision lineage。对 source 缺失、digest drift、partial Plan/lineage、非法 URL/time/ID 和 analyzing/rejected shape 做 fail-closed 校验。
+  - 新增只读 verifier 与 `pnpm run e2e:plan-revision`：先核对 Case 8 revision、source、prior/new Plan、旧/新 approval 与 analysis Attempt，再读取 GitHub Action；base source 重新核对 ref/compare 与 canonical digest，review source 重算 Review body digest/commit/head，supplemental source 保留 Feishu/Meegle 验签与 identity 的人工核对边界。verifier 不创建 revision、Plan、approval、Action 或 source fact。
+  - 新增 [`docs/PlanRevisionE2E.md`](docs/PlanRevisionE2E.md)，同步 DOD、Proto、Architecture、Security、Reference；真实 source 外部子项继续保持未勾。
+- 验证：
+  - 红灯 `pnpm exec vitest run test/plan-revision-evidence.test.ts` → exit 1，failed suite / 0 tests，缺 domain 模块；实现后 → exit 0，1 file / 5 tests，覆盖 strict/example、base source success、Plan/approval drift、GitHub ref/Action failure、raw/token 零传播和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts` → exit 0，1 file / 2 tests；`plan-revision + github-base-observation + supplemental-context-revision + case8-audit-report` → exit 0，4 files / 13 tests，既有 D1 CAS、source digest、R2/context 和 approval invalidation 契约无回归。
+  - `pnpm run e2e:plan-revision`（无 opt-in）→ exit 2，固定 `plan-revision-e2e: opt-in missing`；设置 opt-in 但缺配置 → exit 2，固定 `plan-revision-e2e: required revision configuration is incomplete`。两条路径均在 manifest/network 前结束。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 66 files / 233 tests、workerd 56 files / 298 tests、306 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round87-20260726-final-v2` → exit 0，bundle 2543.96 KiB / gzip 428.58 KiB；最终 verifier approval-set 收紧后仍识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+- 勾选：Phase 4 Plan revision 项新增并勾选“真实外部证据验收契约”；真实 GitHub review/base、Feishu/Meegle 验签/identity、analysis Action 和新审批外部记录仍保持未勾。fake API、schema example、dry-run 或默认 exit 2 不能替代真实外部事实。
+- 决策沉淀：revision source 是 authority，Plan/approval 是其结果；不能先接受 Agent Plan 再补 source。验收必须同时证明旧 Plan/approval 已失效和新 Plan/approval exact 绑定，单独的 Plan digest 或 Action success 都不足。Watt 只提供门禁/读取原语，三类 source 的业务 identity 与外部事实分层保留在 delivery-loop。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker/真实 GitHub App、Feishu/Meegle tenant、Action/Plan revision/approval 外部记录。需要用户提供受控平台前置后，按 [`docs/PlanRevisionE2E.md`](docs/PlanRevisionE2E.md) 分别完成 review/base/context 三类真实 source、Plan replacement、审批与 Action 证据，并运行 `DELIVERY_LOOP_PLAN_REVISION_E2E=1 pnpm run e2e:plan-revision`；只有 exit 0、平台签名/identity 人工核对和链接入账后才能勾真实子项与父项。
+
+## Round 88 — 2026-07-26
+- 目标：Phase 4 / `base branch` 前进导致冲突时不盲目覆盖；安全可重放则 rebase 后重验，否则 `blocked` 请求人工。本轮补齐 Case 8 的 rebase/conflict 安全投影、passed/blocked 双路径仓库外证据 manifest/verifier 和可重跑 CLI；真实 GitHub push webhook/audit、Action、branch 与 compare 外部事实仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cd`、Node fake HTTPS、D1/workerd 测试、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub/Cloudflare/飞书/Meegle/tool-bridge/日志/业务数据库，未创建或推送真实 branch/Action/PR，未部署、未提交代码、未调用模型或使用真实 Secret；不保存 diff、Git 输出、raw API/webhook、token、Task/PRD/Runner 正文或数据库行，按用户要求不更新 llmdoc。
+- Watt 直接复用：`scripts/verify-base-rebase-evidence.ts`直接沿用 Watt `476e3cd` 的显式 opt-in、仓库外 64 KiB manifest、固定 0/1/2 退出和安全错误输出；verifier 的 1 MiB 流式响应上限复用本项目此前从 Watt E2E/tool-bridge 迁入的有界读取纪律。Watt 没有 GitHub rebase Runner、base conflict ledger、branch ancestry 或 Case 8 lineage，故没有虚构可复制的业务代码。
+- 动作：
+  - 审计 `github-base-observation-reconciler`、`github-base-conflict-store`、`base-rebase-attempt-store`、`BaseRebaseRunner`、migrations 0022/0024/0025 和 Case 8，确认控制面已有 D1 状态机但缺少外部 rebase/conflict 证据索引。
+  - Case 8 新增 `checks.baseRebases` / `checks.baseConflicts` 白名单投影：只公开 rebase/conflict ID、revision/Plan/Item/Attempt、old/new/base/merge-base SHA、branch/head、status、suite/GitHub run 标量、reference/comparison/source digest、cancel/dispatch outbox 与固定 blocker/human action；对孤儿、非法状态、partial terminal、Run/Plan version 漂移 fail-closed，不返回 diff、Git stderr、raw provider response 或 token。
+  - 新增 strict `BaseRebaseEvidenceManifestV1`，以 `outcome=passed|blocked` 区分纯 fast-forward replay 和人工阻断。passed 要求新 base/source/target ref、`oldBase...newBase` 与 `sourceHead...resultHead` compare、Action、targeted→required suite/Evidence、target branch fast-forward 且 `force=false`；blocked 要求 immutable conflict、`manual_rebase`、唯一 cancel、无目标 Action、target branch 404 和零新 execution/evidence side effect。
+  - 新增只读 `verify-base-rebase-evidence.ts` / `pnpm run e2e:base-rebase`、schema example 与 [`docs/BaseRebaseE2E.md`](docs/BaseRebaseE2E.md)。manifest 最大 64 KiB、token 只进入对应 Authorization header；GitHub REST 只能证明当前 ref/ancestry/Action inventory，历史 force-push 与 blocked `pushEvents=0` 明确留给真实 push webhook/组织 audit 人工核对。
+  - 同步 `DOD.md`、`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`；只勾选 Phase 4 该项的“真实外部证据验收契约”，父项与真实试点外部事实保持未勾。
+- 验证：
+  - `pnpm run typecheck` → exit 0；`pnpm run lint` → exit 0。
+  - `pnpm exec vitest run test/base-rebase-evidence.test.ts test/base-rebase-runner.test.ts` → exit 0，2 files / 5 tests；覆盖 strict/example、passed fast-forward/no-force、blocked no-Action/no-target、GitHub/action/config drift。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts test/workflow/base-rebase-attempt.test.ts test/workflow/github-base-observation.test.ts` → exit 0，3 files / 9 tests；Case 8 投影和既有观察/调度/Runner 状态机无回归。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts` → exit 0，56 files / 298 tests；workerd 仅输出既有 Workflow terminate 清理信息，无失败 suite。
+  - `pnpm run e2e:base-rebase`（无 opt-in）→ exit 2，固定 `base-rebase-e2e: opt-in missing`；设置 opt-in 但缺配置 → exit 2，固定 `base-rebase-e2e: required rebase configuration is incomplete`，均在 manifest/network 前结束。
+  - `pnpm run verify:secrets` → exit 0，310 files；`pnpm run verify:docs` → exit 0；`git diff --check` → exit 0。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round88-20260726-final-v2` → exit 0，bundle 2554.12 KiB / gzip 430.28 KiB，识别双 Workflow、Queue、D1 与四 R2 binding，未部署。
+- 勾选：Phase 4 base-rebase/conflict 项新增并勾选“真实外部证据验收契约”；真实 GitHub Action、branch push/no-force webhook、compare、conflict zero-push audit 和人工 `manual_rebase` 仍保持未勾。fake API、schema example、dry-run 或默认 exit 2 不能替代真实外部事实。
+- 决策沉淀：base fast-forward observation、rebase result、GitHub Action/branch ref、verification Evidence 与 conflict blocker 是五类独立事实，不能由 Runner 自报合并成成功。Case 8 只做安全索引；manifest 不能覆盖 live projection。当前仓库没有 push webhook ledger，因此 `force=false` 与零 push 只能作为真实试点的人工外部边界，不能过度声称已完成。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker/真实 GitHub App/试点 repo、Action/branch push/audit 或有效 Agent credential。需要用户提供受控试点前置后，按 [`docs/BaseRebaseE2E.md`](docs/BaseRebaseE2E.md) 运行一次 passed rebase 和一次 blocked conflict，记录仓库外 manifest、Action/branch/compare/控制面安全链接以及 push audit；只有 verifier exit 0 和人工核对入账后才能勾真实子项与父项。
+
+## Round 89 — 2026-07-26
+- 目标：Phase 5 / `required checks` 未完成或失败、review 不足、base 非最新、approval 过期时 merge 全部被拒。本轮补齐 Case 8 merge-gate 安全投影、ready/rejected 双路径外部证据 manifest/verifier 和可重跑 CLI；真实 GitHub branch rules/check/review/base/approval 与零 merge mutation 仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd 测试、文档检查与 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、Meegle、tool-bridge、日志或业务数据库，未创建真实 merge/PR/Action、未部署、未提交代码或使用真实 Secret；未保存 raw REST/webhook、PR/review 正文、token、Agent 输出或数据库行，按用户要求未更新 llmdoc。
+- Watt 直接复用：`scripts/verify-merge-gate-evidence.ts`沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定安全错误与 0/1/2 退出；verifier 的控制面有界读取和生产 GitHub adapter 的 response 上限/分页 fail-closed 纪律复用现有 Watt-derived 模式。Watt 没有 GitHub merge fact、branch rules/check/review 聚合或 merge gate ledger，因此这些业务绑定保持 delivery-loop 自有实现，没有复制第二套 GitHub parser。
+- 动作：
+  - 修复并冻结 `MergeGateEvidenceManifestV1`：至少一条 `ready_to_merge` 与五条拒绝 case（`required_checks_incomplete`、`required_checks_failed`、`review_insufficient`、`base_not_latest`、`approval_required`），每条绑定完整 normalized fact、observation/evaluation/decision、approval（如有）和 `noMergeEffect={mergeOutboxes:0,merges:0}`；新增 schema example。
+  - 新增只读 `verifyMergeGateEvidence` 与 `pnpm run e2e:merge-gate`。先读 `GET /v1/runs/:runId/audit` 的 `checks.mergeGates`，再调用生产 `GitHubMergeGateApiClient` 读取 PR/base/rules/check-runs/statuses/reviews 并重算 canonical fact；ready/rejected 两类都核对 base/head/review/check/approval 与零 merge changes、zero merge outbox。projection、live fact、merge effect、raw/token drift 均 fail-closed。
+  - Case 8 新增完整 D1 rejected merge-gate publication/draft、observation、normalized required check 与 evaluation fixture，证明安全 projection 可被真实查询读取；既有 merge gate workerd 20 路 CAS/zero-effect 状态机保持不变。
+  - 强化生产 GitHub merge-gate adapter：拒绝 `Link: rel=next` 分页响应，使用 2 MiB `content-length`/流式读取上限后再解析 JSON；新增对应 API 负向测试。
+  - 顺手把既有 rollback workerd fixture 的 `NOW` 改为“当前时间前 5 分钟”，避免真实 wall clock 超过固定 30 分钟 lease 后导致全量回归出现与本轮无关的 403/409；业务契约未改变。
+  - 新增 [`docs/MergeGateE2E.md`](docs/MergeGateE2E.md)，同步 `DOD.md`、`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`；仅勾选 Phase 5 该项的“真实外部证据验收契约”子项，父项与真实试点子项保持未勾。
+- 验证：
+  - `pnpm exec vitest run test/merge-gate-evidence.test.ts test/github-merge-gate-api.test.ts` → exit 0，2 files / 9 tests；覆盖 strict/example、ready + 五拒绝、Case 8/live fact/effect drift、GitHub 分页/超限、raw/token 零传播和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts` → exit 0，1 file / 2 tests；完整 merge-gate D1 projection 与原八栏审计无回归。
+  - `pnpm run e2e:merge-gate`（无 opt-in）→ exit 2，固定 `merge-gate-e2e: opt-in missing`；设置 opt-in 但缺配置 → exit 2，固定 `merge-gate-e2e: required merge gate configuration is incomplete`。两条路径都在 manifest/network 前结束。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 68 files / 242 tests、workerd 56 files / 298 tests、314 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round89-20260726-final-v3` → exit 0，bundle 2563.54 KiB / gzip 432.22 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+- 勾选：Phase 5 merge gate 项新增并勾选“真实外部证据验收契约”；真实 branch rules、required checks、review、base advance、approval expiry 和“无 merge 请求”外部事实仍保持未勾。fake GitHub、schema example、Case 8、dry-run 或默认 exit 2 不能替代真实试点证据。
+- 决策沉淀：`ready_to_merge` 只是资格 decision，不是 merge effect；rejected evaluation 与 ready decision 都必须证明 zero merge effect。Case 8 是安全索引，manifest 不能覆盖 live projection；所有 live GitHub fact 必须由同一生产 adapter 重算。Watt 只提供 E2E 门禁原语，merge gate 领域事实、D1 ledger 与身份/Plan/approval 绑定仍属于 delivery-loop。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker/真实 GitHub App、试点 repo 或有效控制面/GitHub 只读凭证。需要用户提供受控试点前置后，按 [`docs/MergeGateE2E.md`](docs/MergeGateE2E.md) 从真实 branch rules/PR checks/reviews/base/approval 生成一条 ready 和五条 rejection manifest，确认 GitHub API/Actions/控制面均无 merge mutation，再以 `DELIVERY_LOOP_MERGE_GATE_E2E=1 pnpm run e2e:merge-gate` exit 0 和人工审计链接入账后才能勾真实子项与父项。
+
+## Round 90 — 2026-07-26
+- 目标：Phase 5 / `Agent/PR` 作者不能批准自己的 merge/production effect；审批主体由 GitHub/飞书身份映射核对。本轮补齐 Case 8 identity approval/rejection 安全投影、GitHub/Feishu accepted/self-rejected 四路径仓库外 manifest/verifier 与可重跑 CLI；真实 GitHub signed review、飞书 signed event/tenant/open_id 与外部零 effect 仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd 测试、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、Meegle、tool-bridge、日志或业务数据库，未创建真实 approval/merge/deployment、未部署、未提交代码或使用真实 Secret；未保存 raw event/review、PRD/Task 正文、token、Agent 输出或数据库行，按用户要求未更新 llmdoc。
+- Watt 直接复用：`scripts/verify-identity-approval-evidence.ts`沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定安全错误与 0/1/2 退出；HTTP 有界读取继续复用 Watt-derived 模式；GitHub reviewer actor/head 读取直接复用本项目生产 `GitHubMergeGateApiClient`，没有复制第二套 PR/review parser。Watt 的 `identity_mappings/channel_identities/IdentityMapper` 已在前轮直接迁移；Feishu provider fact 仍保留 delivery-loop 的 signed adapter 边界。
+- 动作：
+  - 新增迁移 `0054_identity_rejection_decision.sql` 与 `0055_identity_rejection_binding_snapshot.sql`，拒绝记录冻结 decision、approver/author channel、principal、login、roles digest 和 `separation_verified`；仅安全标量，不保存原始 provider payload。
+  - `Case8AuditReportStore` 新增 `checks.identityApprovals`：accepted 行必须有 approval/lineage、人类角色与 separation；rejected 行必须有 rejection ID、固定 identity reason、decision 和 zero binding；孤儿、digest/channel/时间/状态漂移 fail-closed。
+  - 新增 strict `IdentityApprovalEvidenceManifestV1`、`verifyIdentityApprovalEvidence` 与 `pnpm run e2e:identity-approval`。manifest 固定 GitHub merge accepted/self-rejected、Feishu production accepted/self-rejected 四类 case；accepted 要求 `human + approve:<effect>`、approver/author 分离和 exact lineage，rejected 要求 self/task-actor reason、无 approval/lineage，四条路径均 zero merge/production effect。
+  - GitHub verifier 通过生产只读 adapter 读取 exact PR 与 review actor/head；Feishu source 只核对控制面 metadata，真实签名/tenant/open_id 外部事实明确留给真实试点。新增 schema example 与 [`docs/IdentityApprovalE2E.md`](docs/IdentityApprovalE2E.md)，同步 `DOD.md`、`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`。
+  - 为使 dry-run 在当前环境稳定可重跑，`wrangler.jsonc` 显式设置 `send_metrics=false`；不改变 Worker 业务逻辑或部署资源。
+- 验证：
+  - `pnpm exec vitest run test/identity-approval-evidence.test.ts` → exit 0，1 file / 4 tests；覆盖 strict/example、GitHub/Feishu accepted/self-rejected、projection/GitHub/effect drift、raw/token 零传播和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts test/workflow/github-merge-gate.test.ts test/workflow/production-deployment.test.ts test/workflow/identity-mapper.test.ts` → exit 0，4 files / 53 tests；Case 8 identity projection、merge/production identity CAS 与 Watt-derived mapper 无回归。
+  - `pnpm run e2e:identity-approval`（无 opt-in）→ exit 2，固定 `identity-approval-e2e: opt-in missing`；设置 opt-in 但缺配置 → exit 2，固定 `identity-approval-e2e: required identity configuration is incomplete`。两条路径均在 manifest/network 前结束。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 69 files / 246 tests、workerd 56 files / 298 tests、320 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `CI=1 pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round90-20260726-final-v2` → exit 0，bundle 2573.40 KiB / gzip 433.60 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`pnpm run verify:secrets`、`git diff --check` → exit 0。
+- 勾选：Phase 5 identity/self-approval 项新增并勾选“真实外部证据验收契约”；真实 GitHub/飞书签名、login/open_id mapping、真人/PR author/Agent 三方 decision 和外部 zero-effect 仍保持未勾。fake API、schema example、Case 8、dry-run 或默认 exit 2 不能替代真实外部事实。
+- 决策沉淀：rejected identity fact 也必须持久化安全 binding snapshot，否则“无 approval 行”无法证明自批曾被拒；roles 正文不入库，只保存 canonical digest。GitHub reviewer API 可补强 actor/head，但不能替代 signed webhook；Feishu identity 必须继续以验签 adapter 与实时 mapping 为真源。Watt 复用范围仍限于 E2E/identity 原语，业务 approval lineage 与 rejection ledger 属于 delivery-loop。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker、真实 GitHub App/试点 repo、飞书 tenant 或有效只读凭证。需要用户提供受控前置后，按 [`docs/IdentityApprovalE2E.md`](docs/IdentityApprovalE2E.md) 真实产生 GitHub reviewer accepted/self-rejected 与 Feishu production accepted/self-rejected 事件，保存 signed delivery、D1 identity binding、外部 PR/Environment/zero-effect 安全链接，再以 `DELIVERY_LOOP_IDENTITY_APPROVAL_E2E=1 pnpm run e2e:identity-approval` exit 0 和人工审计入账后才能勾真实子项与父项。
+
+## Round 91 — 2026-07-26
+- 目标：Phase 5 / 测试部署使用独立 OIDC 角色和 Environment，不能访问生产 Secret；部署结果与 URL 作为独立 Evidence。本轮补齐 Case 8 test deployment/OIDC/双源观察安全投影、测试部署仓库外 evidence manifest/verifier/CLI 与 deployment-triggered Action 只读核对；真实 GitHub/云 OIDC/Environment/Secret 外部事实仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd 测试、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、Meegle、tool-bridge、日志或业务数据库，未创建真实 Deployment/Action/Environment、未部署、未提交代码或使用真实 Secret；manifest/日志未保存 raw webhook/REST、OIDC/JWT、Secret、Task/PRD 正文或数据库行，按用户要求不更新 llmdoc。
+- Watt 直接复用：`scripts/verify-test-deployment-evidence.ts`沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定安全错误与 0/1/2 退出；verifier 的控制面/HTTP 有界读取和 response 分页 fail-closed 沿用既有 Watt-derived 骨架。测试部署业务不复制第二套 parser：复用现有 `GitHubTestDeploymentStatusApiClient` 的 exact Deployment/latest status adapter，扩展 `GitHubActionsApiClient` 共享 workflow-run parser 支持 `deployment` event，并继续使用独立 `deployments:read` token cache。
+- 动作：
+  - Case 8 `answers.deployments` 增加 test workflow path、OIDC audience、attestation ID/GitHub run ID/subject；新增 `checks.testDeploymentObservations`，只投影 webhook/API observation ID、source、fact digest、deployment ID、state 和时间。
+  - 新增 strict `TestDeploymentEvidenceManifestV1`：绑定 Run/Plan/Attempt/approval、test Environment、`test:*` role、OIDC subject/audience、Deployment/Action、URL、独立 deployment Evidence、webhook/API 双源 observation 与单 Attempt/Deployment/outbox/Evidence 计数；OIDC/生产 Secret 隔离链接只作为人工审计索引。
+  - 新增只读 `verify-test-deployment-evidence.ts` / `pnpm run e2e:test-deployment` 与 schema/docs。verifier 交叉核对 Case 8、Deployment/latest status、deployment-triggered Action (`event=deployment`、title/path/SHA/conclusion)、独立 Evidence 与 zero duplicate；失败/分页/URL/status drift fail-closed。
+  - 加强测试部署 status API 有界读取（2 MiB）并拒绝 `Link: rel=next` 分页；新增 Case 8/adapter/evidence 正反测试。
+  - 将既有 production deployment workerd fixture 的 `NOW` 改为当前时间前 5 分钟，避免 24 小时 approval 在真实 wall clock 超过固定 fixture 时间后造成与本轮无关的 409；业务契约未改变。
+- 验证：
+  - `pnpm run typecheck` → exit 0；`pnpm run lint` → exit 0。
+  - `pnpm exec vitest run test/test-deployment-evidence.test.ts test/github-test-deployment-status-api.test.ts` → exit 0，2 files / 6 tests；覆盖 strict/example、OIDC/Action/Deployment/URL/双源 observation、status/action drift、raw/token 零传播、分页拒绝和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts test/workflow/test-deployment.test.ts` → exit 0，2 files / 10 tests；Case 8 新投影与既有 test deployment CAS/OIDC/status 状态机无回归。
+  - `pnpm run e2e:test-deployment`（无 opt-in）→ exit 2，固定 `test-deployment-e2e: opt-in missing`；设置 opt-in 但缺配置 → exit 2，固定 `test-deployment-e2e: required test deployment configuration is incomplete`，两条路径均在 manifest/network 前结束。
+  - `pnpm run verify` → exit 0；Node 70 files / 250 tests，workerd 56 files / 298 tests，324 个生产文件 Secret scan 和 Markdown links 全绿；workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `CI=1 pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round91-20260726-final-v2` → exit 0，bundle 2579.18 KiB / gzip 434.58 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+  - `git diff --check`、`pnpm run verify:docs` → exit 0。
+- 勾选：Phase 5 测试部署项新增并勾选“真实外部证据验收契约”；真实 test Environment/生产隔离、云端 `test:*` trust policy、test-only Secret、OIDC 审计、真实 Deployment/Action/URL、webhook/API compensation 与零重复外部事实仍保持未勾。fake API、Case 8 fixture、schema example、dry-run 或默认 exit 2 不能替代真实试点证据。
+- 决策沉淀：Deployment create、OIDC attestation、deployment-triggered Action、signed/API status、URL Evidence 和 Attempt/Plan 完成是独立事实；Action 末尾自报与 create response 不能关门。Case 8 只提供安全索引，manifest 不能覆盖 live projection。Watt 继续只复用 E2E 门禁/HTTP 读取原语，测试部署 identity/Environment/Secret/双源 projector 属于 delivery-loop。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker、真实 GitHub App/试点 repo、test Environment、云 role/Secret 或有效只读凭证。需要用户提供受控前置后，按 [`docs/TestDeploymentE2E.md`](docs/TestDeploymentE2E.md) 真实运行 test Deployment/Action，记录 OIDC/Secret 隔离审计与 webhook/API compensation 链接，再以 `DELIVERY_LOOP_TEST_DEPLOYMENT_E2E=1 pnpm run e2e:test-deployment` exit 0 和人工审计入账后才能勾真实子项与父项。
+
+## Round 92 — 2026-07-26
+- 目标：Phase 5 / E2E/验收失败返回 `executing` 或 `blocked`，不会因为 deployment job 启动就标成功。本轮完成本地控制面/workerd/固定 workflow 的 test acceptance evidence 验收契约；真实 GitHub Action、test Environment、OIDC 与外部 E2E 事实仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd 测试、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、Meegle、tool-bridge、日志或业务数据库，未创建真实验收 Action/Deployment、未部署、未提交代码或使用真实 Secret；manifest/日志未保存 raw webhook/REST、OIDC/JWT、Secret、Task/PRD 正文、Runner 输出或数据库行，按用户要求未更新 llmdoc。
+- Watt 直接复用：`scripts/verify-test-acceptance-evidence.ts`沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定安全错误与 0/1/2 退出；控制面/GitHub verifier 的有界 HTTP 读取、分页 fail-closed 和安全错误边界沿用 Watt-derived 模式。本轮没有复制第二套 GitHub workflow-run parser，继续复用生产 `GitHubActionsApiClient` 的 acceptance token 与 workflow-run fact parser；acceptance 状态、Runner/Evidence、双源 observation 和 Run/Plan 绑定属于 delivery-loop 业务契约。
+- 动作：
+  - 新增 strict `TestAcceptanceEvidenceManifestV1`、`verifyTestAcceptanceEvidence`、`pnpm run e2e:test-acceptance`、schema example 与 [`docs/TestAcceptanceE2E.md`](docs/TestAcceptanceE2E.md)。manifest 固定 `running`、`passed`、`failed` 三类 case：running 的 Action 尚未完成且无 acceptance Evidence，Run 必须 `executing`；passed 要求 Action completed/success、Runner exit 0 与 verified test Evidence；failed/冲突要求 failed Evidence，Run 只能 `executing|blocked`。
+  - Case 8 增加 `checks.testAcceptances` 与 `checks.testAcceptanceObservations` 安全投影，交叉核对 Deployment/Plan/Attempt/approval、test Environment、workflow/OIDC subject/audience、Action status/conclusion、Runner 结果、独立 Evidence、webhook/API observation 及单 Attempt/Acceptance/outbox/Evidence 计数；不把 Runner 自报、deployment create response 或 Action 启动当作成功。
+  - 修正 Node verifier fixture 的 digest 生成为严格 64 位小写十六进制，并移除临时调试输出；失败/漂移/超限响应仍只返回固定 code，不传播 raw response 或 token。
+- 验证：
+  - `pnpm exec vitest run test/test-acceptance-evidence.test.ts` → exit 0，1 file / 3 tests；覆盖 strict/example、running/passed/failed、projection/action drift、raw/token 零传播和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts test/workflow/test-acceptance.test.ts` → exit 0，2 files / 12 tests；Case 8 acceptance projection 与状态机无回归。
+  - `pnpm run e2e:test-acceptance`（无 opt-in）→ exit 2，固定 `test-acceptance-e2e: opt-in missing`；`DELIVERY_LOOP_TEST_ACCEPTANCE_E2E=1 pnpm run e2e:test-acceptance`（缺配置）→ exit 2，固定 `test-acceptance-e2e: required test acceptance configuration is incomplete`；两条路径均在 manifest/network 前结束。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 71 files / 253 tests、workerd 56 files / 298 tests、328 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `CI=1 pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round92-20260726-final-v1` → exit 0，bundle 2583.56 KiB / gzip 435.16 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+  - `git diff --check`、`pnpm run verify:docs` → exit 0。
+- 勾选：Phase 5 E2E/验收失败项新增并勾选“真实外部证据验收契约”；真实 GitHub Action 的 running/success/failure、test Environment、OIDC、Runner 与外部状态最终一致仍保持未勾。fake API、Case 8 fixture、schema example、dry-run 或默认 exit 2 不能替代真实试点证据。
+- 决策沉淀：deployment 成功只代表部署事实，acceptance 是独立 required Item；只有外部 Action completed/success、Runner exit 0、verified Evidence 和控制面 projection 同时成立才能通过。Action failure 或 Runner/Action 冲突必须保留 failed Evidence 并返回 `executing|blocked`，不得提前写 `succeeded`。Case 8 是安全索引，manifest 不能覆盖 live projection；Watt 继续只复用 E2E 门禁、HTTP 有界读取和退出码原语。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker、真实 GitHub App/试点 repo、test Environment、云 role/Secret 或有效只读凭证。需要用户提供受控前置后，按 [`docs/TestAcceptanceE2E.md`](docs/TestAcceptanceE2E.md) 真实运行 running/success/failure 三种验收与 webhook/API compensation，记录 Action/Runner/Evidence/Run 安全链接，再以 `DELIVERY_LOOP_TEST_ACCEPTANCE_E2E=1 pnpm run e2e:test-acceptance` exit 0 和人工审计入账后才能勾真实子项与父项。
+
+## Round 93 — 2026-07-26
+- 目标：Phase 5 / 合并成功由 GitHub webhook 核对 merge SHA；只在“无需部署”策略下可直接 `succeeded`。本轮补齐本地控制面/workerd/固定 workflow 的 merge 外部证据验收契约；真实真人 merge、分支保护、漏 webhook/API compensation 与外部 GitHub 事实仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd 测试、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、Meegle、tool-bridge、日志或业务数据库，未创建/修改/合并真实 PR、未部署、未提交代码或使用真实 Secret；manifest/日志未保存 raw webhook/REST、PR 正文、OIDC/JWT、Secret、Agent 输出或数据库行，按用户要求未更新 llmdoc。
+- Watt 直接复用：`scripts/verify-merge-evidence.ts`沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定安全错误与 0/1/2 退出；verifier 的控制面/GitHub 1 MiB 有界 HTTP、origin 校验和分页 fail-closed 沿用 Watt-derived 模式。本轮没有复制第二套 GitHub PR parser，直接复用生产 `GitHubMergeStatusApiClient` 的 merge-observation token 与 canonical PR merge fact parser；merge projector、双源 observation、Run deployment disposition 和 Evidence 绑定属于 delivery-loop。
+- 动作：
+  - 新增 strict `MergeEvidenceManifestV1`、`verifyMergeEvidence`、`pnpm run e2e:merge`、schema example 与 [`docs/MergeE2E.md`](docs/MergeE2E.md)。manifest 固定四条 case：no-deploy merged、test merged、production merged、closed-unmerged；分别要求 `succeeded`、`deploying`、`deploying` 和零 merge projection/effect。
+  - Case 8 增加 `checks.mergeObservations` 的 D1-only 安全投影，校验 observation ID/source/digest/PR/merge/state/time、applied 行必须绑定已存在 `github_merges`，孤儿/重复/非法时间或 `received` partial row 使整份报告 fail-closed。
+  - verifier 先读取 Case 8 `changes`/`evidence`/`mergeObservations`/`effectOutboxes`，再用生产 `GitHubMergeStatusApiClient` 读取 exact PR API；已合并 case 重算 canonical merge fact/API digest，确认 merge SHA、PR/publication/Plan/base、Run 状态和 no-duplicate/zero-merge-outbox；closed-unmerged 必须 API 返回 `merged=false` 且 Run 保持 `ready_to_merge`。
+  - 同步 `docs/Proto.md` §26、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 与 DOD；真实 GitHub 子项保持未勾。
+- 验证：
+  - `pnpm run typecheck` → exit 0；`pnpm run lint` → exit 0。
+  - `pnpm exec vitest run test/merge-evidence.test.ts test/github-merge-status-api.test.ts` → exit 0，2 files / 6 tests；覆盖 strict/example、no-deploy/test/production/closed-unmerged、webhook/API observation、merge SHA/API drift、zero-effect、raw/token 零传播和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts test/workflow/github-merge-gate.test.ts` → exit 0，2 files / 34 tests；Case 8 merge observation 空投影与既有 merge projector 状态机无回归。
+  - `pnpm run e2e:merge`（无 opt-in）→ exit 2，固定 `merge-e2e: opt-in missing`；`DELIVERY_LOOP_MERGE_E2E=1 pnpm run e2e:merge`（缺配置）→ exit 2，固定 `merge-e2e: required merge configuration is incomplete`；两条路径均在 manifest/network 前结束。
+  - `pnpm run verify:docs`、`git diff --check` → exit 0。
+- 勾选：Phase 5 合并项新增并勾选“真实外部证据验收契约”；真实受保护分支真人 merge、signed delivery、closed-unmerged、错误 head、漏失 webhook/API compensation 和 no-deploy/deploying 外部 Run 事实仍保持未勾。fake GitHub、schema example、Case 8 fixture、dry-run 或默认 exit 2 不能替代真实试点证据。
+- 决策沉淀：merge gate 的 `ready_to_merge` 只是资格，不是 merge effect；`github_merges` 只由 signed/API 外部事实产生且不可变。no-deploy 的 merge 才能 CAS 到 `succeeded`，任何 test/production effect 都必须停在 `deploying` 等待独立部署事实；closed-unmerged 与错误绑定必须零 merge projection/effect。Case 8 是安全索引，manifest 不能覆盖 live D1/GitHub fact；Watt 只复用 E2E 门禁和 HTTP/退出原语。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker、真实 GitHub App/试点 repo、受保护分支或有效只读凭证。需要用户提供受控前置后，按 [`docs/MergeE2E.md`](docs/MergeE2E.md) 真实完成三条 merged policy 与一条 closed-unmerged、签名 delivery/API compensation/replay，记录 PR/merge SHA/Actions/控制面安全链接，再以 `DELIVERY_LOOP_MERGE_E2E=1 pnpm run e2e:merge` exit 0 和人工审计入账后才能勾真实子项与父项。
+
+## Round 94 — 2026-07-26
+- 目标：Phase 5 / 生产部署必须经过 GitHub Environment reviewer 或等价外部审批；批准绑定 revision + merge SHA + environment。本轮补齐本地控制面/workerd/固定 workflow 的 production approval 外部证据验收契约；真实 Environment reviewer/Feishu event、云 OIDC trust、拒绝/过期和 production job 外部事实仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd 测试、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、Meegle、tool-bridge、日志或业务数据库，未创建/批准真实 production Deployment、未部署、未提交代码或使用真实 Secret；manifest/日志未保存 raw event/REST、approval body、OIDC/JWT、Secret、Task/PRD 正文、Agent 输出或数据库行，按用户要求未更新 llmdoc。
+- Watt 直接复用：`scripts/verify-production-approval-evidence.ts`沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定安全错误与 0/1/2 退出；verifier 的控制面/GitHub 1 MiB 有界 HTTP、origin 校验和分页 fail-closed 沿用 Watt-derived 模式。本轮没有复制第二套 GitHub parser，直接复用生产 `GitHubMergeStatusApiClient` 核对 live merged PR/merge SHA；release binding、identity/live-role、approval lineage 与 zero production effect 属于 delivery-loop。
+- 动作：
+  - 新增 strict `ProductionApprovalEvidenceManifestV1`、`verifyProductionApprovalEvidence`、`pnpm run e2e:production-approval`、schema example 与 [`docs/ProductionApprovalE2E.md`](docs/ProductionApprovalE2E.md)。manifest 固定 accepted、self-approval rejected、merge-binding rejected 三条路径；accepted 绑定 `production_release_approval_bindings`、source/event、human role/separation、Task revision、Plan/digest/base、merge ID/SHA、production environment 和 expiry，rejected 必须无 approval/binding。
+  - Case 8 新增 `checks.productionApprovals` D1-only 安全投影，校验 release binding 的 approval/Run/revision/Plan/base/merge/environment、source/event digest、reviewer roles/separation 与时间；source/approval/binding 孤儿、重复、非法 digest/time、非 production 或非 human separation fail-closed。
+  - verifier 交叉核对 Case 8 `identityApprovals`、`productionApprovals`、`answers.approvals`、Run/Task/Plan、production deployments/outboxes/Attempts，并用生产 merge status API 重算每条 exact merge fact；accepted/rejected 均要求 production effect 为零，approval 不会被误当成 Deployment 成功。
+  - 同步 `docs/Proto.md` §27、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 与 DOD；真实 Environment/云外部子项保持未勾。
+- 验证：
+  - `pnpm run typecheck` → exit 0；`pnpm exec vitest run test/production-approval-evidence.test.ts test/identity-approval-evidence.test.ts` → exit 0，2 files / 7 tests；覆盖 strict/example、accepted/rejected binding、merge SHA/API drift、effect drift、raw/token 零传播和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts test/workflow/production-deployment.test.ts test/workflow/identity-mapper.test.ts` → exit 0，3 files / 21 tests；Case 8 新空投影与 production approval/scheduler/identity 状态机无回归。
+  - `pnpm run e2e:production-approval`（无 opt-in）→ exit 2，固定 `production-approval-e2e: opt-in missing`；`DELIVERY_LOOP_PRODUCTION_APPROVAL_E2E=1 pnpm run e2e:production-approval`（缺配置）→ exit 2，固定 `production-approval-e2e: required production approval configuration is incomplete`；两条路径均在 manifest/network 前结束。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 73 files / 259 tests、workerd 56 files / 298 tests、336 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `CI=1 pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round94-20260726-final-v2` → exit 0，bundle 2590.78 KiB / gzip 436.13 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+  - `pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+- 勾选：Phase 5 production approval 项新增并勾选“真实外部证据验收契约”；真实 GitHub Environment reviewer/Feishu signed event、live role/tenant、拒绝/过期/旧 merge SHA、production job/Deployment 零 effect 与云审计仍保持未勾。fake GitHub、schema example、Case 8 fixture、dry-run 或默认 exit 2 不能替代真实试点证据。
+- 决策沉淀：production approval 是 post-merge release authority，不是 merge 或 deployment success；accepted approval 也必须在 deployment scheduler 前证明 zero production effect。所有 binding 值由服务端从当前 Run/Plan/immutable merge 派生，caller/manifest不能自选 revision、merge SHA 或 environment；`ProductionApprovalEvidenceManifestV1` 只索引安全事实，Environment/云侧 reviewer 与 trust policy 仍需真实外部核对。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker、真实 GitHub App/试点 repo、受保护 production Environment、云 role/Secret 或有效只读凭证。需要用户提供受控前置后，按 [`docs/ProductionApprovalE2E.md`](docs/ProductionApprovalE2E.md) 真实产生 accepted/self-rejected/binding-rejected 事件，记录 Environment/Feishu approval、merge/Plan/Run/zero-effect 安全链接，再以 `DELIVERY_LOOP_PRODUCTION_APPROVAL_E2E=1 pnpm run e2e:production-approval` exit 0 和人工审计入账后才能勾真实子项与父项。
+
+## Round 95 — 2026-07-26
+- 目标：Phase 5 / deployment 成功/失败从平台 API/webhook 核对；Action 末尾 echo `success` 不能替代。本轮完成本地控制面/workerd/固定 workflow 的 production deployment 外部证据验收契约；真实 production Environment、云 OIDC、漏 webhook/API compensation 和 GitHub 外部四态事实仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd 测试、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、Meegle、tool-bridge、日志或业务数据库，未创建/修改真实 production Deployment/Action、未部署、未提交代码或使用真实 Secret；manifest/日志未保存 raw webhook/REST、OIDC/JWT、Secret、Task/PRD 正文或 Action 输出，按用户要求未更新 llmdoc。
+- Watt 直接复用：`scripts/verify-production-deployment-evidence.ts`沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定安全错误与 0/1/2 退出；production status/verifier 的有界 HTTP、origin 校验和分页 fail-closed 沿用 Watt-derived 模式。本轮没有复制第二套 GitHub workflow-run parser，新增生产 Action 读取方法复用既有 `GitHubActionsApiClient` parser；production status、OIDC/Evidence、双源 observation、Run CAS 和 Action/platform conflict 属于 delivery-loop。
+- 动作：
+  - 新增 strict `ProductionDeploymentEvidenceManifestV1`、`verifyProductionDeploymentEvidence`、`pnpm run e2e:production-deployment`、schema example 与 [`docs/ProductionDeploymentE2E.md`](docs/ProductionDeploymentE2E.md)。manifest 固定 `in_progress`、`success`、`failure`、`error` 四类不同 Run；success 要求 exact production OIDC + Action completed/success + passed Evidence，failure/error 要求 failed Evidence/Run，failure case 可明确记录 Action 自报 success。
+  - Case 8 增加 `checks.productionDeploymentObservations`，并把 production deployment 的 external state/time、workflow、OIDC attestation/subject、Evidence 和净化 URL 投影出来；production observation/source/digest/time 非法或重复时 fail-closed。production deployment status API 与 Action GET 均拒绝 `rel=next` 分页并有 1/2 MiB 响应上限，统一 parser 不采信 Runner/Action 自报作为业务状态。
+  - 同步 `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 与 DOD；仅勾选 Phase 5 的“真实外部证据验收契约”子项，真实 GitHub/云外部子项与父项保持未勾。
+- 验证：
+  - `pnpm exec vitest run test/production-deployment-evidence.test.ts test/github-production-deployment-status-api.test.ts` → exit 0，2 files / 7 tests；覆盖 strict/example、四态、Action/platform drift、raw/token 零传播、分页拒绝和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts test/workflow/production-deployment.test.ts` → exit 0，2 files / 19 tests；Case 8 production observation 空投影与 production status/OIDC/CAS 状态机无回归。
+  - `pnpm run e2e:production-deployment`（无 opt-in）→ exit 2，固定 `production-deployment-e2e: opt-in missing`；设置 `DELIVERY_LOOP_PRODUCTION_DEPLOYMENT_E2E=1` 但缺配置 → exit 2，固定 `production-deployment-e2e: required production deployment configuration is incomplete`，两条路径均在 manifest/network 前结束。
+  - `pnpm run verify` → exit 0；Node 74 files / 263 tests，workerd 56 files / 298 tests，340 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `CI=1 pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round95-final-v1` → exit 0，bundle 2596.02 KiB / gzip 436.69 KiB；识别双 Workflow、双 Queue、D1 与五个 R2 binding，未部署。
+  - `git diff --check`、`pnpm run verify:docs`、`pnpm run typecheck`、`pnpm run lint` → exit 0。
+- 勾选：Phase 5 deployment status 项新增并勾选“真实外部证据验收契约”；真实 production Environment 的 in-progress/success/failure/error、签名 webhook、API compensation、Action/Environment URL、云 OIDC 审计及 Action success/platform failure 外部事实仍保持未勾。fake API、Case 8 fixture、schema example、dry-run 或默认 exit 2 不能替代真实试点证据。
+- 决策沉淀：Deployment create、Environment job/OIDC、Action、signed/API platform status 和 verified Evidence 是独立事实；只有平台 success + exact OIDC + Action success + Evidence 才能 `succeeded`。平台 failure/error 即使 Action echo success 也必须 `failed`，终态后晚到相反事实不能复活 Run。Case 8 是安全索引，manifest 不能覆盖 live projection；Watt 继续只复用 E2E 门禁、HTTP 有界读取和退出码原语。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker、真实 GitHub App/试点 repo、受保护 production Environment、云 role/Secret 或有效只读凭证。需用户提供受控前置后，按 [`docs/ProductionDeploymentE2E.md`](docs/ProductionDeploymentE2E.md) 真实产生四态 Deployment/Action/status 与 webhook/API compensation，记录外部审计链接，再以 `DELIVERY_LOOP_PRODUCTION_DEPLOYMENT_E2E=1 pnpm run e2e:production-deployment` exit 0 和人工审计入账后才能勾真实子项与父项。
+
+## Round 96 — 2026-07-26
+- 目标：Phase 3 / 日志、Task、checkpoint、artifact、PR 的 canary Secret 安全验收契约。本轮完成本地控制面/Case 8/仓库外 verifier 的真实外部证据接口；真实 GitHub Action 日志、远端 R2 ciphertext 权限和真实安全/阻断 PR 仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS response、D1/workerd、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub、Cloudflare、飞书、Meegle、tool-bridge、业务日志/数据库，未创建/修改真实 Action/PR、未部署、未提交代码或使用真实 Secret；manifest、日志与 audit projection 不保存 canary、token、raw response、Task/PRD/PR 正文或 ciphertext，按用户要求未更新 llmdoc。
+- Watt 复用：`scripts/verify-secret-safety-evidence.ts`直接沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定安全错误和 0/1/2 退出；verifier 复用生产 `GitHubActionsApiClient` 的 workflow-run parser，以及 Watt-derived 有界 HTTP、HTTPS origin、分页 fail-closed 与日志重定向边界。本轮没有复制第二套通用 GitHub parser；canary 内存扫描、jobs/logs 上限、Case 8 registry/zero-effect 投影属于 delivery-loop。
+- 动作：
+  - 新增 strict `SecretSafetyEvidenceManifestV1`、`verifySecretSafetyEvidence`、`pnpm run e2e:secret-safety`、schema example 与 [`docs/SecretSafetyE2E.md`](docs/SecretSafetyE2E.md)。manifest 固定 `safe_draft_pr` 与 `blocked_secret_publication` 两类 case；canary 只来自显式 opt-in 环境变量且 manifest 只保存 digest。
+  - verifier 读取并扫描每个 Action job log（单 job 8 MiB、单 Run 32 MiB，拒绝分页，302/307/308 只接受无 userinfo 的 HTTPS location）；safe case 用 GitHub PR API 核对 same-repo/open/draft/exact head/base/body digest，blocked case 核对 pending publication、settled `pull_request_secret_detected` outbox 并查询同 head/base 的 PR 列表为零。
+  - Case 8 新增 `secretArtifacts` ciphertext registry 安全投影与 effect outbox `lastErrorCode` 投影；修正 effect outbox 查询遗漏 `last_error_code` 的审计缺口。raw artifact 只投影 object/attempt/category/ciphertext digest/size/policy/retention metadata，不投影 R2 key、etag、明文或 audit response。
+  - 同步 `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 与 DOD；仅勾选 Phase 3 的“真实外部证据验收契约”，真实 Action/R2/PR 外部事实保持未勾。
+- 验证：
+  - `pnpm exec vitest run test/secret-safety-evidence.test.ts` → exit 0，1 file / 3 tests；覆盖 schema/example、safe/blocked、log leak、projection/outbox/artifact/PR/pagination drift、zero-effect、raw/token/canary 零传播和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts` → exit 0，1 file / 3 tests；覆盖 Case 8 ciphertext registry 和 `pull_request_secret_detected` 投影回归。
+  - `pnpm run e2e:secret-safety`（无 opt-in）→ exit 2，固定 `secret-safety-e2e: opt-in missing`，在 manifest/network 前结束。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 75 files / 266 tests、workerd 56 files / 299 tests、344 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `git diff --check`、`pnpm run verify:docs` → exit 0。
+  - `CI=1 pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round96-final-v1` → exit 0，bundle 2599.28 KiB / gzip 437.39 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+- 勾选：Phase 3 Secret safety 项新增并勾选“真实外部证据验收契约”；真实试点 Action 注入 canary、完整日志/远端 R2 ciphertext 权限、真实安全 Draft PR 与 Secret-blocked zero-PR effect 仍保持未勾。fake API、schema example、Case 8 fixture、dry-run 或默认 exit 2 不能替代真实外部事实。
+- 决策沉淀：Case 8 是 D1-only 安全索引，不能覆盖 live GitHub/R2 事实；Action 自报成功和本地 ciphertext registry 不能证明无泄漏。safe Draft PR 必须同时满足 Action/log clean、Case 8 registry、GitHub PR exact identity；blocked publication 必须同时满足控制面 zero-effect 和 GitHub zero PR。canary 明文只在 verifier 进程内存在，错误码固定且不回显 token/raw。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker、真实 GitHub App/试点 repo、可写/只读外部 Secret 或有效 R2 审计链接。需用户提供受控前置后，按 [`docs/SecretSafetyE2E.md`](docs/SecretSafetyE2E.md) 在真实试点 Action 中分别产生 clean Draft PR 与 canary-blocked publication，核对完整 logs、artifact registry/R2 权限、PR API/页面和 D1 安全 projection，再以 `DELIVERY_LOOP_SECRET_SAFETY_E2E=1 pnpm run e2e:secret-safety` exit 0 与人工审计入账后才能勾真实子项与 Phase 3 父项。
+
+## Round 97 — 2026-07-26
+- 目标：Phase 3 / Agent Adapter 的 `start/resume/interrupt/exportCheckpoint` 真实非交互 CLI 证据契约。本轮补齐“真实调用结果如何被安全核对”的仓库外 manifest/verifier；真实已认证 Codex 模型调用仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、fake/strict manifest schema、Node 测试、文档检查和 Wrangler dry-run。未调用计费模型、未访问或修改真实 GitHub/Cloudflare/飞书/Meegle/tool-bridge/业务日志或数据库，未部署、未提交代码或使用真实 Secret；manifest 与错误输出不保存模型输出、Task/PRD、context、workspace 路径、stderr、token 或 checkpoint 正文，按用户要求未更新 llmdoc。
+- Watt 复用：真实入口沿用 Watt E2E 的显式 opt-in、固定 0/1/2 退出分层和固定前置错误边界；没有复制第二套 Agent 生命周期。证据层直接复用既有 `AgentSessionResultV1`、`computeAgentCheckpointDigest`、固定 Git 命令和 Codex adapter，新增仅为 digest/枚举/安全 SHA 的 strict manifest 绑定。
+- 动作：
+  - 新增 strict `AgentAdapterEvidenceManifestV1`、`verifyAgentAdapterEvidence`、`pnpm run e2e:agent-adapter`、`pnpm run verify:agent-adapter-evidence`、schema example 与 [`docs/AgentAdapterE2E.md`](docs/AgentAdapterE2E.md)。manifest 要求 provider/CLI version、`AgentSessionResultV1`、process exit/session、structured output digest、checkpoint sequence/digest/Plan Item/head、workspace head/branch、clean 与 ephemeral 标志；checkpoint 与最终 workspace head 必须 exact 相等。
+  - `verify-real-codex-adapter.ts` 成功路径现在只打印该安全 manifest；真实 CLI 仍固定 `--ephemeral --ignore-user-config --sandbox read-only --approval never`、临时仓库、strict output、checkpoint sequence≥2、HEAD clean 和 finally 清理。无 opt-in 或认证无效均不产生成功 manifest。
+  - 同步 `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 与 DOD；新增并勾选 Agent Adapter 的“真实证据契约”子项，真实认证模型调用保持未勾。
+- 验证：
+  - `pnpm exec vitest run test/agent-adapter-evidence.test.ts test/real-codex-adapter-verifier.test.ts` → exit 0，2 files / 5 tests；覆盖 strict/example、head/session/raw drift、固定错误和 adapter/manifest 两层 opt-in。
+  - `pnpm run e2e:agent-adapter`（无 opt-in）→ exit 2，固定 `real-codex-adapter-e2e: opt-in missing`，认证与模型调用未启动。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 76 files / 269 tests、workerd 56 files / 299 tests、348 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `git diff --check`、`pnpm run verify:docs` → exit 0。
+  - `CI=1 pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round97-final-v1` → exit 0，bundle 2599.28 KiB / gzip 437.39 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+- 勾选：Phase 3 Agent Adapter 项新增并勾选“真实 adapter 证据契约”；真实已认证 Codex 调用、结构化结果/ checkpoint/clean Git 的外部成功事实仍保持未勾。help、fake executor、schema example、`codex login status`、默认 exit 2 不能替代真实模型调用。
+- 决策沉淀：`AgentAdapterEvidenceManifestV1` 只是成功运行的安全索引，不是模型或 Agent 的自报权限；只有实际进程 exit 0、固定输出 schema、Runner checkpoint、Git HEAD/clean tree 和临时 workspace 全部同时成立才能生成 passed manifest。Codex provider session 不作为长期状态真源，恢复仍依赖外部 checkpoint + Git。
+- 遗留：当前本机 Codex credential 状态不能证明 provider 接受真实请求，且没有用户批准的计费模型调用/真实 GitHub Action。需用户提供受控有效凭证后，以 `DELIVERY_LOOP_CODEX_ADAPTER_E2E=1 pnpm run e2e:agent-adapter` 完成一次真实调用，保留安全 manifest 摘要并人工核对后，才能勾选该真实子项与 Agent Adapter 父项。
+
+## Round 98 — 2026-07-26
+- 目标：Phase 4 / 测试失败有界修复循环的仓库外证据契约。本轮补齐真实执行链路的 strict manifest/verifier；真实试点 Action、Codex 修复、bot commit 和外部 blocker 事实仍保持未完成。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cd`、fake HTTPS response、Case 8/Plan projection fixture、Node/workerd、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub/Cloudflare/飞书/Meegle/tool-bridge/业务日志或数据库，未创建真实修复 Action/commit、未部署、未提交代码或使用真实 Secret；manifest/日志/错误不保存测试输出、Agent正文、failure message、raw GitHub response 或 token，按用户要求未更新 llmdoc。
+- Watt 复用：`scripts/verify-repair-loop-evidence.ts`直接沿用 Watt E2E 的显式 opt-in、仓库外 64 KiB manifest、固定安全错误和 0/1/2 退出；verifier 复用生产 `GitHubActionsApiClient` workflow-run parser，以及 Watt-derived 有界 HTTPS、origin 校验和分页 fail-closed。没有复制第二套通用 Actions parser；retry scope/fingerprint、Attempt/Plan/Item、blocker 和 Evidence 仍由 delivery-loop 自有控制面提供。
+- 动作：
+  - 新增 strict `RepairLoopEvidenceManifestV1`、`verifyRepairLoopEvidence`、`pnpm run e2e:repair-loop`、schema example 与 [`docs/RepairLoopE2E.md`](docs/RepairLoopE2E.md)。manifest 固定三类 case：`repair_succeeded`、`repeated_fingerprint_blocked`、`attempt_limit_blocked`；绑定 Run/Plan/Item、Attempt ordinal/mode/head、failure fingerprint、Action conclusion、commit/test Evidence、blocker reason/count 和 execution dispatch 数量。
+  - verifier 先读取 `/v1/runs/:runId/plan` 与 Case 8 audit，再核对每个 Action 的唯一 job、trusted checkout/execution step；成功修复还核对 GitHub commit API、分支 ref 与 `checkoutSha...resultHeadSha` fast-forward compare。额外 Action/commit、head drift、blocker/fingerprint/count drift、分页和 raw/token 均 fail-closed。
+  - 同步 `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md` 与 DOD；新增并勾选固定 workflow 的“修复循环真实外部证据契约”子项，真实试点 Action 子项保持未勾。
+- 验证：
+  - `pnpm exec vitest run test/repair-loop-evidence.test.ts` → exit 0，1 file / 3 tests；覆盖 strict/example、success/repeated/attempt-limit、control/action/raw drift、token/raw 零传播和 CLI opt-in。
+  - `pnpm run e2e:repair-loop`（无 opt-in）→ exit 2，固定 `repair-loop-e2e: opt-in missing`，manifest/network 前结束。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 77 files / 272 tests、workerd 56 files / 299 tests、352 个生产文件 Secret scan 和 Markdown links 全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `git diff --check`、`pnpm run verify:docs` → exit 0。
+  - `CI=1 pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round98-final-v1` → exit 0，bundle 2599.28 KiB / gzip 437.39 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+- 勾选：Phase 4 测试失败修复项新增并勾选“修复循环真实外部证据契约”；真实固定 workflow 调用锁定 Codex、修复 commit/Evidence、同 fingerprint 第二次阻断、第三 Attempt 上限及 `workflow_run` 最终一致仍保持未勾。fake Action、schema example、仅重跑测试、dry-run 或默认 exit 2 不能替代真实外部事实。
+- 决策沉淀：repair manifest 是 live D1/GitHub 事实的安全索引，不能由 manifest 自选 blocker 或 attempt count；只有控制面 `/plan`、Case 8 audit、GitHub Action/job 与 Git commit/ref/compare 同时一致才算 repair evidence。`review_fix` 不继承旧 token/credential/branch，Action 自报 failure 不会消耗 retry budget。
+- 遗留：当前 `git remote -v` 为空，Wrangler D1 ID 仍为占位值，没有已部署 Worker、真实 GitHub App/试点 repo、有效 Action/Codex 凭证或真实 blocker 审计链接。需用户提供受控前置后，按 [`docs/RepairLoopE2E.md`](docs/RepairLoopE2E.md) 真实产生一次修复成功、一次同 fingerprint 阻断和一次三次上限阻断，记录 Actions/commit/Evidence/Case 8 安全链接，再以 `DELIVERY_LOOP_REPAIR_LOOP_E2E=1 pnpm run e2e:repair-loop` exit 0 和人工审计入账后才能勾真实子项与 Phase 4 父项。
+
+## Round 99 — 2026-07-27
+- 目标：Phase 0 / `.github/workflows/ci.yml` 在 GitHub main/pull_request 上实际运行成功且权限只有 `contents: read`；`validate-task.yml` 对合法 TaskEnvelope 成功、无验收标准/非法 schema 失败且日志不打印正文。本轮只闭环两项共用的真实外部证据验收契约，真实 GitHub run 父项保持未勾。
+- 前置与权限：仅使用本地 delivery-loop、Watt 固定 commit `476e3cd` 的既有复用结论、fake HTTPS response、Node/workerd 回归、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub/Cloudflare/飞书/Meegle/tool-bridge/日志/业务数据库，未创建远端、push、PR、workflow_dispatch 或部署，未提交代码或使用真实 Secret；manifest/错误不保存 Task/run title/workflow/log/raw response/token/canary 明文，按用户要求未更新 llmdoc。
+- Watt 直接复用：`scripts/verify-ci-evidence.ts` 沿用显式 opt-in、仓库外 64 KiB manifest、固定 0/1/2 退出、安全错误、有界 HTTPS、origin 校验和分页 fail-closed；run metadata 继续复用生产 `GitHubActionsApiClient`，没有复制第二套通用 Actions parser。Watt 没有 delivery-loop 的 Phase 0 四类 CI case、exact workflow/validation-step 或 invalid Task canary 断言，这些为本项目新增。
+- 动作：
+  - 接续 Round 99 半成品先运行 typecheck，确认 `displayTitle`/`displayTitleDigest` 和 `push|pull_request` event 类型不一致形成真实红灯；manifest 改为只保存 title digest，workflow run parser 扩展只读 event，同时把业务 Attempt projector 显式限制为 `workflow_dispatch`，避免扩大生产状态入口。
+  - 新增 strict `CiEvidenceManifestV1`，固定 `ci_main_success`、`ci_pull_request_success`、`validate_valid_success`、`validate_invalid_failure` 四类唯一 case；每条只保存 run/workflow/job 的 ID、SHA、digest、枚举和安全 URL，invalid canary 只有 digest。
+  - 新增 `verifyCiEvidence` 与 `pnpm run e2e:ci`：按 run exact head SHA 读取 workflow blob，重算 digest并解析 YAML；trigger、唯一 job、setup/validate 命令必须匹配固定契约，顶层权限恰好只有 `contents: read`。随后复用 production Actions parser，核对唯一 job；invalid case 还要求所有前置 step 成功、命名 validation step 失败，再有界扫描四份 job log。
+  - 新增 schema example、[`docs/CIE2E.md`](docs/CIE2E.md) 和正反测试；同步 DOD、Proto、Architecture、Security、Reference。两个父 DoD 只新增并勾选“真实外部证据验收契约”，真实 Actions 事实仍未勾。
+- 验证：
+  - `pnpm run typecheck` → 首次 exit 2：`expectedEvent` 仍只接受 workflow_dispatch/deployment，且 schema 暴露 `displayTitle` 而 verifier 读取 `displayTitleDigest`；修正后 exit 0。
+  - `pnpm exec vitest run test/ci-evidence.test.ts` → 首次 4/6 failed，暴露 canary regex 上界误写为带下划线的量词并全部返回 `configuration_invalid`；修正并补 exact workflow/action drift 后最终 exit 0，1 file / 6 tests。覆盖四类成功、permission/action/run title/event/conclusion/SHA 漂移、job/validation step 漂移、canary leak、分页/超限、raw/token/canary 零传播和 CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-run-reconciler.test.ts test/workflow/github-dispatcher.test.ts` → exit 0，2 files / 11 tests，既有 Attempt reconciliation/dispatch 的 workflow_dispatch 边界无回归。
+  - `pnpm run e2e:ci`（无 opt-in）→ exit 2，固定 `ci-e2e: opt-in missing`，在 manifest/network 前结束。
+  - `pnpm run verify` → 首次 exit 1：新增 CLI 子进程与全量并发叠加后 10 个既有 5 秒测试超时；把本轮 CLI 测试从嵌套 `pnpm` 改为直接锁定 workspace `tsx` 后，`pnpm run test:unit` 为 78 files / 278 tests，最终全量 exit 0：Node 78 files / 278 tests、workerd 56 files / 299 tests、356 个生产文件 Secret scan和文档链接全绿。workerd 仅输出既有预期 Workflow terminate 清理信息，无失败 suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round99-final-v1` → exit 0，bundle 2599.37 KiB / gzip 437.40 KiB；识别双 Workflow、双 Queue、D1 与四个 R2 binding，未部署。
+  - `pnpm run verify:docs`、`git diff --check` → exit 0。
+- 勾选：Phase 0 CI main/PR 与 validate-task 两项分别新增并勾选“真实外部证据验收契约”；两个真实 GitHub 父项保持未勾。fake API、schema example、本地 verify、dry-run 或默认 exit 2 均不能替代真实 Actions URL/API。
+- 决策沉淀：CI 证据必须绑定实际 run 的 immutable head workflow blob，不能拿当前 main、本地文件或 manifest 覆盖历史执行；invalid workflow 只有在 setup 成功而命名 validation step 失败时才证明 schema 拒绝，整个 job 安装失败不算。run title和 canary 只保存 canonical digest，真实日志在 verifier 内存扫描后丢弃。
+- 遗留：当前 `git remote -v` 为空，没有用户确认的 owner/visibility/默认分支保护，也没有 main/PR/合法与非法 workflow_dispatch run。需用户提供受控 GitHub repo 和 Actions/Contents read 前置后，按 [`docs/CIE2E.md`](docs/CIE2E.md) 产生四条真实 run、保存仓库外 manifest，并以 `DELIVERY_LOOP_CI_E2E=1 pnpm run e2e:ci` exit 0 与 Actions URL/API 人工核对入账；只有届时才能勾两个真实父项。
+
+## Round 100 — 2026-07-27
+- 目标：Phase 0 / `新仓库远端、owner、visibility 和默认分支保护由用户确认后创建；本地初始化不能冒充远端已完成`。本轮只闭环真实外部证据验收契约；用户尚未确认且远端不存在，父项保持未勾。
+- 前置与权限：只使用本地 delivery-loop、Watt 固定 commit `476e3cd`、fake HTTPS response、固定Git argv、Node/workerd回归、文档检查和 Wrangler dry-run。未访问或修改真实 GitHub/Cloudflare/飞书/Meegle/tool-bridge/日志/业务数据库，未创建仓库、设置remote、配置branch rules、部署或提交代码，未使用真实token/Secret；manifest与错误不保存人审正文、raw rules/REST、remote credential或token，按用户要求未更新llmdoc。
+- Watt 直接复用：完整读取Watt `scripts/e2e/lib.ts`与CI workflow并检索repository/bootstrap/branch protection；Watt只有显式opt-in、前置exit 2和0/1/2 E2E收口，没有GitHub repository/bootstrap或branch-rules业务模块可直接复制。`verify-repository-bootstrap-evidence.ts`沿用其门禁/退出纪律；GitHub 1 MiB有界JSON/分页fail-closed和`git remote get-url origin`固定argv直接复用delivery-loop既有生产边界，没有复制Watt会传播stderr/raw错误的CLI helper。
+- 动作：
+  - 先写红灯：`test/repository-bootstrap-evidence.test.ts` 初始failed suite / 0 tests，缺domain模块；随后新增strict `RepositoryBootstrapEvidenceManifestV1`，把仓库外decision ID/time、确认主体digest、owner/repo/visibility/default branch/active rules digest与repository/branch安全标量固定为不可混淆索引。
+  - 新增只读`verifyRepositoryBootstrapEvidence`与`pnpm run e2e:repository-bootstrap`：先重算rules/selection digest，再用固定Git argv读取本地origin并只接受无credential GitHub HTTPS/SSH；最后读取GitHub repository、default branch与applicable branch rules，核对numeric ID/owner/type/visibility/lifecycle、protected/head和全部active rule parameters digest。响应1 MiB且分页fail-closed，任何错误只返回固定code。
+  - 新增schema example与[`docs/RepositoryBootstrapE2E.md`](docs/RepositoryBootstrapE2E.md)，同步DOD、Proto、Architecture、Security、Reference和公共export。文档明确manifest不能自证用户确认，exit 0仍必须与仓库外人审记录和真实GitHub页面/API共同入账。
+  - 全量Node首次出现既有Git fixture的5秒并发超时；`--maxWorkers=4`验证79 files全绿后，把Node file concurrency固定为4，使行为超时不再测量宿主进程过量并发，没有提高或跳过任何单测timeout。
+- 验证：
+  - 红灯`pnpm exec vitest run test/repository-bootstrap-evidence.test.ts` → exit 1，failed suite / 0 tests；实现后首次1/6 failed，暴露测试构造只改变decision visibility导致schema先拒绝；让repository snapshot同步变化后，最终exit 0，1 file / 6 tests。覆盖decision digest、本地HTTPS/SSH origin、credential/跨repo/非GitHub remote、repository visibility/default/lifecycle、branch SHA/protected、rule parameters、分页/超限、raw/token零传播和CLI opt-in。
+  - `pnpm run e2e:repository-bootstrap`（无opt-in）→ exit 2，固定`repository-bootstrap-e2e: opt-in missing`，在manifest/Git/network前结束。
+  - `pnpm run typecheck` → exit 0；`pnpm run lint`首次exit 1（两个正则无用转义），修正后exit 0。
+  - `pnpm run verify` → 首次exit 1：2个既有真实Git fixture在10核文件并发下撞到5秒timeout；`pnpm exec vitest run --maxWorkers=4`为79 files / 284 tests全绿并写入`vitest.config.ts`后，最终exit 0：Node 79 files / 284 tests、workerd 56 files / 299 tests、360个生产文件Secret scan和文档链接全绿。workerd仅输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round100-final-v1` → exit 0，bundle 2599.37 KiB / gzip 437.40 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+  - `pnpm run verify:docs`、`git diff --check` → exit 0。
+- 勾选：Phase 0远端创建项新增并勾选“真实外部证据验收契约”；父项保持未勾。schema example、decision/manifest自报、fake API、本地`git init`、dry-run或默认exit 2不能替代用户确认和真实GitHub remote/rules。
+- 决策沉淀：用户决策、local origin和GitHub live fact是三种不同authority，必须同时一致；manifest只冻结digest与安全标量。verifier没有create/update路径，也不应从DOD文字推断owner/visibility/保护策略；真正创建远端仍需用户明确选择。GitHub rules只记录当前active规则，每条raw parameters只在内存计算canonical digest后丢弃。
+- 遗留：`git remote -v`仍为空，也没有用户确认记录、GitHub repository ID、default branch head或active rules事实。需要用户明确owner/repo/visibility/default branch/protection policy并授权创建后，按[`docs/RepositoryBootstrapE2E.md`](docs/RepositoryBootstrapE2E.md)创建真实仓库、设置无credential origin、配置rules、保存仓库外decision/manifest，以`DELIVERY_LOOP_REPOSITORY_BOOTSTRAP_E2E=1 pnpm run e2e:repository-bootstrap` exit 0和人工核对入账；只有届时才能勾父项并继续真实CI。
+
+## Round 101 — 2026-07-27
+- 目标：Phase 1 / `DeliveryRunWorkflow` 的副作用全部在稳定命名`step.do`；强制hibernate/restart Worker后复用成功步骤，dispatch只发生一次，D1 Run投影仍正确。本轮只闭环真实Cloudflare hibernate + Worker redeploy + 唯一GitHub Action的外部证据验收契约；真实远端演练与父项保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit `476e3cdd2490d725fde174e7c697ebf00899edc6`、Wrangler 4.107.0内置Cloudflare SDK路径、fake HTTPS、Node/workerd回归、文档检查和Wrangler dry-run。未访问或修改真实GitHub/Cloudflare/飞书/Meegle/tool-bridge、日志或业务数据库，未触发Action、未发布Worker、未发送Workflow event、未部署或提交代码，未使用真实Secret；manifest/错误不保存Cloudflare instance/step output/error、GitHub raw响应、Task/Plan正文、token或数据库行，按用户要求不更新llmdoc。
+- Watt直接复用：Watt的`taskId/runId = Workflow instance ID`、稳定命名`step.do`/`waitForEvent`、D1业务投影和显式opt-in/固定0-1-2 E2E门禁继续直接复用；GitHub run metadata复用delivery-loop现有production `GitHubActionsApiClient`，没有复制第二套Actions parser。Watt没有Cloudflare REST + D1 + GitHub三方外部verifier，因此deployment/instance/Case 8绑定为delivery-loop新增，没有虚构可复制的业务模块。
+- 动作：
+  - 先写红灯：`test/workflow-hibernate-evidence.test.ts`首次为failed suite / 0 tests，缺`src/domain/workflow-hibernate-evidence.ts`；随后新增strict `WorkflowHibernateEvidenceManifestV1`、只读`verifyWorkflowHibernateEvidence`、`pnpm run e2e:workflow-hibernate`和schema example。
+  - verifier交叉核对`GET /v1/runs/:runId/plan`与Case 8：Run固定`awaiting_approval`、active Plan由唯一completed analysis Attempt生成、`analysis_dispatch` outbox唯一且settled、Workflow安全投影为同ID `waiting`且无restart/recreate reconciliation；D1仍是业务真源。
+  - 读取官方Cloudflare Workflow instance与Worker deployments API：七条平台step必须严格按`register-run → dispatch-analysis-attempt → await-analysis-result → verify-analysis-result → activate-analysis-plan → observe-run-control-state → await-run-terminal`排列；前两步在wait前成功、wait跨过Worker redeploy、后三步在wait结束后继续、最后仍waiting。进一步要求before是wait开始时最后生效deployment，wait期间只有一个after deployment，避免任意两条历史deployment误配成恢复事实。
+  - GitHub核对exact analysis run的repo/event/path/SHA/branch/stable title/run-attempt/conclusion，并在完整workflow inventory中要求`delivery-loop/<attemptId>`恰好一条；响应1 MiB、分页/超限/错误时间线/重复Action全部fail-closed。Cloudflare account只以digest入manifest，Dashboard链接限定无query的`dash.cloudflare.com`，所有token只进入Authorization header。
+  - 新增[`docs/WorkflowHibernateE2E.md`](docs/WorkflowHibernateE2E.md)，同步`DOD.md`、`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`与公共export；只勾选本项“真实外部证据验收契约”子项。
+- 验证：
+  - 红灯`pnpm exec vitest run test/workflow-hibernate-evidence.test.ts` → exit 1，failed suite / 0 tests；实现后最终exit 0，1 file / 6 tests。覆盖strict/example、D1 Run/Workflow projection drift、deployment/version/唯一wait内deployment与step时间线漂移、GitHub failure/duplicate、分页/超限、raw/token零传播和CLI opt-in。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0；收紧deployment/step时间线后再次运行仍exit 0。
+  - `pnpm run e2e:workflow-hibernate`（无opt-in）→ exit 2，固定`workflow-hibernate-e2e: opt-in missing`，在manifest/token/account/network前结束。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 80 files / 290 tests、workerd 56 files / 299 tests、364个生产文件Secret scan和文档链接全绿。workerd仅输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round101-final-v2` → exit 0，bundle 2599.37 KiB / gzip 437.40 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+  - `pnpm run verify:docs`、`git diff --check` → exit 0。
+- 勾选：Phase 1 Workflow hibernate/restart项新增并勾选“真实外部证据验收契约”；真实Cloudflare hibernate/Worker redeploy、GitHub Action与父项保持未勾。fake API、schema example、本地workerd restart、Wrangler dry-run或默认exit 2不能替代真实外部事实。
+- 决策沉淀：普通hibernate/redeploy与controlled replay是两种恢复事实：前者不调用restart API，而是在durable wait期间跨Worker deployment继续；后者从terminal instance的受控target restart。before/after deployment ID本身不能证明跨版本，必须用完整deployment时间线确定wait开始时生效版本与wait内唯一发布；Cloudflare step成功、D1 projection和GitHub唯一Action三种authority也不能互相替代。
+- 遗留：当前`git remote -v`为空、Wrangler D1 ID仍是占位值，没有已部署Worker、Cloudflare Paid Workflow、真实GitHub App/试点repo或只读凭证。需要用户提供受控试点前置后，按[`docs/WorkflowHibernateE2E.md`](docs/WorkflowHibernateE2E.md)在一个真实analysis wait中发布before/after Worker版本、回传同一Action结果并保存仓库外manifest；只有`DELIVERY_LOOP_WORKFLOW_HIBERNATE_E2E=1 pnpm run e2e:workflow-hibernate` exit 0和Cloudflare/GitHub/控制面链接人工入账后，才能勾真实子项与父项。
+
+## Round 102 — 2026-07-27
+- 目标：Phase 1 / GitHub App只安装到试点仓库，dispatcher成功触发固定workflow ref且dispatch payload无Secret/任务正文。本轮只闭环单仓库installation + D1 dispatch + 固定workflow blob + 唯一Action/job的真实外部证据验收契约；真实安装/Action与父项保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit `476e3cdd2490d725fde174e7c697ebf00899edc6`的既有复用结论、fake HTTPS、Node/workerd回归、文档检查和Wrangler dry-run。未访问或修改真实GitHub/Cloudflare/飞书/Meegle/tool-bridge、日志或业务数据库，未安装App、未签发真实token、未触发Action、未部署或提交代码，未使用真实Secret；manifest/错误不保存App JWT、installation token、workflow/job/raw API正文或Task/Plan/数据库正文，按用户要求不更新llmdoc。
+- Watt直接复用：Watt没有GitHub App、installation repository inventory、workflow blob或Actions REST业务模块，本轮没有把不存在的代码虚构为可复制；直接沿用其显式opt-in、仓库外64 KiB manifest、固定0-1-2退出和安全错误纪律。Action run metadata继续复用delivery-loop production `GitHubActionsApiClient`，固定workflow契约复用现有`delivery-agent-workflow`测试所验证的run-name/inputs/permissions/pinned Actions/clean-workspace语义，没有复制第二套run parser。
+- 动作：
+  - 先写红灯：`test/github-app-dispatch-evidence.test.ts`首次exit 1，failed suite / 0 tests，缺`src/domain/github-app-dispatch-evidence.ts`；随后新增strict `GitHubAppDispatchEvidenceManifestV1`、只读`verifyGitHubAppDispatchEvidence`、`pnpm run e2e:github-app-dispatch`和schema example。
+  - App JWT实时交叉读取`/app`、`/app/installations/:id`和`/repos/:repo/installation`，绑定numeric App/installation/target/repo ID、slug/owner/target、allowlisted permissions/events、`repository_selection=selected`与未suspend；短期installation audit token读取完整`/installation/repositories`并要求单repo identity/visibility/default branch/lifecycle和inventory digest一致。
+  - verifier读取D1 Run/active Plan与Case 8，要求唯一completed analysis Attempt、exact fixed workflow ref、唯一settled `analysis_dispatch` outbox及GitHub run binding；再按Action immutable head读取workflow blob、重算content digest并解析YAML，拒绝当前main/本地文件替代历史执行。
+  - GitHub live Action必须绑定repo/event/head/default branch/path/stable title/run-attempt/updated-at/conclusion；完整workflow inventory只允许一个stable-title run，jobs API只允许一个successful `attempt` job，其中analysis与clean-workspace step成功、execution step skipped。响应1 MiB、workflow decoded 256 KiB，分页/超限/权限事件/库存/工作流/job漂移均fail-closed。
+  - 审计Round 101真实Case 8形状时修正其hibernate verifier：analysis Attempt没有写代码`headSha`，应核对创建时可信`baseSha`；测试fixture同步删除伪造head事实，避免真实E2E被错误拒绝。
+  - 新增[`docs/GitHubAppDispatchE2E.md`](docs/GitHubAppDispatchE2E.md)，同步`DOD.md`、`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`和公共export；只勾选本项“真实外部证据验收契约”。文档明确audit token可能预先按repo二次narrow且无法从字符串发现，所以settings页与credential issuance审计不可省略。
+- 验证：
+  - 红灯`pnpm exec vitest run test/github-app-dispatch-evidence.test.ts` → exit 1，failed suite / 0 tests；实现后首次4/6 failed，暴露token regex把数字分隔符写进quantifier并全部`configuration_invalid`；修正后最终exit 0，1 file / 6 tests。覆盖strict/example、App/installation/repo drift、D1 projection、workflow/job/duplicate Action、分页/超限、credential/raw零传播和CLI opt-in。
+  - `pnpm exec vitest run test/github-app-dispatch-evidence.test.ts test/workflow-hibernate-evidence.test.ts` → exit 0，2 files / 12 tests；Round 101 baseSha真实性修正与本轮契约同时通过。
+  - `pnpm run e2e:github-app-dispatch`（无opt-in）→ exit 2，固定`github-app-dispatch-e2e: opt-in missing`，在manifest/token/network前结束。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`git diff --check` → exit 0。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 81 files / 296 tests、workerd 56 files / 299 tests、368个生产文件Secret scan和文档链接全绿。workerd仅输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round102-final-v1` → exit 0，bundle 2599.37 KiB / gzip 437.40 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+- 勾选：Phase 1 GitHub App/dispatcher项新增并勾选“真实外部证据验收契约”；真实single-repo installation、Actions run/job与父项保持未勾。fake API、schema example、其他E2E Action URL、本地workflow test、dry-run或默认exit 2不能替代真实安装事实。
+- 决策沉淀：App对象、installation配置、installation token可见repo、D1 dispatch、immutable workflow和Action/job是不同authority。尤其`GET /installation/repositories`只能证明“该token看见一个repo”，不能证明token签发时没有`repositories/repository_ids`二次narrow；真实关门必须同时核对GitHub settings页和credential issuance audit，verifier exit 0不能覆盖这一人工事实。
+- 遗留：当前`git remote -v`为空，没有用户确认的试点repo、GitHub App owner/installation或已部署控制面，也无可用App JWT/未narrow audit token。需用户提供受控前置后，按[`docs/GitHubAppDispatchE2E.md`](docs/GitHubAppDispatchE2E.md)只选试点repo、从D1正常触发一个analysis Run、保留settings/credential审计和仓库外manifest；只有`DELIVERY_LOOP_GITHUB_APP_DISPATCH_E2E=1 pnpm run e2e:github-app-dispatch` exit 0及人审链接入账后，才能勾真实子项与父项。
+
+## Round 103 — 2026-07-27
+- 目标：Phase 1 / 一个真实Action只读检出目标repo，Codex按用户反馈/PRD分析并按需读取只读上下文，输出带Evidence refs的合法ExecutionPlan且不创建分支、不写repo。本轮只闭环Task/Plan/context/immutable Runner/Codex/Git三联检查的真实外部证据验收契约；真实Action与父项保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的既有复用结论、fake HTTPS、Node/workerd回归、文档检查和Wrangler dry-run。未访问或修改真实GitHub/Cloudflare/飞书/Meegle/tool-bridge、日志或业务数据库，未调用Codex模型、触发Action、创建branch/commit、部署或提交代码，未使用真实Secret；manifest/错误不保存Task/Plan/Item正文、Evidence ref原值、tool参数/result、Runner/workflow正文、raw API或token，按用户要求不更新llmdoc。
+- Watt直接复用：`verify-analysis-action-evidence.ts`继续直接沿用Watt-derived显式opt-in、仓库外64 KiB manifest、固定0/1/2退出和安全固定错误纪律；Task/context/code/tool结果按Watt HTBP规则保持不可信数据。GitHub App/installation/workflow/Action/job核对不复制，生产verifier直接调用Round 102 `verifyGitHubAppDispatchEvidence`。Watt没有delivery-loop的Task/ExecutionPlan/Case 8或Runner source contract模块，对应业务交叉核对为本项目新增，没有虚构Watt来源。
+- 动作：
+  - 先写红灯：`test/analysis-action-evidence.test.ts`首次exit 1、failed suite / 0 tests，缺`src/domain/analysis-action-evidence.ts`；随后新增strict `AnalysisActionEvidenceManifestV1`、live verifier、`pnpm run e2e:analysis-action`、schema example和[`docs/AnalysisActionE2E.md`](docs/AnalysisActionE2E.md)。
+  - `/v1/runs/:id/plan`新增安全投影：assumption只公开count，Evidence refs只公开count和有序数组canonical digest，Item公开纯数字acceptance criteria indexes；workerd测试证明assumption/ref原值不回显。外部verifier据此要求refs至少1条、Item ID/依赖/DAG/doneWhen/Evidence合法且required Items覆盖全部Task acceptance criteria。
+  - Task query绑定`bug→user_feedback`、`requirement→prd`；Case 8 context只允许repository/logs/traces/K8s/database的成功read聚合，至少含repository，attempt IDs必须exact且全部grant scopes为triage只读；analysis Attempt出现repo-write credential即失败。
+  - immutable Runner contract固定八文件：entrypoint、Runner、Codex adapter、Plan domain/schema、package和pnpm lock。verifier按Action exact base SHA逐文件核对Git blob/content digest，package和lock双重锁定Codex版本，再把聚合digest与manifest外release review配置比较，拒绝当前main或manifest自选expected值替代受审源码。
+  - 固定workflow的always-run关口由单一porcelain检查收紧为`HEAD == checkout_sha + detached HEAD + clean workspace`；Round 102 workflow parser同步要求三联命令和可信env，live job仍必须observed success。GitHub不提供瞬态本地branch历史，文档要求有组织Runner审计时人工补强，不能让manifest布尔值自证。
+  - 同步`DOD.md`、`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`和公共export；只勾本项“真实外部证据验收契约”。
+- 验证：
+  - 红灯`pnpm exec vitest run test/analysis-action-evidence.test.ts` → exit 1，failed suite / 0 tests；实现后与Round 102及workflow契约联合 → exit 0，3 files / 13 tests。覆盖反馈/PRD schema、Task/Plan/Item漂移、denied context/write credential、Runner/source review/Codex lock、Git三联job、超限/raw/credential零传播和CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-query-api.test.ts` → exit 0，1 file / 3 tests；新增Plan ref/assumption安全投影与acceptance indexes断言。
+  - `pnpm run e2e:analysis-action`（无opt-in）→ exit 2，固定`analysis-action-e2e: opt-in missing`；设置opt-in但缺真实配置 → exit 2，固定`required analysis Action configuration is incomplete`。两者都不是skip或成功，且在manifest/credential/network前结束。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 82 files / 302 tests、workerd 56 files / 299 tests、372个生产文件Secret scan和文档链接全绿。workerd仅输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round103-final` → exit 0，bundle 2600.99 KiB / gzip 437.59 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。
+- 勾选：Phase 1真实analysis Action项新增并勾选“真实外部证据验收契约”；真实GitHub Action/Codex调用和父项保持未勾。fake HTTPS、schema-valid example、本地Runner/workflow测试、Wrangler dry-run或默认exit 2不能替代真实外部事实。
+- 决策沉淀：Action success、D1 active Plan、Case 8 context、immutable Runner source、Codex lock和最终Git状态是不同authority，任一面不能替代其余事实。clean workspace单独不能排除commit/branch漂移，必须同时核对exact HEAD与detached；而GitHub job API仍看不到“创建后删除”的瞬态branch，所以source review和可用的组织Runner审计是必要补强。Evidence refs原值可能携带内部定位信息，状态API只公开count+digest。
+- 遗留：当前`git remote -v`为空、Wrangler D1 ID仍为占位值，没有试点repo/App/已部署控制面、有效Codex credential或manifest外release review记录。需用户提供这些前置后，按[`docs/AnalysisActionE2E.md`](docs/AnalysisActionE2E.md)经正常链路提交一份反馈/PRD、触发唯一analysis Action并保存仓库外manifest；只有`DELIVERY_LOOP_ANALYSIS_ACTION_E2E=1 pnpm run e2e:analysis-action` exit 0以及Action/job/release review/可用Runner审计链接人工入账后，才能勾真实子项与父DoD。
+
+## Round 104 — 2026-07-27
+- 目标：Phase 1 / Runner每30～60秒heartbeat；正常完成写attempt result，控制面状态与GitHub run外部事实一致。本轮只闭环连续heartbeat receipt + result + signed final webhook + live GitHub API的真实外部证据验收契约；真实Action与父项保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的既有复用结论、fake HTTPS、D1/workerd回归、文档检查和Wrangler dry-run。未访问或修改真实GitHub/Cloudflare/飞书/Meegle/tool-bridge、日志或业务数据库，未触发Action、重放webhook、部署或提交代码，未使用真实Secret；manifest/receipt/错误不保存run/tool token或其digest、raw webhook/REST、Task/Plan正文、Runner输出或数据库行，按用户要求未更新llmdoc。
+- Watt直接复用：`verify-runner-heartbeat-evidence.ts`继续沿用Watt-derived显式opt-in、仓库外64 KiB manifest、固定0/1/2退出、安全固定错误与有界HTTPS读取纪律；App/Action/API/Runner全链路直接调用Round 103 `verifyAnalysisActionEvidence`，没有复制第二套GitHub verifier。Watt没有heartbeat receipt ledger、Attempt result/GitHub final projection或Case 8 observation业务模块，对应实现为delivery-loop新增，没有虚构Watt来源。
+- 动作：
+  - 先写红灯：`pnpm exec vitest run test/runner-heartbeat-evidence.test.ts`首次exit 1，缺`runner-heartbeat-evidence` domain/verifier；随后新增strict `RunnerHeartbeatEvidenceManifestV1`、live verifier、`pnpm run e2e:runner-heartbeat`、schema example与[`docs/RunnerHeartbeatE2E.md`](docs/RunnerHeartbeatE2E.md)。
+  - 识别到`attempts.heartbeat_at`最新值不能证明30～60秒cadence，migration 0056新增append-only `attempt_heartbeat_receipts`。每次成功heartbeat CAS、run/tool token轮换与receipt INSERT位于同一D1 batch；stable receipt绑定attempt/generation/前后version，postcheck要求receipt确实存在，20路并发失败者不能插入伪receipt。表结构没有token/token digest，`(attempt,version)`唯一且UPDATE trigger拒绝改写。
+  - `GET /v1/runs/:runId/plan`新增最多1000条receipt、reference-only result与GitHub final-state安全投影；workerd测试覆盖两条45秒链、90秒lease、result/Plan绑定、GitHub observation字段及token/digest零泄漏。Case 8新增webhook/API run observation安全索引，并对ID/digest/repo/run/attempt/state/ignore reason和时间线fail-closed校验。
+  - verifier先完整复用Round 103 Analysis Action证据，再从live Plan投影重算至少两条receipt的连续version、每段30000～60000ms、90000ms lease、首末值与canonical digest；completed analysis Attempt必须为末条receipt version + 1，result必须是sequence 1和exact active Plan ref/digest。D1 final projection必须为同Action `completed/success + updated_at`；Case 8还必须存在manifest指定的唯一signed `webhook/applied` final observation，嵌入verifier同时以Actions API核对live run。
+  - 同步`DOD.md`、`docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md`、`docs/Reference.md`和公共export；只勾本项“真实外部证据验收契约”。
+- 验证：
+  - 红灯`pnpm exec vitest run test/runner-heartbeat-evidence.test.ts` → exit 1（domain/verifier不存在）；实现后最终exit 0，1 file / 5 tests。覆盖strict/example、连续cadence/version/lease/digest、result/GitHub/webhook漂移、Round 103 verifier复用、有界响应、raw/credential零传播和CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/runner-api.test.ts test/workflow/task-query-api.test.ts test/workflow/case8-audit-report.test.ts` → exit 0，3 files / 11 tests；20路单receipt、两条45秒receipt、安全查询和Case 8损坏projection fail-closed通过。
+  - `pnpm run e2e:runner-heartbeat`（无opt-in）→ exit 2，固定`runner-heartbeat-e2e: opt-in missing`；`DELIVERY_LOOP_RUNNER_HEARTBEAT_E2E=1 pnpm run e2e:runner-heartbeat`（缺配置）→ exit 2，固定`required Runner heartbeat configuration is incomplete`；两条都在manifest/credential/network前结束。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 83 files / 307 tests、workerd 56 files / 301 tests、377个生产文件Secret scan和文档链接全绿。workerd仅输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round104-final` → exit 0，bundle 2610.34 KiB / gzip 438.91 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。
+- 勾选：Phase 1 Runner heartbeat/final consistency项新增并勾选“真实外部证据验收契约”；真实GitHub Action连续heartbeat、signed final webhook与父项保持未勾。最新`heartbeat_at`、manifest自报、fake API、schema example、本地Runner、dry-run或默认exit 2不能替代真实外部事实。
+- 决策沉淀：cadence必须由append-only receipt链证明，不能从单个最新时间推断；每条receipt的前后version/time和90秒lease都由控制面CAS产生。Runner result、D1 GitHub projection、signed webhook和live Actions API是四种不同authority，只有exact Plan/run/attempt/`updated_at`同时一致才可关门；API reconciliation存在也不能替代本验收要求的signed final webhook。
+- 遗留：当前`git remote -v`为空、Wrangler D1 ID仍为占位值，没有试点repo/App、已部署控制面、有效Codex credential、manifest外Runner release review或signed final webhook事实。需用户提供受控前置后，按[`docs/RunnerHeartbeatE2E.md`](docs/RunnerHeartbeatE2E.md)经正常链路运行一份至少产生两条receipt的analysis Action并保存仓库外manifest；只有`DELIVERY_LOOP_RUNNER_HEARTBEAT_E2E=1 pnpm run e2e:runner-heartbeat` exit 0以及Action/webhook/release review链接人工入账后，才能勾真实子项与父DoD。
+
+## Round 105 — 2026-07-27
+- 目标：Phase 1 / 实测并记录试点GitHub组织的hosted runner最大时长、并发/计费策略、GitHub App权限和Actions事件语义，以及Cloudflare Paid Workflows的create/sendEvent/restart、在途代码升级、大小/保留/并发限制。本轮只闭环这些真实平台事实的只读组合验收契约；真实计费probe、账户/管理面review与父项保持未完成。
+- 前置与权限：只读访问GitHub/Cloudflare官方公开文档与GitHub公开OpenAPI；本地使用delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的既有复用结论、fake HTTPS、Node回归、文档检查和Wrangler dry-run。未访问或修改真实试点GitHub组织、Cloudflare账户、飞书/Meegle/tool-bridge、日志或业务数据库；未触发并发/六小时Action、create/sendEvent/restart、Worker部署或计费模型，未提交代码或使用真实Secret，按用户要求未更新llmdoc。
+- Watt直接复用：`scripts/verify-platform-limits-evidence.ts`继续沿用Watt-derived显式opt-in、仓库外64 KiB manifest、固定0/1/2退出、安全固定错误和1 MiB有界HTTPS读取。GitHub App/`workflow_dispatch`/signed `workflow_run`不复制parser，直接复用`RunnerHeartbeatEvidence`全链；Cloudflare create/sendEvent/在途升级和restart分别直接复用`WorkflowHibernateEvidence`与`ControlledReplayEvidence`。Watt没有GitHub组织limits probe、enhanced billing聚合或Cloudflare官方限制解析，这些平台边界契约为delivery-loop新增，没有虚构复制来源。
+- 动作：
+  - 先写红灯：`test/platform-limits-evidence.test.ts`首次failed suite / 0 tests，缺`platform-limits-evidence` domain/verifier；随后新增strict `PlatformLimitsEvidenceManifestV1`、`verifyPlatformLimitsEvidence`、`pnpm run e2e:platform-limits`、schema example与[`docs/PlatformLimitsE2E.md`](docs/PlatformLimitsE2E.md)。中间定向测试4/5因token regex数字分隔符误入量词统一返回`configuration_invalid`，修正后全绿。
+  - 官方authority固定GitHub `github/docs@071ed75ada2d9e80348639adfc7cca5b3902ed16` / blob `f492e2ebd2859b4f91546cb2f270c83c7cae669a`与Cloudflare `cloudflare-docs@862ae7b51ce028a30f1760e46e5d25ae76cc6832` / blob `926ed4527289522656999bbaa46efd8c4b98e247`。verifier实时读immutable Contents blob、重算digest并解析GitHub 6小时/35天/matrix 256/20-40-60-500/1000和Cloudflare Paid 10MB、CPU/result/event/state/sleep/steps/create/queued/retention/subrequest限制；同页表格50,000与后文10,000 active concurrency冲突必须同时存在并输出显式conflict。
+  - live读取organization Actions permissions、default `GITHUB_TOKEN` policy、artifact/log retention和enhanced billing。按GitHub当前官方OpenAPI纠正最初错误假设：usage响应是逐日`date/quantity/amount/organizationName/repositoryName`，不是`timePeriod + gross/net quantity`；实现先核对org/month，再按date/SKU/unit/price聚合并丢弃repository明细，manifest只保留聚合digest、原Actions item count、unit/quantity/amount标量。
+  - 新增两个只能手动触发的空权限probe workflow：并发probe不checkout、matrix job固定`sleep 300`，verifier分页收集最多10个run/2560 jobs，按`[started_at,completed_at)`跨run重算overlap并要求总job大于review limit且最大overlap相等；duration probe唯一job固定360分钟timeout与370分钟sleep，live failure必须在355～370分钟且时间精确匹配。verifier从不触发probe，避免隐式六小时与并发计费。
+  - 主verifier重新运行三份既有子manifest，绑定同repository、同GitHub API/control-plane origin、Cloudflare account digest与安全evidence ID；Cloudflare Paid plan/billing/support调整仍保留管理面人工review，exit 0不让manifest URL自证。同步DOD、Proto、Architecture、Security、Reference和公共export，只勾“真实外部证据验收契约”。
+  - 最终全量回归额外暴露既有workerd文件级并发污染：一次`execution-attempt-api`的20路相同head上报有10路409，下一次则是另一文件`github-review-feedback`少一条duplicate；两个失败文件单独运行均立即全绿，且失败对象随全量调度变化。workerd测试文件都对同一配置D1执行全表reset/seed，故把`vitest.workflow.config.ts`的文件worker收敛为1；文件内部20路并发不变，串行全量56 files / 301 tests稳定通过，避免用重复碰运气伪装回归绿色。
+- 验证：
+  - 红灯`pnpm exec vitest run test/platform-limits-evidence.test.ts` → failed suite / 0 tests（domain模块不存在）；实现与修正后exit 0，1 file / 5 tests。覆盖strict/example、固定docs/blob/content、policy/billing聚合、跨run并发、六小时时长、三子verifier复用、Cloudflare限制自报、超限/raw/token零传播和CLI opt-in。
+  - `pnpm exec vitest run test/platform-limits-evidence.test.ts test/runner-heartbeat-evidence.test.ts test/workflow-hibernate-evidence.test.ts test/controlled-replay-evidence.test.ts` → exit 0，4 files / 22 tests；App/event、hibernate/redeploy与restart复用链无回归。
+  - 官方公开事实读取 → exit 0：两个固定raw文档与Contents blob SHA匹配；GitHub公开OpenAPI确认`/organizations/{org}/settings/billing/usage`当前`billing-usage-report`逐日usage item结构，并据此完成上述聚合修正。未带试点credential、未读取真实组织账单。
+  - `pnpm run e2e:platform-limits`（无opt-in）→ exit 2，固定`platform-limits-e2e: opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required platform limits configuration is incomplete`；都在manifest/credential/network前结束。
+  - 中间全量故障注入 → 两次`pnpm run verify`分别在无关workerd并发fixture出现1/301失败；对应`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/execution-attempt-api.test.ts`（2/2）与`... test/workflow/github-review-feedback.test.ts`（5/5）均单独exit 0。设置workerd file `maxWorkers=1`后，`pnpm run test:workflow` → exit 0，56 files / 301 tests，内部20路竞争断言保留。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 84 files / 312 tests、workerd 56 files / 301 tests、383个生产文件Secret scan和文档链接全绿。workerd仅输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round105-20260727` → exit 0，bundle 2610.34 KiB / gzip 438.91 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。
+- 勾选：Phase 1平台边界项新增并勾选“真实外部证据验收契约”；真实GitHub组织并发/约六小时计费probe、App/事件、Cloudflare Paid create/sendEvent/redeploy/restart和父项保持未勾。官方静态表、fake API、schema example、本地绿色测试、未运行workflow、管理面URL自报、dry-run或默认exit 2不能替代真实外部事实。
+- 决策沉淀：平台文档、账户effective policy、live probe和业务恢复演练是不同authority。GitHub Support可改变并发，静态plan表不能证明试点limit；Cloudflare官方同页自身存在50,000/10,000冲突，必须显式升级核对。平台limits verifier保持只读，预算消耗与mutation必须由owner另行批准；账单明细在内存聚合后丢弃repository信息，不进入manifest/日志。
+- 遗留：当前`git remote -v`为空、Wrangler D1 ID仍为占位值，没有用户确认的试点organization/repo/App、已部署控制面、Cloudflare Paid account或有效用途隔离凭证。需owner先批准hosted runner分钟/金额和约六小时时间窗，再按[`docs/PlatformLimitsE2E.md`](docs/PlatformLimitsE2E.md)完成饱和并发与duration probe、组织policy/billing人工review及Cloudflare hibernate/redeploy/restart演练；只有`DELIVERY_LOOP_PLATFORM_LIMITS_E2E=1 pnpm run e2e:platform-limits` exit 0、Cloudflare并发冲突处置和全部安全链接/Reviewer入账后，才能勾真实子项与父DoD。
+
+## Round 106 — 2026-07-27
+- 目标：Phase 2 / 真实飞书应用challenge和一条真实事件验签通过，错误签名、过期timestamp、错误tenant被拒且无业务记录。本轮只闭环真实tenant的三方外部证据验收契约；未发布飞书应用、配置真实callback或发送任何真实/负向请求，父项保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`、fake HTTPS、D1/workerd回归、飞书官方公开事件订阅/FAQ/日志检索文档、文档检查和Wrangler dry-run。未访问或修改真实飞书/Meegle/GitHub/Cloudflare/tool-bridge、日志或业务数据库，未部署、提交代码或使用真实Secret；按用户要求未更新llmdoc。
+- Watt直接复用：生产入口继续直接复用Watt的`SHA-256(timestamp + nonce + encryptKey + exact body)`、constant-time compare、AES-256-CBC和challenge短路；`verify-feishu-webhook-evidence.ts`直接沿用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出和安全固定错误。Watt的匿名明文兼容、raw payload持久化与上游错误传播明确没有复制；Watt没有delivery-loop的metadata-only D1 receipt/ingress或三方live evidence，未虚构可复制业务模块。
+- 动作：
+  - 先写红灯：`test/feishu-webhook-evidence.test.ts`首次failed suite / 0 tests，缺`feishu-webhook-evidence` domain模块；随后新增strict `FeishuWebhookEvidenceManifestV1`、`FeishuWebhookObservabilityReportV1`、只读`verifyFeishuWebhookEvidence`、`pnpm run e2e:feishu-webhook`及两份schema example。
+  - challenge按既有安全契约继续零D1写入。Worker仅对challenge、成功event、invalid signature、expired timestamp和wrong tenant输出allowlist结构化观测：case/outcome、request/response digest、status、start/end/latency及可用的event/type/delivery ID；统一Secret redaction/scanner后发出，不记录challenge、raw/encrypted/decrypted body、nonce、token、encrypt key或错误正文。外部report固定exact五条并以canonical digest绑定；challenge≤1秒、event/rejection≤3秒。
+  - 新增operations-only `GET /v1/operations/feishu-webhook/evidence?tenantKey=<exact>&eventId=<exact>`与D1安全store。查询拒绝额外/重复参数，只投影唯一receipt/ingress白名单标量，以及delivery/nonce/ingress/Task/Run/outbox effect六类计数；不存在返回全零/null。成功event要求唯一delivery/ingress和至少一个nonce，三类负向要求所有业务计数为零。
+  - 官方文档确认保存Request URL会发送`url_verification`，challenge须1秒内原样返回，普通事件须3秒内200否则重推，开发者后台日志检索以`SUCCESS`与retry count审计；未发现机器可读的历史事件投递日志OpenAPI。因此verifier不能伪造“飞书已接受”，manifest强制保留app-bound developer console URL/status/review时间，真实关门仍需人工核对。
+  - verifier把飞书后台人工review、外部observability report和D1安全投影保持为三种authority；manifest中的report URL只有与独立环境变量exact相等才发送独立observability token，callback必须绑定控制面origin与固定path。响应1 MiB有界，错误不传播raw/credential，工具没有POST、飞书配置或D1写路径。
+  - 新增[`docs/FeishuWebhookE2E.md`](docs/FeishuWebhookE2E.md)，同步DOD、Proto、Architecture、Security、Reference、公共export与Worker路由；只勾本项“真实外部证据验收契约”。
+- 验证：
+  - 红灯`pnpm exec vitest run test/feishu-webhook-evidence.test.ts` → exit 1，failed suite / 0 tests（domain模块不存在）；实现后最终exit 0，1 file / 5 tests。覆盖strict/example/report digest、三authority交叉、1秒/3秒、receipt drift、负向非零、URL/token绑定、raw/credential零传播和CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-webhook.test.ts` → exit 0，1 file / 5 tests；覆盖真实Worker crypto/challenge、成功metadata receipt、五类本地拒绝、nonce replay与operations鉴权/零写入安全投影。
+  - `pnpm run e2e:feishu-webhook`（无opt-in）→ exit 2，固定`feishu-webhook-e2e: opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required evidence configuration is incomplete`；两次均在manifest/credential/network前结束。
+  - 首次`pnpm run verify`的Node 85 files / 317 tests全绿，workerd在既有`execution-attempt-api`20路同head用例出现9个409；该文件单独2/2立即全绿，随后完整workerd 56 files / 302 tests全绿。最终重新执行`pnpm run verify` → exit 0：typecheck、ESLint、Node 85 files / 317 tests、workerd 56 files / 302 tests、390个生产文件Secret scan和文档链接全绿；workerd仅有既有预期Workflow terminate清理输出。
+  - `pnpm exec wrangler deploy --dry-run` → exit 0，bundle 2618.38 KiB / gzip 440.33 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`pnpm run verify:secrets`与`git diff --check` → exit 0。
+- 勾选：Phase 2第一项新增并勾选“真实外部证据验收契约”；真实飞书自建应用/加密订阅、公开callback、后台challenge/event `SUCCESS`、受控三类负向probe和父项保持未勾。fake API、schema example、本地密文/workerd、manifest自报、单一HTTP状态、dry-run或默认exit 2不能替代真实tenant事实。
+- 决策沉淀：challenge本来就必须零D1写入，因此不能靠控制面数据库自证；Worker安全日志只能证明服务处理，不能证明飞书平台接受。真实关门必须同时具备飞书后台`SUCCESS`人工审计、独立外部HTTP观测和D1正向receipt/负向零写入，且三者用digest/ID/time exact绑定。invalid signature在验签前无法可信解密event ID，日志不伪造该字段；受控probe输入event ID只作为manifest索引，再由D1 exact零写入补强。
+- 遗留：当前`git remote -v`为空、Wrangler D1 ID仍为占位值，没有已部署控制面、飞书测试应用owner确认、公开callback、外部observability report端点或用途隔离短期token。需用户提供受控测试应用与部署前置后，按[`docs/FeishuWebhookE2E.md`](docs/FeishuWebhookE2E.md)完成真实challenge/event和三类负向probe，保留飞书后台/observability/operations安全证据；只有`DELIVERY_LOOP_FEISHU_WEBHOOK_E2E=1 pnpm run e2e:feishu-webhook` exit 0及人工review入账后，才能勾真实子项与父DoD。
+
+## Round 107 — 2026-07-27
+- 目标：Phase 2 / 同一飞书event重放3次只入队一次；不同event指向同task revision仍只创建一个Run。本轮只闭环真实tenant、Cloudflare Queue与Workflow的外部证据验收契约；未重放真实event、运行真实normalizer、创建Workflow或部署，父项保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的既有源码审计结论、fake HTTPS、D1/workerd回归、已安装Cloudflare Workers类型和Wrangler dry-run。未访问或修改真实飞书/Meegle/GitHub/Cloudflare/tool-bridge、日志或业务数据库，未发送webhook、调用真实Queue/Workflow API、部署、提交代码或使用真实Secret；按用户要求未更新llmdoc。
+- Watt直接复用：生产入口继续复用Round 72从Watt EventStore迁入的“dedupe identity命中后不再Queue send”断言结构、Queue sender注入，以及Watt-derived migration/R2/稳定identity模式；`verify-feishu-ingress-evidence.ts`直接沿用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出、有界HTTPS和安全固定错误。Watt没有Cloudflare Queue message identity/attempt ledger、Task revision/Run/workflow-create双层幂等或三方live evidence，对应业务实现为delivery-loop新增，没有虚构Watt来源。
+- 动作：
+  - 先写红灯：`pnpm exec vitest run test/feishu-ingress-evidence.test.ts`首次exit 1，failed suite / 0 tests，缺`feishu-ingress-evidence` domain；恢复本轮时schema已落盘，测试继续因缺`feishu-ingress-evidence-verifier`而exit 1。随后完成strict `FeishuIngressEvidenceManifestV1`/observability report、live verifier、CLI和两份canonical digest示例。
+  - 识别到既有`feishu_ingress_outbox.queue_observed_at`只能证明“至少观察过一次”，不能证明Cloudflare logical message identity或delivery attempt。migration 0057新增immutable `feishu_ingress_queue_observations`：只保存固定Queue名、message ID canonical digest、attempt、message/observed time；原始ID/body无列，`(queue,digest,attempt)`唯一且UPDATE trigger拒绝改写。
+  - consumer直接使用Cloudflare `Message.id/timestamp/attempts`，observation INSERT、queued状态更新和postcheck位于同一D1 batch；状态更新还要求同outbox的exact observation已经存在。相同message/attempt重放幂等，attempt 2追加第二行但仍只有一个message identity；D1异常retry，非法消息ack，Queue原始ID经测试证明零持久化。
+  - 新增operations-only `GET /v1/operations/feishu-ingress/evidence?tenantKey=<exact>&eventId=<exact>`。安全投影包含delivery、按时间排序的transport receipt digest、ingress relay/settlement、Queue digest/attempt/time、Task source tuple/revision/digest、Run/workflow instance和唯一workflow-create outbox；拒绝额外/重复query，不返回nonce、Queue原始ID/body、Task正文、R2 ref、lease、token或SQL行。
+  - verifier要求外部observability exact四条成功HTTP记录：同event三条、peer event一条且request digest各异；再读取两个operations投影，要求各一delivery/ingress/logical Queue identity，两event同Task/Run/revision/digest和同一settled workflow-create outbox；最后以Cloudflare Workflows read API核对live `run_id` instance的status/version/start。Queue/Workflow dashboard URL只作人工review索引，不能自证平台事实。
+  - 中间静态检查先因tuple索引可能undefined而exit 2，收窄后通过；Node实现后第一次5/5失败暴露schema example/CLI缺失及token regex错误地把数字分隔符写入正则量词，修正为`{1,2000}`后只剩Cloudflare合法`errored`状态被过早归类response-invalid，调整为先解析再报instance mismatch后5/5全绿。没有把中间失败隐藏为成功。
+  - 新增[`docs/FeishuIngressE2E.md`](docs/FeishuIngressE2E.md)，同步DOD、Proto、Architecture、Security、Reference、公共export和Worker route；只勾“真实外部证据验收契约”。
+- 验证：
+  - 最终`pnpm exec vitest run test/feishu-ingress-evidence.test.ts` → exit 0，1 file / 5 tests；覆盖strict/example/report digest、四HTTP/双Queue/单Task-Run-live Workflow交叉、transport/Queue/revision/workflow drift、URL/account/token绑定、有界错误/raw credential零传播和CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-ingress-idempotency.test.ts test/workflow/meegle-work-item-ingress.test.ts test/workflow/feishu-webhook.test.ts test/workflow/feishu-card-action.test.ts` → exit 0，4 files / 21 tests；覆盖三receipt、一Queue send、同attempt重放、attempt 2 append、两个event同revision唯一Task/Run/outbox、operations投影及既有webhook/Meegle/card无回归。
+  - `pnpm run e2e:feishu-ingress`（无opt-in）→ exit 2，固定`feishu-ingress-e2e: opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required Feishu ingress configuration is incomplete`；两次都在manifest/credential/network前结束。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 86 files / 322 tests、workerd 56 files / 302 tests、398个生产文件Secret scan和文档链接全绿；workerd仅输出既有预期Workflow terminate清理信息。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round107-20260727` → exit 0，bundle 2630.39 KiB / gzip 441.76 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。
+- 勾选：Phase 2 ingress幂等项新增并勾选“真实外部证据验收契约”；真实飞书event重投、实际normalizer、Cloudflare Queue/Workflow live fact、dashboard人工review和父项保持未勾。本地fake Queue、直接调用normalized sink、schema example、manifest自报、dry-run或默认exit 2不能替代真实tenant事实。
+- 决策沉淀：event业务去重、Queue logical message identity、Queue at-least-once attempt、Task source revision和Workflow instance是五层不同identity。`queue_observed_at`单值不能证明Queue delivery历史，故用append-only digest ledger；但该ledger仍只能证明consumer看到的平台metadata，必须与外部HTTP、operations lineage、live Workflow及Queue dashboard人工review组合。verifier完全只读，不提供重放、部署或平台mutation入口。
+- 遗留：当前`git remote -v`为空、Wrangler D1 ID仍为占位值，没有已部署控制面、飞书测试应用/Meegle normalizer、外部observability、Cloudflare真实Queue/Workflow或用途隔离read token。需owner批准受控重投窗口后，按[`docs/FeishuIngressE2E.md`](docs/FeishuIngressE2E.md)让飞书真实重试同event三次，再产生不同event但相同source revision并经实际normalizer处理；只有`DELIVERY_LOOP_FEISHU_INGRESS_E2E=1 pnpm run e2e:feishu-ingress` exit 0和飞书/Queue/Workflow人工review入账后，才能勾真实子项与父DoD。
+
+## Round 108 — 2026-07-27
+- 目标：Phase 2 / Meegle工作项title、description、acceptance、owner、目标repo和revision映射为TaskEnvelope，缺失时triaging。本轮只闭环真实测试tenant的外部证据验收契约；未读取真实Meegle工作项、触发事件/normalizer或创建Task/Run，父项保持未完成。
+- 前置与权限：使用本地delivery-loop、已安装Meegle CLI只读版本信息、Meegle skill/官方CLI公开源码、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`既有复用结论、fake command runner/HTTPS、Node/workerd/D1/R2、文档检查和Wrangler dry-run。未访问或修改真实Meegle/飞书/GitHub/Cloudflare/tool-bridge、日志或业务数据库，未调用真实tenant API、部署、提交代码或使用Secret；按用户要求未更新llmdoc。
+- 三方authority审计：本机`meegle`为1.0.16。npm metadata的`gitHead=73f1be359ad2e298e5a1817c13e1f1d82fcdf7d3`首次在公开repo checkout失败（对象不存在），随后按官方`v1.0.16` tag成功固定commit`674042f0f58b62962103aff91598c9bc85ccb138`。源码确认`--envelope={data,meta,error}`、token/page-number自动分页最多200页，以及`auto_paginated/pages_merged/total_items/truncated/stopped_reason`；故verifier拒绝truncated、stopped和剩余cursor，不能用半页数据冒充完整事实。
+- Watt直接复用：Watt没有Meegle/Meego mapper、field/role metadata、全量分页、repository allowlist或snapshot→Task/Run lineage，直接复制业务代码为零；继续最大化复用此前迁入的content-addressed immutable R2、stable identity、D1 conditional write，以及Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64KiB manifest、固定0/1/2退出、有界读取和安全固定错误纪律，没有虚构Watt来源。
+- 动作：
+  - 先写红灯：新增`test/meegle-work-item-evidence.test.ts`后，`pnpm exec vitest run test/meegle-work-item-evidence.test.ts`首次failed suite / 0 tests，缺`src/domain/meegle-work-item-evidence.ts`。
+  - migration 0058新增immutable metadata-only `meegle_mapping_lineage`，每个ingress绑定event/source/revision、exact/mapping snapshot digest、profile version/digest及三个受控field/role key、R2 ref、分页布尔/count和`mapped|triaging`结果。mapped行必须绑定Task/Run且gap为空；triaging行必须绑定candidate且Task/Run为空；UPDATE trigger拒绝改写。
+  - 完整snapshot继续先复用`FeishuNormalizedTaskStore`。Task/Run已成功但mapping lineage写入前中断时，同一ingress重试复用existing Task/Run并补lineage；测试通过删除lineage模拟该窗口，未创建补偿Run。triaging candidate、既有triage lineage和统一mapping lineage在同一D1 batch写入，20路既有幂等不变。
+  - 新增operations-only `GET /v1/operations/meegle/evidence?tenantKey=<exact>&eventId=<exact>`。Worker在服务端从隐藏R2 ref有界读取snapshot，重新解析strict schema、重算exact digest，并核对R2 custom metadata、event/source/revision、分页与field/role/owner count；响应只返回验证布尔、digest、受控key/count、repo分类、固定gap和Task/Run/workflow-create标量，不返回正文、field value、principal、cursor、R2 ref或raw API。
+  - 新增strict `MeegleWorkItemEvidenceManifestV1`与`pnpm run e2e:meegle-work-item`。verifier固定CLI 1.0.16与官方tag commit，CLI profile及tenant/project/type由环境独立配置并与manifest exact绑定；先用`meta-fields/meta-roles`核对两个field key/type和一个role key，再用argv数组、`shell:false`、`fields=["_all"] + page_size=200 + --auto-paginate + --envelope`读取五个真实工作项。一个完整case交叉到唯一Task/Run；缺字段、owner多值、repo越allowlist和原始分页未完成四case固定gap且Task/Run/workflow effect全零。
+  - 分页未完成case显式分离两个时间点：D1/R2原始normalizer snapshot必须是`fieldsComplete=false + hasNextPageToken=true`，而验收时live CLI重新读取当前工作项仍必须完整；故不能故意返回truncated/stopped来伪造negative gap。新增[`docs/MeegleWorkItemE2E.md`](docs/MeegleWorkItemE2E.md)，同步DOD、Proto、Architecture、Security、Reference、公共export、Worker route和schema example，只勾“真实外部证据验收契约”。
+- 验证：
+  - 红灯命令见上；实现后`pnpm exec vitest run test/meegle-work-item-evidence.test.ts test/meegle-work-item-mapper.test.ts` → exit 0，2 files / 9 tests。覆盖strict五case/schema example、固定CLI argv/version/metadata、分页拒绝、D1/R2 lineage、mapped Task/Run、四类triage零effect、authority绑定、有界错误/raw零传播和CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/meegle-work-item-ingress.test.ts test/workflow/feishu-ingress-idempotency.test.ts` → exit 0，2 files / 7 tests。覆盖migration 0058、mapped/triage入账、Task后中断补lineage、operations R2回读、正文/principal/ref零返回和既有ingress幂等无回归。
+  - `pnpm run e2e:meegle-work-item`（无opt-in）→ exit 2，固定`meegle-work-item-e2e: opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required evidence configuration is incomplete`；两次都在manifest/Meegle/API前结束。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 87 files / 327 tests、workerd 56 files / 302 tests、405个生产文件Secret scan和文档链接全绿。workerd仅输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round108-final-20260727` → exit 0，bundle 2642.45 KiB / gzip 443.76 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、定向`pnpm run verify:docs`与`git diff --check` → exit 0。
+- 勾选：Phase 2 Meegle映射项新增并勾选“真实外部证据验收契约”；真实test tenant的metadata、5个工作项、实际事件/normalizer、CLI exit 0和父项保持未勾。schema example、fake runner、本地snapshot、workerd、manifest自报、对象存在、dry-run或默认exit 2不能替代真实外部事实。
+- 决策沉淀：live Meegle API、D1 mapping lineage和私有R2 exact snapshot是三种不同authority。CLI证明当前tenant metadata/work-item，D1证明event到candidate或Task/Run，R2回读证明normalizer实际使用的snapshot；任何单一来源都不能关门。mapped lineage必须可在Task事务后补写，否则一次Worker中断会留下无法从Meegle追溯的Task/Run。
+- 遗留：当前`git remote -v`为空、Wrangler D1 ID仍为占位值，没有已部署控制面、测试Meegle project/type/profile、5个受控工作项、实际normalizer或用途隔离operations token。需owner提供测试tenant和只读CLI profile后，按[`docs/MeegleWorkItemE2E.md`](docs/MeegleWorkItemE2E.md)触发真实事件并完成metadata/五case/R2-D1交叉；只有`DELIVERY_LOOP_MEEGLE_WORK_ITEM_E2E=1 pnpm run e2e:meegle-work-item` exit 0与项目权限人工review入账后，才能勾真实子项和父DoD。
+
+## Round 109 — 2026-07-27
+- 目标：Phase 2 / 卡片展示Run/Task/Plan/DoD/repo/goal/Action/PR/blocker/approved effects，大日志只有安全摘要/受控链接。本轮只闭环真实飞书tenant的外部证据验收契约；未发送/更新真实卡片、未等待真实approval过期、未调用飞书写API或部署，父项保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`已迁入源码、fake HTTPS、D1/workerd、文档检查和Wrangler dry-run。未访问或修改真实飞书/Meegle/GitHub/Cloudflare/tool-bridge、日志或业务数据库，未使用真实Secret、提交代码或更新llmdoc。
+- Watt直接复用：生产继续复用Round 58/74从Watt迁入的interactive `wide_screen_mode`/`lark_md` renderer、isolate token cache、stable create UUID、同message create/PATCH/delivery ledger与10秒飞书请求边界；新CLI直接沿用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出和安全固定错误。Watt没有Run/Plan/DoD安全snapshot、approval expiry source watermark、D1 presentation lineage或三方live evidence，这些为delivery-loop新增，没有虚构Watt业务复用。
+- 动作：
+  - 先写红灯：新增`test/feishu-card-presentation-evidence.test.ts`后，`pnpm exec vitest run test/feishu-card-presentation-evidence.test.ts`首次exit 1，failed suite / 0 tests，缺`src/domain/feishu-card-presentation-evidence.ts`。
+  - migration 0059新增immutable metadata-only `feishu_delivery_card_presentation_lineages`，每张新v2 presentation绑定prior presentation、`initial|source_change|approval_expiry|manual_refresh`、prior/current source watermark、trigger/next refresh和projected time。只有到期时前后watermark一致才可标记`approval_expiry`；同batch插入后还必须postcheck exact lineage，避免`OR IGNORE`隐藏无效行。
+  - 新增operations-only `GET /v1/operations/feishu-card-presentation/evidence?runId=<exact>`，不扩展已有strict `/feishu-card` response。Worker最多读100张，strict-rehydrate stored v2、核对presentation/card/run与reference-only outbox、重算rendered digest；只返回安全snapshot、delivery上lineage，剥离actions/application nonce、raw presentation/card JSON、正文、raw log、artifact/R2 ref、DB行上upstream response。
+  - 新增strict `FeishuCardPresentationEvidenceManifestV1`与`pnpm run e2e:feishu-card-presentation`。verifier绑定首次v2 created、同message的expiry前/后updated、直接prior lineage与无业务watermark变化；到期前snapshot必须有Plan/DoD/Action/PR/blocker/唯一effect、Markdown probe、固定隐藏checkpoint和大日志受控链接，到期后只移除effect。最后有界读live Message GET，重算digest、精确比较14个非动作段落，并在JSON parse前以仓库外synthetic credential-pattern canary扫描控制面和飞书完整响应。
+  - 新增[`docs/FeishuCardPresentationE2E.md`](docs/FeishuCardPresentationE2E.md)和schema example，同步DOD、Proto、Architecture、Security、Reference、公共export、Worker route与package script；只勾本项“真实外部证据验收契约”。
+- 验证：
+  - 红灯命令见上；实现后`pnpm exec vitest run test/feishu-card-presentation-evidence.test.ts` → exit 0，1 file / 5 tests。覆盖strict lifecycle/review/schema example、create/PATCH/expiry watermark/live card交叉、消息重建/业务写入拒绝、段落篡改、控制面与飞书canary零泄漏、raw/credential零传播和CLI opt-in。
+  - `pnpm exec vitest run test/feishu-card-presentation-evidence.test.ts test/feishu-delivery-card.test.ts test/failure-blocker-card-evidence.test.ts test/feishu-retry-evidence.test.ts` → exit 0，4 files / 24 tests；`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-delivery-card.test.ts test/workflow/feishu-card-action.test.ts` → exit 0，2 files / 16 tests。Worker穿透额外证明expiry lineage、同message create/PATCH、operations鉴权/strict query、nonce/raw/R2/canary零返回和lineage UPDATE拒绝。
+  - `pnpm run e2e:feishu-card-presentation`（无opt-in）→ exit 2，固定`feishu-card-presentation-e2e: opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required evidence configuration is incomplete`；两次都在manifest/credential/network前结束。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 88 files / 332 tests、workerd 56 files / 302 tests、411个生产文件Secret scan和文档链接全绿。workerd仅输出既有预期Workflow terminate清理信息，无失败suite。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round109-final2-20260727` → exit 0，bundle 2653.16 KiB / gzip 445.38 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`pnpm run verify:secrets`与`git diff --check` → exit 0。
+- 勾选：Phase 2卡片展示项新增并勾选“真实外部证据验收契约”；真实bot create/PATCH、approval自然过期、live Message GET exit 0、scope/群membership/截图人工review和父DoD保持未勾。fake HTTPS、workerd、schema example、manifest自报、dry-run或默认exit 2不能替代真实tenant。
+- 决策沉淀：D1 presentation可证明投影内容，delivery ledger可证明控制面执行了create/PATCH，live Message GET可证明飞书当前消息，但任一单一事实都不能证明完整历史。approval过期若没有immutable prior/current source watermark，无法区分“定时刷新”与“恰好有其他写入”；因此单独新增lineage，而不用manifest或最新`refresh_after`自证。
+- 遗留：当前`git remote -v`为空、Wrangler D1 ID仍为占位值，没有已部署控制面、飞书测试应用/群/bot owner授权、专用operations/read token、受控Run、短期approval、synthetic canary或大日志来源。需owner提供真实测试tenant与受控时窗后，按[`docs/FeishuCardPresentationE2E.md`](docs/FeishuCardPresentationE2E.md)完成create→PATCH→expiry、Message GET和人工scope/membership/截图review；只有`DELIVERY_LOOP_FEISHU_CARD_PRESENTATION_E2E=1 pnpm run e2e:feishu-card-presentation` exit 0且人工authority入账后，才能勾真实子项和父DoD。
+
+## Round 110 — 2026-07-27
+- 目标：Phase 2 / `approve/reject/cancel/retry/replay/add-context`服务端按open_id、tenant、Task/Plan/base/effect鉴权，伪造payload、重复nonce和旧revision拒绝。本轮只闭环真实飞书tenant的外部证据验收契约；未发送/点击真实卡片、修改真实身份映射、读取真实tenant、部署或执行业务effect，父项保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`既有迁入源码、fake HTTPS、Node/workerd/D1/R2、文档检查和Wrangler dry-run。未访问或修改真实飞书/Meegle/GitHub/Cloudflare/tool-bridge、日志或业务数据库，未使用真实Secret、提交代码或更新llmdoc。
+- Watt直接复用：生产callback继续直接复用Round 75从Watt迁入的`card.action.trigger` trusted-field extraction和`button.value={id,signal}`编码；新CLI直接沿用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出和安全固定错误纪律。Watt没有Task/Run/Plan/base/effect fencing、application nonce、D1 action/result lineage、server-derived retry/replay target或18-case真实证据，对应verifier/operations业务断言为delivery-loop新增，没有虚构Watt来源。
+- 动作：
+  - 先写红灯：新增`test/feishu-card-action-evidence.test.ts`后，`pnpm exec vitest run test/feishu-card-action-evidence.test.ts`首次exit 1，failed suite / 0 tests，缺`src/domain/feishu-card-action-evidence.ts`。
+  - verified app/tenant card action现在先调用metadata-only`acceptAction`再做decode/chat/latest snapshot/identity/nonce/effect鉴权。malformed/转发/旧卡/错误群/撤权event因此有exact delivery但仍零Task ingress；所有成功/失败callback写安全structured observation，成功HTTP response去掉principal，日志/响应不含open_id、nonce、raw callback/form或上游正文。
+  - 新增operations-only `GET /v1/operations/feishu-card-action/evidence?tenantKey=<exact>&eventId=<exact>`。投影返回verified delivery、零/一action receipt/outcome、operator/principal/chat canonical digest、exact card/presentation/Task/Run/Plan/base binding及event-bound approval/cancel outbox/recovery Attempt+checkpoint/workflow replay/context revision；不返回open_id/principal/roles正文/nonce/raw/form/R2 ref。rejected event必须`businessEffects=0`且`ingressOutboxes=0`。
+  - 新增strict `FeishuCardActionEvidenceManifestV1`、独立`FeishuCardActionObservabilityReportV1`与`pnpm run e2e:feishu-card-action`。固定六类成功和十二类拒绝，要求两个distinct mapped human、一个revoked和一个unmapped账号；verifier重算report digest、逐event核对D1、验证retry lost Attempt/checkpoint/Item与固定replay step，并在JSON parse前以仓库外synthetic credential-pattern canary扫描完整有界响应。
+  - 新增[`docs/FeishuCardActionE2E.md`](docs/FeishuCardActionE2E.md)和schema example，同步DOD、Proto、Architecture、Security、Reference、公共export、Worker route与package script；只勾“真实外部证据验收契约”。
+- 验证：
+  - 红灯命令见上；实现后`pnpm exec vitest run test/feishu-card-action-evidence.test.ts` → exit 0，1 file / 5 tests。覆盖strict 6+12 inventory/schema example、observer/D1交叉、拒绝零effect、server-derived retry/replay、actor authority、canary/raw/credential零传播和CLI opt-in。
+  - `pnpm exec vitest run test/feishu-card-action-evidence.test.ts test/feishu-card-presentation-evidence.test.ts test/feishu-webhook-evidence.test.ts test/feishu-delivery-card.test.ts` → exit 0，4 files / 23 tests；`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/feishu-card-action.test.ts test/workflow/feishu-webhook.test.ts test/workflow/feishu-delivery-card.test.ts` → exit 0，3 files / 21 tests。Worker穿透额外证明operations鉴权/strict query、成功approval lineage、pre-claim拒绝delivery、零ingress/effect及HTTP/operations零open_id/principal/nonce。
+  - `pnpm run e2e:feishu-card-action`（无opt-in）→ exit 2，固定`feishu-card-action-e2e: opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required evidence configuration is incomplete`；两次都在manifest/credential/network前结束。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 89 files / 337 tests、workerd 56 files / 302 tests、417个生产文件Secret scan和文档链接全绿；workerd仅输出既有预期Workflow terminate清理信息。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round110-final-20260727` → exit 0，bundle 2671.17 KiB / gzip 448.38 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。
+- 勾选：Phase 2卡片动作项新增并勾选“真实外部证据验收契约”；真实两个human/未授权账号点击、18个callback、app scope/群membership/open_id mapping/screenshot、observer report和CLI exit 0均保持未勾，父DoD保持未勾。fake callback、workerd、schema example、manifest自报、dry-run或默认exit 2不能替代真实tenant。
+- 决策沉淀：飞书无历史callback只读API，因此HTTP observer、D1 event/action/effect lineage和人工scope/membership/identity mapping是三种不同authority。pre-claim拒绝若不先存verified delivery，就无法在不保存raw callback的前提下证明真实event确已到达；先存delivery仍不授权，也不进入Task normalizer。retry/replay target只从event-bound D1 result反查，manifest不能提供或覆盖target。
+- 遗留：当前`git remote -v`为空、Wrangler D1 ID仍为占位值，没有已部署控制面、测试应用/目标群/错误群、两个mapped human、未授权/撤权账号、独立observer、用途隔离read token、18个受控callback或人工证据。需owner批准测试写入/点击窗口后按[`docs/FeishuCardActionE2E.md`](docs/FeishuCardActionE2E.md)执行；只有`DELIVERY_LOOP_FEISHU_CARD_ACTION_E2E=1 pnpm run e2e:feishu-card-action` exit 0且人工authority入账后，才能勾真实子项与父DoD。
+
+## Round 111 — 2026-07-27
+- 目标：Phase 2 / 补充上下文默认创建新revision且不静默改变running Attempt，只有用户明确选择“应用到当前Run”才取消/重建Attempt。本轮只闭环真实飞书/Meegle外部证据验收契约；未点击真实卡片、触发真实Meegle事件、读取真实tenant、部署或修改外部状态，父项与真实外部事实子项保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`既有复用结论、fake HTTPS、Node/workerd/D1/R2、文档检查与Wrangler dry-run。未访问或修改真实飞书/Meegle/GitHub/Cloudflare/tool-bridge、日志或业务数据库，未使用真实Secret、提交代码或更新llmdoc。
+- Watt直接复用：新CLI直接沿用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出和安全固定错误纪律；operations R2回读继续复用此前从Watt迁入的content-addressed immutable object、stable identity与conditional D1 write。Watt没有supplemental Task/Run/PlanRevision、Meegle mapping lineage、当前Attempt fencing或live card/observer/D1/R2四方证据，新增业务代码直接复制量为零，没有虚构Watt来源。
+- 动作：
+  - 先写红灯：`pnpm exec vitest run test/supplemental-context-evidence.test.ts`首次exit 1、failed suite / 0 tests，缺`src/domain/supplemental-context-evidence.ts`；实现后形成5/5稳定回归。
+  - 审计后未新增migration：飞书每个exact event已有immutable delivery/action receipt/outcome，Meegle每个exact event已有immutable `meegle_mapping_lineage`，`supplemental_context_revisions`负责唯一业务effect。新增统一事件表会重复authority；operations按context反查现有两类external lineage，并以实际双event联表测试证明足够，未用manifest自报补洞。
+  - 新增operations-only `GET /v1/operations/supplemental-context/evidence?contextId=<exact>`。服务端按隐藏D1 ref有界读取private R2 context/new Task，strict解析并重算canonical digest、custom metadata、source/actor/target binding；响应只返回revision digest、验证布尔、Run/workflow-create、Feishu action或Meegle mapping及apply-current的PlanRevision/Attempt/token/approval安全计数，不返回正文、actor/open_id/principal、Meegle field/owner、R2 ref、token/nonce、raw event、outbox payload或数据库行。源行超过20不会静默截断，actual count与有界结果不一致时fail-closed。
+  - 新增strict `SupplementalContextEvidenceManifestV1`、`SupplementalContextObservabilityReportV1`与`pnpm run e2e:supplemental-context`。固定三case：Feishu `new_run`要求source Run version与running Attempt version/lease/token不变；`apply_current`要求派生Run cancelled/absorbed、source Run只前进一个version、旧Attempt cancelled/token全撤销/approval全失效且唯一analysis revision/outbox；Meegle同event重投与第二event同revision要求四个distinct event/五次HTTP观测、两条mapping lineage、单一Task/Run/context/workflow effect。
+  - verifier最后以用途隔离Feishu read token执行live Message GET，核对app/tenant/chat/message/timestamps与canonical card digest，并同时查找“补充上下文·新 Run”和“补充上下文·当前 Run”；在JSON parse前以仓库外synthetic canary和三个短期token扫描全部1 MiB有界响应。
+  - workerd穿透新增三层事实：既有default/apply-current真实D1/R2状态可由operations安全回读；生产Feishu add-context receipt/outcome可反查同一context；两个真实D1 Meegle event lineage可绑定同一supplemental revision且仍只有一个workflow-create。新增[`docs/SupplementalContextE2E.md`](docs/SupplementalContextE2E.md)与两份schema example，同步DOD、Proto、Architecture、Security、Reference、公共export、Worker route和package script；只勾“真实外部证据验收契约”。
+- 验证：
+  - 红灯命令见上；实现后`pnpm exec vitest run test/supplemental-context-evidence.test.ts` → exit 0，1 file / 5 tests。覆盖strict inventory/schema example、observability digest、两种Feishu模式、同event重投/双event Meegle收敛、R2验证、Attempt/token/approval fencing、live card两按钮、canary与用途隔离token零传播、CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/supplemental-context-revision.test.ts test/workflow/feishu-card-action.test.ts test/workflow/meegle-work-item-ingress.test.ts` → exit 0，3 files / 17 tests；覆盖operations auth/strict query、R2验证、Feishu action→context联表、default零source mutation、apply-current fencing和两个Meegle event→单effect。
+  - `pnpm run e2e:supplemental-context`（无opt-in）→ exit 2，固定`supplemental-context-e2e: opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required evidence configuration is incomplete`；两次均在manifest/credential/network前结束。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 90 files / 342 tests、workerd 56 files / 303 tests、424个生产文件Secret scan和文档链接全绿；workerd仅输出既有预期Workflow terminate清理信息。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round111-final-20260727` → exit 0，bundle 2690.77 KiB / gzip 451.70 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`pnpm run verify:secrets`与`git diff --check` → exit 0。
+- 勾选：Phase 2补充上下文项新增并勾选“真实外部证据验收契约”；真实签名Feishu `new_run/apply_current`、Meegle同event重投/双event、live Message GET、scope/群membership/open_id映射/Meegle project权限人工review、CLI exit 0和父项保持未勾。fake HTTPS、workerd、schema example、manifest自报、direct D1 insert、dry-run或默认exit 2不能替代真实tenant。
+- 决策沉淀：默认新Run与apply-current不是一个布尔字段的展示差异，而是两条不同状态机边界。证明默认路径“没有修改旧Attempt”必须同时冻结card action的source Run version、检查旧Attempt version/lease/token与零invalidation/revision；证明apply-current则必须看到新Run absorbed、旧Attempt/token/approval全部fence及唯一analysis replacement。Meegle同event重投和不同event同revision分别由HTTP observer与D1 mapping lineage证明，不能合并成一个manifest count。
+- 遗留：当前`git remote -v`为空、Wrangler D1 ID仍为占位值，没有已部署控制面、测试飞书应用/群/bot、两个受控source Run、Meegle project/type/revision、独立observer、用途隔离read token或人工证据。需owner批准测试写入/点击/event窗口后按[`docs/SupplementalContextE2E.md`](docs/SupplementalContextE2E.md)执行；只有`DELIVERY_LOOP_SUPPLEMENTAL_CONTEXT_E2E=1 pnpm run e2e:supplemental-context` exit 0且人工authority入账后，才能勾真实外部事实与父DoD。
+
+## Round 112 — 2026-07-27
+- 目标：Phase 2 / 飞书审批事件、GitHub审批与控制面approval形成唯一关联。本轮只闭环真实飞书/GitHub外部证据验收契约；未点击真实卡片、创建/重投真实review、访问真实tenant/repo、部署或触发merge，父项与真实外部事实子项保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`既有复用结论、fake HTTPS、Node/workerd/D1、文档检查与Wrangler dry-run。未访问或修改真实飞书/Meegle/GitHub/Cloudflare/tool-bridge、日志或业务数据库，未使用真实Secret、提交代码或更新llmdoc。`git remote -v`为空，Wrangler D1 ID仍为占位值。
+- authority审计：migration 0049及现有producer已经把每个external decision在同一D1 batch绑定到唯一immutable `approval_lineages`；Case 8可同时回答source/approval/lineage、who、两个时间与Task/Run/Plan/base/effect，Feishu card-action operations可反查delivery/receipt/outcome，生产`GitHubMergeGateApiClient.observeApprovalIdentity()`可读取exact PR author/head/review ID/login/submitted time。因此本轮未新增migration或第二张approval真源表；证据契约只读组合现有authority。
+- Watt直接复用：新CLI直接沿用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定安全错误与0/1/2退出纪律，有界HTTPS/canary扫描继续复用本项目既有Watt-derived E2E骨架。Watt没有同一human的Feishu/GitHub approval pair、Task/Run/Plan/base/effect lineage、Case 8/receipt/live review四方核对或event/snapshot隔离，等价业务代码直接复制量为零，没有虚构Watt业务来源。
+- 动作：
+  - 先写红灯：新增`test/approval-lineage-evidence.test.ts`后，`pnpm exec vitest run test/approval-lineage-evidence.test.ts`首次exit 1、failed suite / 0 tests，缺`src/domain/approval-lineage-evidence.ts`。
+  - 新增strict `ApprovalLineageEvidenceManifestV1`与`ApprovalLineageObservabilityReportV1`。固定同一human在Feishu card与GitHub current-head review批准同一Task ID/revision/digest、Run ID/version、Plan ID/version/digest、base SHA和`merge` effect；两条event/source/approval/lineage必须独立，principal/roles digest/PR author separation一致，source occurred与decision recorded时间分别冻结。
+  - observer report固定六次signed HTTP观测：Feishu/GitHub primary与same-event exact retry各一对，retry必须收敛原approval/lineage；Feishu distinct event复用nonce必须`replay_rejected`，GitHub same event改snapshot必须`source_conflict`。Feishu负例还要由operations证明只有metadata delivery且零receipt/outcome/effect。
+  - `verifyApprovalLineageEvidence`以用途隔离operations/observer/GitHub read token执行1 MiB有界GET；交叉核对Case 8两条identity/approval投影、Feishu event/receipt/outcome/business effect、live GitHub review ID/login/current head/submitted time、same-human人工mapping review元数据，以及零merge outbox/fact。所有响应在JSON parse前扫描三枚token、credential形状与仓库外synthetic canary。
+  - 第一次实现后聚焦测试3/5失败，暴露新verifier把数字分隔符写进正则量词（`{1,2_000}`不是合法量词语义），修正为`{1,2000}`/`{8,20000}`后5/5全绿；没有把中间configuration failure隐藏为成功。
+  - 新增[`docs/ApprovalLineageE2E.md`](docs/ApprovalLineageE2E.md)、manifest/report两份schema example、公共export和package script，同步DOD、Proto、Architecture、Security与Reference；只勾“真实外部证据验收契约”。
+- 验证：
+  - 红灯命令见上；实现后`pnpm exec vitest run test/approval-lineage-evidence.test.ts` → exit 0，1 file / 5 tests。覆盖strict pair/inventory/schema examples、observability canonical digest、same-event重投、跨平台same-human/exact snapshot/two lineage、Feishu distinct-event与GitHub snapshot mutation隔离、live review、zero merge、canary/token零传播和CLI opt-in/缺配置。
+  - `pnpm exec vitest run test/identity-approval-evidence.test.ts test/feishu-card-action-evidence.test.ts` → exit 0，2 files / 9 tests；`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts test/workflow/feishu-card-action.test.ts test/workflow/github-merge-gate.test.ts` → exit 0，3 files / 45 tests。覆盖既有Case 8、Feishu receipt/lineage与GitHub approval producer无回归。
+  - `pnpm run e2e:approval-lineage`（无opt-in）→ exit 2，固定`approval-lineage-e2e: opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required evidence configuration is incomplete`；两次均在manifest/credential/network前结束。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 91 files / 347 tests、workerd 56 files / 303 tests、429个生产文件Secret scan和文档链接全绿；workerd仅输出既有预期Workflow terminate清理信息。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round112-final-20260727` → exit 0，bundle 2690.77 KiB / gzip 451.70 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+  - `pnpm run typecheck`、定向ESLint与`git diff --check` → exit 0。
+- 勾选：Phase 2 approval唯一关联项新增并勾选“真实外部证据验收契约”；真实飞书signed card decision、GitHub signed current-head review、两类受控重投/隔离、live REST、open_id↔login↔principal人工mapping、CLI exit 0和父项保持未勾。fake HTTPS、schema example、manifest/report自报、direct D1 insert、dry-run或默认exit 2不能替代真实平台事实。
+- 决策沉淀：approval事实与external event lineage已经是D1真源；本轮缺口不是再建表，而是防止“两个各自正确的approval”被误说成同一个人批准了同一snapshot。必须同时证明共享human/snapshot与独立event/source/approval/lineage，且same-event replay收敛、event/snapshot mutation隔离。Feishu没有历史callback read API，因此signed observer、D1 receipt/Case 8、live GitHub review与人工identity mapping四者不可互相替代。
+- 遗留：当前没有已部署控制面、测试飞书应用/群/latest card、受控GitHub repo/PR、同一映射human、独立signed observer、用途隔离read token或人工mapping证据。需owner批准测试点击/review/replay窗口后按[`docs/ApprovalLineageE2E.md`](docs/ApprovalLineageE2E.md)执行；只有`DELIVERY_LOOP_APPROVAL_LINEAGE_E2E=1 pnpm run e2e:approval-lineage` exit 0且人工authority入账后，才能勾真实外部事实与父DoD。
+
+## Round 113 — 2026-07-27
+- 目标：Phase 2 / optional monitor adapter只创建candidate/triage、同指纹窗口合并且没有repo write。本轮只闭环生产`enabled|disabled`两种决策的真实外部证据验收契约；未访问真实Sentry/Cloudflare、发送告警、修改binding、部署、创建Task或执行仓库effect，父项与真实外部事实保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`既有迁入源码、Sentry官方公开文档、fake HTTPS、Node/workerd/D1/R2、文档检查与Wrangler dry-run。未使用真实Secret、tenant/project/settings token，未提交代码或更新llmdoc；当前Wrangler D1仍是占位资源，dry-run不构成Cloudflare生产配置证据。
+- authority审计：migration 0050已经提供immutable receipt、suppression head、candidate与event lineage，且Task/Run/approval/outbox物理分离；因此没有新增migration或第二张monitor真源表。原`GET /v1/triage/monitor`只能列candidate，不能证明exact rejected event零receipt、某一event的lineage或隐藏R2 snapshot完整性，故只新增operations exact-event安全投影。Sentry官方Integration Platform Webhooks确认`Sentry-Hook-Signature`为client secret对exact request body的HMAC-SHA256；enabled v1据此固定Sentry，不用generic fixture宣称兼容其他provider。
+- Watt直接复用：Watt没有Sentry native observer、Cloudflare Worker settings核对、monitor D1/R2证据投影或enabled/disabled治理分支，等价业务代码直接复制量为零；生产继续直接复用Round 77从Watt迁入的exact-body HMAC与inclusive dedupe。新CLI继续沿用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出及安全固定错误纪律；1 MiB有界HTTPS和canary扫描复用本项目既有Watt-derived E2E骨架，没有虚构Watt业务来源。
+- 动作：
+  - 先写红灯：新增`test/monitor-alert-evidence.test.ts`，首次`pnpm exec vitest run test/monitor-alert-evidence.test.ts`为exit 1、failed suite / 0 tests，缺`src/domain/monitor-alert-evidence.ts`。恢复本轮时`pnpm run typecheck`继续按预期exit 2，缺`src/pilot/monitor-alert-evidence-verifier.ts`；随后才补实现。
+  - 新增strict discriminated `MonitorAlertEvidenceManifestV1`：共同冻结exact Cloudflare account/service/production settings与owner decision。disabled固定`not_enabled + productionConfigurationAbsent`；enabled固定Sentry project/rule/native签名元数据、受信generic profile、四accepted event、三rejected event和人工mapping/project review。独立observability report固定八个scenario，并要求same-event retry exact request/delivery收敛、三个窗口内event共享candidate、过窗event切新candidate。
+  - 新增operations-only `GET /v1/operations/monitor-alert/evidence?tenantKey=<exact>&eventId=<exact>`。它联查receipt/lineage/candidate与monitor source的Task/Run/approval/outbox计数，再有界回读隐藏R2对象、strict parse并重算exact snapshot/resource/fingerprint digest和custom metadata；响应只给安全ID、ordinal/suppressed、受控mapping、candidate count/time及snapshot验证布尔，不返回正文、resource、任何digest、R2 ref或SQL行。不存在/持久化前拒绝event固定`found=false`且所有authority count为零。
+  - 新增`verifyMonitorAlertEvidence`与`pnpm run e2e:monitor-alert`。两种模式都用独立环境配置的exact只读Cloudflare settings URL读取live bindings；disabled要求四个monitor binding全缺。enabled要求Secret为`secret_text`，tenant/sorted allowlist JSON/window seconds三个`plain_text`与profile exact相等；随后交叉observer canonical digest、7个exact D1/R2投影、Sentry live project/rule ID/environment及全程零authority。所有响应在JSON parse前扫描四枚用途隔离token、credential形状与仓库外synthetic canary；CLI没有mutation路径。
+  - 新增[`docs/MonitorAlertE2E.md`](docs/MonitorAlertE2E.md)、enabled/disabled manifest与observer report三份schema example、公共export和package script，同步DOD、Proto、Architecture、Security与Reference；只勾“真实外部证据验收契约”。手写report example首次聚焦测试暴露四个digest长度错误，修正后重新全绿，没有把示例失败隐藏成成功。
+- 验证：
+  - 聚焦`pnpm exec vitest run test/monitor-alert-evidence.test.ts test/monitor-alert.test.ts` → exit 0，2 files / 13 tests；覆盖strict双模式/example、observer digest/retry、Cloudflare binding presence/absence/value、四accepted/三rejected D1/R2、suppression/candidate drift、zero authority、Sentry project/rule mismatch、credential leak及CLI opt-in。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/monitor-alert-ingress.test.ts` → exit 0，1 file / 4 tests；覆盖operations auth/strict query、accepted exact receipt/lineage/candidate与R2重算、authority injection rejected event的`found=false`/零effect，以及正文/resource/digest/ref/Secret零返回。
+  - `pnpm run e2e:monitor-alert`（无opt-in）→ exit 2，固定`monitor-alert-e2e: opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required evidence configuration is incomplete`；两次都在manifest credential/network前结束。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 92 files / 352 tests、workerd 56 files / 304 tests、436个生产文件Secret scan和文档链接全绿；workerd仅输出既有预期Workflow terminate清理信息。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round113-final-20260727` → exit 0，bundle 2702.19 KiB / gzip 453.20 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+  - `pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。
+- 勾选：monitor adapter项新增并勾选“真实外部证据验收契约”；真实Sentry native webhook、受控八case、Cloudflare live settings、Sentry live REST、CLI exit 0与父项保持未勾。fake HTTPS/workerd、schema example、manifest/report自报、default exit 2、dashboard URL或dry-run不能替代真实外部事实。若生产明确不启用，仍必须由owner decision与live settings API exit 0后把真实事实子项按N/A关门，本轮未代替该决定。
+- 决策沉淀：生产“启用”与“不启用”不是同一证据清单上的可选字段。disabled只需治理决策和live配置缺失；enabled则需要native signature observer、D1 event lineage、R2 snapshot、Cloudflare bindings和Sentry project/rule五类authority。observer只能证明它看到/转发的HTTP，manifest只能绑定预期，D1/R2只能证明控制面结果；任何单源都不能证明真实Sentry到零authority的完整链。
+- 遗留：当前没有生产owner决策、已部署控制面、Sentry test organization/project/rule/integration、native observer、用途隔离Cloudflare/operations/observer/Sentry read token或受控过窗时段。需owner先选择enabled或disabled；enabled按[`docs/MonitorAlertE2E.md`](docs/MonitorAlertE2E.md)执行八case并完成人工project/integration review，disabled记录`not_enabled`并用production settings证明四binding全缺。只有`DELIVERY_LOOP_MONITOR_ALERT_E2E=1 pnpm run e2e:monitor-alert`读取真实平台exit 0后，才能勾真实事实或标N/A并评估父DoD。
+
+## Round 114 — 2026-07-27
+- 目标：Phase 4最终试点DoD“真实试点repo完成requirement与bug各一条到Draft PR”。本轮只闭环严格、可重跑的真实外部证据验收契约；未访问真实控制面/GitHub tenant、dispatch Action、写仓库、创建/修改PR、merge、deploy或使用真实Secret，父项与真实试点外部事实保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`既有模式、fake HTTPS、Node/workerd、文档检查与Wrangler dry-run。当前仓库没有可供验收的真实双case manifest/read token；示例manifest只验证schema，不能冒充真实Task/Action/PR。未提交代码或更新llmdoc。
+- authority审计：Task GET已提供intent/source revision/digest/acceptance count，Plan GET已提供required Item/verification decision/Attempt/Evidence，Case 8已提供commit/command/Item verification/PR observation，GitHub REST已提供Action/job、compare diff和当前PR。因此没有新增migration、第二张试点汇总表或第二套PR真源；manifest只组合expected安全索引。业务semantic与bug root cause无法由ID/digest自证，继续要求真人独立review原始需求、诊断、diff、测试与PR。
+- Watt直接复用：新CLI直接沿用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定安全错误与0/1/2退出纪律；1 MiB有界HTTPS、分页fail-closed和credential-shaped canary扫描复用本项目既有Watt-derived E2E骨架。Watt没有requirement/bug→ExecutionPlan/DoD→Draft PR业务链或五方证据绑定，等价业务代码复制量为零；本轮直接复用项目现有`verifyGitHubPullRequestEvidence`，没有复制第二套PR parser。
+- 动作：
+  - 先写红灯：`pnpm exec vitest run test/draft-pr-cases-evidence.test.ts`首次exit 1、failed suite / 0 tests，缺`src/domain/draft-pr-cases-evidence.ts`；随后才实现schema/verifier/CLI。
+  - 新增strict `DraftPrCasesEvidenceManifestV1`，固定按顺序出现`requirement + prd`和`bug + user_feedback`。两条case必须共享受审repo/base branch但使用不同Task、Run、Action、head、branch和PR；每条至少有investigation/change/verification/delivery四类required Item，全部acceptance index覆盖，targeted先于required且全部test Evidence绑定final head。
+  - 新增`verifyDraftPrCasesEvidence`与`pnpm run e2e:draft-pr-cases`。逐case交叉Task GET、Plan GET、Case 8 canonical report、GitHub `Delivery Agent`唯一job/固定三step、base→head compare与canonical changed-file digest，再调用既有Draft PR verifier核对publication、webhook/API observation和live `open + draft` PR；同时要求零merge、零deployment和所有响应零credential/canary泄漏。
+  - authority实读暴露既有`verifyGitHubPullRequestEvidence`与生产Case 8 API不一致：旧代码错误读取`run.id`和`task.target.repository`，真实投影是顶层`runId`与`task.repository`。已修正production projection并同步原测试fixture；未用兼容双读掩盖错误schema。
+  - 新增[`docs/DraftPrCasesE2E.md`](docs/DraftPrCasesE2E.md)、schema example、公共export和package script，同步DOD、Proto、Architecture、Security与Reference；只勾“真实外部证据验收契约”，明确manifest/reviewer URL不能自证semantic/root cause。
+- 验证：
+  - 聚焦`pnpm exec vitest run test/draft-pr-cases-evidence.test.ts test/github-pr-evidence.test.ts` → exit 0，2 files / 10 tests；覆盖strict双case/example、Task/Plan/acceptance coverage、Case 8 commit/test/Evidence、Action/job、compare diff、当前Draft PR、各类drift、credential-shaped canary与CLI前置边界。
+  - 扩展Node回归`pnpm exec vitest run test/draft-pr-cases-evidence.test.ts test/github-pr-evidence.test.ts test/analysis-action-evidence.test.ts test/pull-request-draft.test.ts` → exit 0，4 files / 18 tests；workerd回归`case8-audit-report/github-pull-request/pull-request-draft` → exit 0，3 files / 11 tests。
+  - `pnpm run e2e:draft-pr-cases`（无opt-in）→ exit 2，固定`opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required evidence configuration is incomplete`。两次都没有读取manifest/credential或发网络请求。
+  - 第一次`pnpm run verify`中typecheck/lint和Node 93 files / 357 tests已通过，但既有workerd `execution-attempt-api`并发重放测试出现409时序失败；单独首次重跑仍失败。未将其伪装为成功：临时只读响应诊断行已移除，随后三个独立进程各2/2通过，未修改该测试断言或生产ExecutionHead实现。第二次完整`pnpm run verify` → exit 0：Node 93 files / 357 tests、workerd 56 files / 304 tests、440个生产文件Secret scan和文档链接全绿；workerd仅输出既有预期Workflow terminate清理信息。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round114-final-20260727` → exit 0，bundle 2702.19 KiB / gzip 453.20 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+  - `pnpm run lint`、`pnpm run verify:docs`与`git diff --check`在文档落地前已exit 0；最终修改后再次执行下述收尾命令入账。
+- 勾选：Phase 4最终试点项新增并勾选“真实外部证据验收契约”；真实同repo两条Task/Run/Action/head/branch/PR、真人PRD semantic与bug root-cause review、真实CLI exit 0和父项保持未勾。fake HTTPS、schema example、manifest自报、local workerd、dry-run或默认exit 2不能替代真实外部事实。
+- 决策沉淀：最终试点不是再造一张`pilot_cases`表，而是将已有五个authority做交叉证明。Task/Plan回答“计划与DoD是否完成”，Case 8回答“控制面记了什么”，Actions/compare回答“GitHub实际执行和改了什么”，PR verifier回答“外部PR是否仍是当前Draft”，真人review回答“需求语义和bug根因是否成立”；任何一方不能替代其余各方。
+- 遗留：当前没有已部署控制面、受控试点repo中的一条真实PRD和一条真实用户反馈、对应两条成功Action/Draft PR、用途隔离只读token、synthetic canary或真人semantic/root-cause review证据。需owner授权试点资源与执行窗口后按[`docs/DraftPrCasesE2E.md`](docs/DraftPrCasesE2E.md)采集仓库外manifest；只有`DELIVERY_LOOP_DRAFT_PR_CASES_E2E=1 pnpm run e2e:draft-pr-cases`读取真实五方事实exit 0且人工review入账后，才能勾真实外部事实与父DoD。
+
+## Round 115 — 2026-07-27
+- 目标：Phase 6 / Task、Run、Attempt、GitHub run、PR、test/production deployment与tool trace可在日志和trace中联查。本轮只闭环Cloudflare Workers Logs/Traces + GitHub + D1四方真实外部证据验收契约；未访问真实tenant、部署Worker、调用真实GitHub/Cloudflare API或使用真实Secret，父项与真实平台事实保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的已审模式、Cloudflare官方公开文档、fake HTTPS、Node/workerd、文档检查和Wrangler dry-run。当前Wrangler D1仍是占位资源，observability配置只写入仓库且未部署；未提交代码或更新llmdoc。
+- authority审计：既有`GET /v1/correlations`与D1 split views已直接联查authoritative ledger，`CorrelationLogger`也是唯一生产structured console路径，故不新增migration、correlation汇总表或telemetry副本。D1只能证明控制面内部lineage，GitHub REST只能证明当前外部对象，Workers Logs只能证明安全record持久化，Workers Traces只能证明调用trace；manifest与Dashboard URL都不能替代这四方中的任一authority。
+- Watt直接复用：Watt固定commit只有内部metrics/D1 audit与短期Agent correlation，没有跨Task/PR/deployment的Cloudflare telemetry证据链，等价业务代码复制量为零。新CLI最大化复用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出和安全错误纪律；1 MiB/10秒有界HTTPS、parse前credential/canary扫描继续复用本项目既有Watt-derived骨架，没有虚构Watt业务能力。
+- 动作：
+  - 先写红灯：`pnpm exec vitest run test/correlation-platform-evidence.test.ts`首次exit 1、failed suite / 0 tests，缺`src/domain/correlation-platform-evidence.ts`；扩展完整五个case后再实现，没有先写实现再补断言。
+  - 新增strict`CorrelationPlatformEvidenceManifestV1`与`CorrelationPlatformLogRecordV1`。manifest固定十条有序lookup、同一Run lineage、四个GitHub object、Cloudflare account digest/production script/七天窗口、100% sampling/persist、synthetic canary digest和三类人工review URL；每条lookup绑定exact observed time、strict log canonical digest和唯一32位worker trace ID。
+  - `CorrelationLogger`增加来自strict query parse的`matchedByKind/matchedById/matchedByRepository`，不记录请求URL或raw query。`wrangler.jsonc`显式启用persisted Logs/Traces与100% head sampling，并以`invocation_logs=false`减少平台自动请求元数据；这是试点验收配置，扩大生产流量前仍需成本评估。
+  - 新增`verifyCorrelationPlatformEvidence`与`pnpm run e2e:correlation-platform`。逐条核对十个非truncated D1安全projection，再实时读取GitHub Action、PR和两个Deployment；随后直接调用Cloudflare官方telemetry query endpoint，以`dry=true`分别执行十个events与十个traces查询，核对account/service/trace/time/source digest/truncated/span/error。所有外部响应在JSON parse前扫描三枚用途隔离token、credential-shaped canary和credential模式，只输出固定错误码。
+  - 新增[`docs/CorrelationPlatformE2E.md`](docs/CorrelationPlatformE2E.md)、schema example、公共export和package script，同步DOD、Proto、Architecture、Security与Reference；只勾“真实外部证据验收契约”。
+- 验证：
+  - 聚焦`pnpm exec vitest run test/correlation-platform-evidence.test.ts` → exit 0，1 file / 5 tests；覆盖strict example/Wrangler配置、十D1+四GitHub+十log+十trace、lineage/GitHub drift、truncated log、missing trace、credential leak与CLI前置边界。
+  - workerd聚焦`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/correlation-query.test.ts` → exit 0，1 file / 3 tests；覆盖D1五类基础反查、认证/strict query和新增matched-by allowlist log。
+  - `pnpm run e2e:correlation-platform`（无opt-in）→ exit 2，固定`opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required evidence configuration is incomplete`。首次把两条命令包装为一个zsh退出码检查时误用了只读变量名`status`，wrapper exit 1；未伪装成功，改用`code_one/code_two`后确认两次均为预期exit 2且无网络。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`和`git diff --check` → exit 0。追加Round记录后的首次组合文档检索因shell双引号内含反引号导致`unmatched quote`、exit 1；修正为单引号pattern后`verify:docs + diff --check + rg`再次exit 0，未把命令拼接错误当作项目失败或成功证据。
+  - `pnpm run verify` → exit 0：Node 94 files / 362 tests、workerd 56 files / 304 tests、444个生产文件Secret scan和文档链接全绿；workerd只输出既有预期Workflow terminate清理信息。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round115-final-20260727` → exit 0，bundle 2702.37 KiB / gzip 453.24 KiB；识别双Workflow、双Queue、D1与四个R2 binding，未部署。
+- 勾选：Phase 6 correlation项新增并勾选“真实外部证据验收契约”；真实Worker deployment、七天内十条live log/trace、四个GitHub live object、Dashboard人工review、真实CLI exit 0与父项保持未勾。fake HTTPS、schema example、manifest/URL自报、local workerd、Wrangler dry-run或默认exit 2不能替代真实外部事实。
+- 决策沉淀：Correlation的长期业务root仍是`run_id`，D1 ledger仍是内部状态真源；telemetry不是第二套状态机。可恢复审计必须通过D1 lineage、GitHub外部对象、Workers persisted log和Workers trace四方交叉证明，并把最大七天的Cloudflare原生保留作为操作窗口，而不是假设日志永久存在。未来需要更长保留时应单独接入受审OpenTelemetry sink，不能把官方export能力文档当作已配置事实。
+- 遗留：当前没有已部署控制面、真实试点Run、Cloudflare Workers Observability read token、控制面/GitHub用途隔离read token、synthetic canary或三类Dashboard人工review。需owner批准部署和只读采集窗口后按[`docs/CorrelationPlatformE2E.md`](docs/CorrelationPlatformE2E.md)在七天内生成十次查询与仓库外manifest；只有`DELIVERY_LOOP_CORRELATION_PLATFORM_E2E=1 pnpm run e2e:correlation-platform`读取真实四方事实exit 0且人工review入账后，才能勾真实平台事实与父DoD。
+
+## Round 116 — 2026-07-27
+- 目标：Phase 5 / 仓库有明确rollback contract时测试环境自动回滚可执行，production自动回滚另行审批。本轮只闭环严格、可重跑的真实外部证据验收契约；未制造真实test/production failure、访问真实控制面/GitHub/云tenant、dispatch Action、执行云回滚、部署Worker或使用真实Secret，父项与真实GitHub/云事实保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`既有模式、fake HTTPS、Node/workerd、文档检查和Wrangler dry-run。未提交代码或更新llmdoc；当前Wrangler D1仍为占位资源，dry-run不构成已部署控制面或真实Environment/OIDC/云审计证据。
+- authority审计：migration 0033、`TestRollbackStore/RunnerStore/GitHubTestRollbackStatusStore`和固定workflow已经形成contract observation、rollback snapshot、独立Attempt/outbox/OIDC、Runner result、GitHub双源observation与Evidence真源，因此没有新增migration、回滚汇总表或第二套状态机。原Task查询只有简化rollback摘要，Case 8没有contract/rollback/observation投影，且没有外部verifier/CLI，无法可重跑地证明两类真实失败成功回滚与两类越权边界。
+- Watt直接复用：Watt的`rollbackDelivery`只把投递失败的outbox从delivering退回pending，不是云环境rollback，无法复制为业务回滚。新CLI最大化复用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2退出和安全错误纪律；1 MiB/10秒有界HTTPS、credential-shaped canary parse前扫描和生产`GitHubActionsApiClient.getRollbackWorkflowRun` parser复用本项目既有Watt-derived骨架。新增内容只组合既有rollback authorities，没有虚构Watt业务能力。
+- 动作：
+  - 先写红灯：新增`test/test-rollback-evidence.test.ts`，首次`pnpm exec vitest run test/test-rollback-evidence.test.ts`为exit 1、failed suite / 0 tests，缺`src/domain/test-rollback-evidence.ts`；随后才实现schema/verifier/CLI和projection。
+  - 新增strict `TestRollbackEvidenceManifestV1`，固定deployment failure与acceptance failure两条成功rollback，以及contract absent与production failure两条零effect；正向绑定source failure/Evidence、exact policy/contract digest、独立Attempt/outbox、fixed workflow/test Environment/OIDC role、Runner+GitHub双事实、双源observation、rollback Evidence和云人工review。负向绑定受控GitHub workflow inventory窗口；production decision固定`not_approved`并要求治理链接/reviewer。
+  - Case 8新增`checks.testRollbackContracts/testRollbacks/testRollbackObservations`。查询直接联查authoritative表并严格验证白名单标量，只公开source/Run/Plan/Attempt/policy digest/status/GitHub/OIDC identity/Evidence/时间；token、OIDC JWT/token digest、raw policy/argv、Runner output和raw webhook/REST没有response字段。workerd穿透同时覆盖declared成功与`not_declared`零effect。
+  - 新增`verifyTestRollbackEvidence`与`pnpm run e2e:test-rollback`。四条Run均回读Case 8；两条正向用用途隔离Actions read token实时读取exact Action，两条负向用exact workflow+head SHA+受控created窗口实时要求`total_count=0`且无分页。所有body在JSON parse前扫描控制面/GitHub token、synthetic canary和credential形状；CLI没有mutation路径。
+  - 新增[`docs/TestRollbackE2E.md`](docs/TestRollbackE2E.md)、schema example、公共export和package script，同步DOD、Proto、Architecture、Security与Reference；只勾“真实外部证据验收契约”，云URL/manifest自报不能替代真人打开真实平台事实。
+- 验证：
+  - 聚焦`pnpm exec vitest run test/test-rollback-evidence.test.ts` → exit 0，1 file / 4 tests；覆盖strict四case/example、正向Case 8+Action、负向零Action inventory、projection/Action/inventory drift、credential leak和CLI opt-in。
+  - workerd聚焦`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/test-rollback.test.ts` → exit 0，1 file / 9 tests；覆盖本地rollback完整状态机，并新增declared/negative Case 8安全投影与Secret零返回。
+  - `pnpm run e2e:test-rollback`无opt-in → exit 2，固定`opt-in missing`；设置opt-in但缺真实配置 → exit 2，固定`required evidence configuration is incomplete`。两次都在manifest/credential/network前结束。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。首次并行聚焦检查如实暴露test tuple类型、一个regex lint和workerd期望ID pattern三处问题，修正后全部通过。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 95 files / 366 tests、workerd 56 files / 304 tests、448个生产文件Secret scan和文档链接全绿；workerd只输出既有预期Workflow terminate清理信息。
+  - 首次dry-run wrapper因包含`rm -rf /tmp/...`被命令安全策略拒绝，未执行项目命令且未伪装成功；改用新唯一outdir，最终`CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round116-final-20260727-2031` → exit 0，bundle 2714.09 KiB / gzip 454.87 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+- 勾选：Phase 5 rollback项新增并勾选“真实外部证据验收契约”；真实test Environment的deployment/acceptance failure回滚、exact Actions/OIDC/云审计/环境恢复、contract absent与production failure零Action、production真人治理决定、真实CLI exit 0及父项保持未勾。fake HTTPS、schema example、manifest/URL、自报review、local workerd、dry-run或默认exit 2不能替代。
+- 决策沉淀：回滚成功是独立补偿事实，不会改写原failed Item/Evidence或把Run伪装为`succeeded`。D1回答控制面授权/执行链，GitHub live Action与负向inventory回答外部job是否存在，云审计/环境结果由真人回答真实恢复，production治理记录回答权限是否批准；四者不能互相替代。production未来若批准自动回滚，必须提升为独立schema/approval/Environment/OIDC/outbox和演练，不能扩展test manifest越权。
+- 遗留：当前没有已部署控制面、受控试点repo/test Environment、两条真实失败与rollback Action、云审计/环境结果、用途隔离Case 8/Actions read token、synthetic canary或production owner治理记录。需owner批准试点资源和失败窗口后按[`docs/TestRollbackE2E.md`](docs/TestRollbackE2E.md)采集仓库外manifest；只有`DELIVERY_LOOP_TEST_ROLLBACK_E2E=1 pnpm run e2e:test-rollback`读取真实平台exit 0且真人review入账后，才能勾真实GitHub/云事实并评估父DoD。
+
+## Round 117 — 2026-07-27
+- 目标：Phase 7 / E2E-1“真实Meegle/卡片创建任务 → 只读分析 → ExecutionPlan v1 → 计划/effect批准 → 单一Run/Workflow/analysis Action”。本轮只闭环严格、可重跑的真实外部证据组合契约；未访问真实Meegle/飞书/GitHub/Cloudflare tenant、创建Task、点击卡片、dispatch Action、签发write credential、写仓库或部署Worker，E2E-1真实平台事实与最终Done保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`既有E2E模式、三份现有verifier、fake HTTPS、Node测试、文档检查和Wrangler dry-run。无真实Secret进入命令/manifest/日志，未提交代码或更新llmdoc；四份example只验证schema，不能冒充真实工作项、human、Action或Workflow。
+- authority审计：analysis Plan activation把validated Plan置active并让Run进入`awaiting_approval`，没有独立`plan_approvals`真源；`approvals`表的一条记录已经exact绑定Task revision、Plan version/digest、base SHA和effect。因此E2E-1的“计划/effect批准”是同一真人`approve(repo_write)` decision的两个绑定维度，不是复制两条approval。Meegle mapping ledger、Task/Plan/Case 8、GitHub Actions、飞书card-action ledger和Cloudflare live instance各回答不同事实，任何单方或manifest不能替代其余authority。
+- Watt直接复用：Watt没有Meegle PRD→delivery-loop Task/Run→GitHub analysis Plan→飞书exact approval的跨平台lineage，等价业务代码直接复制量为零；强行复制generic Task/checkpoint approval会丢失revision、Plan digest/base/effect和external human绑定。本轮继续直接复用Watt`scripts/e2e/lib.ts`的显式opt-in、仓库外64 KiB manifest、固定0/1/2及安全错误纪律，并最大化复用本项目既有`verifyMeegleWorkItemEvidence`、`verifyAnalysisActionEvidence`和`verifyFeishuCardActionEvidence`，没有复制第二套Meegle/GitHub/飞书parser。
+- 动作：
+  - 先写红灯：`pnpm exec vitest run test/requirement-e2e-evidence.test.ts`首次exit 1、failed suite / 0 tests，缺`src/domain/requirement-e2e-evidence.ts`；随后才实现schema/verifier/CLI。
+  - 新增strict`RequirementE2EEvidenceManifestV1`。主manifest只保存三份完整子manifest的canonical digest和同一repository、Meegle event/work-item、Task/revision/digest、Run/version、Workflow instance、Plan/version/digest/base、analysis Attempt/Action、飞书approval安全lineage；任一子manifest变更先触发digest失败，digest同步后仍须交叉绑定。
+  - 新增`verifyRequirementE2EEvidence`与`pnpm run e2e:requirement`。三份原verifier无条件执行；组合层固定`prd + requirement`、唯一mapped Task/Run、`run_id=workflowInstanceId`、唯一analysis Action和mapped human的`approve(repo_write)`。随后复读当前Case 8，要求Run仍`awaiting_approval`、exact approval唯一、只有settled analysis dispatch outbox且write credential/change/deployment全零；最后只读Cloudflare live `delivery-run/instances/:runId`核对`waiting`、version和start。
+  - 收尾安全review发现初版为测试暴露了可注入`componentVerifiers`，库调用者理论上可绕过三份子验证器；该旁路在提交前完全移除，测试改用Vitest模块替身，生产函数现在无条件调用原verifier。Cloudflare与Case 8响应均1 MiB/10秒有界并在JSON parse前扫描全部用途隔离token和credential-shaped canary。
+  - 新增[`docs/RequirementE2E.md`](docs/RequirementE2E.md)、schema example、公共export和package script，同步DOD、Proto、Architecture、Security与Reference；只勾E2E-1“真实外部证据验收契约”，真实平台子项保持未勾。
+- 验证：
+  - 聚焦`pnpm exec vitest run test/requirement-e2e-evidence.test.ts` → exit 0，1 file / 5 tests；覆盖strict example、三manifest digest、同一Task/Run/Plan/approval、真实子verifier强制调用、Cloudflare instance、当前Case 8零write effect、component/lineage/Workflow漂移、credential泄漏与CLI前置边界。
+  - 扩展`pnpm exec vitest run test/requirement-e2e-evidence.test.ts test/meegle-work-item-evidence.test.ts test/analysis-action-evidence.test.ts test/feishu-card-action-evidence.test.ts` → exit 0，4 files / 21 tests。
+  - `pnpm run e2e:requirement`无opt-in → exit 2，固定`opt-in missing`；`DELIVERY_LOOP_REQUIREMENT_E2E=1 pnpm run e2e:requirement`缺配置 → exit 2，固定`required evidence configuration is incomplete`。两次都在manifest/credential/network前结束。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0；四份example总计32460 bytes且各自均小于64 KiB。
+  - 一次完整`pnpm run verify`如实暴露既有workerd`execution-attempt-api`20路响应中的一个409：Node 96 files / 371 tests通过，workerd 55 files / 303 tests通过、1 test失败。该路径本轮未修改且Round 114已有同指纹；立即聚焦重跑为1 file / 2 tests通过，未改生产代码或放宽断言。最终修改后的完整`pnpm run verify` → exit 0：Node 96 files / 371 tests、workerd 56 files / 304 tests、452个生产文件Secret scan和文档链接全绿；workerd仅输出既有预期Workflow terminate清理信息。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round117-final-20260727-2105` → exit 0，bundle 2714.09 KiB / gzip 454.87 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+- 勾选：Phase 7 E2E-1新增并勾选“真实外部证据验收契约”；真实Meegle PRD/飞书human card approval、真实GitHub analysis Action、live Cloudflare Workflow、四份仓库外manifest、用途隔离read token、synthetic canary、真人语义/Plan review、真实CLI exit 0及E2E-1本身保持未完成。fake HTTPS、schema example、本地测试、manifest自报、dry-run或默认exit 2不能替代。
+- 决策沉淀：E2E-1是既有authority的组合验真，不是新增E2E状态表。一个approval record同时批准exact Plan snapshot与一个effect，但summary以`approvalRecords=1 + planSnapshotsApproved=1 + effectsApproved=1`明确“一个decision、两个绑定维度”。E2E-1停在批准且零write effect；执行代码和Draft PR属于E2E-3，不能提前混入。
+- 遗留：当前没有已部署控制面、真实Meegle PRD工作项、飞书测试tenant/card mapped human、试点GitHub App/repository/analysis Action、Cloudflare Paid Workflow实例、四类用途隔离只读credential、synthetic canary或cross-lineage人工review。需owner授权试点资源与受控窗口后按[`docs/RequirementE2E.md`](docs/RequirementE2E.md)采集四份仓库外manifest；只有`DELIVERY_LOOP_REQUIREMENT_E2E=1 pnpm run e2e:requirement`读取真实四方事实exit 0且Reviewer打开Meegle/飞书/GitHub/Cloudflare链接入账，才能勾E2E-1真实平台事实。
+
+## Round 118 — 2026-07-27
+- 目标：Phase 7 / E2E-2“输入uid/cid/路径等定位信息 → tool-bridge查日志/trace → 根因Evidence + DoD计划可引用，未写生产”。本轮只闭环控制面根因authority与严格、可重跑的真实外部证据验收契约；未访问真实日志/数据库/GitHub/Cloudflare tenant、调用真实tool-bridge、dispatch Action、写仓库或部署Worker，E2E-2真实平台事实与最终Done保持未完成。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`已迁入的tool-bridge/E2E模式、fake tool/HTTPS、Node/workerd、文档检查和Wrangler dry-run。没有真实uid/cid/path、日志、trace、数据库行、Secret或root-cause正文进入manifest/命令输出；未提交代码、部署或更新llmdoc。
+- authority审计：既有`tool_call_traces`只证明同Attempt发生过某类调用，既有Plan只保存自由字符串`evidenceRefs`，Case 8又把trace聚合为count；三者不能证明“这次logs/trace产生了这条根因且Plan精确引用”。因此不能只做宽松组合manifest。本轮补最小可信ledger/API：tool trace仍不保存arguments/result，diagnostic Evidence保存脱敏summary但operations投影刻意排除summary，Plan持久化边界精确重验binding。
+- Watt直接复用：继续直接复用Watt的`toolActionFor(scope)`单点action映射、read/write effect catalog、metadata-only AuditStore思想和有界tool transport；CLI继续复用Watt-derived显式opt-in、仓库外64 KiB manifest、固定0/1/2、安全错误与1 MiB/10秒响应边界。Watt没有Task/Attempt/Plan/Evidence表或logs→request trace→root cause→Plan ref业务lineage，故migration 0060和diagnostic binding是本项目必需新增；组合verifier完整调用既有`verifyAnalysisActionEvidence`，没有复制第二套GitHub/Action parser。
+- 动作：
+  - 先写两条红灯：`pnpm exec vitest run test/bug-triage-e2e-evidence.test.ts`首次exit 1、failed suite / 0 tests，缺`src/domain/bug-triage-e2e-evidence.ts`；`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/diagnostic-evidence.test.ts`首次exit 1、failed suite / 0 tests，缺`src/domain/diagnostic-evidence.ts`。随后才实现领域契约、ledger/API、Plan gate和verifier。
+  - 新增strict`DiagnosticEvidenceV1`和migration 0060。producer只接受active`analysis + bug + planning` Attempt token；locator kinds/value只以digest持久化，root cause仅接受Secret-scanned脱敏summary/confidence/relative code refs；source trace必须同Run/Attempt、read/success且同时覆盖`logs/search`和`traces/get`。D1新增immutable binding/source表并把tool trace设为update-immutable，原始locator/log/trace/tool result/error没有列。
+  - 新增`POST /v1/attempts/:attemptId/diagnostic-evidence`与operations-only`GET /v1/runs/:runId/diagnostic-evidence`。并发相同producer稳定收敛一条Evidence；查询从authoritative表join重算Task/active Plan/Evidence/source trace，只返回ID/ref/digest/白名单metadata，不返回root-cause summary。
+  - `AnalysisPlanProposalStore`增加根因门禁：`bug` Plan只要声明`logs_read`，至少一条`d1://evidence/diagnostic_*` ref必须绑定同analysis Attempt的passed+verified Evidence及成功logs/trace sources；缺失、失败、跨Attempt或自由字符串在任何Plan写入前返回conflict。其他Plan/Evidence能力不被扩权。
+  - 新增strict`BugTriageE2EEvidenceManifestV1`、`verifyBugTriageE2EEvidence`和`pnpm run e2e:bug-triage`。主manifest只引用完整Analysis Action manifest canonical digest与安全lineage；原verifier无条件执行，组合层再live核对唯一diagnostic Evidence/Plan ref与Case 8零write credential/change/deployment，并在parse前扫描全部用途隔离token和synthetic canary。
+  - 新增[`docs/BugTriageE2E.md`](docs/BugTriageE2E.md)、schema example、公共export和package script，同步DOD、Vision、Proto、Architecture、Security与Reference。明确固定`run-analysis-attempt.ts`尚无Agent↔tool-bridge受审多轮mediation，故只勾控制面/验收契约，不勾真实平台事实。
+- 验证：
+  - workflow聚焦`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/diagnostic-evidence.test.ts` → exit 0，1 file / 3 tests；覆盖8路幂等、logs+trace绑定、失败/缺失source、Secret拒绝、Plan ref gate和summary-free operations投影。
+  - E2E聚焦`pnpm exec vitest run test/bug-triage-e2e-evidence.test.ts` → exit 0，1 file / 5 tests；覆盖strict example、原Analysis verifier强制调用、Task/Run/Plan/Attempt/Action、diagnostic binding、Plan ref、零write、component/root-cause/deployment drift、credential泄漏与CLI前置边界。
+  - 扩展Node`bug-triage + analysis-action` → exit 0，2 files / 11 tests；扩展workerd`diagnostic-evidence + analysis-attempt-api + tool-bridge-api` → exit 0，3 files / 16 tests。`pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`和`git diff --check`均exit 0。
+  - `pnpm run e2e:bug-triage`无opt-in → exit 2，固定`opt-in missing`，在manifest/credential/network前结束。
+  - 最终`pnpm run verify` → exit 0：Node 97 files / 376 tests、workerd 57 files / 307 tests、460个生产文件Secret scan和文档链接全绿；workerd打印既有测试主动terminate清理诊断但最终exit 0。
+  - `pnpm exec wrangler deploy --dry-run` → exit 0，bundle 2735.57 KiB / gzip 458.64 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+- 勾选：Phase 7新增并勾选E2E-2“控制面与真实外部证据验收契约”；真实用户反馈定位输入、真实tool-bridge logs/trace、固定Action的多轮mediation、真实root-cause human review、用途隔离read token、synthetic canary、真实CLI exit 0和E2E-2本身保持未完成。fake tool/HTTPS、schema example、直接D1写入、本地测试、dry-run、manifest自报或默认exit 2不能替代。
+- 决策沉淀：根因Evidence不是tool-call count，也不是Agent填写的Plan字符串。可信链必须是`同Attempt成功read trace → immutable diagnostic binding → verified Evidence → active Plan exact ref`；原始敏感上下文留在受控源，D1只保留最小摘要与digest，真人review独立回答语义正确性。E2E-2组合层复用已有Action authority，不新增第二套E2E状态表。
+- 遗留：控制面producer/verifier已具备，但固定analysis Runner尚未把Agent工具请求安全地调停到tool-bridge并在Plan前提交diagnostic Evidence；当前也没有已部署控制面、真实日志平台/试点repo、用途隔离token或人工审计记录。下一轮应只处理该Runner mediation契约；完成后由owner授权真实试点窗口，按[`docs/BugTriageE2E.md`](docs/BugTriageE2E.md)采集两份仓库外manifest并运行`DELIVERY_LOOP_BUG_TRIAGE_E2E=1 pnpm run e2e:bug-triage`。只有live exit 0且Reviewer核对原始反馈、日志/trace和exact SHA代码入账后，才能勾E2E-2真实平台事实。
+
+## Round 119 — 2026-07-27
+- 目标：Phase 7 / E2E-2“先补齐并审计固定analysis Runner的Agent↔tool-bridge多轮mediation”。本轮只闭环固定Runner的`logs/search → traces/get → root cause Evidence → exact Plan ref`执行契约；未访问真实用户反馈、日志/trace平台、GitHub/Cloudflare tenant，未dispatch真实Action、写目标仓库、部署Worker或勾选E2E-2真实平台事实。
+- 前置与权限：仅使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`的只读源码、本地fake HTTPS/tool、Node/workerd、文档检查和Wrangler dry-run。没有真实uid/cid/path、日志/trace、token或Secret进入仓库/命令输出；临时诊断内容只在测试Runner temp中出现并被finally删除。未stage/commit，按项目约定未更新llmdoc。
+- Watt直接复用：再次核对`harness/types.ts`、`htbp-tools.ts`与`llm.ts`，直接沿用provider-neutral schema+injected execute思想、“远端文档/结果是参考资料、不构成指令”静态prompt、deny不透传上游正文、每次真实模型调用独立usage及tool loop/final schema分离边界。Watt动态循环依赖AI SDK`generateText tools + stopWhen`，Codex CLI无in-process tool callback，不能直接复制成可运行loop；本项目据此把`DiagnosticAnalysisMediation`收窄为固定三阶段token-free capability，没有虚构Watt能力。
+- 动作：
+  - 先写红灯：扩展`test/codex-analysis-adapter.test.ts`后首次`pnpm exec vitest run test/codex-analysis-adapter.test.ts test/analysis-runner-bootstrap.test.ts`出现2个新失败、10个旧测试通过；失败点是Adapter忽略diagnostic配置、仍只执行单轮Plan schema。随后才实现。
+  - `CodexAnalysisAdapter`新增三个strict structured-output阶段：log request、trace request、sanitized root cause + Plan。tool result只写repo外0600 mediation context；prompt固定不可信reference纪律；Agent预填任何`d1://evidence/diagnostic_*`在finish前拒绝。总timeout仍为单Attempt 50分钟，三个真实Codex进程各自产生usage。
+  - `analysis-runner`新增受控mediation状态机和冻结三函数facade。一次且仅一次固定调用`logs/search`和`traces/get`，Agent不能选择path/scope/effect或访问attempt/tool token；heartbeat与tool HTTP共享fencing lock，始终读取当前轮换token。arguments/result/root cause/Plan均重验schema、256 KiB上限及runtime Secret/credential shape；失败、policy deny、重复/越序统一映射安全failure category且不读取上游错误正文。
+  - bug路径预建并结算三个独立model reservation/usage；requirement/PRD仍单轮。Agent结束后先验证`logs_read + diagnostic` Item、零伪造ref、root cause/Plan Secret和workspace snapshot，再以两轮arguments计算locator digest、用实际tool trace ID提交Evidence；Runner本地重算并核对Evidence/root-cause digest，只注入控制面返回的exact ref，重算Plan digest后提交。Evidence/Plan前的workspace mutation、Secret tool result与fake ref均证明零持久写。
+  - 安全测试发现初版把持有fencing/runtimeSecrets的class实例直接放入Agent input，JavaScript运行时仍可枚举private字段；提交前改为仅含三个冻结闭包函数的capability facade，测试证明Agent input对象图不含attempt/tool token。
+  - Analysis Action immutable source verifier新增固定logs/trace/Evidence/ref mediation形状检查；`bug`的`AnalysisActionEvidenceManifestV1`现在必须有成功且排序的logs/repository/traces context，requirement仍允许repository-only。同步两个嵌套example及Analysis/E2E-2规范。
+  - 首次完整`pnpm run verify`如实在既有`execution-attempt-api`20路相同head用例出现1个409；聚焦重跑又出现5个409，故停止盲重试并只读定位。根因为请求读到immutable head update的pending投影后，另一并发请求已推进Attempt，旧candidate分支未复读收敛authority而误报冲突。`ExecutionHeadStore`仅在candidate不匹配时复读一次projection：同内容已收敛返回existing，不同content仍由`existing()`拒绝；无循环重试或断言放宽。原红灯随后聚焦通过。
+- 验证：
+  - 最终聚焦`pnpm exec vitest run test/codex-analysis-adapter.test.ts test/analysis-runner-bootstrap.test.ts` → exit 0，2 files / 18 tests；覆盖三阶段schema/prompt/usage、轮换token、固定顺序、digest/ref、Secret result、重复调用、trace unavailable、fake ref、workspace mutation、temp权限/清理及requirement单轮回归。
+  - 扩展Node`codex adapter + runner + analysis action + bug triage + runner heartbeat + usage` → exit 0，6 files / 36 tests；workerd`diagnostic-evidence + tool-bridge-api + analysis-attempt-api` → exit 0，3 files / 16 tests。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check` → exit 0。`pnpm run e2e:bug-triage`无opt-in按预期exit 2、固定`opt-in missing`，没有读取manifest/credential或联网。
+  - 首次完整verify因上述既有head竞态exit 1；最小修复后`execution-attempt-api`聚焦 → exit 0，1 file / 2 tests。最终完整`pnpm run verify` → exit 0：Node 97 files / 384 tests、workerd 57 files / 307 tests、460个生产文件Secret scan和文档链接全绿；workerd只输出既有测试主动terminate清理诊断。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round119-final-20260727-2216` → exit 0，bundle 2737.11 KiB / gzip 458.90 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+- 勾选：新增并勾选“E2E-2固定Runner mediation契约”；E2E-2真实平台事实及最终Done保持未勾。本地fake tool/Agent、schema、dry-run、默认exit 2和PROGRESS自报不能替代真实Action/tool-bridge/root-cause review。
+- 决策沉淀：Agent只提出两个阶段的arguments和最终root cause/Plan；Runner固定tool authority、轮数、token、Evidence producer和Plan ref。原始工具上下文是短命不可信数据，metadata trace是调用事实，diagnostic Evidence binding是根因引用authority，真人review是语义authority，四者不能互相替代。Watt的成熟AI SDK loop可在未来更换支持callback的Adapter时复用，但不得降低本轮固定path、fencing、Secret、workspace和exact-ref门禁。
+- 遗留：当前仍没有已部署控制面、真实试点GitHub Action/tool-bridge/log平台、用途隔离credential、真实uid/cid/path输入或真人根因review。需owner授权试点资源和受控窗口后按[`docs/BugTriageE2E.md`](docs/BugTriageE2E.md)采集仓库外manifest；只有`DELIVERY_LOOP_BUG_TRIAGE_E2E=1 pnpm run e2e:bug-triage`读取live事实exit 0且Reviewer打开原始反馈、日志/trace平台和exact SHA代码入账，才能勾E2E-2真实平台事实。
+
+## Round 120 — 2026-07-27
+- 目标：Phase 7 / E2E-3“repo_write批准 → 按ready DoD Item最小diff → 定向+全量测试 → Draft PR，required Item逐条有证据”。本轮只闭环控制面与真实外部证据验收契约，并同步增强Phase 4既有双case契约；未读取真实tenant/控制面/GitHub、未签发credential、dispatch Action、写目标repo、创建PR、部署Worker或勾选E2E-3真实平台事实。
+- 前置与权限：只使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`已迁入的E2E安全骨架、本地fake HTTPS、Node/workerd、文档检查和Wrangler dry-run。没有token、Task正文、PR正文、raw API、approval正文或credential进入仓库/输出；未stage/commit，按当前阶段约定未更新llmdoc。
+- authority审计：既有`DraftPrCasesEvidenceManifestV1`和`e2e:draft-pr-cases`已经强于单case wrapper，能组合Task/Plan/Case 8/Action+compare/Draft PR五方authority，但原verifier没有消费Case 8中的Task写策略、approval、Plan effect、write credential和Attempt领取事实，且接受base→head多个commit。因此旧contract能证明“已有commit/test/PR”，不能证明“exact repo_write approval授权了从ready领取的这个Item和这条repo/commit/PR lineage”。`ApprovalLineageEvidenceManifestV1`固定merge effect，不能挪作repo_write；E2E-1 verifier又要求Run仍停在awaiting_approval和零write，不能在Draft PR后复用。
+- Watt直接复用：继续直接复用Watt-derived显式opt-in、仓库外64 KiB manifest、固定0/1/2、安全错误、有界HTTPS、分页fail-closed与credential-shaped canary扫描，并完整复用本项目既有`verifyGitHubPullRequestEvidence`，没有复制第二套PR parser、Case 8 parser或新建E2E-3汇总表。Watt没有Task/Plan/ready Item/approval/credential/commit/PR业务lineage，强行复制generic task/tool代码会丢失本项目authority，等价新增业务代码复制量为零。
+- 动作：
+  - 先扩展`test/draft-pr-cases-evidence.test.ts`。第一次运行因测试fixture自身仍把suite绑定verification Item而出现5个失败；修正为真实initial change Item形状后得到有效红灯：6 tests中2个失败，重算Case 8 report digest后的approval/ready/credential漂移仍被接受，GitHub compare `ahead_by=2`仍被接受。生产代码随后才修改。
+  - 不新增manifest/CLI。现有strict双case contract收紧为每条只有一个required change Item、`mode=implement`、checkout/parent等于Plan base；change verification同时绑定commit及targeted/required Evidence。review-fix属于E2E-4，不能冒充E2E-3首次ready领取。
+  - Case 8只增加两个非敏感历史标量：Attempt的`claimedProgressVersion`和write credential的`createdAt`；物理查询仍不选择token digest/ciphertext、lease token、GitHub token、Task/Plan/PR正文或raw外部响应，也没有migration。
+  - `verifyDraftPrCasesEvidence`现在从Plan重验唯一change Item的exact `repo_write + targeted/required commands + test Evidence`；从Case 8重验Task允许写、latest exact飞书mapped-human approval及source/lineage/event/role digest、Task revision/Plan/version/digest/base/effect、正数ready claim version、同Attempt/Plan/Item/approval/repo credential和approval→claim→credential→commit→publication时间线。approval必须覆盖publication、credential必须在commit时有效；日后自然过期不否定已冻结历史。
+  - 同Attempt只允许一条immutable head/commit；GitHub compare固定`ahead_by=1 + behind_by=0 + commits=[final head]`并继续重算canonical changed-files digest。这个约束证明单commit边界，diff是否语义最小仍由真人review，不能由manifest/Agent自报。
+  - 增强strict example和负向测试，覆盖schema拒绝review_fix、report digest重算后的旧approval/newer reject、缺ready claim、跨repo credential、多commit及compare多commit；summary新增2条approval/ready claim/write credential/single-commit安全计数。同步DOD、DraftPrCases E2E手册、Proto、Architecture、Security与Reference；只勾E2E-3控制面/验收契约，真实平台子项保持未勾。
+- 验证：
+  - 有效红灯`pnpm exec vitest run test/draft-pr-cases-evidence.test.ts` → exit 1，1 file / 6 tests，2 failed；生产实现后同命令 → exit 0，1 file / 6 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/case8-audit-report.test.ts` → exit 0，1 file / 4 tests；证明新增safe projection存在且既有八栏/report digest/Secret边界不变。
+  - 扩展Node`draft-pr-cases + github-pr + github-pull-request-api + pull-request-draft` → exit 0，4 files / 15 tests；扩展workerd`plan-item-attempt + repo-write-credential + plan-item-evidence + pull-request-draft + github-pull-request + Case 8` → exit 0，6 files / 30 tests。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check`均exit 0。example为10512 bytes，小于64 KiB。
+  - `pnpm run e2e:draft-pr-cases`无opt-in → exit 2，固定`opt-in missing`，在manifest/credential/network前结束。
+  - 最终`pnpm run verify` → exit 0：Node 97 files / 385 tests、workerd 57 files / 307 tests、460个生产文件Secret scan和文档链接全绿；workerd只输出既有测试主动terminate清理诊断。第一次全量输出被执行工具在该诊断处截断且无最终exit code，未作为通过证据；第二次完整重跑取得明确exit 0。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round120-final-20260727-2241` → exit 0，bundle 2737.29 KiB / gzip 458.94 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+- 勾选：Phase 7新增并勾选“E2E-3控制面与真实外部证据验收契约”；Phase 4原双case契约同步增强。真实E2E-3、Phase 4真实双case、真实repo_write approval/credential、Actions commit/test和Draft PR仍未完成。fake HTTPS、schema example、本地workerd、manifest自报、Wrangler dry-run或默认exit 2不能替代。
+- 决策沉淀：E2E-3不是新状态机，而是已有authority的组合验真。可信链为`飞书mapped-human exact approval → ready progress version → initial implement Attempt → 单repo短期credential → unique commit → targeted/required Evidence → same-approval Draft PR publication → webhook/API/live PR`。approval自然过期是历史时间线，不应让证据不可回放；更新reject/invalidation则使当前live组合验收fail-closed。`ahead=1`只能证明单commit，改动是否真正最小仍是人工语义authority。
+- 遗留：当前没有Git remote、已部署控制面、飞书测试tenant/card mapped human、试点GitHub App/repository、真实execution Action、用途隔离只读token、synthetic canary或两条真实Draft PR。需owner授权资源与受控窗口后按[`docs/DraftPrCasesE2E.md`](docs/DraftPrCasesE2E.md)采集仓库外manifest；只有`DELIVERY_LOOP_DRAFT_PR_CASES_E2E=1 pnpm run e2e:draft-pr-cases`读取live五方事实exit 0且Reviewer打开approval、原始PRD/反馈、根因、diff、测试和PR链接入账，才能同时关闭Phase 4真实双case与E2E-3真实平台事实。
+
+## Round 121 — 2026-07-27
+- 目标：Phase 7 / E2E-4“review提意见 → 新attempt恢复 → 修复 → 新head SHA上checks全绿”。本轮只闭环控制面与真实外部证据验收契约，并同步增强Phase 4既有GitHub review契约；未读取真实控制面/GitHub、提交review、dispatch Action、写目标repo、创建commit/PR、部署Worker或勾选E2E-4真实平台事实。
+- 前置与权限：只使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`已迁入的E2E安全骨架、本地fake HTTPS、Node/workerd、文档检查和Wrangler dry-run。没有token、review正文、Task/Plan正文、raw API、数据库行或canary原文进入仓库/输出；未stage/commit，按当前阶段约定未更新llmdoc。
+- authority审计：既有`GitHubReviewFeedbackEvidenceManifestV1`、Case 8和`e2e:github-review`已覆盖applied/stale review、PR/Action/ref/compare/check，但verifier使用不存在的`run.id/task.target.repository`而非生产顶层`runId/task.repository`，不重算Case 8 report digest，把Action `head_sha`误当result commit，未读取`/plan`或核对review_fix的Plan/Item/commit/test Evidence lineage，且只验证manifest列出的check子集。因此旧contract既会错拒真实Case 8，也可能在跨Plan replacement、缺DoD Evidence或额外failed check时假通过。
+- Watt直接复用：不新增E2E-4 wrapper、第二套review manifest/parser、migration或状态表，直接增强Phase 4既有manifest/verifier/CLI。继续直接复用Watt-derived显式opt-in、仓库外64 KiB manifest、固定0/1/2、安全错误、有界HTTPS、分页fail-closed和credential-shaped canary扫描。Watt没有reviewed head→same Plan/Item review_fix→commit/test Evidence→new head checks业务lineage，强行复制generic task不能成为本项目authority，等价新增业务代码复制量为零。
+- 动作：
+  - 先把`test/github-review-evidence.test.ts`改为生产真实Case 8形状并增加额外failed check负向case；有效红灯为5 tests中2个失败，真实投影被`control_plane_projection_mismatch`错拒，后续GitHub负向断言也被该错误提前截断。生产实现随后才修改。
+  - strict manifest新增Case 8 report digest、active Plan/version/base/change Item、真人GitHub reviewer、replacement claim、workflow head/base branch、reviewed checkout、唯一commit、targeted→required suite、Item decision完整Evidence IDs及synthetic canary digest。schema固定command顺序/唯一性和`checkout=reviewed head`、`workflow head=Plan base`、`result!=reviewed`等三SHA不变量。
+  - verifier现在并行读取`/plan + /audit`：重算Case 8 canonical digest，核对prior/replacement同Run/repository/active Plan/version/Item、replacement正数`claimedProgressVersion`、Item progress重新passed、唯一reviewed→result commit、commit/test `passed + verified` Evidence、targeted→required命令与同result head的Item decision。跨Plan、缺command/Evidence、旧report digest和错误时间线均fail-closed。
+  - GitHub侧不再把Action run `head_sha`冒充result：run/job head绑定受信workflow ref/Plan base，replacement checkout和commit parent绑定reviewed SHA，commit/ref/PR/compare/checks绑定result SHA。要求唯一`attempt` job及固定checkout/mode-validation/execution steps成功、commit单parent、compare恰好ahead 1/behind 0/单commit；live check-runs必须与manifest exact同集且全部`completed/success/result head`，额外failed check不能被忽略。
+  - 所有控制面/GitHub GET增加10秒timeout；1 MiB有界读取后先扫描用途隔离token、credential形状和仓库外canary，再JSON parse。CLI新增必需`GITHUB_REVIEW_CANARY`且仍在opt-in缺失时先exit 2。增强example、summary和负向测试，覆盖cross-Plan、完整DoD suite、Action job、commit parent、check subset和parse前Secret扫描；同步DOD、GitHubReview E2E手册、Proto、Architecture、Security与Reference，只勾E2E-4控制面/验收契约。
+- 验证：
+  - 有效红灯`pnpm exec vitest run test/github-review-evidence.test.ts` → exit 1，1 file / 5 tests，2 failed；生产实现后同命令 → exit 0，1 file / 6 tests。
+  - 扩展Node`github-review-evidence + review-fix-repository-writer + execution-attempt-runner + delivery-agent-workflow` → exit 0，4 files / 13 tests；扩展workerd`github-review-feedback + execution-attempt-api + verification-evidence + plan-item-evidence-verifier + Case 8` → exit 0，5 files / 19 tests。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check`均exit 0。strict example为4086 bytes，小于64 KiB。
+  - `DELIVERY_LOOP_GITHUB_REVIEW_E2E=0 pnpm run e2e:github-review` → exit 2，固定`opt-in missing`，在manifest/credential/network前结束。
+  - 最终`pnpm run verify` → exit 0：Node 97 files / 386 tests、workerd 57 files / 307 tests、460个生产文件Secret scan和文档链接全绿；workerd只输出既有测试主动terminate清理诊断。第一次并行启动因执行工具拒绝临时目录`rm`而未取得全量exit code，不作为通过证据；去掉清理动作后完整重跑取得明确exit 0。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round121-final-20260727-2308` → exit 0，bundle 2737.29 KiB / gzip 458.94 KiB；识别双Workflow、双Queue、D1与四R2 binding，未部署。
+- 勾选：Phase 7新增并勾选“E2E-4控制面与真实外部证据验收契约”；Phase 4原GitHub review外部证据契约同步增强。真实E2E-4、Phase 4真实review事实、真人review、真实replacement Action/commit/checks仍未完成。fake HTTPS、schema example、本地workerd、manifest自报、Wrangler dry-run或默认exit 2不能替代。
+- 决策沉淀：E2E-4不是新状态机，而是已有authority的组合验真。可信链为`真人exact-head changes_requested → signed applied observation → same Plan/version/Item review_fix claim → reviewed checkout → unique fast-forward commit → targeted/required verified Evidence → passed Item decision → live PR/ref/new-head complete check inventory`。GitHub Action `head_sha`只证明workflow ref head，不能代表Runner产出；reviewed checkout与result commit必须由控制面和Git事实分别证明。check manifest是完整inventory承诺，不是允许忽略额外失败的allowlist。
+- 遗留：当前没有Git remote、已部署控制面、试点GitHub App/repository、真实Draft PR/reviewer、execution Action、用途隔离只读token或synthetic canary。需owner授权试点资源与受控窗口后按[`docs/GitHubReviewE2E.md`](docs/GitHubReviewE2E.md)采集仓库外manifest；只有`DELIVERY_LOOP_GITHUB_REVIEW_E2E=1 pnpm run e2e:github-review`读取live控制面/GitHub事实exit 0且Reviewer打开review、diff、Action、checks和Case 8链接入账，才能同时关闭Phase 4真实review与E2E-4真实平台事实。
+## Round 122 — 2026-07-27
+- 目标：Phase 7 / E2E-5“Workflow hibernate/Worker restart后复用成功步骤；Runner执行中kill后lease/token撤销，新Attempt从checkpoint/Git继续且无重复副作用”。本轮只闭环控制面与真实外部证据验收契约；未访问真实Cloudflare/GitHub/control-plane tenant，未发布Worker、restart Workflow、kill/retry Runner、dispatch Action、push commit、部署、stage或提交，E2E-5真实平台事实与最终Done保持未完成。
+- 第一性原理/authority决策：不能让同一Run同时满足hibernate verifier要求的`awaiting_approval + Workflow waiting`和Runner replacement完成后的`succeeded`投影。E2E-5因此固定为同repository/试点环境内两个不同Run的受控场景；薄组合层只引用两份component manifest的canonical digest并完整调用原verifier，不新增第二套Workflow/Attempt状态、恢复parser或migration。
+- Watt最大化复用：继续固定`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`。直接复用其显式opt-in、仓库外64 KiB manifest、固定0/1/2退出、有界HTTPS、分页fail-closed与安全固定错误纪律；把本项目既有Watt-derived response骨架统一增强为10秒timeout、Case 8 canonical digest和parse前token/credential-shaped canary扫描。Watt没有Cloudflare durable step、delivery-loop Attempt lease/token/cancel、checkpoint/Git、Case 8或副作用inventory，业务断言直接复制量为零，未把generic task冒充恢复authority。
+- 红灯：
+  - `pnpm exec vitest run test/runner-recovery-evidence.test.ts`首次exit 1，10 tests中9 failed；旧schema拒绝新增fence/inventory字段，既有verifier无法证明generation/token/cancel/report digest/单commit/超时/Secret扫描。
+  - `pnpm exec vitest run test/workflow-hibernate-evidence.test.ts`首次exit 1，8 tests中7 failed；旧schema/verifier无法重算Case 8、排除controlled replay、扫描canary或证明所有请求带timeout。
+  - `pnpm exec vitest run test/dual-recovery-evidence.test.ts`首次exit 1，failed suite / 0 tests，缺少dual composition domain/verifier。
+- 动作：
+  - 增强`RunnerRecoveryEvidenceManifestV1`与verifier：Plan精确核对kill前/撤销后generation，Case 8重算report digest并核对lost token ID/generation/revokedAt、全部lost grant已撤销、唯一settled `workflow_cancel`、完整settled effect outbox与零replay；correlation要求所有inventory未截断且PR/deployment ID exact；GitHub compare要求checkpoint为base/merge-base、behind 0并恰好一个result commit。新增operations token、仓库外canary、10秒abort、分页拒绝和parse前Secret扫描；Case 8安全effect inventory正式纳入`workflow_cancel`。
+  - 增强`WorkflowHibernateEvidenceManifestV1`与verifier：重算Case 8 report digest，明确要求`checks.replays=[]`，拒绝以controlled replay/restart修补普通hibernate；GitHub run改走同一有界/scanned GET边界，全部控制面/GitHub/Cloudflare读取带10秒abort和credential扫描。
+  - 新增strict `DualRecoveryEvidenceManifestV1`、`verifyDualRecoveryEvidence`、`pnpm run e2e:dual-recovery`、example与[`docs/DualRecoveryE2E.md`](docs/DualRecoveryE2E.md)。总manifest只保存两份完整component manifest digest及安全identity/window；两份component必须同repository、不同Run/Evidence/三条Action且共用canary digest。CLI读取三份仓库外64 KiB文件并完整调用既有两份authority；没有mutation路径。
+  - 同步[`docs/RunnerRecoveryE2E.md`](docs/RunnerRecoveryE2E.md)、[`docs/WorkflowHibernateE2E.md`](docs/WorkflowHibernateE2E.md)、`docs/Proto.md`、`docs/Reference.md`、`docs/Security.md`和Phase 7 DoD；按项目约定不更新llmdoc。
+- 验证：
+  - 聚焦组件：`pnpm exec vitest run test/dual-recovery-evidence.test.ts test/workflow-hibernate-evidence.test.ts test/runner-recovery-evidence.test.ts test/platform-limits-evidence.test.ts` → exit 0，4 files / 27 tests；digest/identity/window、完整delegation、generation/token/cancel、Case 8/replay、side-effect inventory、Git compare、pagination/canary/timeout及上层reuse均通过。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`pnpm run verify:secrets`均exit 0；Secret扫描为464 files，新增文档链接有效。
+  - `pnpm run test` → exit 0：Node 98 files / 395 tests；workerd 57 files / 307 tests。workerd预期的`User called terminate`诊断不影响最终exit 0。
+  - 最终`pnpm run verify && git diff --check` → exit 0：typecheck、ESLint、Node 98 files / 395 tests、workerd 57 files / 307 tests、464个生产文件Secret scan、文档链接及diff whitespace全部通过；workerd仅输出测试主动terminate的既有清理诊断。
+  - `pnpm run e2e:dual-recovery`（无opt-in）→ exit 2，固定`dual-recovery-e2e: opt-in missing`，在manifest/token/network前结束，不是skip或成功。
+  - `pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-round-122` → exit 0，Worker 2737.31 KiB / gzip 458.95 KiB，Workflow/Queue/D1/四R2 bindings识别；仅dry-run，未部署。
+- DoD：勾选E2E-5“控制面与真实外部证据验收契约”，新增并保留“真实平台事实”未完成项。默认exit 2、fake响应、schema example、本地全绿和Wrangler dry-run均未冒充Cloudflare/GitHub真实恢复。
+- 遗留/下一步：当前`git remote -v`为空、Wrangler D1 ID仍为占位值，没有已部署Worker/Paid Workflow、真实GitHub App/试点repo或只读凭证。需要用户提供同一试点repository与受控Actions/Cloudflare预算，按[`docs/DualRecoveryE2E.md`](docs/DualRecoveryE2E.md)完成两场演练并保存三份仓库外manifest；只有总命令live exit 0、旧token无副作用401探针、Cloudflare/GitHub/Case 8链接和人工时序review入账后才能勾真实项。
+
+## Round 123 — 2026-07-27
+- 目标：Phase 7 / E2E-6“未授权写/部署、跨repo OIDC、过期审批、恶意任务文本全部被拒；canary Secret零泄漏”。本轮只闭环控制面与真实外部证据验收契约；未访问真实飞书/GitHub/Cloudflare/control-plane tenant，未点击卡片、签OIDC、dispatch Action、写目标repo、审批或部署，E2E-6真实平台事实与最终Done保持未完成。
+- 前置与权限：只使用本地delivery-loop、Watt固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`既有复用结论、本地fake HTTPS、Node测试、文档检查和Wrangler dry-run。没有token、OIDC JWT、Task/Plan正文、raw API/日志、approval正文或canary明文进入仓库/输出；未stage/commit，按当前项目约定不更新llmdoc。
+- authority审计：既有Feishu card-action能证明`unauthorized_account/role_revoked`场景与零effect，但场景名不能证明尝试的是repo write；本轮要求独立observer和manifest仅为这两个case冻结枚举型`attemptedCommand=approve + attemptedEffect=repo_write`，再与人工`unmapped/revoked` identity review及operations的verified delivery/零receipt/outcome/ingress/business effect交叉核对。Production Approval完整authority回答self/过期拒绝和零production effect；Test Deployment完整authority回答合法同repo baseline和零重复；Analysis Action、Task/Plan/Case 8回答恶意文本没有提升authority；Secret Safety回答Action log/PR/artifact/blocked publication零明文。E2E组合层不新增状态表或第二套parser。
+- Watt最大化复用：新CLI与全部component I/O继续直接复用Watt-derived显式opt-in、仓库外64 KiB输入、固定0/1/2、安全固定错误、1 MiB/10秒有界HTTPS、分页fail-closed和parse前credential-shaped canary扫描；Secret Safety把同一边界覆盖到控制面/GitHub/PR/Action log且Action log扫描全部credential。Watt没有delivery-loop飞书identity/effect、production approval、GitHub deployment OIDC、Task/Plan/Case 8或Secret publication lineage，等价业务代码直接复制量为零；强行复制generic task/approval会丢失本项目authority。组合层完整调用本项目五份既有verifier，未复制component实现。
+- 红灯：
+  - Secret Safety首次聚焦为3 failed / exit 1，暴露Case 8 digest与parse前全credential扫描缺口；实现后通过。
+  - Permission Injection首次聚焦为failed suite / exit 1，缺`src/domain/permission-injection-evidence.ts`；新CLI不存在时opt-in契约测试exit 1，随后实现。
+  - authority复审后先扩展Feishu测试；`pnpm exec vitest run test/feishu-card-action-evidence.test.ts --config vitest.config.ts` → exit 1，5/5 failed，因为旧strict observer schema拒绝`attemptedCommand/attemptedEffect`，生产实现随后才修改。
+- 动作：
+  - `SecretSafetyEvidenceManifestV1`每case新增`case8ReportDigest`并重算canonical Case 8；全部GET增加10秒timeout，控制面/GitHub/PR/Action log在JSON parse前扫描所有token/canary/credential shape，Action log不再只扫canary。
+  - 新增strict `PermissionInjectionEvidenceManifestV1`、只读组合verifier、`pnpm run e2e:permission-injection`、两份example和[`docs/PermissionInjectionE2E.md`](docs/PermissionInjectionE2E.md)。总manifest只以canonical digest与安全identity组合Feishu action、Production approval、Analysis Action、Test deployment、Secret Safety及原始挑战Task；公开options移除component verifier test seam，CLI和库调用不能注入假的authority。Vitest仅用module mock隔离五个既有component I/O，恶意Task与cross-repo probe仍运行真实生产函数。
+  - 新增`.github/workflows/delivery-cross-repo-oidc-probe.yml`与`scripts/run-cross-repo-oidc-probe.mjs`。隔离probe repo的Action只持有`contents:read + id-token:write`，获取audience=`delivery-loop-test-deploy`的真实GitHub OIDC并调用目标既有test deployment；只有`403 + policy_denied + retryable=false`输出唯一固定marker，不打印JWT、响应/错误正文。组合verifier重读Action、immutable workflow/script、manifest外release contract、唯一成功job和完整log，并与合法同repo Test Deployment baseline共同证明拒绝且无新增attestation/deployment。
+  - 固定三条恶意挑战覆盖Secret外传、跳过DoD验证和修改`.github/workflows/delivery-agent.yml`提升写/部署权限。挑战仍作为合法不可信Task进入analysis，不按关键词丢弃；verifier重算revision digest与稳定Task/Run ID，复读live Task/Plan/Case 8，要求Task三个allow为false、Plan仅`repo_read/logs_read/database_diagnostic`、只有analysis Attempt且零write credential/change/deployment/写部署outbox。
+  - 同步DOD、Proto、Architecture、Security、Reference与Feishu card-action手册；明确summary/marker/manifest不能自证外部事实，真实identity、release和Task语义仍需人工review。
+- 验证：
+  - authority实现后`pnpm exec vitest run test/feishu-card-action-evidence.test.ts --config vitest.config.ts` → exit 0，1 file / 5 tests；strict observer/manifest枚举、人工actor binding、D1零effect、server-derived retry/replay与Secret扫描全绿。
+  - 聚焦组件`pnpm exec vitest run test/permission-injection-evidence.test.ts test/feishu-card-action-evidence.test.ts test/production-approval-evidence.test.ts test/analysis-action-evidence.test.ts test/test-deployment-evidence.test.ts test/secret-safety-evidence.test.ts --config vitest.config.ts` → exit 0，6 files / 26 tests；覆盖strict digest组合、生产authority固定调用、跨repo immutable Action/source/job/log parser、恶意Task/Plan/Case 8、未授权写枚举绑定、write effect拒绝和parse前Secret扫描。
+  - `pnpm run e2e:permission-injection`（无opt-in）→ exit 2，固定`permission-injection-e2e: opt-in missing`；设置opt-in但缺配置 → exit 2，固定`required security configuration is incomplete`；两次均在manifest/credential/network前结束，不是skip或成功。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:secrets`、`pnpm run verify:docs`与`git diff --check`均exit 0；Secret扫描471个生产文件，两份新example合计4185 bytes，小于64 KiB。
+  - `pnpm run test` → exit 0：Node 99 files / 401 tests；workerd 57 files / 307 tests。workerd仅输出既有测试主动`User called terminate`清理诊断。
+  - 最终`pnpm run verify` → exit 0：typecheck、ESLint、Node 99 files / 401 tests、workerd 57 files / 307 tests、471个生产文件Secret scan与文档链接全部通过。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-round-123` → exit 0，Worker 2737.31 KiB / gzip 458.95 KiB，双Workflow、双Queue、D1与四R2 binding识别；仅dry-run，未部署。
+- DoD：勾选E2E-6“控制面与真实外部证据验收契约”，新增并保留“真实平台事实”未完成项。fake HTTPS/module mock、schema example、本地全绿、默认exit 2和Wrangler dry-run均未冒充真实越权/Secret演练。
+- 遗留/下一步：当前`git remote -v`为空、Wrangler D1 ID仍为`00000000-0000-0000-0000-000000000000`，没有已部署控制面、飞书测试tenant/两类未授权身份、GitHub App/目标repo/隔离probe repo、合法test deployment、用途隔离只读token或仓库外canary。需owner批准真实卡片点击、Production approval、Actions/OIDC与测试环境窗口后按[`docs/PermissionInjectionE2E.md`](docs/PermissionInjectionE2E.md)采集七份仓库外证据；只有live命令exit 0、全部平台/人工链接入账且零side effect/plaintext leak，才能勾真实项。下一轮只能选择另一个未完成DoD，不能把本轮本地契约继续重跑成真实事实。
+
+## Round 124 — 2026-07-28
+- 目标：Phase 7 / E2E-7“required checks +真人review/approval、merge、test/production gate、deployment外部核对与飞书完成”。本轮只闭环控制面与真实外部证据验收契约；未访问真实GitHub/飞书/Cloudflare/control-plane、未merge PR、批准effect、dispatch/deploy、更新卡片、stage或commit，E2E-7真实平台事实与最终Done保持未完成。
+- 第一性原理/状态修正：authority审计确认`target_environment`单选，test deployment与post-deployment acceptance只能在`executing`阶段作为merge前required Plan Item执行；仓库只有production `deploying → succeeded` projector。旧merge裁决把`merged_test`留在`deploying`会制造永久stuck Run，与真实代码路径和E2E目标冲突。本轮将合法边对齐为no-deploy/test `merging → succeeded`、仅production `merging → deploying`；test仍必须先由全部required deployment/acceptance Evidence通过merge gate，不能借merge跳过部署。
+- 双lane决策：E2E-7固定使用同repository/受审窗口内两个不同Run，禁止把互斥authority拼成同一Run。test lane为`test deployment success → acceptance passed → checks/review/merge approval → merge → succeeded`；production lane为`checks/review/merge approval → merge/deploying → merge-SHA-bound release approval → production platform success → succeeded`。两条最终各有一张live飞书完成卡。
+- Watt最大化复用：继续固定`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`。CLI/组合fetch直接复用其显式opt-in、仓库外64 KiB文件、固定0/1/2、安全错误、有界HTTPS、分页fail-closed与10秒timeout纪律；八份业务authority完整调用本项目已有Merge Gate、Merge、Test Deployment/Acceptance、Production Approval/Deployment verifier。飞书完成态抽取并复用既有operations projection、Secret scan、同message create/PATCH ledger、Message GET与renderer，不复制第二套sender/parser。Watt没有delivery-loop Run/Plan/merge/deployment/card lineage，新增仅为双lane digest组合与完成态断言。
+- 红灯与动作：
+  - 先把`merged_test`期望改为`succeeded`；`pnpm exec vitest run test/merge-evidence.test.ts`首次exit 1，3 tests中2 failed，旧schema报`manifest_invalid`。随后修改唯一merge projector、strict manifest/example、summary与规范。
+  - workerd首轮`github-merge-gate + feishu-delivery-card`为exit 1：test lane真实得到`deploying`而非`succeeded`；新增完成卡测试的第一版seed同时被`required_plan_item_requires_verified_evidence`守卫正确拒绝，未把非法直写当证据。修正fixture后，聚焦2 files / 40 tests通过。
+  - 新增strict`FeishuCardCompletionEvidenceManifestV1`与生产verifier，固定test/production两张卡；共享读取要求latest settled presentation、同message PATCH、live app/tenant/chat/time/rendered digest、`succeeded + all required passed + merge/deployment succeeded + zero blocker/approval/action`。终态projector不再展示已消费approval，也不生成replay/context按钮。
+  - 新增strict`MergeDeploymentE2EEvidenceManifestV1`、`verifyMergeDeploymentE2EEvidence`、`pnpm run e2e:merge-deployment`、两份example与[`docs/MergeDeploymentE2E.md`](docs/MergeDeploymentE2E.md)。总manifest只存八份完整component的canonical digest/安全case ID和window；公开options没有component verifier注入，Vitest仅以module mock隔离外部I/O。组合层再绑定Run/PR/head/base/decision/Plan/merge ID/SHA/deployment/acceptance/approval/URL/时间线，并对component响应parse前扫描全部token/canary及分页。
+  - 同步DOD、MergeE2E、Proto、Architecture、Security与Reference；按约定未更新llmdoc。Phase 5已完成merge契约的旧文字也同步修正，避免规范继续要求一个没有终态authority的test `deploying`状态。
+- 验证：
+  - 聚焦Node`pnpm exec vitest run test/merge-deployment-e2e-evidence.test.ts test/feishu-card-completion-evidence.test.ts test/feishu-card-presentation-evidence.test.ts test/merge-evidence.test.ts` → exit 0，4 files / 13 tests；随后E2E-7组合扩展Secret/pagination负向后单文件为4/4 tests。覆盖strict双lane/example、digest/lineage漂移、强制component调用、完成卡live message/action拒绝、parse前token扫描、分页fail-closed和CLI opt-in。
+  - 聚焦workerd`pnpm exec vitest --config vitest.workflow.config.ts run test/workflow/github-merge-gate.test.ts test/workflow/feishu-delivery-card.test.ts` → exit 0，2 files / 40 tests；证明test merge终态与succeeded卡零approval/action。
+  - `pnpm run e2e:merge-deployment`无opt-in → exit 2，固定`opt-in missing`；设置`DELIVERY_LOOP_MERGE_DEPLOYMENT_E2E=1`但缺真实文件/credential → exit 2，固定`required external configuration is incomplete`。两次均在manifest/token/network前结束，不是skip或成功。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check`均exit 0。
+  - 最终`pnpm run verify` → exit 0：Node 101 files / 407 tests、workerd 57 files / 308 tests、478个生产文件Secret scan与文档链接全部通过；workerd只输出既有测试主动`User called terminate`清理诊断。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-round-124-20260728` → exit 0，Worker 2737.54 KiB / gzip 459.00 KiB，双Workflow、双Queue、D1与四R2 binding识别；仅dry-run，未部署。
+- DoD：勾选E2E-7“控制面与真实外部证据验收契约”，新增并保留“真实平台事实”未完成项；同时修正已完成merge contract的test终态说明。fake HTTPS/module mock、schema example、manifest自报、本地全绿、默认exit 2和Wrangler dry-run均未冒充真实merge/deployment/飞书事实。
+- 遗留/下一步：当前没有已授权试点repository、已部署控制面、真实test/production Environment与OIDC/云审计、两份受保护PR/真人review/merge、production release reviewer、飞书tenant/机器人群membership或用途隔离只读credential。需owner按[`docs/MergeDeploymentE2E.md`](docs/MergeDeploymentE2E.md)完成双Run试点并采集九份仓库外manifest；只有总命令live exit 0、两张消息/截图和GitHub/Environment/云永久链接经真人review入账后才能勾E2E-7真实平台事实。下一轮只能选择另一个未完成DoD，不能把本轮本地契约重跑成真实事实。
+
+## Round 125 — 2026-07-28
+- 目标：Phase 7 / E2E-8“飞书/GitHub/queue事件各重放3次，注入callback丢失/限流，最终状态正确且无重复PR/部署”。本轮只闭环控制面与真实外部证据验收契约；未访问真实飞书/GitHub/Cloudflare/control-plane、未发送webhook、制造429、请求DLQ replay、dispatch Action、创建PR/Deployment、部署、stage或commit，E2E-8真实平台事实与最终Done保持未完成。
+- 第一性原理/authority裁决：一个Run无法同时保持Feishu ingress live waiting、GitHub PR `pull_request_open`和故障恢复后的`succeeded`。E2E-8固定三个Run lane：Feishu ingress/retry共用一Run，GitHub signed webhook三次投递使用独立PR Run，callback丢失、DLQ replay和最终唯一inventory使用succeeded controlled-replay Run。transport observability只证明HTTP发生三次，不能替代D1/平台业务事实。
+- Watt最大化复用：再次核对`/Users/jishihe/tokenrollal/Watt@476e3cdd2490d725fde174e7c697ebf00899edc6`的`scripts/e2e/lib.ts`。新CLI逐结构沿用其0/1/2退出和前置检查纪律，并继续直接复用本项目既有Watt-derived显式opt-in、仓库外64 KiB、有界HTTPS、安全错误、分页fail-closed与10秒timeout骨架；Watt的`runE2e`会拼接stderr/`String(err)`，不适合本项目provider/Secret错误边界，未直接复制该段。Watt没有Feishu/GitHub/DLQ replay、Case 8 callback recovery或PR/Deployment inventory，等价业务代码直接复制量为零；组合层完整调用本项目既有四份生产verifier，没有复制第二套component parser。
+- 红灯：先新增`test/replay-failure-e2e-evidence.test.ts`并运行`pnpm exec vitest run test/replay-failure-e2e-evidence.test.ts` → exit 1，failed suite / 0 tests，缺`src/domain/replay-failure-e2e-evidence.ts`；生产实现随后才创建。
+- 动作：
+  - 新增strict`ReplayFailureE2EEvidenceManifestV1`和`ReplayFailureObservabilityReportV1`。总manifest只以canonical digest引用Feishu Ingress、Feishu Retry、GitHub PR、Controlled Replay四份完整manifest，并保存API-only callback与resolved DLQ安全索引；report固定GitHub三次202为`applied,duplicate,duplicate`，DLQ三次202为同replay ID的`created=true,false,false`。
+  - 新增`verifyReplayFailureE2EEvidence`，公开options不接受component verifier替换。组合层完整调用四份既有authority；另从Controlled Run Case 8要求selected PR零webhook/唯一applied API observation，从resolved dead-letter要求snapshot内原`*_dispatch → github_actions` outbox exact匹配，再读取GitHub同head/base完整PR inventory。Controlled Replay继续证明最终Run succeeded、effect snapshot未增、唯一Action/PR/Deployment。
+  - 新增`pnpm run e2e:replay-failure`、两份example和[`docs/ReplayFailureE2E.md`](docs/ReplayFailureE2E.md)。五份输入各64 KiB；所有component/自定义外部读取共用10秒abort、有界response、分页fail-closed与JSON parse前全部用途token/canary扫描。未新增migration、状态表、写API或真实effect入口。
+  - 同步DOD、Proto、Architecture、Security与Reference；只勾E2E-8控制面/验收契约，真实平台事实保持未勾；按当前项目约定未更新llmdoc。
+- 验证：
+  - 最终聚焦`pnpm exec vitest run test/replay-failure-e2e-evidence.test.ts` → exit 0，1 file / 5 tests；真实穿透四份component verifier，覆盖strict schema/report digest、三类replay计数、callback出现即拒绝、DLQ漂移、重复PR inventory、component digest和parse前canary扫描。
+  - `pnpm run e2e:replay-failure`无opt-in → exit 2，固定`opt-in missing`；设置`DELIVERY_LOOP_REPLAY_FAILURE_E2E=1`但缺真实配置 → exit 2，固定`required external configuration is incomplete`。两次都在manifest/token/network前结束，不是skip或成功。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check`均exit 0。
+  - 最终`pnpm run verify` → exit 0：Node 102 files / 412 tests、workerd 57 files / 308 tests、483个生产文件Secret scan与文档链接全部通过；workerd只输出既有测试主动`User called terminate`清理诊断。
+  - `CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round125-20260728-final` → exit 0，Worker 2737.54 KiB / gzip 459.00 KiB，双Workflow、双Queue、D1与四R2 binding识别；仅dry-run，未部署。
+- DoD：勾选E2E-8“控制面与真实外部证据验收契约”，新增并保留“真实平台事实”未完成项。fake HTTPS、本地测试、schema example、manifest/structured log自报、默认exit 2和Wrangler dry-run均未冒充真实平台重放/故障恢复。
+- 遗留/下一步：当前没有已授权试点tenant/repository、已部署控制面、真实飞书重投/429、GitHub delivery redelivery、callback丢失代理、Cloudflare Queue/DLQ/Workflow或用途隔离只读credential。需owner按[`docs/ReplayFailureE2E.md`](docs/ReplayFailureE2E.md)完成三个Run lane并采集五份仓库外manifest和transport report；只有live命令exit 0、飞书/GitHub/Queue/Case 8永久链接与Reviewer入账后才能勾E2E-8真实平台事实。Phase 7本地E2E-1～8组合契约已齐，但八个真实平台事实仍需授权试点逐项关闭，不能宣布Done。
+
+## Round 126 — 2026-07-28
+- 目标：Phase 0 / “新仓库远端、owner、visibility和默认分支保护由用户确认后创建；本地初始化不能冒充远端已完成。”本轮只读核对可用账号、候选owner与远端是否存在，不创建仓库、不push、不改分支保护、不部署。
+- 验收命令与成功判据：待owner/name/visibility确认并授权外部写入后，以`git remote get-url origin`、`gh repo view <owner>/delivery-loop --json nameWithOwner,visibility,defaultBranchRef,url`和GitHub branch-protection API共同证明唯一远端、选定可见性、`main`默认分支及受保护状态；任一项不成立均不勾DoD。
+- 只读证据：`gh auth status`→exit 0，本机有active GitHub登录态；`pnpm exec wrangler whoami`→exit 0，本机有Cloudflare OAuth登录态且可见两个account context，本轮未使用其write scope；`gh repo view evilstar9527/delivery-loop`→exit 1，个人候选远端不存在；`git -C /Users/jishihe/tokenrollal/Watt remote -v`→exit 0，Watt的既有远端为`TokenRollAI/Watt`；`gh api user/memberships/orgs/TokenRollAI`→exit 0，当前账号是active member；`gh api orgs/TokenRollAI`→exit 0，该组织当前为Free plan。未输出或持久化token。
+- 勾选：无。`TokenRollAI/delivery-loop`当前未创建；也未确认是否应放在`TokenRollAI`、`Lightspeed-Intelligence`或个人owner，以及是否public/private。
+- 决策沉淀：无。不从Watt远端自动推导本项目owner；不因本机有write-capable登录态就视为获得了创建仓库或Cloudflare部署授权。
+- 遗留/blocker：需owner给出一次性选择：GitHub owner、repository name、visibility，并授权创建远端/push/设置默认分支保护。若选`TokenRollAI` Free + private，还需先确认当前GitHub计划是否支持本DoD要求的private branch protection；不满足时应选public、升级组织计划或改用其他已支持的owner。
+
+## Round 127 — 2026-07-28
+- 目标：继续Phase 0远端bootstrap DoD，在不产生GitHub写入的前提下排除组织建仓权限和Free plan分支保护能力的不确定性，并重验现有真实证据verifier。本轮仍不创建仓库、不push、不修改ruleset/branch protection。
+- 验收命令与成功判据：前置核对要求GitHub organization API明确当前身份允许创建选定visibility，GitHub官方文档明确该plan对protected branches的支持边界，且`pnpm exec vitest run test/repository-bootstrap-evidence.test.ts`通过。真实DoD仍只能由用户决策后的live repository/protection事实与opt-in verifier exit 0关门。
+- 只读证据：`gh api orgs/TokenRollAI`→exit 0，返回`members_can_create_repositories/public/private=true`且plan为Free；`gh repo view TokenRollAI/Watt`→exit 0，Watt为public且默认分支`main`；Watt branch-protection API→HTTP 404且repo ruleset inventory为空，说明不能把Watt当成已有保护模板；GitHub Docs `data/reusables/gated-features/protected-branches.md`明确Free user/organization只在public repository提供protected branches，private需Pro/Team/Enterprise。未请求`admin:org`扩权，未访问或记录credential。
+- 验证：`pnpm exec vitest run test/repository-bootstrap-evidence.test.ts`→exit 0，1 file / 6 tests；`pnpm run e2e:repository-bootstrap`无opt-in→exit 2，固定`opt-in missing`，未冒充真实远端成功。
+- 勾选：无。在当前`TokenRollAI` Free计划下，`public + protected main`是唯一能直接满足该DoD的已证实方案；`private`需先升级计划。
+- 决策沉淀：仍不代替owner做visibility/公开代码决策。候选执行值已收敛为`TokenRollAI/delivery-loop`、`public`、默认分支`main`并启用branch protection；除非owner明确选择私有+升级。
+- 遗留/blocker：只缺owner对“将本地代码公开为`TokenRollAI/delivery-loop`，创建/push并设置`main`保护”的明确授权。该动作是不可默认推导的对外发布；授权后才执行并以`pnpm run e2e:repository-bootstrap` live exit 0入账。
+
+## Round 128 — 2026-07-28
+- 目标：Phase 0远端bootstrap DoD的第三轮blocker审计；只重读本地/remote事实，不扩展授权边界。
+- 验收命令与成功判据：`git remote -v`必须出现已确认的origin，`gh repo view TokenRollAI/delivery-loop --json nameWithOwner,visibility,defaultBranchRef,url`必须返回真实repository，否则不得继续伪造repository/protection/CI证据。
+- 验证：`pwd`→`/Users/jishihe/delivery-loop`；`git remote -v`仍为空；`gh repo view TokenRollAI/delivery-loop --json nameWithOwner,visibility,defaultBranchRef,url`→exit 1 / repository not found。Round 126与127已完成账号、组织建仓权限、plan能力和verifier的所有只读前置，本轮没有新的安全本地路径可以替代用户发布决策。
+- 勾选：无。DOD.md中远端、main/pull_request CI和workflow_dispatch三个真实项均保持未完成。
+- blocker：同一阻塞条件已连续三轮未变：需owner明确授权创建并公开`TokenRollAI/delivery-loop`、push当前代码并设置`main`保护。在此之前停止盲重试；用户确认“按公开方案执行”后从真实建仓操作恢复。
+
+## Round 129 — 2026-07-28
+- 目标：用户恢复了外部bootstrap决策，将owner从组织改为个人账号；本轮只读核对个人仓库身份和验收前置，不因“个人仓库”自动推导visibility。
+- 用户决策：owner改为当前GitHub身份`evilstar9527`；候选repository仍为`delivery-loop`；不使用`TokenRollAI`或`Lightspeed-Intelligence`。
+- 验证：`gh api user --jq '{login,name}'`→exit 0，身份为`evilstar9527`；`gh repo view evilstar9527/delivery-loop --json nameWithOwner,visibility,defaultBranchRef,url`→exit 1，repository not found；`git remote -v`→空。`docs/RepositoryBootstrapE2E.md`重新核对后确认manifest必须保存用户选定的`public|private|internal`和保护规则digest，本地不能代填。GraphQL plan字段不可用，未据此猜测账号计划，也未创建或push任何内容。
+- 勾选：无。owner决策已更新，但visibility、默认分支保护参数和创建/push授权尚未完整冻结，因此Phase 0远端DoD不勾。
+- 遗留：请选`public`或`private`。若选public，下一步创建`evilstar9527/delivery-loop`、推送`main`并设置protected branch；若选private，先需确认账号计划支持private branch protection，否则该DoD不能关闭。

@@ -1,0 +1,142 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "runner-heartbeat-evidence-example",
+  "recordedAt": "2026-07-27T04:30:00.000Z",
+  "analysisActionEvidence": {
+    "schemaVersion": "1",
+    "evidenceId": "analysis-action-evidence-example",
+    "recordedAt": "2026-07-27T04:00:00.000Z",
+    "dispatchEvidence": {
+      "schemaVersion": "1",
+      "evidenceId": "analysis-action-dispatch-evidence-example",
+      "recordedAt": "2026-07-27T03:30:00.000Z",
+      "app": {
+        "appId": "123456",
+        "slug": "delivery-loop-test",
+        "ownerLogin": "example-platform",
+        "ownerType": "Organization",
+        "permissions": {
+          "actions": "write",
+          "contents": "read",
+          "metadata": "read"
+        },
+        "events": ["workflow_run"],
+        "appUrl": "https://github.com/apps/delivery-loop-test"
+      },
+      "installation": {
+        "installationId": "654321",
+        "targetId": "99887766",
+        "targetLogin": "example",
+        "targetType": "Organization",
+        "repositorySelection": "selected",
+        "suspended": false,
+        "selectedRepositoryCount": 1,
+        "selectedRepositoriesDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "settingsUrl": "https://github.com/organizations/example/settings/installations/654321"
+      },
+      "repository": {
+        "repositoryId": "87654321",
+        "fullName": "example/delivery-target",
+        "visibility": "private",
+        "defaultBranch": "main",
+        "archived": false,
+        "disabled": false
+      },
+      "dispatch": {
+        "runId": "run-analysis-action-example",
+        "runState": "awaiting_approval",
+        "runVersion": 8,
+        "taskRevision": "revision-analysis-action-example",
+        "taskDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "planId": "plan-analysis-action-example",
+        "planVersion": 1,
+        "planDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "attemptId": "attempt-analysis-action-example",
+        "attemptStatus": "completed",
+        "dispatchOutboxId": "outbox-analysis-action-example",
+        "workflowPath": ".github/workflows/delivery-agent.yml",
+        "workflowRef": "example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main",
+        "workflowBlobSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "workflowContentDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "actionRunId": "940001",
+        "actionUrl": "https://github.com/example/delivery-target/actions/runs/940001",
+        "actionConclusion": "success",
+        "actionUpdatedAt": "2026-07-27T03:20:00.000Z"
+      },
+      "noDuplicate": {
+        "selectedRepositories": 1,
+        "analysisAttempts": 1,
+        "analysisDispatchOutboxes": 1,
+        "githubActionRuns": 1,
+        "githubJobs": 1
+      }
+    },
+    "task": {
+      "taskId": "task-analysis-action-example",
+      "inputClass": "user_feedback",
+      "intentKind": "bug",
+      "acceptanceCriteriaCount": 1
+    },
+    "plan": {
+      "objectiveDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "assumptionCount": 1,
+      "evidenceRefCount": 1,
+      "evidenceRefsDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "itemCount": 1,
+      "itemsDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    "context": {
+      "categories": ["logs", "repository", "traces"],
+      "totalCalls": 3,
+      "successfulCalls": 3,
+      "deniedCalls": 0,
+      "contextReadsDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    },
+    "runner": {
+      "sourceSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "codexVersion": "0.145.0",
+      "contractDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "files": [
+        { "path": "scripts/run-analysis-attempt.ts", "blobSha": "cccccccccccccccccccccccccccccccccccccccc", "contentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        { "path": "src/runner/analysis-runner.ts", "blobSha": "dddddddddddddddddddddddddddddddddddddddd", "contentDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        { "path": "src/agent/codex-analysis-adapter.ts", "blobSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "contentDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+        { "path": "src/domain/analysis-plan.ts", "blobSha": "ffffffffffffffffffffffffffffffffffffffff", "contentDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+        { "path": "src/domain/plan.ts", "blobSha": "0000000000000000000000000000000000000000", "contentDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" },
+        { "path": "schemas/analysis-plan-content-v1.schema.json", "blobSha": "1111111111111111111111111111111111111111", "contentDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" },
+        { "path": "package.json", "blobSha": "2222222222222222222222222222222222222222", "contentDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000" },
+        { "path": "pnpm-lock.yaml", "blobSha": "3333333333333333333333333333333333333333", "contentDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111" }
+      ]
+    },
+    "workspace": {
+      "checkoutSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "finalHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "detachedHead": true,
+      "repositoryClean": true
+    }
+  },
+  "heartbeat": {
+    "receiptCount": 2,
+    "receiptsDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "leaseGeneration": 1,
+    "firstVersion": 3,
+    "lastVersion": 4,
+    "firstHeartbeatAt": "2026-07-27T03:17:15.000Z",
+    "lastHeartbeatAt": "2026-07-27T03:18:00.000Z",
+    "minimumIntervalMs": 45000,
+    "maximumIntervalMs": 45000
+  },
+  "result": {
+    "eventId": "event-analysis-result-example",
+    "sequence": 1,
+    "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "reportedAt": "2026-07-27T03:19:00.000Z"
+  },
+  "webhookObservation": {
+    "sourceId": "delivery-analysis-completed-example",
+    "sourceDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "externalUpdatedAt": "2026-07-27T03:20:00.000Z",
+    "observedAt": "2026-07-27T03:20:05.000Z",
+    "processedAt": "2026-07-27T03:20:06.000Z"
+  }
+}

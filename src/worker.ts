@@ -1,0 +1,285 @@
+import { Hono } from 'hono';
+import type { Bindings } from './env.js';
+import { secureStructuredLogSink } from './observability/structured-log.js';
+import { configuredSecrets } from './security/runtime-secrets.js';
+import { R2BackupManager } from './backup/r2-backup-manager.js';
+import { backupApi } from './http/backup-api.js';
+import { case8AuditApi } from './http/case8-audit-api.js';
+import { approvalApi } from './http/approval-api.js';
+import { attemptApi } from './http/attempt-api.js';
+import { correlationApi } from './http/correlation-api.js';
+import { deadLetterApi } from './http/dead-letter-api.js';
+import { dataRetentionApi } from './http/data-retention-api.js';
+import { diagnosticEvidenceApi } from './http/diagnostic-evidence-api.js';
+import { errorResponse } from './http/errors.js';
+import { feishuWebhookApi } from './http/feishu-webhook-api.js';
+import { feishuWebhookEvidenceApi } from './http/feishu-webhook-evidence-api.js';
+import { feishuIngressEvidenceApi } from './http/feishu-ingress-evidence-api.js';
+import { feishuDeliveryCardRefreshApi } from './http/feishu-delivery-card-refresh-api.js';
+import { feishuCardPresentationEvidenceApi } from './http/feishu-card-presentation-evidence-api.js';
+import { feishuCardActionEvidenceApi } from './http/feishu-card-action-evidence-api.js';
+import { supplementalContextEvidenceApi } from './http/supplemental-context-evidence-api.js';
+import { githubWebhookApi } from './http/github-webhook-api.js';
+import { meegleTriageApi } from './http/meegle-triage-api.js';
+import { meegleWorkItemEvidenceApi } from './http/meegle-work-item-evidence-api.js';
+import { monitorAlertApi } from './http/monitor-alert-api.js';
+import { taskApi } from './http/task-api.js';
+import { testAcceptanceApi } from './http/test-acceptance-api.js';
+import { testDeploymentApi } from './http/test-deployment-api.js';
+import { testRollbackApi } from './http/test-rollback-api.js';
+import { productionDeploymentApi } from './http/production-deployment-api.js';
+import { githubDispatchProcessorFromEnv } from './outbox/github-dispatch-runtime.js';
+import {
+  githubTestAcceptanceRuntimeFromEnv,
+  reconcileTestAcceptancesFromEnv,
+} from './outbox/github-test-acceptance-runtime.js';
+import {
+  githubTestDeploymentRuntimeFromEnv,
+  reconcileTestDeploymentsFromEnv,
+} from './outbox/github-test-deployment-runtime.js';
+import {
+  githubTestRollbackRuntimeFromEnv,
+  reconcileTestRollbacksFromEnv,
+} from './outbox/github-test-rollback-runtime.js';
+import {
+  githubProductionDeploymentRuntimeFromEnv,
+  reconcileProductionDeploymentsFromEnv,
+} from './outbox/github-production-deployment-runtime.js';
+import {
+  githubPullRequestRuntimeFromEnv,
+  reconcileGitHubPullRequestsFromEnv,
+} from './outbox/github-pull-request-runtime.js';
+import {
+  feishuDeliveryCardRuntimeFromEnv,
+  reconcileFeishuDeliveryCardsFromEnv,
+} from './outbox/feishu-delivery-card-runtime.js';
+import {
+  OutboxDestinationRouter,
+  consumeOutboxBatch,
+} from './outbox/outbox-queue-consumer.js';
+import {
+  FEISHU_INGRESS_DEAD_LETTER_QUEUE_NAME,
+  FEISHU_INGRESS_QUEUE_NAME,
+  FeishuIngressRelay,
+  consumeFeishuIngressBatch,
+  consumeFeishuIngressDeadLetterBatch,
+} from './outbox/feishu-ingress.js';
+import {
+  OUTBOX_DEAD_LETTER_QUEUE,
+  PRIMARY_OUTBOX_QUEUE,
+  OutboxDeadLetterStore,
+  consumeOutboxDeadLetterBatch,
+} from './outbox/outbox-dead-letter.js';
+import {
+  CloudflareWorkflowEffectClient,
+  WorkflowOutboxRelay,
+  WorkflowOutboxProcessor,
+  type RelayDestination,
+  type WorkflowOutboxMessage,
+} from './outbox/workflow-outbox.js';
+import { reconcileGitHubRunsFromEnv } from './reconciliation/github-run-reconciliation-runtime.js';
+import { reconcileGitHubBasesFromEnv } from './reconciliation/github-base-observation-runtime.js';
+import { reconcileGitHubMergeGatesFromEnv } from './reconciliation/github-merge-gate-runtime.js';
+import { reconcileGitHubMergeStatusesFromEnv } from './reconciliation/github-merge-status-runtime.js';
+import { reconcileGitHubProductionDeploymentStatusesFromEnv } from './reconciliation/github-production-deployment-status-runtime.js';
+import { BaseRebaseAttemptReconciler } from './reconciliation/base-rebase-attempt-reconciler.js';
+import { revokeRepoWriteCredentialsFromEnv } from './reconciliation/repo-write-credential-runtime.js';
+import { RunStuckDetector } from './reconciliation/run-stuck-detector.js';
+import { reconcileWorkflowInstancesFromEnv } from './reconciliation/workflow-instance-reconciler.js';
+import { QuotaControlStore } from './storage/quota-control-store.js';
+import { BackupRestoreCoordinator } from './storage/backup-restore-store.js';
+import { DataRetentionStore } from './storage/data-retention-store.js';
+
+export { DeliveryRunWorkflow } from './workflows/delivery-run-workflow.js';
+export { ControlPlaneBackupWorkflow } from './workflows/control-plane-backup-workflow.js';
+
+export const app = new Hono<{ Bindings: Bindings }>();
+
+function recovery(env: Bindings): BackupRestoreCoordinator {
+  return new BackupRestoreCoordinator(
+    env.DB_CONTROL,
+    new R2BackupManager(env.BACKUP_OBJECTS, {
+      task: env.TASK_OBJECTS,
+      checkpoint: env.CHECKPOINT_OBJECTS,
+    }),
+  );
+}
+
+app.use('*', async (c, next) => {
+  const path = new URL(c.req.url).pathname;
+  const revokedAttemptContextProbe = c.req.method === 'GET' &&
+    /^\/v1\/attempts\/[A-Za-z0-9_-]+\/context$/.test(path);
+  if (
+    path === '/healthz' || path === '/v1/backups' ||
+    path.startsWith('/v1/restores/') || revokedAttemptContextProbe
+  ) {
+    await next();
+    return;
+  }
+  const state = await recovery(c.env).servingState();
+  if (state.servingState !== 'active') {
+    return errorResponse(c, 503, 'unavailable', 'control plane restore in progress', true);
+  }
+  await next();
+});
+
+app.get('/healthz', (c) => c.json({ ok: true, service: 'delivery-loop-control-plane' }));
+app.route('/', backupApi());
+app.route('/', case8AuditApi());
+app.route('/', approvalApi());
+app.route('/', attemptApi());
+app.route('/', correlationApi());
+app.route('/', deadLetterApi());
+app.route('/', dataRetentionApi());
+app.route('/', diagnosticEvidenceApi());
+app.route('/', feishuWebhookApi());
+app.route('/', feishuWebhookEvidenceApi());
+app.route('/', feishuIngressEvidenceApi());
+app.route('/', feishuCardPresentationEvidenceApi());
+app.route('/', feishuCardActionEvidenceApi());
+app.route('/', supplementalContextEvidenceApi());
+app.route('/', feishuDeliveryCardRefreshApi());
+app.route('/', githubWebhookApi());
+app.route('/', meegleTriageApi());
+app.route('/', meegleWorkItemEvidenceApi());
+app.route('/', monitorAlertApi());
+app.route('/', taskApi());
+app.route('/', testAcceptanceApi());
+app.route('/', testDeploymentApi());
+app.route('/', testRollbackApi());
+app.route('/', productionDeploymentApi());
+app.notFound((c) => errorResponse(c, 404, 'not_found', 'route not found', false));
+app.onError((error, c) => {
+  secureStructuredLogSink({
+    component: 'control_plane',
+    level: 'error',
+    secrets: configuredSecrets(c.env),
+  })({
+    schemaVersion: '1',
+    event: 'unhandled_error',
+    method: c.req.method,
+    path: new URL(c.req.url).pathname,
+    errorName: error.name,
+  });
+  return errorResponse(c, 500, 'internal', 'internal error', true);
+});
+
+export default {
+  fetch: app.fetch,
+  scheduled(controller, env, context): void {
+    void controller;
+    const githubDispatch = githubDispatchProcessorFromEnv(env);
+    const githubPullRequests = githubPullRequestRuntimeFromEnv(env);
+    const githubTestDeployments = githubTestDeploymentRuntimeFromEnv(env);
+    const githubTestAcceptances = githubTestAcceptanceRuntimeFromEnv(env);
+    const githubTestRollbacks = githubTestRollbackRuntimeFromEnv(env);
+    const githubProductionDeployments = githubProductionDeploymentRuntimeFromEnv(env);
+    const feishuCards = feishuDeliveryCardRuntimeFromEnv(env);
+    const destinations: RelayDestination[] = ['cloudflare_workflows'];
+    if (githubDispatch !== null) destinations.push('github_actions');
+    if (githubPullRequests !== null) destinations.push('github_api');
+    if (githubTestDeployments !== null) destinations.push('github_deployments');
+    if (githubTestAcceptances !== null) destinations.push('github_acceptance');
+    if (githubTestRollbacks !== null) destinations.push('github_test_rollback');
+    if (githubProductionDeployments !== null) {
+      destinations.push('github_production_deployments');
+    }
+    if (feishuCards !== null) destinations.push('feishu_cards');
+    const relay = new WorkflowOutboxRelay(
+      env.DB_CONTROL,
+      env.WORKFLOW_OUTBOX_QUEUE,
+      destinations,
+    );
+    context.waitUntil((async () => {
+      const recoveryState = await recovery(env).servingState();
+      if (recoveryState.servingState !== 'active') {
+        // External credential revocation is the only effect allowed while the
+        // recovered database remains fenced. Completion proves it converged.
+        await revokeRepoWriteCredentialsFromEnv(env);
+        return;
+      }
+      // Detect/re-arm first so queued outbox relay and deployment reconciliation
+      // can perform the state-specific recovery in this same scheduled cycle.
+      await new RunStuckDetector(env.DB_CONTROL, {
+        sink: secureStructuredLogSink({
+          component: 'run_stuck',
+          secrets: configuredSecrets(env),
+        }),
+      }).scan(25);
+      await reconcileWorkflowInstancesFromEnv(env);
+      await Promise.all([
+        relay.relay(),
+        new FeishuIngressRelay(env.DB_CONTROL, env.FEISHU_INGRESS_QUEUE).relay(),
+        reconcileGitHubRunsFromEnv(env),
+        reconcileGitHubBasesFromEnv(env),
+        reconcileGitHubMergeGatesFromEnv(env),
+        reconcileGitHubMergeStatusesFromEnv(env),
+        reconcileGitHubProductionDeploymentStatusesFromEnv(env),
+        new BaseRebaseAttemptReconciler(env.DB_CONTROL).reconcileBatch(25),
+        reconcileGitHubPullRequestsFromEnv(env),
+        reconcileTestDeploymentsFromEnv(env),
+        reconcileTestAcceptancesFromEnv(env),
+        reconcileTestRollbacksFromEnv(env),
+        reconcileProductionDeploymentsFromEnv(env),
+        reconcileFeishuDeliveryCardsFromEnv(env),
+        revokeRepoWriteCredentialsFromEnv(env),
+        new QuotaControlStore(env.DB_CONTROL).reconcile(),
+        new OutboxDeadLetterStore(env.DB_CONTROL).reconcile(100),
+        new DataRetentionStore(env.DB_CONTROL, env.RAW_AGENT_OBJECTS)
+          .run('execute', 'scheduled', 25),
+      ]);
+    })());
+  },
+  async queue(batch: MessageBatch<WorkflowOutboxMessage>, env): Promise<void> {
+    if ((await recovery(env).servingState()).servingState !== 'active') {
+      batch.retryAll();
+      return;
+    }
+    if (batch.queue === OUTBOX_DEAD_LETTER_QUEUE) {
+      await consumeOutboxDeadLetterBatch(
+        batch,
+        new OutboxDeadLetterStore(env.DB_CONTROL),
+        new Date(),
+        secureStructuredLogSink({
+          component: 'outbox_dead_letter',
+          secrets: configuredSecrets(env),
+        }),
+      );
+      return;
+    }
+    if (batch.queue === FEISHU_INGRESS_QUEUE_NAME) {
+      await consumeFeishuIngressBatch(batch, env.DB_CONTROL);
+      return;
+    }
+    if (batch.queue === FEISHU_INGRESS_DEAD_LETTER_QUEUE_NAME) {
+      await consumeFeishuIngressDeadLetterBatch(batch, env.DB_CONTROL);
+      return;
+    }
+    if (batch.queue !== PRIMARY_OUTBOX_QUEUE) {
+      batch.ackAll();
+      return;
+    }
+    const workflowProcessor = new WorkflowOutboxProcessor(
+      env.DB_CONTROL,
+      new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
+    );
+    const githubPullRequests = githubPullRequestRuntimeFromEnv(env);
+    const githubTestDeployments = githubTestDeploymentRuntimeFromEnv(env);
+    const githubTestAcceptances = githubTestAcceptanceRuntimeFromEnv(env);
+    const githubTestRollbacks = githubTestRollbackRuntimeFromEnv(env);
+    const githubProductionDeployments = githubProductionDeploymentRuntimeFromEnv(env);
+    const feishuCards = feishuDeliveryCardRuntimeFromEnv(env);
+    const router = new OutboxDestinationRouter(
+      env.DB_CONTROL,
+      workflowProcessor,
+      githubDispatchProcessorFromEnv(env),
+      githubPullRequests?.processor ?? null,
+      githubTestDeployments?.processor ?? null,
+      githubTestAcceptances?.processor ?? null,
+      githubProductionDeployments?.processor ?? null,
+      githubTestRollbacks?.processor ?? null,
+      feishuCards?.processor ?? null,
+    );
+    await consumeOutboxBatch(batch, router);
+  },
+} satisfies ExportedHandler<Bindings, WorkflowOutboxMessage>;

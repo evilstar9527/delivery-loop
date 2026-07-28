@@ -1,0 +1,136 @@
+{
+  "schemaVersion": "1",
+  "mode": "enabled",
+  "evidenceId": "monitor_alert_round_113",
+  "recordedAt": "2026-07-27T10:00:00.000Z",
+  "worker": {
+    "accountId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "service": "delivery-loop",
+    "environment": "production",
+    "settingsUrl": "https://api.cloudflare.com/client/v4/accounts/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/workers/services/delivery-loop/environments/production/settings",
+    "dashboardUrl": "https://dash.cloudflare.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/workers/services/view/delivery-loop/production/settings",
+    "configurationNames": [
+      "MONITOR_WEBHOOK_SECRET",
+      "MONITOR_TENANT_KEY",
+      "MONITOR_ALLOWED_REPOSITORIES",
+      "MONITOR_SUPPRESSION_WINDOW_SECONDS"
+    ]
+  },
+  "decision": {
+    "decision": "enabled",
+    "owner": "delivery_owner",
+    "decisionId": "decision_monitor_enabled",
+    "decisionDigest": "sha256:0101010101010101010101010101010101010101010101010101010101010101",
+    "decisionEvidenceUrl": "https://evidence.example/monitor-alert/decision.json",
+    "decidedAt": "2026-07-27T08:00:00.000Z"
+  },
+  "safety": {
+    "canaryDigest": "sha256:0303030303030303030303030303030303030303030303030303030303030303"
+  },
+  "controlPlaneOrigin": "https://control.example",
+  "observabilityReportUrl": "https://observer.example/monitor-alert/round-113",
+  "observabilityReportDigest": "sha256:0404040404040404040404040404040404040404040404040404040404040404",
+  "source": {
+    "provider": "sentry",
+    "organizationSlug": "example-org",
+    "projectSlug": "delivery-loop",
+    "projectId": "1234",
+    "ruleId": "42",
+    "projectUrl": "https://sentry.io/organizations/example-org/projects/delivery-loop/",
+    "ruleUrl": "https://sentry.io/organizations/example-org/projects/delivery-loop/alerts/rules/42/details/",
+    "integrationUrl": "https://sentry.io/settings/example-org/integrations/delivery-loop/",
+    "nativeSignatureHeader": "Sentry-Hook-Signature",
+    "nativeSignatureAlgorithm": "HMAC-SHA256(client-secret, exact-body)"
+  },
+  "profile": {
+    "adapter": "generic",
+    "tenantKey": "tenant-monitor-production",
+    "allowedRepositories": ["example/delivery-target"],
+    "suppressionWindowMs": 60000,
+    "alertRuleId": "sentry:42",
+    "repository": "example/delivery-target",
+    "environment": "production",
+    "severity": "critical"
+  },
+  "events": [
+    {
+      "scenario": "primary",
+      "sourceEventId": "source-primary",
+      "eventId": "event-primary",
+      "receiptId": "monitor_receipt_1",
+      "lineageId": "monitor_lineage_1",
+      "candidateId": "candidate-window-1",
+      "occurrenceOrdinal": 1,
+      "suppressed": false,
+      "occurredAt": "2026-07-27T09:00:00.000Z",
+      "receivedAt": "2026-07-27T09:00:01.000Z"
+    },
+    {
+      "scenario": "suppressed_second",
+      "sourceEventId": "source-second",
+      "eventId": "event-second",
+      "receiptId": "monitor_receipt_2",
+      "lineageId": "monitor_lineage_2",
+      "candidateId": "candidate-window-1",
+      "occurrenceOrdinal": 2,
+      "suppressed": true,
+      "occurredAt": "2026-07-27T09:00:10.000Z",
+      "receivedAt": "2026-07-27T09:00:11.000Z"
+    },
+    {
+      "scenario": "suppressed_third",
+      "sourceEventId": "source-third",
+      "eventId": "event-third",
+      "receiptId": "monitor_receipt_3",
+      "lineageId": "monitor_lineage_3",
+      "candidateId": "candidate-window-1",
+      "occurrenceOrdinal": 3,
+      "suppressed": true,
+      "occurredAt": "2026-07-27T09:00:20.000Z",
+      "receivedAt": "2026-07-27T09:00:21.000Z"
+    },
+    {
+      "scenario": "after_window",
+      "sourceEventId": "source-after",
+      "eventId": "event-after",
+      "receiptId": "monitor_receipt_4",
+      "lineageId": "monitor_lineage_4",
+      "candidateId": "candidate-window-2",
+      "occurrenceOrdinal": 1,
+      "suppressed": false,
+      "occurredAt": "2026-07-27T09:01:01.000Z",
+      "receivedAt": "2026-07-27T09:01:02.000Z"
+    }
+  ],
+  "rejections": [
+    {
+      "scenario": "invalid_native_signature",
+      "sourceEventId": "source-invalid-signature",
+      "eventId": "event-invalid-signature",
+      "expectedStatus": 401,
+      "expectedReason": "invalid_signature"
+    },
+    {
+      "scenario": "repository_denied",
+      "sourceEventId": "source-repository-denied",
+      "eventId": "event-repository-denied",
+      "expectedStatus": 403,
+      "expectedReason": "repository_not_allowed"
+    },
+    {
+      "scenario": "authority_injection_denied",
+      "sourceEventId": "source-authority-denied",
+      "eventId": "event-authority-denied",
+      "expectedStatus": 400,
+      "expectedReason": "invalid_request"
+    }
+  ],
+  "review": {
+    "observerDeploymentUrl": "https://observer.example/deployments/monitor-alert",
+    "mappingEvidenceUrl": "https://evidence.example/monitor-alert/mapping.json",
+    "reviewer": "release_reviewer",
+    "reviewedAt": "2026-07-27T09:30:00.000Z",
+    "nativeSignatureVerified": true,
+    "projectAccessVerified": true
+  }
+}

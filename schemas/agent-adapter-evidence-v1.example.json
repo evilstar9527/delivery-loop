@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replace-agent-adapter-evidence",
+  "recordedAt": "2026-07-26T16:00:00.000Z",
+  "provider": "codex",
+  "cliVersion": "codex-cli-0.145.0",
+  "resultSchema": "AgentSessionResultV1",
+  "status": "passed",
+  "processExitCode": 0,
+  "sessionStatus": "completed",
+  "structuredOutputDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "checkpoint": {
+    "sequence": 2,
+    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "planVersion": 1,
+    "planItemId": "verify-real-codex-adapter",
+    "headBranch": "main",
+    "headSha": "cccccccccccccccccccccccccccccccccccccccc"
+  },
+  "workspace": {
+    "headSha": "cccccccccccccccccccccccccccccccccccccccc",
+    "headBranch": "main",
+    "repositoryClean": true,
+    "ephemeral": true
+  }
+}

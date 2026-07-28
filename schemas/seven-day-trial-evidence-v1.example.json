@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1",
+  "trialId": "replace-with-seven-day-trial-id",
+  "repository": "example/delivery-pilot",
+  "githubActorLogin": "delivery-loop-bot",
+  "window": {
+    "startedAt": "2026-07-19T00:00:00.000Z",
+    "endedAt": "2026-07-26T00:00:00.000Z"
+  },
+  "recordedAt": "2026-07-26T00:10:00.000Z",
+  "observabilityReportUrl": "https://observability.example/trials/replace-with-seven-day-trial-id",
+  "observabilityReportDigest": "sha256:f72a2ce6ddbc86c7165475bbf26774a48984370153ed4a453b95a8e42d3694e1",
+  "metricsDashboardUrl": "https://observability.example/dashboards/delivery-loop-seven-day",
+  "logQueryUrl": "https://observability.example/logs/delivery-loop-seven-day",
+  "secretAlertQueryUrl": "https://observability.example/alerts/delivery-loop-seven-day"
+}

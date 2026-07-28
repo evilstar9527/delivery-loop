@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replace-with-feishu-webhook-evidence-id",
+  "service": "delivery-loop-control-plane",
+  "callbackUrl": "https://control.example.com/v1/webhooks/feishu",
+  "generatedAt": "2026-07-27T10:06:00.000Z",
+  "requests": [
+    {
+      "case": "challenge",
+      "requestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "responseDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "statusCode": 200,
+      "outcome": "challenge_echoed",
+      "startedAt": "2026-07-27T10:00:00.000Z",
+      "completedAt": "2026-07-27T10:00:00.420Z",
+      "latencyMs": 420
+    },
+    {
+      "case": "event",
+      "requestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "responseDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "statusCode": 200,
+      "outcome": "event_accepted",
+      "startedAt": "2026-07-27T10:01:00.000Z",
+      "completedAt": "2026-07-27T10:01:00.630Z",
+      "latencyMs": 630,
+      "eventId": "replace-with-success-event-id",
+      "eventType": "im.message.receive_v1",
+      "deliveryId": "replace-with-success-delivery-id"
+    },
+    {
+      "case": "invalid_signature",
+      "requestDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "responseDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "statusCode": 401,
+      "outcome": "signature_invalid",
+      "startedAt": "2026-07-27T10:02:00.000Z",
+      "completedAt": "2026-07-27T10:02:00.050Z",
+      "latencyMs": 50
+    },
+    {
+      "case": "expired_timestamp",
+      "requestDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "responseDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "statusCode": 401,
+      "outcome": "timestamp_invalid",
+      "startedAt": "2026-07-27T10:03:00.000Z",
+      "completedAt": "2026-07-27T10:03:00.040Z",
+      "latencyMs": 40
+    },
+    {
+      "case": "wrong_tenant",
+      "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "responseDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "statusCode": 403,
+      "outcome": "binding_rejected",
+      "startedAt": "2026-07-27T10:04:00.000Z",
+      "completedAt": "2026-07-27T10:04:00.070Z",
+      "latencyMs": 70,
+      "eventId": "replace-with-wrong-tenant-event-id",
+      "eventType": "im.message.receive_v1"
+    }
+  ],
+  "reportDigest": "sha256:3afd9dfd9d7e2721ff5667e1a470d208d2c433a0e7dd1f3f581464553e4d73f3"
+}

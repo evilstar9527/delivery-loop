@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "plan-revision-evidence-example",
+  "recordedAt": "2026-07-26T17:00:00.000Z",
+  "runId": "run-plan-revision-evidence-example",
+  "repository": "example/delivery-pilot",
+  "revision": {
+    "revisionId": "plan-revision-evidence-example",
+    "expectedRunVersion": 10,
+    "status": "activated",
+    "analysisAttemptId": "attempt-plan-revision-analysis-example",
+    "priorPlan": {
+      "id": "plan-revision-prior-example",
+      "version": 1,
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "superseded"
+    },
+    "newPlan": {
+      "id": "plan-revision-new-example",
+      "version": 2,
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "baseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "status": "active"
+    },
+    "changes": { "body": true, "base": true, "effects": true },
+    "activatedAt": "2026-07-26T16:40:00.000Z"
+  },
+  "source": {
+    "kind": "base_update",
+    "recordId": "github-base-observation-evidence-example",
+    "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "observedAt": "2026-07-26T16:30:00.000Z",
+    "repository": "example/delivery-pilot",
+    "baseBranch": "main",
+    "beforeSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "afterSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "aheadBy": 2,
+    "referenceDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "comparisonDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+  },
+  "approvals": {
+    "invalidated": [{
+      "approvalId": "approval-plan-revision-old-example",
+      "effect": "repo_write",
+      "invalidated": true
+    }],
+    "fresh": [{
+      "approvalId": "approval-plan-revision-new-example",
+      "effect": "repo_write",
+      "decision": "approve",
+      "approver": "user:plan-reviewer",
+      "provider": "github",
+      "externalEventId": "approval-event-plan-revision-example",
+      "eventDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "expiresAt": "2026-07-27T16:45:00.000Z",
+      "invalidated": false
+    }]
+  },
+  "analysisAction": {
+    "githubRunId": "81001",
+    "workflowPath": ".github/workflows/delivery-agent.yml",
+    "displayTitle": "delivery-loop/attempt-plan-revision-analysis-example",
+    "status": "completed",
+    "conclusion": "success",
+    "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "headBranch": "main",
+    "runAttempt": 1
+  }
+}

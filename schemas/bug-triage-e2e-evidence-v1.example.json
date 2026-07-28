@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "1",
+  "scenario": "E2E-2",
+  "evidenceId": "bug-triage-e2e-round-118-example",
+  "recordedAt": "2026-07-27T05:00:00.000Z",
+  "components": {
+    "analysisAction": {
+      "evidenceId": "analysis-action-evidence-example",
+      "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  },
+  "lineage": {
+    "repository": "example/delivery-target",
+    "taskId": "task-analysis-action-example",
+    "taskRevision": "revision-analysis-action-example",
+    "taskDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "runId": "run-analysis-action-example",
+    "runVersion": 8,
+    "planId": "plan-analysis-action-example",
+    "planVersion": 1,
+    "planDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "analysisAttemptId": "attempt-analysis-action-example",
+    "analysisActionRunId": "940001"
+  },
+  "diagnosis": {
+    "evidenceId": "diagnostic_e2e_2_root_cause",
+    "evidenceRef": "d1://evidence/diagnostic_e2e_2_root_cause",
+    "locatorKinds": ["uid", "cid", "path"],
+    "locatorDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "rootCauseDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "evidenceDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "logsTraceId": "tooltrace_logs_e2e_2",
+    "requestTraceId": "tooltrace_request_e2e_2",
+    "observedAt": "2026-07-27T03:10:00.000Z"
+  },
+  "safety": {
+    "canaryDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "review": {
+    "reviewer": "incident-reviewer",
+    "reviewedAt": "2026-07-27T04:30:00.000Z",
+    "sourceEvidenceUrl": "https://evidence.example/e2e-2/round-118",
+    "locatorInputReviewed": true,
+    "rootCauseReviewed": true,
+    "noProductionWriteReviewed": true
+  }
+}

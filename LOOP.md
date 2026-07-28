@@ -1,6 +1,6 @@
 # delivery-loop Loop Prompt（持续交付执行契约）
 
-> DOD 定义“什么算完成”，本文定义“每一轮怎么做”。Agent、人工开发者和 CI 都应遵守相同证据纪律。
+> `DOD.md` 定义“这个仓库各 Phase 什么算完成”，本文定义“每一轮怎么做”。运行时任务的 DoD Item 是 `ExecutionPlan` 的组成部分，契约见 `docs/Proto.md`；两者都遵守相同的证据纪律，但不能混为一张清单。
 
 ## 0. 六条纪律
 
@@ -8,7 +8,7 @@
 2. **先验收后实现**：先写下命令、外部资源和成功判据；纯逻辑优先让测试先失败一次。
 3. **默认最小权限**：外部测试只申请本轮需要的 scope；不得把真实 Secret 写入仓库、prompt、命令输出或 PROGRESS。
 4. **不伪造进度**：失败、skip、未配置远端、未真实部署都按事实记录；本地模拟不冒充真实 E2E。
-5. **成熟原语优先**：GitHub App/OIDC/branch protection/Environment、飞书验签、SQL unique/CAS、队列和 OpenTelemetry 优先于自造协议。
+5. **成熟原语优先**：Cloudflare Workflows、GitHub App/OIDC/branch protection/Environment、飞书验签、SQL unique/CAS、队列和 OpenTelemetry 优先于自造协议。
 6. **小步提交**：按契约、实现、测试/文档等清晰边界提交；共享工作区只提交本任务路径，不使用 `git commit -a`。
 
 ## 1. 每轮开场
@@ -34,6 +34,7 @@
 4. 对 I/O 使用 adapter；领域状态不直接依赖 D1、GitHub、飞书或某个 Agent SDK。
 5. 所有外部写操作带 idempotency key；数据库业务状态与 outbox 同事务。
 6. 每个 Agent/Action 路径定义 timeout、cancel、heartbeat、checkpoint 和失败退出。
+7. Workflow 的副作用只出现在稳定命名的持久步骤中；运行时 DoD Item 必须在执行前声明完成判据和验证方式。
 
 ## 4. 验证顺序
 

@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replace-test-deployment-evidence",
+  "repository": "example/delivery-pilot",
+  "recordedAt": "2026-07-26T13:00:00.000Z",
+  "cases": [
+    {
+      "caseId": "replace-test-deployment-success",
+      "runId": "replace-test-deployment-run",
+      "runVersion": 8,
+      "currentRunVersion": 9,
+      "repository": "example/delivery-pilot",
+      "planId": "replace-test-plan",
+      "planVersion": 1,
+      "planDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "planItemId": "deploy-test",
+      "attemptId": "replace-test-deployment-attempt",
+      "approvalId": "replace-test-deployment-approval",
+      "deploymentId": "replace-test-deployment",
+      "githubDeploymentId": "7001",
+      "refSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "environment": "test",
+      "workflowPath": ".github/workflows/delivery-test-deploy.yml",
+      "oidcAudience": "delivery-loop-test-deploy",
+      "oidcSubject": "repo:example/delivery-pilot:environment:test",
+      "roleRef": "test:delivery-loop-deployer",
+      "oidcAttestationId": "replace-test-oidc-attestation",
+      "oidcGithubRunId": "9001",
+      "actionRunId": "9002",
+      "actionConclusion": "success",
+      "actionUrl": "https://github.com/example/delivery-pilot/actions/runs/9002",
+      "deploymentEvidenceId": "replace-test-deployment-evidence-row",
+      "outcome": "succeeded",
+      "externalState": "success",
+      "environmentUrl": "https://test.demo.example/status",
+      "webhook": {
+        "id": "replace-test-deployment-webhook",
+        "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "state": "applied",
+        "observedAt": "2026-07-26T12:58:00.000Z"
+      },
+      "apiObservation": {
+        "id": "replace-test-deployment-api-observation",
+        "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "state": "applied",
+        "observedAt": "2026-07-26T12:59:00.000Z"
+      },
+      "noDuplicate": {
+        "attempts": 1,
+        "deployments": 1,
+        "deployOutboxes": 1,
+        "deploymentEvidence": 1
+      },
+      "audit": {
+        "oidcAuditUrl": "https://audit.example.test/oidc/test-deployment",
+        "productionSecretIsolationEvidenceUrl": "https://audit.example.test/isolation/test-only"
+      }
+    }
+  ]
+}

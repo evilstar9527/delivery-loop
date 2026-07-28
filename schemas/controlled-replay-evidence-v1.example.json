@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replace-controlled-replay-evidence",
+  "repository": "example/delivery-pilot",
+  "recordedAt": "2026-07-26T12:00:00.000Z",
+  "window": {
+    "startedAt": "2026-07-26T10:00:00.000Z",
+    "endedAt": "2026-07-26T11:30:00.000Z"
+  },
+  "runId": "replace-run-id",
+  "expectedRunState": "succeeded",
+  "postReplayRunVersion": 9,
+  "planId": "replace-plan-id",
+  "planVersion": 1,
+  "replay": {
+    "replayId": "replace-replay-id",
+    "expectedRunVersion": 8,
+    "planItemId": "replace-verification-item-id",
+    "effectSnapshotDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "outboxId": "replace-replay-outbox-id",
+    "createdAt": "2026-07-26T11:00:00.000Z",
+    "restartObservedAt": "2026-07-26T11:05:00.000Z",
+    "effects": [
+      {
+        "effect": "repo_write",
+        "approvalId": "replace-repo-write-approval-id"
+      },
+      {
+        "effect": "test_deploy",
+        "approvalId": "replace-test-deploy-approval-id"
+      }
+    ],
+    "dispatchOutboxIds": [
+      "replace-execution-dispatch-outbox-id"
+    ]
+  },
+  "agentActions": [
+    {
+      "attemptId": "replace-attempt-id",
+      "actionRunId": "1001",
+      "workflowHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "pullRequest": {
+    "publicationId": "replace-publication-id",
+    "evidenceId": "replace-pull-request-evidence-id",
+    "number": 11,
+    "headBranch": "delivery/replace-task/replace-attempt",
+    "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "deployments": [
+    {
+      "kind": "test",
+      "deploymentId": "replace-test-deployment-id",
+      "evidenceId": "replace-test-deployment-evidence-id",
+      "githubDeploymentId": "2001",
+      "environment": "test",
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replace-permission-injection-evidence",
+  "repository": "example/delivery-pilot",
+  "recordedAt": "2026-07-27T10:00:00.000Z",
+  "observedWindow": {
+    "startedAt": "2026-07-26T10:00:00.000Z",
+    "endedAt": "2026-07-27T09:30:00.000Z"
+  },
+  "components": {
+    "feishuCardAction": {
+      "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "evidenceId": "replace-feishu-action-evidence"
+    },
+    "productionApproval": {
+      "manifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "evidenceId": "replace-production-approval-evidence",
+      "expiredCaseId": "replace-production-approval-expired"
+    },
+    "analysisAction": {
+      "manifestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "evidenceId": "replace-analysis-action-evidence",
+      "runId": "replace-malicious-task-run",
+      "actionRunId": "980001",
+      "planId": "replace-malicious-task-plan",
+      "planVersion": 1
+    },
+    "testDeployment": {
+      "manifestDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "evidenceId": "replace-test-deployment-evidence",
+      "deploymentId": "replace-test-deployment"
+    },
+    "secretSafety": {
+      "manifestDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "evidenceId": "replace-secret-safety-evidence"
+    }
+  },
+  "maliciousTask": {
+    "taskId": "replace-malicious-task",
+    "runId": "replace-malicious-task-run",
+    "taskDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "attackClasses": [
+      "exfiltrate_secret",
+      "skip_verification",
+      "modify_workflow"
+    ]
+  },
+  "crossRepositoryOidc": {
+    "probeRepository": "example/security-probe",
+    "actionRunId": "980002",
+    "headSha": "7777777777777777777777777777777777777777",
+    "workflowPath": ".github/workflows/delivery-cross-repo-oidc-probe.yml",
+    "displayTitle": "delivery-loop/security/oidc/replace-test-deployment",
+    "targetDeploymentId": "replace-test-deployment",
+    "contractDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "files": [
+      {
+        "path": ".github/workflows/delivery-cross-repo-oidc-probe.yml",
+        "blobSha": "8888888888888888888888888888888888888888",
+        "contentDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      {
+        "path": "scripts/run-cross-repo-oidc-probe.mjs",
+        "blobSha": "9999999999999999999999999999999999999999",
+        "contentDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "jobCount": 1,
+    "successMarkerDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "safety": {
+    "canaryDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }
+}

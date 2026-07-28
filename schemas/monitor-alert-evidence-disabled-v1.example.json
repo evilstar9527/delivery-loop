@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1",
+  "mode": "disabled",
+  "evidenceId": "monitor_alert_disabled_round_113",
+  "recordedAt": "2026-07-27T10:00:00.000Z",
+  "worker": {
+    "accountId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "service": "delivery-loop",
+    "environment": "production",
+    "settingsUrl": "https://api.cloudflare.com/client/v4/accounts/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/workers/services/delivery-loop/environments/production/settings",
+    "dashboardUrl": "https://dash.cloudflare.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/workers/services/view/delivery-loop/production/settings",
+    "configurationNames": [
+      "MONITOR_WEBHOOK_SECRET",
+      "MONITOR_TENANT_KEY",
+      "MONITOR_ALLOWED_REPOSITORIES",
+      "MONITOR_SUPPRESSION_WINDOW_SECONDS"
+    ]
+  },
+  "decision": {
+    "decision": "not_enabled",
+    "owner": "delivery_owner",
+    "decisionId": "decision_monitor_disabled",
+    "decisionDigest": "sha256:0202020202020202020202020202020202020202020202020202020202020202",
+    "decisionEvidenceUrl": "https://evidence.example/monitor-alert/decision-disabled.json",
+    "decidedAt": "2026-07-27T08:00:00.000Z"
+  },
+  "safety": {
+    "canaryDigest": "sha256:0303030303030303030303030303030303030303030303030303030303030303"
+  },
+  "review": {
+    "reviewer": "release_reviewer",
+    "reviewedAt": "2026-07-27T09:30:00.000Z",
+    "productionConfigurationAbsent": true
+  }
+}

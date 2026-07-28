@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "supplemental_context_pilot",
+  "recordedAt": "2026-07-27T10:00:00.000Z",
+  "controlPlaneOrigin": "https://control.example",
+  "observabilityReportUrl": "https://observer.example/supplemental-context/pilot",
+  "observabilityReportDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+  "application": {
+    "appId": "cli_delivery_loop",
+    "tenantKey": "tenant_delivery_loop",
+    "chatId": "oc_delivery_loop_pilot",
+    "callbackUrl": "https://control.example/v1/webhooks/feishu"
+  },
+  "card": {
+    "messageId": "om_supplemental_context",
+    "cardDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "createdAt": "2026-07-27T08:00:00.000Z",
+    "updatedAt": "2026-07-27T09:30:00.000Z"
+  },
+  "feishuCases": [
+    {
+      "mode": "new_run",
+      "tenantKey": "tenant_delivery_loop",
+      "eventId": "evt_context_new",
+      "deliveryId": "delivery_context_new",
+      "actionReceiptId": "receipt_context_new",
+      "outcomeId": "outcome_context_new",
+      "operatorDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "contextId": "supplemental_context_new",
+      "priorTaskId": "task_context_prior_new",
+      "newTaskId": "task_context_next_new",
+      "newRunId": "run_context_next_new",
+      "sourceRunId": "run_context_prior_new",
+      "expectedRunVersion": 7,
+      "priorAttemptId": "attempt_context_prior_new",
+      "priorAttemptVersion": 4,
+      "priorAttemptLeaseGeneration": 3,
+      "contextDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "newTaskDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "planRevisionId": null,
+      "analysisAttemptId": null
+    },
+    {
+      "mode": "apply_current",
+      "tenantKey": "tenant_delivery_loop",
+      "eventId": "evt_context_apply",
+      "deliveryId": "delivery_context_apply",
+      "actionReceiptId": "receipt_context_apply",
+      "outcomeId": "outcome_context_apply",
+      "operatorDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "contextId": "supplemental_context_apply",
+      "priorTaskId": "task_context_prior_apply",
+      "newTaskId": "task_context_next_apply",
+      "newRunId": "run_context_next_apply",
+      "sourceRunId": "run_context_prior_apply",
+      "expectedRunVersion": 8,
+      "priorAttemptId": "attempt_context_prior_apply",
+      "priorAttemptVersion": 5,
+      "priorAttemptLeaseGeneration": 4,
+      "contextDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "newTaskDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "planRevisionId": "revision_context_apply",
+      "analysisAttemptId": "attempt_context_analysis_apply"
+    }
+  ],
+  "meegleConvergence": {
+    "tenantKey": "tenant_delivery_loop",
+    "projectKey": "project_delivery_loop",
+    "workItemTypeKey": "story",
+    "workItemId": "work_item_context_42",
+    "externalRevision": "revision_context_42",
+    "contextId": "supplemental_context_meegle",
+    "priorTaskId": "task_context_prior_meegle",
+    "newTaskId": "task_context_next_meegle",
+    "newRunId": "run_context_next_meegle",
+    "contextDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "newTaskDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "eventIds": ["evt_meegle_primary", "evt_meegle_peer"],
+    "ingressOutboxIds": ["ingress_meegle_primary", "ingress_meegle_peer"],
+    "exactSnapshotDigests": [
+      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    ],
+    "mappingSnapshotDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "mappingProfileDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "safety": {
+    "canaryDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "review": {
+    "feishuDeveloperConsoleUrl": "https://open.feishu.cn/app/cli_delivery_loop/event",
+    "feishuPermissionUrl": "https://open.feishu.cn/app/cli_delivery_loop/permission",
+    "feishuChatUrl": "https://example.feishu.cn/messenger/chat/oc_delivery_loop_pilot",
+    "feishuMappingEvidenceUrl": "https://evidence.example/feishu/context-mapping.json",
+    "meegleProjectUrl": "https://example.feishu.cn/meegle/projects/project_delivery_loop",
+    "screenshotBundleUrl": "https://evidence.example/supplemental-context/pilot/",
+    "reviewer": "release_owner",
+    "reviewedAt": "2026-07-27T09:45:00.000Z",
+    "eventSubscription": "active",
+    "botMembership": "member",
+    "meegleProjectAccess": "verified",
+    "feishuScopes": [
+      "im:message:send_as_bot",
+      "im:message:update",
+      "im:message:readonly",
+      "im:message.group_msg"
+    ]
+  }
+}

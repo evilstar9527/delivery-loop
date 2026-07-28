@@ -1,0 +1,136 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "correlation-platform-example",
+  "recordedAt": "2026-07-27T14:30:00.000Z",
+  "repository": "example/delivery-pilot",
+  "runId": "run-correlation-example",
+  "lineage": {
+    "taskId": "task-correlation-example",
+    "attemptId": "attempt-correlation-example",
+    "githubRun": {
+      "id": "901",
+      "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "pullRequest": {
+      "number": 41,
+      "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "state": "closed",
+      "draft": false
+    },
+    "testDeployment": {
+      "deploymentId": "test-deployment-correlation-example",
+      "githubDeploymentId": "7001",
+      "sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "environment": "test"
+    },
+    "productionDeployment": {
+      "deploymentId": "production-deployment-correlation-example",
+      "githubDeploymentId": "7002",
+      "sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "environment": "production"
+    },
+    "toolTraceId": "tooltrace-correlation-example"
+  },
+  "cloudflare": {
+    "accountIdDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "scriptName": "delivery-loop-control-plane",
+    "environment": "production",
+    "window": {
+      "from": "2026-07-27T13:59:00.000Z",
+      "to": "2026-07-27T14:15:00.000Z"
+    },
+    "retentionDays": 7,
+    "logHeadSamplingRate": 1,
+    "traceHeadSamplingRate": 1,
+    "logsPersisted": true,
+    "tracesPersisted": true,
+    "invocationLogs": false
+  },
+  "lookups": [
+    {
+      "kind": "task",
+      "id": "task-correlation-example",
+      "observedAt": "2026-07-27T14:00:00.000Z",
+      "logRecordDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+      "workerTraceId": "00000000000000000000000000000001"
+    },
+    {
+      "kind": "run",
+      "id": "run-correlation-example",
+      "observedAt": "2026-07-27T14:01:00.000Z",
+      "logRecordDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+      "workerTraceId": "00000000000000000000000000000002"
+    },
+    {
+      "kind": "attempt",
+      "id": "attempt-correlation-example",
+      "observedAt": "2026-07-27T14:02:00.000Z",
+      "logRecordDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+      "workerTraceId": "00000000000000000000000000000003"
+    },
+    {
+      "kind": "github_run",
+      "id": "901",
+      "observedAt": "2026-07-27T14:03:00.000Z",
+      "logRecordDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000004",
+      "workerTraceId": "00000000000000000000000000000004"
+    },
+    {
+      "kind": "github_pr",
+      "id": "41",
+      "repository": "example/delivery-pilot",
+      "observedAt": "2026-07-27T14:04:00.000Z",
+      "logRecordDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000005",
+      "workerTraceId": "00000000000000000000000000000005"
+    },
+    {
+      "kind": "test_deployment",
+      "id": "test-deployment-correlation-example",
+      "observedAt": "2026-07-27T14:05:00.000Z",
+      "logRecordDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000006",
+      "workerTraceId": "00000000000000000000000000000006"
+    },
+    {
+      "kind": "production_deployment",
+      "id": "production-deployment-correlation-example",
+      "observedAt": "2026-07-27T14:06:00.000Z",
+      "logRecordDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000007",
+      "workerTraceId": "00000000000000000000000000000007"
+    },
+    {
+      "kind": "github_deployment",
+      "id": "7001",
+      "repository": "example/delivery-pilot",
+      "observedAt": "2026-07-27T14:07:00.000Z",
+      "logRecordDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000008",
+      "workerTraceId": "00000000000000000000000000000008"
+    },
+    {
+      "kind": "github_deployment",
+      "id": "7002",
+      "repository": "example/delivery-pilot",
+      "observedAt": "2026-07-27T14:08:00.000Z",
+      "logRecordDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000009",
+      "workerTraceId": "00000000000000000000000000000009"
+    },
+    {
+      "kind": "trace",
+      "id": "tooltrace-correlation-example",
+      "observedAt": "2026-07-27T14:09:00.000Z",
+      "logRecordDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000010",
+      "workerTraceId": "0000000000000000000000000000000a"
+    }
+  ],
+  "safety": {
+    "canaryDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "review": {
+    "reviewer": "platform-observability-reviewer",
+    "reviewedAt": "2026-07-27T14:20:00.000Z",
+    "workerDeploymentEvidenceUrl": "https://dash.cloudflare.com/evidence/delivery-loop/deployment",
+    "workersLogsEvidenceUrl": "https://dash.cloudflare.com/evidence/delivery-loop/logs",
+    "workersTracesEvidenceUrl": "https://dash.cloudflare.com/evidence/delivery-loop/traces",
+    "retentionAndIndexReviewed": true,
+    "secretScanReviewed": true
+  }
+}

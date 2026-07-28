@@ -22,17 +22,17 @@ export type RunState = (typeof RUN_STATES)[number];
 const transitions: Readonly<Record<RunState, readonly RunState[]>> = {
   received: ['triaging', 'cancelled', 'failed'],
   triaging: ['awaiting_approval', 'queued', 'blocked', 'cancelled', 'failed'],
-  awaiting_approval: ['queued', 'cancelled', 'blocked'],
+  awaiting_approval: ['queued', 'planning', 'executing', 'cancelled', 'blocked'],
   queued: ['planning', 'cancelled', 'failed'],
   planning: ['executing', 'awaiting_approval', 'blocked', 'cancelled', 'failed'],
-  executing: ['verifying', 'awaiting_approval', 'blocked', 'cancelled', 'failed'],
-  verifying: ['executing', 'pull_request_open', 'blocked', 'cancelled', 'failed'],
-  pull_request_open: ['awaiting_review', 'ready_to_merge', 'cancelled', 'failed'],
-  awaiting_review: ['executing', 'ready_to_merge', 'blocked', 'cancelled', 'failed'],
-  ready_to_merge: ['merging', 'cancelled', 'failed'],
+  executing: ['planning', 'verifying', 'awaiting_approval', 'blocked', 'cancelled', 'failed'],
+  verifying: ['planning', 'executing', 'pull_request_open', 'blocked', 'cancelled', 'failed'],
+  pull_request_open: ['planning', 'awaiting_review', 'ready_to_merge', 'cancelled', 'failed'],
+  awaiting_review: ['planning', 'executing', 'ready_to_merge', 'blocked', 'cancelled', 'failed'],
+  ready_to_merge: ['planning', 'merging', 'cancelled', 'failed'],
   merging: ['deploying', 'succeeded', 'failed'],
   deploying: ['succeeded', 'blocked', 'failed'],
-  blocked: ['triaging', 'queued', 'executing', 'cancelled', 'failed'],
+  blocked: ['triaging', 'queued', 'planning', 'executing', 'cancelled', 'failed'],
   succeeded: [],
   failed: ['queued', 'cancelled'],
   cancelled: [],
@@ -59,3 +59,8 @@ export function isTerminalRunState(state: RunState): boolean {
   return state === 'succeeded' || state === 'cancelled';
 }
 
+/** States in which the durable control Workflow must no longer remain active. */
+export function expectsActiveWorkflow(state: RunState): boolean {
+  return state !== 'blocked' && state !== 'failed' &&
+    state !== 'succeeded' && state !== 'cancelled';
+}

@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "feishu-card-completion-evidence-example",
+  "repository": "example/delivery-pilot",
+  "recordedAt": "2026-07-27T08:00:00.000Z",
+  "safety": {
+    "canaryDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "cases": [
+    {
+      "caseId": "completion-test-example",
+      "lane": "test",
+      "taskId": "task-completion-test-example",
+      "runId": "run-completion-test-example",
+      "repository": "example/delivery-pilot",
+      "runVersion": 20,
+      "taskRevision": "revision-completion-test",
+      "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "planVersion": 2,
+      "planDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "progress": {
+        "passed": 5,
+        "total": 5,
+        "requiredPassed": 5,
+        "requiredTotal": 5,
+        "inProgress": 0,
+        "failed": 0,
+        "blocked": 0
+      },
+      "pullRequestUrl": "https://github.com/example/delivery-pilot/pull/40",
+      "mergeUrl": "https://github.com/example/delivery-pilot/pull/40",
+      "deploymentUrl": "https://test.example.test/releases/100",
+      "card": {
+        "appId": "cli_delivery_loop",
+        "tenantKey": "tenant_delivery_loop",
+        "chatId": "oc_delivery_loop_pilot",
+        "messageId": "om_completion_test_example",
+        "createdAt": "2026-07-27T06:00:10.000Z",
+        "updatedAt": "2026-07-27T06:10:02.000Z"
+      },
+      "completion": {
+        "presentationId": "presentation-completion-test-example",
+        "revision": 3,
+        "presentationDigest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "renderedDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "outboxId": "outbox-completion-test-example",
+        "deliveredAt": "2026-07-27T06:10:02.000Z"
+      },
+      "review": {
+        "messageUrl": "https://example.feishu.cn/message/om_completion_test_example",
+        "screenshotUrl": "https://evidence.example.test/completion-test.png",
+        "reviewer": "release-owner",
+        "reviewedAt": "2026-07-27T06:11:00.000Z"
+      }
+    },
+    {
+      "caseId": "completion-production-example",
+      "lane": "production",
+      "taskId": "task-completion-production-example",
+      "runId": "run-completion-production-example",
+      "repository": "example/delivery-pilot",
+      "runVersion": 21,
+      "taskRevision": "revision-completion-production",
+      "baseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "planVersion": 2,
+      "planDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "progress": {
+        "passed": 5,
+        "total": 5,
+        "requiredPassed": 5,
+        "requiredTotal": 5,
+        "inProgress": 0,
+        "failed": 0,
+        "blocked": 0
+      },
+      "pullRequestUrl": "https://github.com/example/delivery-pilot/pull/41",
+      "mergeUrl": "https://github.com/example/delivery-pilot/pull/41",
+      "deploymentUrl": "https://production.example.test/releases/101",
+      "card": {
+        "appId": "cli_delivery_loop",
+        "tenantKey": "tenant_delivery_loop",
+        "chatId": "oc_delivery_loop_pilot",
+        "messageId": "om_completion_production_example",
+        "createdAt": "2026-07-27T07:00:10.000Z",
+        "updatedAt": "2026-07-27T07:10:02.000Z"
+      },
+      "completion": {
+        "presentationId": "presentation-completion-production-example",
+        "revision": 3,
+        "presentationDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "renderedDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "outboxId": "outbox-completion-production-example",
+        "deliveredAt": "2026-07-27T07:10:02.000Z"
+      },
+      "review": {
+        "messageUrl": "https://example.feishu.cn/message/om_completion_production_example",
+        "screenshotUrl": "https://evidence.example.test/completion-production.png",
+        "reviewer": "release-owner",
+        "reviewedAt": "2026-07-27T07:11:00.000Z"
+      }
+    }
+  ]
+}

@@ -1,0 +1,239 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "draft_pr_cases_round_114",
+  "recordedAt": "2026-07-27T15:00:00.000Z",
+  "repository": "example/delivery-pilot",
+  "baseBranch": "main",
+  "cases": [
+    {
+      "scenario": "requirement",
+      "inputClass": "prd",
+      "task": {
+        "taskId": "task_requirement",
+        "sourceSystem": "meego",
+        "sourceRevision": "revision-requirement-1",
+        "taskDigest": "sha256:0101010101010101010101010101010101010101010101010101010101010101",
+        "acceptanceCriteriaCount": 2
+      },
+      "runId": "run_requirement",
+      "plan": {
+        "planId": "plan_requirement",
+        "version": 1,
+        "digest": "sha256:0202020202020202020202020202020202020202020202020202020202020202",
+        "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requiredItems": [
+          {
+            "itemId": "change_requirement",
+            "kind": "change",
+            "verificationId": "verification_change_requirement",
+            "headSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "evidenceSetDigest": "sha256:0303030303030303030303030303030303030303030303030303030303030303",
+            "evidenceIds": ["commit_evidence_requirement", "test_targeted_requirement", "test_required_requirement"]
+          },
+          {
+            "itemId": "deliver_requirement",
+            "kind": "delivery",
+            "verificationId": "verification_deliver_requirement",
+            "headSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "evidenceSetDigest": "sha256:0404040404040404040404040404040404040404040404040404040404040404",
+            "evidenceIds": ["pr_evidence_requirement"]
+          },
+          {
+            "itemId": "investigate_requirement",
+            "kind": "investigation",
+            "verificationId": "verification_investigate_requirement",
+            "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "evidenceSetDigest": "sha256:0505050505050505050505050505050505050505050505050505050505050505",
+            "evidenceIds": ["diagnostic_evidence_requirement"]
+          },
+          {
+            "itemId": "verify_requirement",
+            "kind": "verification",
+            "verificationId": "verification_tests_requirement",
+            "headSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "evidenceSetDigest": "sha256:0606060606060606060606060606060606060606060606060606060606060606",
+            "evidenceIds": ["test_targeted_requirement", "test_required_requirement"]
+          }
+        ]
+      },
+      "execution": {
+        "attemptId": "attempt_requirement",
+        "mode": "implement",
+        "actionRunId": "9001",
+        "actionCheckoutSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "updateId": "update_requirement",
+        "commitEvidenceId": "commit_evidence_requirement",
+        "parentSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "headSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "branch": "delivery/requirement/attempt-1"
+      },
+      "testSuite": {
+        "suiteId": "suite_requirement",
+        "planItemId": "change_requirement",
+        "deliveryPolicyDigest": "sha256:0707070707070707070707070707070707070707070707070707070707070707",
+        "commands": [
+          { "position": 0, "phase": "targeted", "commandRef": "test:targeted", "evidenceId": "test_targeted_requirement" },
+          { "position": 1, "phase": "required", "commandRef": "verify:required", "evidenceId": "test_required_requirement" }
+        ]
+      },
+      "diff": {
+        "changedFileCount": 1,
+        "changedFilesDigest": "sha256:0808080808080808080808080808080808080808080808080808080808080808"
+      },
+      "pullRequest": {
+        "schemaVersion": "1",
+        "evidenceId": "pr_case_requirement",
+        "recordedAt": "2026-07-27T14:00:00.000Z",
+        "runId": "run_requirement",
+        "repository": "example/delivery-pilot",
+        "publication": {
+          "publicationId": "publication_requirement",
+          "approvalId": "approval_requirement",
+          "repository": "example/delivery-pilot",
+          "baseBranch": "main",
+          "headBranch": "delivery/requirement/attempt-1",
+          "headSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "bodyDigest": "sha256:0909090909090909090909090909090909090909090909090909090909090909",
+          "status": "verified",
+          "number": 41,
+          "url": "https://github.com/example/delivery-pilot/pull/41",
+          "evidenceId": "pr_evidence_requirement",
+          "webhook": {
+            "deliveryId": "delivery_requirement",
+            "payloadDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "processingState": "applied",
+            "externalUpdatedAt": "2026-07-27T13:00:00.000Z",
+            "receivedAt": "2026-07-27T13:00:01.000Z"
+          },
+          "apiObservation": {
+            "observationId": "api_pr_requirement",
+            "factDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "processingState": "applied",
+            "externalUpdatedAt": "2026-07-27T13:00:00.000Z",
+            "observedAt": "2026-07-27T13:01:00.000Z"
+          }
+        }
+      }
+    },
+    {
+      "scenario": "bug",
+      "inputClass": "user_feedback",
+      "task": {
+        "taskId": "task_bug",
+        "sourceSystem": "feishu",
+        "sourceRevision": "revision-bug-1",
+        "taskDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "acceptanceCriteriaCount": 2
+      },
+      "runId": "run_bug",
+      "plan": {
+        "planId": "plan_bug",
+        "version": 1,
+        "digest": "sha256:1212121212121212121212121212121212121212121212121212121212121212",
+        "baseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "requiredItems": [
+          {
+            "itemId": "change_bug",
+            "kind": "change",
+            "verificationId": "verification_change_bug",
+            "headSha": "ffffffffffffffffffffffffffffffffffffffff",
+            "evidenceSetDigest": "sha256:1313131313131313131313131313131313131313131313131313131313131313",
+            "evidenceIds": ["commit_evidence_bug", "test_targeted_bug", "test_required_bug"]
+          },
+          {
+            "itemId": "deliver_bug",
+            "kind": "delivery",
+            "verificationId": "verification_deliver_bug",
+            "headSha": "ffffffffffffffffffffffffffffffffffffffff",
+            "evidenceSetDigest": "sha256:1414141414141414141414141414141414141414141414141414141414141414",
+            "evidenceIds": ["pr_evidence_bug"]
+          },
+          {
+            "itemId": "investigate_bug",
+            "kind": "investigation",
+            "verificationId": "verification_investigate_bug",
+            "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "evidenceSetDigest": "sha256:1515151515151515151515151515151515151515151515151515151515151515",
+            "evidenceIds": ["diagnostic_evidence_bug"]
+          },
+          {
+            "itemId": "verify_bug",
+            "kind": "verification",
+            "verificationId": "verification_tests_bug",
+            "headSha": "ffffffffffffffffffffffffffffffffffffffff",
+            "evidenceSetDigest": "sha256:1616161616161616161616161616161616161616161616161616161616161616",
+            "evidenceIds": ["test_targeted_bug", "test_required_bug"]
+          }
+        ]
+      },
+      "execution": {
+        "attemptId": "attempt_bug",
+        "mode": "implement",
+        "actionRunId": "9002",
+        "actionCheckoutSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "updateId": "update_bug",
+        "commitEvidenceId": "commit_evidence_bug",
+        "parentSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "headSha": "ffffffffffffffffffffffffffffffffffffffff",
+        "branch": "delivery/bug/attempt-2"
+      },
+      "testSuite": {
+        "suiteId": "suite_bug",
+        "planItemId": "change_bug",
+        "deliveryPolicyDigest": "sha256:1717171717171717171717171717171717171717171717171717171717171717",
+        "commands": [
+          { "position": 0, "phase": "targeted", "commandRef": "test:targeted", "evidenceId": "test_targeted_bug" },
+          { "position": 1, "phase": "required", "commandRef": "verify:required", "evidenceId": "test_required_bug" }
+        ]
+      },
+      "diff": {
+        "changedFileCount": 1,
+        "changedFilesDigest": "sha256:1818181818181818181818181818181818181818181818181818181818181818"
+      },
+      "pullRequest": {
+        "schemaVersion": "1",
+        "evidenceId": "pr_case_bug",
+        "recordedAt": "2026-07-27T14:00:00.000Z",
+        "runId": "run_bug",
+        "repository": "example/delivery-pilot",
+        "publication": {
+          "publicationId": "publication_bug",
+          "approvalId": "approval_bug",
+          "repository": "example/delivery-pilot",
+          "baseBranch": "main",
+          "headBranch": "delivery/bug/attempt-2",
+          "headSha": "ffffffffffffffffffffffffffffffffffffffff",
+          "bodyDigest": "sha256:1919191919191919191919191919191919191919191919191919191919191919",
+          "status": "verified",
+          "number": 42,
+          "url": "https://github.com/example/delivery-pilot/pull/42",
+          "evidenceId": "pr_evidence_bug",
+          "webhook": {
+            "deliveryId": "delivery_bug",
+            "payloadDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "processingState": "applied",
+            "externalUpdatedAt": "2026-07-27T13:10:00.000Z",
+            "receivedAt": "2026-07-27T13:10:01.000Z"
+          },
+          "apiObservation": {
+            "observationId": "api_pr_bug",
+            "factDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "processingState": "applied",
+            "externalUpdatedAt": "2026-07-27T13:10:00.000Z",
+            "observedAt": "2026-07-27T13:11:00.000Z"
+          }
+        }
+      }
+    }
+  ],
+  "safety": {
+    "canaryDigest": "sha256:2020202020202020202020202020202020202020202020202020202020202020"
+  },
+  "review": {
+    "reviewer": "delivery_reviewer",
+    "reviewedAt": "2026-07-27T14:30:00.000Z",
+    "requirementSemanticsEvidenceUrl": "https://evidence.example/draft-pr/requirement-review.json",
+    "bugRootCauseEvidenceUrl": "https://evidence.example/draft-pr/bug-root-cause-review.json",
+    "diffAndTestTraceReviewed": true
+  }
+}

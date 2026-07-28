@@ -1,0 +1,240 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "test-rollback-evidence-example",
+  "repository": "example/test-rollback",
+  "baseBranch": "main",
+  "recordedAt": "2026-07-27T11:10:00.000Z",
+  "successfulRollbacks": [
+    {
+      "caseId": "rollback-case-deployment",
+      "source": {
+        "kind": "deployment_failure",
+        "id": "deployment-deployment",
+        "evidenceId": "evidence-source-deployment",
+        "failedAttemptId": "attempt-failed-deployment",
+        "deploymentId": "deployment-deployment",
+        "deploymentEvidenceId": "evidence-source-deployment"
+      },
+      "runId": "run-deployment",
+      "runVersion": 12,
+      "currentRunVersion": 12,
+      "runState": "executing",
+      "planId": "plan-deployment",
+      "planVersion": 2,
+      "planDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "planItemId": "deploy-test",
+      "approvalId": "approval-deployment",
+      "repository": "example/test-rollback",
+      "baseBranch": "main",
+      "baseSha": "ffffffffffffffffffffffffffffffffffffffff",
+      "refSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "contractObservationId": "rollback-contract-deployment",
+      "policyDigest": "sha256:2121212121212121212121212121212121212121212121212121212121212121",
+      "contractDigest": "sha256:3131313131313131313131313131313131313131313131313131313131313131",
+      "workflowPath": ".github/workflows/delivery-test-rollback.yml",
+      "environment": "test",
+      "oidcAudience": "delivery-loop-test-rollback",
+      "roleRef": "test:delivery-loop-rollback",
+      "rollbackId": "rollback-deployment",
+      "rollbackAttemptId": "attempt-rollback-deployment",
+      "rollbackStatus": "succeeded",
+      "actionRunId": "9101",
+      "actionUrl": "https://github.com/example/test-rollback/actions/runs/9101",
+      "actionStatus": "completed",
+      "actionConclusion": "success",
+      "runner": {
+        "digest": "sha256:4141414141414141414141414141414141414141414141414141414141414141",
+        "status": "passed",
+        "exitCode": 0,
+        "durationMs": 20001
+      },
+      "rollbackEvidenceId": "evidence-rollback-deployment",
+      "oidc": {
+        "attestationId": "oidc-rollback-deployment",
+        "githubRunId": "9101",
+        "workflowRef": "example/test-rollback/.github/workflows/delivery-test-rollback.yml@refs/heads/main",
+        "subject": "repo:example/test-rollback:environment:test"
+      },
+      "observations": {
+        "webhook": {
+          "id": "webhook-rollback-deployment",
+          "digest": "sha256:5151515151515151515151515151515151515151515151515151515151515151",
+          "state": "applied",
+          "observedAt": "2026-07-27T10:01:00.000Z"
+        },
+        "api": {
+          "id": "api-rollback-deployment",
+          "digest": "sha256:6161616161616161616161616161616161616161616161616161616161616161",
+          "state": "applied",
+          "observedAt": "2026-07-27T10:11:00.000Z"
+        }
+      },
+      "noDuplicate": {
+        "contracts": 1,
+        "rollbacks": 1,
+        "attempts": 1,
+        "dispatchOutboxes": 1,
+        "evidence": 1
+      },
+      "cloudReview": {
+        "auditUrl": "https://cloud.example.test/audit/rollback-deployment",
+        "environmentResultUrl": "https://test.example.test/results/rollback-deployment",
+        "result": "restored",
+        "reviewer": "reviewer-deployment",
+        "reviewedAt": "2026-07-27T10:21:00.000Z",
+        "actionAndCloudBindingReviewed": true
+      }
+    },
+    {
+      "caseId": "rollback-case-acceptance",
+      "source": {
+        "kind": "acceptance_failure",
+        "id": "acceptance-acceptance",
+        "evidenceId": "evidence-source-acceptance",
+        "failedAttemptId": "attempt-failed-acceptance",
+        "deploymentId": "deployment-acceptance",
+        "deploymentEvidenceId": "evidence-deployment-acceptance",
+        "acceptanceId": "acceptance-acceptance"
+      },
+      "runId": "run-acceptance",
+      "runVersion": 12,
+      "currentRunVersion": 12,
+      "runState": "executing",
+      "planId": "plan-acceptance",
+      "planVersion": 2,
+      "planDigest": "sha256:1212121212121212121212121212121212121212121212121212121212121212",
+      "planItemId": "deploy-test",
+      "approvalId": "approval-acceptance",
+      "repository": "example/test-rollback",
+      "baseBranch": "main",
+      "baseSha": "ffffffffffffffffffffffffffffffffffffffff",
+      "refSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "contractObservationId": "rollback-contract-acceptance",
+      "policyDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "contractDigest": "sha256:3232323232323232323232323232323232323232323232323232323232323232",
+      "workflowPath": ".github/workflows/delivery-test-rollback.yml",
+      "environment": "test",
+      "oidcAudience": "delivery-loop-test-rollback",
+      "roleRef": "test:delivery-loop-rollback",
+      "rollbackId": "rollback-acceptance",
+      "rollbackAttemptId": "attempt-rollback-acceptance",
+      "rollbackStatus": "succeeded",
+      "actionRunId": "9102",
+      "actionUrl": "https://github.com/example/test-rollback/actions/runs/9102",
+      "actionStatus": "completed",
+      "actionConclusion": "success",
+      "runner": {
+        "digest": "sha256:4242424242424242424242424242424242424242424242424242424242424242",
+        "status": "passed",
+        "exitCode": 0,
+        "durationMs": 20002
+      },
+      "rollbackEvidenceId": "evidence-rollback-acceptance",
+      "oidc": {
+        "attestationId": "oidc-rollback-acceptance",
+        "githubRunId": "9102",
+        "workflowRef": "example/test-rollback/.github/workflows/delivery-test-rollback.yml@refs/heads/main",
+        "subject": "repo:example/test-rollback:environment:test"
+      },
+      "observations": {
+        "webhook": {
+          "id": "webhook-rollback-acceptance",
+          "digest": "sha256:5252525252525252525252525252525252525252525252525252525252525252",
+          "state": "applied",
+          "observedAt": "2026-07-27T10:02:00.000Z"
+        },
+        "api": {
+          "id": "api-rollback-acceptance",
+          "digest": "sha256:6262626262626262626262626262626262626262626262626262626262626262",
+          "state": "applied",
+          "observedAt": "2026-07-27T10:12:00.000Z"
+        }
+      },
+      "noDuplicate": {
+        "contracts": 1,
+        "rollbacks": 1,
+        "attempts": 1,
+        "dispatchOutboxes": 1,
+        "evidence": 1
+      },
+      "cloudReview": {
+        "auditUrl": "https://cloud.example.test/audit/rollback-acceptance",
+        "environmentResultUrl": "https://test.example.test/results/rollback-acceptance",
+        "result": "restored",
+        "reviewer": "reviewer-acceptance",
+        "reviewedAt": "2026-07-27T10:22:00.000Z",
+        "actionAndCloudBindingReviewed": true
+      }
+    }
+  ],
+  "negativeCases": [
+    {
+      "caseKind": "contract_absent",
+      "caseId": "rollback-negative-contract-absent",
+      "runId": "run-contract-absent",
+      "currentRunVersion": 7,
+      "runState": "executing",
+      "repository": "example/test-rollback",
+      "source": {
+        "kind": "deployment_failure",
+        "id": "deployment-contract-absent",
+        "evidenceId": "evidence-contract-absent",
+        "failedAttemptId": "attempt-contract-absent",
+        "deploymentId": "deployment-contract-absent",
+        "deploymentEvidenceId": "evidence-contract-absent"
+      },
+      "refSha": "cccccccccccccccccccccccccccccccccccccccc",
+      "contractObservation": {
+        "id": "observation-contract-absent",
+        "disposition": "not_declared",
+        "policyDigest": "sha256:7171717171717171717171717171717171717171717171717171717171717171",
+        "observedAt": "2026-07-27T10:30:00.000Z"
+      },
+      "actionAbsence": {
+        "from": "2026-07-27T10:29:00.000Z",
+        "to": "2026-07-27T10:40:00.000Z"
+      },
+      "noEffect": {
+        "contracts": 1,
+        "rollbacks": 0,
+        "attempts": 0,
+        "dispatchOutboxes": 0,
+        "actions": 0,
+        "evidence": 0
+      }
+    },
+    {
+      "caseKind": "production_failure",
+      "caseId": "rollback-negative-production",
+      "runId": "run-production-failure",
+      "currentRunVersion": 22,
+      "runState": "failed",
+      "repository": "example/test-rollback",
+      "failedAttemptId": "attempt-production-failure",
+      "deploymentId": "deployment-production-failure",
+      "sourceEvidenceId": "evidence-production-failure",
+      "refSha": "dddddddddddddddddddddddddddddddddddddddd",
+      "actionAbsence": {
+        "from": "2026-07-27T10:49:00.000Z",
+        "to": "2026-07-27T11:00:00.000Z"
+      },
+      "noEffect": {
+        "contracts": 0,
+        "rollbacks": 0,
+        "attempts": 0,
+        "dispatchOutboxes": 0,
+        "actions": 0,
+        "evidence": 0
+      }
+    }
+  ],
+  "productionDecision": {
+    "automaticRollback": "not_approved",
+    "decisionEvidenceUrl": "https://governance.example.test/decisions/production-rollback",
+    "reviewer": "production-owner",
+    "reviewedAt": "2026-07-27T11:05:00.000Z"
+  },
+  "safety": {
+    "canaryDigest": "sha256:abababababababababababababababababababababababababababababababab"
+  }
+}

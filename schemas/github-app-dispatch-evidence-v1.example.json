@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "github-app-dispatch-evidence-example",
+  "recordedAt": "2026-07-27T03:30:00.000Z",
+  "app": {
+    "appId": "123456",
+    "slug": "delivery-loop-test",
+    "ownerLogin": "example-platform",
+    "ownerType": "Organization",
+    "permissions": {
+      "actions": "write",
+      "contents": "read",
+      "metadata": "read"
+    },
+    "events": [
+      "workflow_run"
+    ],
+    "appUrl": "https://github.com/apps/delivery-loop-test"
+  },
+  "installation": {
+    "installationId": "654321",
+    "targetId": "99887766",
+    "targetLogin": "example",
+    "targetType": "Organization",
+    "repositorySelection": "selected",
+    "suspended": false,
+    "selectedRepositoryCount": 1,
+    "selectedRepositoriesDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "settingsUrl": "https://github.com/organizations/example/settings/installations/654321"
+  },
+  "repository": {
+    "repositoryId": "87654321",
+    "fullName": "example/delivery-target",
+    "visibility": "private",
+    "defaultBranch": "main",
+    "archived": false,
+    "disabled": false
+  },
+  "dispatch": {
+    "runId": "run-app-dispatch-example",
+    "runState": "awaiting_approval",
+    "runVersion": 8,
+    "taskRevision": "revision-app-dispatch-example",
+    "taskDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "planId": "plan-app-dispatch-example",
+    "planVersion": 1,
+    "planDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "attemptId": "attempt-app-dispatch-example",
+    "attemptStatus": "completed",
+    "dispatchOutboxId": "outbox-app-dispatch-example",
+    "workflowPath": ".github/workflows/delivery-agent.yml",
+    "workflowRef": "example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main",
+    "workflowBlobSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "workflowContentDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "actionRunId": "940001",
+    "actionUrl": "https://github.com/example/delivery-target/actions/runs/940001",
+    "actionConclusion": "success",
+    "actionUpdatedAt": "2026-07-27T03:20:00.000Z"
+  },
+  "noDuplicate": {
+    "selectedRepositories": 1,
+    "analysisAttempts": 1,
+    "analysisDispatchOutboxes": 1,
+    "githubActionRuns": 1,
+    "githubJobs": 1
+  }
+}

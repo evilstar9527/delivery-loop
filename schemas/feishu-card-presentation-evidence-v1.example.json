@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "feishu-card-presentation-evidence-example",
+  "recordedAt": "2026-07-27T05:12:00.000Z",
+  "taskId": "task-feishu-card-presentation-example",
+  "runId": "run-feishu-card-presentation-example",
+  "repository": "example/delivery-pilot",
+  "card": {
+    "appId": "cli_delivery_loop",
+    "tenantKey": "tenant_delivery_loop",
+    "chatId": "oc_delivery_loop_pilot",
+    "messageId": "om_feishu_card_presentation_example",
+    "createdAt": "2026-07-27T05:00:10.000Z",
+    "updatedAt": "2026-07-27T05:10:02.000Z"
+  },
+  "lifecycle": {
+    "created": {
+      "presentationId": "presentation-card-created-example",
+      "revision": 1,
+      "presentationDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "renderedDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "outboxId": "outbox-card-created-example",
+      "deliveredAt": "2026-07-27T05:00:10.000Z"
+    },
+    "beforeExpiry": {
+      "presentationId": "presentation-card-before-expiry-example",
+      "revision": 2,
+      "presentationDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "renderedDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "outboxId": "outbox-card-before-expiry-example",
+      "deliveredAt": "2026-07-27T05:05:01.000Z"
+    },
+    "afterExpiry": {
+      "presentationId": "presentation-card-after-expiry-example",
+      "revision": 3,
+      "presentationDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "renderedDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "outboxId": "outbox-card-after-expiry-example",
+      "deliveredAt": "2026-07-27T05:10:02.000Z"
+    },
+    "expiringEffect": "repo_write",
+    "expiresAt": "2026-07-27T05:10:00.000Z"
+  },
+  "safety": {
+    "canaryDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "largeLog": {
+      "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "sizeBytes": 262144,
+      "controlledUrl": "https://github.com/example/delivery-pilot/actions/runs/987654"
+    }
+  },
+  "review": {
+    "developerConsoleUrl": "https://open.feishu.cn/app/cli_delivery_loop/permission",
+    "messageUrl": "https://example.feishu.cn/message/om_feishu_card_presentation_example",
+    "screenshotUrl": "https://evidence.example.test/feishu/card-presentation-example.png",
+    "reviewer": "release-owner",
+    "reviewedAt": "2026-07-27T05:11:00.000Z",
+    "botMembership": "member",
+    "scopes": [
+      "im:message:send_as_bot",
+      "im:message:update",
+      "im:message:readonly",
+      "im:message.group_msg"
+    ]
+  }
+}

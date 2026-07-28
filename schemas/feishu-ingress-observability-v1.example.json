@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "feishu-ingress-round-107-example",
+  "service": "delivery-loop-control-plane",
+  "generatedAt": "2026-07-27T11:05:00.000Z",
+  "requests": [
+    {
+      "case": "event",
+      "requestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "responseDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "statusCode": 200,
+      "outcome": "event_accepted",
+      "startedAt": "2026-07-27T11:01:00.000Z",
+      "completedAt": "2026-07-27T11:01:00.200Z",
+      "latencyMs": 200,
+      "eventId": "evt_round_107_replayed",
+      "eventType": "work_item.updated_v1",
+      "deliveryId": "feishu_webhook_round_107_a"
+    },
+    {
+      "case": "event",
+      "requestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "responseDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "statusCode": 200,
+      "outcome": "event_accepted",
+      "startedAt": "2026-07-27T11:02:00.000Z",
+      "completedAt": "2026-07-27T11:02:00.200Z",
+      "latencyMs": 200,
+      "eventId": "evt_round_107_replayed",
+      "eventType": "work_item.updated_v1",
+      "deliveryId": "feishu_webhook_round_107_a"
+    },
+    {
+      "case": "event",
+      "requestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "responseDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "statusCode": 200,
+      "outcome": "event_accepted",
+      "startedAt": "2026-07-27T11:03:00.000Z",
+      "completedAt": "2026-07-27T11:03:00.200Z",
+      "latencyMs": 200,
+      "eventId": "evt_round_107_replayed",
+      "eventType": "work_item.updated_v1",
+      "deliveryId": "feishu_webhook_round_107_a"
+    },
+    {
+      "case": "event",
+      "requestDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "responseDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "statusCode": 200,
+      "outcome": "event_accepted",
+      "startedAt": "2026-07-27T11:04:00.000Z",
+      "completedAt": "2026-07-27T11:04:00.200Z",
+      "latencyMs": 200,
+      "eventId": "evt_round_107_peer",
+      "eventType": "work_item.updated_v1",
+      "deliveryId": "feishu_webhook_round_107_b"
+    }
+  ],
+  "reportDigest": "sha256:0c96b5e23ac58af5109da8d520cb5071adfc79a0146d25de1cb9da2249337b05"
+}

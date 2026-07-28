@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "merge-deployment-e2e-evidence-example",
+  "repository": "example/delivery-pilot",
+  "recordedAt": "2026-07-27T09:00:00.000Z",
+  "observedWindow": {
+    "startedAt": "2026-07-26T00:00:00.000Z",
+    "endedAt": "2026-07-27T08:30:00.000Z"
+  },
+  "components": {
+    "testMergeGate": {
+      "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "evidenceId": "merge-gate-test-evidence-example",
+      "caseId": "ready-test-example"
+    },
+    "productionMergeGate": {
+      "manifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "evidenceId": "merge-gate-production-evidence-example",
+      "caseId": "ready-production-example"
+    },
+    "merge": {
+      "manifestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "evidenceId": "merge-evidence-example",
+      "testCaseId": "merge-test-example",
+      "productionCaseId": "merge-production-example"
+    },
+    "testDeployment": {
+      "manifestDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "evidenceId": "test-deployment-evidence-example",
+      "caseId": "test-deployment-success-example"
+    },
+    "testAcceptance": {
+      "manifestDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "evidenceId": "test-acceptance-evidence-example",
+      "caseId": "test-acceptance-passed-example"
+    },
+    "productionApproval": {
+      "manifestDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "evidenceId": "production-approval-evidence-example",
+      "caseId": "production-approval-accepted-example"
+    },
+    "productionDeployment": {
+      "manifestDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "evidenceId": "production-deployment-evidence-example",
+      "caseId": "production-deployment-success-example"
+    },
+    "feishuCompletion": {
+      "manifestDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "evidenceId": "feishu-completion-evidence-example",
+      "testCaseId": "completion-test-example",
+      "productionCaseId": "completion-production-example"
+    }
+  },
+  "safety": {
+    "canaryDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+  }
+}

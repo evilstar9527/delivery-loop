@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replace-runner-recovery-evidence",
+  "repository": "example/delivery-pilot",
+  "recordedAt": "2026-07-26T08:00:00.000Z",
+  "runId": "replace-run-id",
+  "expectedRunState": "succeeded",
+  "planId": "replace-plan-id",
+  "planVersion": 1,
+  "recoveredPlanItemId": "replace-recovered-item-id",
+  "case8ReportDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "safety": {
+    "canaryDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "lost": {
+    "attemptId": "replace-lost-attempt-id",
+    "ordinal": 2,
+    "activeLeaseGenerationBeforeKill": 1,
+    "fencedLeaseGeneration": 2,
+    "tokenId": "replace-lost-token-id",
+    "tokenRevokedAt": "2026-07-26T07:35:00.000Z",
+    "dispatchOutboxId": "replace-lost-dispatch-outbox-id",
+    "workflowCancelOutboxId": "replace-workflow-cancel-outbox-id",
+    "actionRunId": "1001",
+    "workflowHeadSha": "dddddddddddddddddddddddddddddddddddddddd"
+  },
+  "checkpoint": {
+    "checkpointId": "replace-checkpoint-id",
+    "sequence": 3,
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "headBranch": "delivery/replace-run-id",
+    "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "replacement": {
+    "attemptId": "replace-replacement-attempt-id",
+    "ordinal": 3,
+    "leaseGeneration": 2,
+    "dispatchOutboxId": "replace-replacement-dispatch-outbox-id",
+    "actionRunId": "1002",
+    "workflowHeadSha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "resultHeadSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "verificationId": "replace-recovered-verification-id",
+    "evidenceId": "replace-recovered-evidence-id"
+  },
+  "previouslyPassed": {
+    "planItemId": "replace-previously-passed-item-id",
+    "verificationId": "replace-previously-passed-verification-id",
+    "evidenceIds": [
+      "replace-previously-passed-evidence-id"
+    ]
+  },
+  "sideEffects": {
+    "effectOutboxIds": [
+      "replace-lost-dispatch-outbox-id",
+      "replace-replacement-dispatch-outbox-id",
+      "replace-workflow-cancel-outbox-id"
+    ],
+    "pullRequestPublicationIds": [],
+    "deploymentIds": [],
+    "replacementCommitCount": 1
+  }
+}

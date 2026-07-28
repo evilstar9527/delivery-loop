@@ -1,0 +1,30 @@
+name: Platform concurrency probe
+run-name: delivery-loop/platform-concurrency/${{ inputs.probe_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_id:
+        description: Non-sensitive audit correlation ID
+        required: true
+        type: string
+      slots_json:
+        description: JSON array of unique integer slots (maximum 256)
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  probe:
+    name: platform-concurrency-${{ matrix.slot }}
+    strategy:
+      fail-fast: false
+      max-parallel: 256
+      matrix:
+        slot: ${{ fromJSON(inputs.slots_json) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Hold runner slot for overlap measurement
+        run: sleep 300

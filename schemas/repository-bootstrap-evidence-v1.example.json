@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "repository-bootstrap-evidence-example",
+  "recordedAt": "2026-07-27T11:00:00.000+08:00",
+  "decision": {
+    "decisionId": "repository-bootstrap-decision-example",
+    "confirmedAt": "2026-07-27T10:30:00.000+08:00",
+    "confirmedByPrincipalDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "repository": "example/delivery-loop",
+    "visibility": "private",
+    "defaultBranch": "main",
+    "protectionRulesDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "selectionDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "repository": {
+    "githubRepositoryId": "900001",
+    "ownerLogin": "example",
+    "ownerType": "Organization",
+    "name": "delivery-loop",
+    "fullName": "example/delivery-loop",
+    "htmlUrl": "https://github.com/example/delivery-loop",
+    "visibility": "private",
+    "defaultBranch": "main",
+    "createdAt": "2026-07-27T02:00:00.000Z",
+    "archived": false,
+    "disabled": false,
+    "fork": false
+  },
+  "branch": {
+    "name": "main",
+    "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "protected": true
+  },
+  "protection": {
+    "rules": [
+      {
+        "rulesetId": "101",
+        "type": "non_fast_forward",
+        "rulesetSourceType": "Repository",
+        "rulesetSource": "example/delivery-loop",
+        "enforcement": "active",
+        "parametersDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      },
+      {
+        "rulesetId": "101",
+        "type": "pull_request",
+        "rulesetSourceType": "Repository",
+        "rulesetSource": "example/delivery-loop",
+        "enforcement": "active",
+        "parametersDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      {
+        "rulesetId": "101",
+        "type": "required_status_checks",
+        "rulesetSourceType": "Repository",
+        "rulesetSource": "example/delivery-loop",
+        "enforcement": "active",
+        "parametersDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      }
+    ],
+    "rulesDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  }
+}

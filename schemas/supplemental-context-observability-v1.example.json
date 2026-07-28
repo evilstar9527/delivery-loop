@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "supplemental_context_pilot",
+  "service": "delivery-loop-supplemental-context-observer",
+  "generatedAt": "2026-07-27T09:10:00.000Z",
+  "requests": [
+    {
+      "scenario": "feishu_new_run",
+      "provider": "feishu",
+      "eventId": "evt_context_new",
+      "requestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "responseDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "statusCode": 200,
+      "startedAt": "2026-07-27T09:00:00.000Z",
+      "completedAt": "2026-07-27T09:00:00.100Z",
+      "latencyMs": 100
+    },
+    {
+      "scenario": "feishu_apply_current",
+      "provider": "feishu",
+      "eventId": "evt_context_apply",
+      "requestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "responseDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "statusCode": 200,
+      "startedAt": "2026-07-27T09:01:00.000Z",
+      "completedAt": "2026-07-27T09:01:00.100Z",
+      "latencyMs": 100
+    },
+    {
+      "scenario": "meegle_primary",
+      "provider": "meegle",
+      "eventId": "evt_meegle_primary",
+      "requestDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "responseDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "statusCode": 200,
+      "startedAt": "2026-07-27T09:02:00.000Z",
+      "completedAt": "2026-07-27T09:02:00.100Z",
+      "latencyMs": 100
+    },
+    {
+      "scenario": "meegle_primary_retry",
+      "provider": "meegle",
+      "eventId": "evt_meegle_primary",
+      "requestDigest": "sha256:abababababababababababababababababababababababababababababababab",
+      "responseDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "statusCode": 200,
+      "startedAt": "2026-07-27T09:03:00.000Z",
+      "completedAt": "2026-07-27T09:03:00.100Z",
+      "latencyMs": 100
+    },
+    {
+      "scenario": "meegle_peer",
+      "provider": "meegle",
+      "eventId": "evt_meegle_peer",
+      "requestDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "responseDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "statusCode": 200,
+      "startedAt": "2026-07-27T09:04:00.000Z",
+      "completedAt": "2026-07-27T09:04:00.100Z",
+      "latencyMs": 100
+    }
+  ],
+  "reportDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+}

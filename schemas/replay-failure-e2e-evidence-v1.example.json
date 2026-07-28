@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replay-failure-e2e-example",
+  "repository": "example/delivery-pilot",
+  "recordedAt": "2026-07-28T11:10:00.000Z",
+  "observedWindow": {
+    "startedAt": "2026-07-28T10:00:00.000Z",
+    "endedAt": "2026-07-28T11:05:00.000Z"
+  },
+  "components": {
+    "feishuIngress": {
+      "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "evidenceId": "replace-feishu-ingress-evidence",
+      "runId": "replace-feishu-run"
+    },
+    "feishuRetry": {
+      "manifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "evidenceId": "replace-feishu-retry-evidence",
+      "runId": "replace-feishu-run"
+    },
+    "githubPullRequest": {
+      "manifestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "evidenceId": "replace-github-pr-evidence",
+      "runId": "replace-github-replay-run",
+      "publicationId": "replace-github-replay-publication",
+      "deliveryId": "12345678-1234-4234-8234-123456789abc"
+    },
+    "controlledReplay": {
+      "manifestDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "evidenceId": "replace-controlled-replay-evidence",
+      "runId": "replace-controlled-run"
+    }
+  },
+  "observability": {
+    "reportUrl": "https://observability.example.com/replay-failure/e2e-example",
+    "reportDigest": "sha256:6a38617529961383193c736eecee93863d0a699bff371f6645c147057d46ab1d"
+  },
+  "callbackRecovery": {
+    "runId": "replace-controlled-run",
+    "publicationId": "replace-controlled-publication",
+    "apiObservationId": "replace-api-observation",
+    "factDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "externalUpdatedAt": "2026-07-28T10:15:00.000Z",
+    "observedAt": "2026-07-28T10:16:00.000Z",
+    "processedAt": "2026-07-28T10:16:01.000Z",
+    "webhookObservationCount": 0,
+    "apiObservationCount": 1
+  },
+  "queueReplay": {
+    "runId": "replace-controlled-run",
+    "deadLetterId": "outbox-dlq-example",
+    "outboxId": "outbox-execution-dispatch-example",
+    "replayId": "outbox-dlq-replay-outbox-dlq-example",
+    "sourceQueue": "delivery-loop-workflow-outbox",
+    "sourceAttempts": 4,
+    "outboxKind": "execution_dispatch",
+    "destination": "github_actions",
+    "expectedOutboxAttemptCount": 3,
+    "reasonCode": "upstream_recovered",
+    "capturedAt": "2026-07-28T10:19:00.000Z",
+    "replayRequestedAt": "2026-07-28T10:20:00.000Z",
+    "resolvedAt": "2026-07-28T10:21:00.000Z",
+    "resolutionCode": "outbox_settled"
+  },
+  "safety": {
+    "canaryDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+  }
+}

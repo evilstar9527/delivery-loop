@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "1",
+  "scenario": "E2E-1",
+  "evidenceId": "requirement-e2e-round-117-example",
+  "recordedAt": "2026-07-27T14:00:00.000Z",
+  "components": {
+    "meegleWorkItem": {
+      "evidenceId": "meegle-work-item-example",
+      "manifestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "analysisAction": {
+      "evidenceId": "analysis-action-example",
+      "manifestDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "feishuCardAction": {
+      "evidenceId": "feishu-card-action-example",
+      "manifestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  },
+  "lineage": {
+    "repository": "example/delivery-target",
+    "sourceEventId": "evt_meegle_requirement",
+    "sourceWorkItemId": "wi_requirement_1001",
+    "taskId": "task_requirement_e2e_1",
+    "taskRevision": "revision-requirement-e2e-1",
+    "taskDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "runId": "run_requirement_e2e_1",
+    "runVersion": 8,
+    "workflowInstanceId": "run_requirement_e2e_1",
+    "planId": "plan_requirement_e2e_1",
+    "planVersion": 1,
+    "planDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "baseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "analysisAttemptId": "attempt_requirement_analysis_e2e_1",
+    "analysisActionRunId": "940001"
+  },
+  "approval": {
+    "eventId": "evt_requirement_plan_approve",
+    "actionReceiptId": "receipt_requirement_plan_approve",
+    "approvalId": "approval_requirement_repo_write",
+    "actorKey": "requirement_reviewer",
+    "decision": "approve",
+    "effect": "repo_write"
+  },
+  "cloudflare": {
+    "accountIdDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "workflowName": "delivery-run",
+    "instanceVersionId": "11111111-2222-4333-8444-555555555555",
+    "instanceStatus": "waiting",
+    "instanceStartedAt": "2026-07-27T03:00:00.000Z",
+    "dashboardUrl": "https://dash.cloudflare.com/example/workers/workflows/delivery-run"
+  },
+  "safety": {
+    "canaryDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "review": {
+    "reviewer": "release-owner",
+    "reviewedAt": "2026-07-27T13:45:00.000Z",
+    "crossLineageEvidenceUrl": "https://evidence.example/e2e-1/round-117",
+    "requirementSemanticsReviewed": true,
+    "planAndEffectReviewed": true
+  }
+}

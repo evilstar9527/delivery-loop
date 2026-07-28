@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "replace-with-feishu-webhook-evidence-id",
+  "recordedAt": "2026-07-27T10:10:00.000Z",
+  "application": {
+    "appId": "cli_replace_with_app_id",
+    "tenantKey": "replace-with-tenant-key",
+    "callbackUrl": "https://control.example.com/v1/webhooks/feishu",
+    "encryptionMode": "encrypted",
+    "subscriptionStatus": "active",
+    "reviewedAt": "2026-07-27T10:07:00.000Z",
+    "developerConsoleUrl": "https://open.feishu.cn/app/cli_replace_with_app_id/event"
+  },
+  "observabilityReportUrl": "https://observability.example.com/feishu/round-106",
+  "observabilityReportDigest": "sha256:3afd9dfd9d7e2721ff5667e1a470d208d2c433a0e7dd1f3f581464553e4d73f3",
+  "challenge": {
+    "requestDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "responseDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "observedAt": "2026-07-27T10:00:00.000Z",
+    "latencyMs": 420,
+    "developerConsoleStatus": "SUCCESS",
+    "developerConsoleLogUrl": "https://open.feishu.cn/app/cli_replace_with_app_id/event/log",
+    "reviewedAt": "2026-07-27T10:07:00.000Z"
+  },
+  "event": {
+    "tenantKey": "replace-with-tenant-key",
+    "eventId": "replace-with-success-event-id",
+    "eventType": "im.message.receive_v1",
+    "deliveryId": "replace-with-success-delivery-id",
+    "requestDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "responseDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "eventDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "observedAt": "2026-07-27T10:01:00.000Z",
+    "developerConsoleStatus": "SUCCESS",
+    "developerConsoleLogUrl": "https://open.feishu.cn/app/cli_replace_with_app_id/event/log",
+    "reviewedAt": "2026-07-27T10:07:00.000Z"
+  },
+  "rejections": [
+    {
+      "case": "invalid_signature",
+      "tenantKey": "replace-with-tenant-key",
+      "eventId": "replace-with-invalid-signature-event-id",
+      "requestDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "responseDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "statusCode": 401,
+      "observedAt": "2026-07-27T10:02:00.000Z"
+    },
+    {
+      "case": "expired_timestamp",
+      "tenantKey": "replace-with-tenant-key",
+      "eventId": "replace-with-expired-timestamp-event-id",
+      "requestDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "responseDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "statusCode": 401,
+      "observedAt": "2026-07-27T10:03:00.000Z"
+    },
+    {
+      "case": "wrong_tenant",
+      "tenantKey": "replace-with-wrong-tenant-key",
+      "eventId": "replace-with-wrong-tenant-event-id",
+      "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "responseDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "statusCode": 403,
+      "observedAt": "2026-07-27T10:04:00.000Z"
+    }
+  ]
+}

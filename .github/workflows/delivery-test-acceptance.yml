@@ -1,0 +1,61 @@
+name: Delivery Test Acceptance
+run-name: delivery-loop/acceptance/${{ inputs.acceptance_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      schema_version:
+        required: true
+        type: string
+      acceptance_id:
+        required: true
+        type: string
+      ref_sha:
+        required: true
+        type: string
+      control_plane_url:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: delivery-acceptance-${{ github.repository }}-${{ inputs.acceptance_id }}
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    if: inputs.schema_version == '1'
+    environment: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout accepted deployment SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.ref_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 11.5.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: package.json
+          cache: pnpm
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run post-deployment acceptance
+        run: pnpm exec tsx scripts/run-test-acceptance.ts
+        env:
+          DELIVERY_ACCEPTANCE_ID: ${{ inputs.acceptance_id }}
+          DELIVERY_ACCEPTANCE_SHA: ${{ inputs.ref_sha }}
+          DELIVERY_CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}

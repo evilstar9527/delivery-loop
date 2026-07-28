@@ -1,0 +1,53 @@
+name: Delivery Production Deployment
+run-name: delivery-loop/production/${{ github.event.deployment.id }}
+
+on:
+  deployment:
+
+permissions:
+  contents: read
+  deployments: write
+  id-token: write
+
+concurrency:
+  group: delivery-production-${{ github.repository }}-${{ github.event.deployment.id }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event.deployment.environment == 'production' &&
+      github.event.deployment.task == 'delivery-loop:production'
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout approved merge SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.deployment.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 11.5.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: package.json
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Run policy-bound production deployment
+        run: pnpm exec tsx scripts/run-production-deployment.ts
+        env:
+          DELIVERY_PRODUCTION_DEPLOYMENT_ID: ${{ github.event.deployment.payload.delivery_production_deployment_id }}
+          DELIVERY_GITHUB_DEPLOYMENT_ID: ${{ github.event.deployment.id }}
+          DELIVERY_PRODUCTION_MERGE_SHA: ${{ github.event.deployment.sha }}
+          DELIVERY_CONTROL_PLANE_URL: ${{ vars.DELIVERY_CONTROL_PLANE_URL }}
+          DELIVERY_PRODUCTION_ENVIRONMENT_URL: ${{ vars.DELIVERY_PRODUCTION_ENVIRONMENT_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

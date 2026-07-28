@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "github-review-evidence-example",
+  "recordedAt": "2026-07-26T16:00:00.000Z",
+  "runId": "run-github-review-evidence-example",
+  "repository": "example/delivery-pilot",
+  "case8ReportDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "plan": {
+    "planId": "plan-review-evidence-example",
+    "version": 1,
+    "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "baseSha": "dddddddddddddddddddddddddddddddddddddddd",
+    "itemId": "review-item"
+  },
+  "publication": {
+    "publicationId": "pr-publication-review-evidence-example",
+    "number": 42,
+    "url": "https://github.com/example/delivery-pilot/pull/42",
+    "baseBranch": "main",
+    "headBranch": "delivery/task-evidence/attempt-1",
+    "reviewedHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "appliedReview": {
+    "deliveryId": "delivery-review-evidence-example",
+    "payloadDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "reviewId": "9001",
+    "reviewUrl": "https://github.com/example/delivery-pilot/pull/42",
+    "reviewerLogin": "human-reviewer",
+    "reviewerType": "User",
+    "bodyDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "reviewedHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "processingState": "applied",
+    "receivedAt": "2026-07-26T15:40:00.000Z",
+    "processedAt": "2026-07-26T15:40:01.000Z",
+    "submittedAt": "2026-07-26T15:39:59.000Z",
+    "feedbackId": "review-feedback-evidence-example",
+    "priorAttemptId": "attempt-review-prior-example",
+    "reviewAttemptId": "attempt-review-fix-example",
+    "branch": "delivery/task-evidence/attempt-1"
+  },
+  "staleReview": {
+    "deliveryId": "delivery-review-evidence-stale-example",
+    "payloadDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "reviewId": "9002",
+    "reviewedHeadSha": "cccccccccccccccccccccccccccccccccccccccc",
+    "processingState": "ignored",
+    "ignoreReason": "stale_head",
+    "receivedAt": "2026-07-26T15:45:00.000Z",
+    "processedAt": "2026-07-26T15:45:01.000Z"
+  },
+  "replacement": {
+    "attemptId": "attempt-review-fix-example",
+    "priorAttemptId": "attempt-review-prior-example",
+    "actionRunId": "70042",
+    "actionWorkflowPath": ".github/workflows/delivery-agent.yml",
+    "actionTitle": "delivery-loop/attempt-review-fix-example",
+    "actionWorkflowHeadSha": "dddddddddddddddddddddddddddddddddddddddd",
+    "actionHeadBranch": "main",
+    "actionStatus": "completed",
+    "actionConclusion": "success",
+    "checkoutSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "claimedProgressVersion": 3,
+    "updateId": "head-update-review-fix-example",
+    "commitEvidenceId": "commit-evidence-review-fix-example",
+    "resultHeadSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "branch": "delivery/task-evidence/attempt-1",
+    "testSuite": {
+      "suiteId": "suite-review-fix-example",
+      "deliveryPolicyDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "commands": [
+        {
+          "position": 0,
+          "phase": "targeted",
+          "commandRef": "test:targeted",
+          "evidenceId": "test-evidence-review-targeted-example"
+        },
+        {
+          "position": 1,
+          "phase": "required",
+          "commandRef": "verify:required",
+          "evidenceId": "test-evidence-review-required-example"
+        }
+      ]
+    },
+    "itemVerification": {
+      "verificationId": "verification-review-fix-example",
+      "evidenceSetDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "evidenceIds": [
+        "commit-evidence-review-fix-example",
+        "test-evidence-review-targeted-example",
+        "test-evidence-review-required-example"
+      ]
+    },
+    "checks": [{ "name": "required", "conclusion": "success" }]
+  },
+  "safety": {
+    "canaryDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+  }
+}

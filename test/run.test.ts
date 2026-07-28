@@ -20,7 +20,24 @@ describe('run state machine', () => {
     expect(canTransition('verifying', 'executing')).toBe(true);
   });
 
+  it('returns active pre-merge work to planning when its immutable Plan must be revised', () => {
+    for (const state of [
+      'awaiting_approval',
+      'executing',
+      'verifying',
+      'pull_request_open',
+      'awaiting_review',
+      'ready_to_merge',
+      'blocked',
+    ] as const) {
+      expect(canTransition(state, 'planning')).toBe(true);
+    }
+    expect(canTransition('merging', 'planning')).toBe(false);
+    expect(canTransition('deploying', 'planning')).toBe(false);
+  });
+
   it('supports explicit recovery from blocked and failed states', () => {
+    expect(canTransition('awaiting_approval', 'executing')).toBe(true);
     expect(canTransition('blocked', 'queued')).toBe(true);
     expect(canTransition('blocked', 'executing')).toBe(true);
     expect(canTransition('failed', 'queued')).toBe(true);

@@ -1,0 +1,30 @@
+schemaVersion: '1'
+commands:
+  setup:
+    install:
+      argv: [pnpm, install, --frozen-lockfile]
+      timeoutSeconds: 600
+  targeted:
+    unit:
+      argv: [pnpm, run, test:unit]
+      timeoutSeconds: 300
+  verify:
+    all:
+      argv: [pnpm, run, verify]
+      timeoutSeconds: 1200
+  acceptance:
+    smoke:
+      argv: [pnpm, run, test:unit]
+      timeoutSeconds: 300
+protectedPaths:
+  - delivery.yaml
+  - .github/workflows/**
+  - CODEOWNERS
+  - .env*
+  - .dev.vars*
+  - secrets.y*ml
+  - wrangler.jsonc
+  - deploy/**
+  - infra/**
+deployment:
+  mode: none

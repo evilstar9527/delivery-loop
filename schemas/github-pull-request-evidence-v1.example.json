@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "github-pr-evidence-example",
+  "recordedAt": "2026-07-26T15:00:00.000Z",
+  "runId": "run-github-pr-evidence-example",
+  "repository": "example/delivery-pilot",
+  "publication": {
+    "publicationId": "pr-publication-evidence-example",
+    "approvalId": "approval-pr-evidence-example",
+    "repository": "example/delivery-pilot",
+    "baseBranch": "main",
+    "headBranch": "delivery/task-evidence/attempt-1",
+    "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "bodyDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "status": "verified",
+    "number": 42,
+    "url": "https://github.com/example/delivery-pilot/pull/42",
+    "evidenceId": "evidence-pr-evidence-example",
+    "webhook": {
+      "deliveryId": "delivery-pr-evidence-example",
+      "payloadDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "processingState": "applied",
+      "externalUpdatedAt": "2026-07-26T14:40:00.000Z",
+      "receivedAt": "2026-07-26T14:40:01.000Z"
+    },
+    "apiObservation": {
+      "observationId": "github-pr-api-evidence-example",
+      "factDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "processingState": "applied",
+      "externalUpdatedAt": "2026-07-26T14:40:00.000Z",
+      "observedAt": "2026-07-26T14:41:00.000Z"
+    }
+  }
+}

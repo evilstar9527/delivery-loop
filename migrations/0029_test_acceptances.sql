@@ -1,0 +1,142 @@
+-- Post-deployment acceptance is a separate, read-only workflow. A deployment
+-- result, acceptance runner report, and signed workflow_run are distinct facts.
+
+CREATE TABLE IF NOT EXISTS test_acceptances (
+  acceptance_id              TEXT PRIMARY KEY,
+  deployment_id              TEXT NOT NULL REFERENCES test_deployments(deployment_id),
+  run_id                     TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  run_version                INTEGER NOT NULL CHECK (run_version >= 0),
+  plan_id                    TEXT NOT NULL REFERENCES execution_plans(plan_id) ON DELETE CASCADE,
+  plan_version               INTEGER NOT NULL CHECK (plan_version > 0),
+  plan_digest                TEXT NOT NULL CHECK (length(plan_digest) = 71),
+  plan_item_id               TEXT NOT NULL,
+  attempt_id                 TEXT NOT NULL UNIQUE REFERENCES attempts(attempt_id) ON DELETE CASCADE,
+  repository                 TEXT NOT NULL,
+  base_branch                TEXT NOT NULL,
+  base_sha                   TEXT NOT NULL CHECK (length(base_sha) = 40),
+  ref_sha                    TEXT NOT NULL CHECK (length(ref_sha) = 40),
+  workflow_path              TEXT NOT NULL CHECK (
+    workflow_path = '.github/workflows/delivery-test-acceptance.yml'
+  ),
+  environment                TEXT NOT NULL CHECK (environment = 'test'),
+  oidc_audience              TEXT NOT NULL CHECK (
+    oidc_audience = 'delivery-loop-test-acceptance'
+  ),
+  command_ref                TEXT NOT NULL CHECK (command_ref LIKE 'acceptance:%'),
+  environment_url            TEXT NOT NULL CHECK (environment_url LIKE 'https://%'),
+  status                     TEXT NOT NULL CHECK (
+    status IN ('scheduled', 'dispatched', 'running', 'passed', 'failed')
+  ),
+  github_run_id              TEXT UNIQUE,
+  runner_result_digest       TEXT UNIQUE CHECK (
+    runner_result_digest IS NULL OR length(runner_result_digest) = 71
+  ),
+  runner_status              TEXT CHECK (runner_status IS NULL OR runner_status IN ('passed', 'failed')),
+  runner_exit_code           INTEGER CHECK (
+    runner_exit_code IS NULL OR (runner_exit_code >= 0 AND runner_exit_code <= 255)
+  ),
+  runner_duration_ms         INTEGER CHECK (
+    runner_duration_ms IS NULL OR
+    (runner_duration_ms >= 0 AND runner_duration_ms <= 3600000)
+  ),
+  external_state             TEXT,
+  external_conclusion        TEXT,
+  external_updated_at        TEXT,
+  observation_version        INTEGER NOT NULL DEFAULT 0 CHECK (observation_version >= 0),
+  evidence_id                TEXT UNIQUE REFERENCES evidence(evidence_id),
+  created_at                 TEXT NOT NULL,
+  updated_at                 TEXT NOT NULL,
+  UNIQUE (run_id, plan_id, plan_item_id),
+  FOREIGN KEY (plan_id, plan_item_id) REFERENCES plan_items(plan_id, item_id),
+  CHECK (
+    (runner_result_digest IS NULL AND runner_status IS NULL AND
+     runner_exit_code IS NULL AND runner_duration_ms IS NULL) OR
+    (runner_result_digest IS NOT NULL AND runner_status IS NOT NULL AND
+     runner_exit_code IS NOT NULL AND runner_duration_ms IS NOT NULL)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_test_acceptances_status
+  ON test_acceptances(status, updated_at);
+
+CREATE TABLE IF NOT EXISTS test_acceptance_oidc_attestations (
+  attestation_id    TEXT PRIMARY KEY,
+  acceptance_id    TEXT NOT NULL UNIQUE REFERENCES test_acceptances(acceptance_id) ON DELETE CASCADE,
+  oidc_token_digest TEXT NOT NULL UNIQUE CHECK (length(oidc_token_digest) = 71),
+  repository        TEXT NOT NULL,
+  workflow_ref      TEXT NOT NULL,
+  sha               TEXT NOT NULL CHECK (length(sha) = 40),
+  github_run_id     TEXT NOT NULL,
+  subject           TEXT NOT NULL,
+  environment       TEXT NOT NULL CHECK (environment = 'test'),
+  audience          TEXT NOT NULL CHECK (audience = 'delivery-loop-test-acceptance'),
+  created_at        TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS github_test_acceptance_observations (
+  observation_id       TEXT PRIMARY KEY,
+  source_kind          TEXT NOT NULL CHECK (source_kind IN ('webhook', 'api')),
+  fact_digest          TEXT NOT NULL CHECK (length(fact_digest) = 71),
+  repository           TEXT NOT NULL,
+  github_run_id        TEXT NOT NULL,
+  acceptance_id        TEXT REFERENCES test_acceptances(acceptance_id),
+  processing_state     TEXT NOT NULL CHECK (
+    processing_state IN ('received', 'applied', 'ignored')
+  ),
+  ignore_reason        TEXT,
+  external_updated_at  TEXT NOT NULL,
+  observed_at          TEXT NOT NULL,
+  processed_at         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_github_test_acceptance_observations
+  ON github_test_acceptance_observations(
+    repository, github_run_id, external_updated_at
+  );
+
+CREATE TRIGGER IF NOT EXISTS trg_test_acceptance_snapshot_immutable
+BEFORE UPDATE OF
+  deployment_id, run_id, run_version, plan_id, plan_version, plan_digest,
+  plan_item_id, attempt_id, repository, base_branch, base_sha, ref_sha,
+  workflow_path, environment, oidc_audience, command_ref, environment_url,
+  created_at
+ON test_acceptances
+BEGIN SELECT RAISE(ABORT, 'test_acceptance_snapshot_is_immutable'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_test_acceptance_status_monotonic
+BEFORE UPDATE OF status ON test_acceptances
+WHEN NOT (
+  OLD.status = NEW.status OR
+  (OLD.status = 'scheduled' AND NEW.status IN ('dispatched', 'running', 'failed')) OR
+  (OLD.status = 'dispatched' AND NEW.status IN ('running', 'passed', 'failed')) OR
+  (OLD.status = 'running' AND NEW.status IN ('passed', 'failed'))
+)
+BEGIN SELECT RAISE(ABORT, 'test_acceptance_status_cannot_regress'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_test_acceptance_github_run_immutable
+BEFORE UPDATE OF github_run_id ON test_acceptances
+WHEN OLD.github_run_id IS NOT NULL AND NEW.github_run_id IS NOT OLD.github_run_id
+BEGIN SELECT RAISE(ABORT, 'test_acceptance_github_run_is_immutable'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_test_acceptance_runner_result_immutable
+BEFORE UPDATE OF
+  runner_result_digest, runner_status, runner_exit_code, runner_duration_ms
+ON test_acceptances
+WHEN OLD.runner_result_digest IS NOT NULL AND (
+  NEW.runner_result_digest IS NOT OLD.runner_result_digest OR
+  NEW.runner_status IS NOT OLD.runner_status OR
+  NEW.runner_exit_code IS NOT OLD.runner_exit_code OR
+  NEW.runner_duration_ms IS NOT OLD.runner_duration_ms
+)
+BEGIN SELECT RAISE(ABORT, 'test_acceptance_runner_result_is_immutable'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_test_acceptance_oidc_immutable
+BEFORE UPDATE ON test_acceptance_oidc_attestations
+BEGIN SELECT RAISE(ABORT, 'test_acceptance_oidc_attestation_is_immutable'); END;
+
+CREATE TRIGGER IF NOT EXISTS trg_test_acceptance_observation_identity_immutable
+BEFORE UPDATE OF
+  observation_id, source_kind, fact_digest, repository, github_run_id,
+  external_updated_at, observed_at
+ON github_test_acceptance_observations
+BEGIN SELECT RAISE(ABORT, 'test_acceptance_observation_identity_is_immutable'); END;

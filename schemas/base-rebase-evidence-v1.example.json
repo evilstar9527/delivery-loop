@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "base-rebase-evidence-example",
+  "recordedAt": "2026-07-26T18:00:00.000Z",
+  "runId": "run-base-rebase-example",
+  "repository": "example/delivery-target",
+  "outcome": "passed",
+  "rebase": {
+    "rebaseId": "base-rebase-example",
+    "revisionId": "revision-base-example",
+    "sourcePlanId": "plan-base-old-example",
+    "sourcePlanVersion": 1,
+    "targetPlanId": "plan-base-new-example",
+    "targetPlanVersion": 2,
+    "planItemId": "item-change-example",
+    "sourceAttemptId": "attempt-source-example",
+    "rebaseAttemptId": "attempt-rebase-example",
+    "oldBaseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "newBaseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "sourceBranch": "agent/task-example/attempt-source-example",
+    "sourceHeadSha": "cccccccccccccccccccccccccccccccccccccccc",
+    "targetBranch": "agent/task-example/attempt-rebase-example",
+    "resultHeadSha": "dddddddddddddddddddddddddddddddddddddddd",
+    "status": "passed",
+    "verificationSuiteId": "suite-base-rebase-example",
+    "dispatchOutboxId": "dispatch-base-rebase-example"
+  },
+  "baseComparison": {
+    "observationId": "github-base-observation-example",
+    "sourceDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "referenceDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "comparisonDigest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "repository": "example/delivery-target",
+    "baseBranch": "main",
+    "beforeSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "afterSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "relationship": "ahead",
+    "aheadBy": 1,
+    "behindBy": 0,
+    "mergeBaseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "branchUpdate": {
+    "ref": "refs/heads/agent/task-example/attempt-rebase-example",
+    "beforeSha": "cccccccccccccccccccccccccccccccccccccccc",
+    "afterSha": "dddddddddddddddddddddddddddddddddddddddd",
+    "fastForward": true,
+    "force": false
+  },
+  "action": {
+    "githubRunId": "81001",
+    "workflowPath": ".github/workflows/delivery-agent.yml",
+    "displayTitle": "delivery-loop/attempt-rebase-example",
+    "status": "completed",
+    "conclusion": "success",
+    "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "headBranch": "main",
+    "runAttempt": 1
+  },
+  "verification": {
+    "suiteId": "suite-base-rebase-example",
+    "headSha": "dddddddddddddddddddddddddddddddddddddddd",
+    "targetedPassed": true,
+    "requiredPassed": true,
+    "evidenceCount": 2
+  }
+}

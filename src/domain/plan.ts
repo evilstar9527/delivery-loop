@@ -1,0 +1,387 @@
+import { z } from 'zod';
+import { canonicalSha256 } from './digest.js';
+
+export const PLAN_EFFECTS = [
+  'repo_read',
+  'logs_read',
+  'database_diagnostic',
+  'repo_write',
+  'test_deploy',
+  'merge',
+  'production_deploy',
+] as const;
+
+export const EVIDENCE_KINDS = [
+  'diagnostic',
+  'plan',
+  'test',
+  'lint',
+  'build',
+  'commit',
+  'pull_request',
+  'check',
+  'deployment',
+  'approval',
+] as const;
+
+const PLAN_STATUSES = [
+  'proposed',
+  'validated',
+  'approved',
+  'active',
+  'superseded',
+  'completed',
+  'blocked',
+] as const;
+
+const ITEM_KINDS = ['investigation', 'change', 'verification', 'delivery'] as const;
+const EXTERNAL_FACTS = ['github_pr', 'github_check', 'deployment'] as const;
+const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+const BASE_SHA_PATTERN = /^[a-f0-9]{40}$/;
+const ITEM_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+const nonBlank = (maximum: number): z.ZodString =>
+  z.string().min(1).max(maximum).refine((value) => /\S/.test(value), 'must not be blank');
+
+export const PlanEffectSchema = z.enum(PLAN_EFFECTS);
+export const EvidenceKindSchema = z.enum(EVIDENCE_KINDS);
+
+export const PlanItemV1Schema = z
+  .object({
+    id: z.string().min(1).max(64),
+    kind: z.enum(ITEM_KINDS),
+    title: nonBlank(200),
+    objective: nonBlank(2_000),
+    acceptanceCriteriaIndexes: z.array(z.number().int().nonnegative()).max(100),
+    doneWhen: z.array(nonBlank(1_000)).min(1).max(50),
+    verification: z
+      .object({
+        commandRefs: z.array(nonBlank(200)).max(50).optional(),
+        evidenceKinds: z.array(EvidenceKindSchema).min(1).max(EVIDENCE_KINDS.length),
+        externalFacts: z.array(z.enum(EXTERNAL_FACTS)).max(EXTERNAL_FACTS.length).optional(),
+      })
+      .strict(),
+    effects: z.array(PlanEffectSchema).max(PLAN_EFFECTS.length),
+    dependsOn: z.array(z.string().min(1).max(64)).max(200),
+    required: z.boolean(),
+  })
+  .strict();
+
+export const ExecutionPlanBodyV1Schema = z
+  .object({
+    schemaVersion: z.literal('1'),
+    id: z.string().min(1).max(128).regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/),
+    runId: z.string().min(1).max(64),
+    version: z.number().int().positive(),
+    taskRevision: z.string().min(1).max(256),
+    baseSha: z.string().regex(BASE_SHA_PATTERN),
+    createdByAttemptId: z.string().min(1).max(128),
+    objective: nonBlank(4_000),
+    assumptions: z.array(nonBlank(1_000)).max(100),
+    evidenceRefs: z.array(nonBlank(500)).max(200),
+    items: z.array(PlanItemV1Schema).min(1).max(200),
+  })
+  .strict();
+
+export const ExecutionPlanV1Schema = ExecutionPlanBodyV1Schema.extend({
+  digest: z.string().regex(SHA256_DIGEST_PATTERN),
+  status: z.enum(PLAN_STATUSES),
+}).strict();
+
+export type PlanEffect = z.infer<typeof PlanEffectSchema>;
+export type EvidenceKind = z.infer<typeof EvidenceKindSchema>;
+export type PlanItemV1 = z.infer<typeof PlanItemV1Schema>;
+export type ExecutionPlanBodyV1 = z.infer<typeof ExecutionPlanBodyV1Schema>;
+export type ExecutionPlanV1 = z.infer<typeof ExecutionPlanV1Schema>;
+
+export interface ExecutionPlanValidationContext {
+  runId: string;
+  taskRevision: string;
+  baseSha: string;
+  expectedVersion: number;
+  acceptanceCriteriaCount: number;
+  allowedCommandRefs: readonly string[];
+  /** Trusted subset that actually performs test/lint/build verification. */
+  verificationCommandRefs?: readonly string[];
+  allowedEffects: readonly PlanEffect[];
+}
+
+export type ExecutionPlanValidationIssueCode =
+  | 'schema_invalid'
+  | 'item_id_invalid'
+  | 'duplicate_item_id'
+  | 'dependency_missing'
+  | 'dependency_cycle'
+  | 'done_when_required'
+  | 'evidence_required'
+  | 'command_ref_not_allowed'
+  | 'effect_not_allowed'
+  | 'acceptance_criterion_uncovered'
+  | 'verification_required_after_change'
+  | 'duplicate_value'
+  | 'acceptance_criterion_out_of_range'
+  | 'run_mismatch'
+  | 'task_revision_mismatch'
+  | 'base_sha_mismatch'
+  | 'version_mismatch'
+  | 'digest_mismatch'
+  | 'status_not_proposed';
+
+export interface ExecutionPlanValidationIssue {
+  code: ExecutionPlanValidationIssueCode;
+  path: string;
+  message: string;
+}
+
+export class ExecutionPlanValidationError extends Error {
+  constructor(readonly issues: readonly ExecutionPlanValidationIssue[]) {
+    super(`ExecutionPlan validation failed with ${issues.length} issue(s)`);
+    this.name = 'ExecutionPlanValidationError';
+  }
+}
+
+export async function computeExecutionPlanDigest(
+  body: ExecutionPlanBodyV1,
+): Promise<string> {
+  return await canonicalSha256(body);
+}
+
+function immutableBody(plan: ExecutionPlanV1): ExecutionPlanBodyV1 {
+  return {
+    schemaVersion: plan.schemaVersion,
+    id: plan.id,
+    runId: plan.runId,
+    version: plan.version,
+    taskRevision: plan.taskRevision,
+    baseSha: plan.baseSha,
+    createdByAttemptId: plan.createdByAttemptId,
+    objective: plan.objective,
+    assumptions: plan.assumptions,
+    evidenceRefs: plan.evidenceRefs,
+    items: plan.items,
+  };
+}
+
+function schemaIssueCode(issue: z.core.$ZodIssue): ExecutionPlanValidationIssueCode {
+  const path = issue.path.map(String);
+  if (path.at(-1) === 'doneWhen' && issue.code === 'too_small') return 'done_when_required';
+  if (path.at(-1) === 'evidenceKinds' && issue.code === 'too_small') return 'evidence_required';
+  return 'schema_invalid';
+}
+
+function duplicateValues(values: readonly unknown[]): boolean {
+  return new Set(values).size !== values.length;
+}
+
+function dependencyGraphHasCycle(items: readonly PlanItemV1[]): boolean {
+  const dependencies = new Map(items.map((item) => [item.id, item.dependsOn]));
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+
+  const visit = (itemId: string): boolean => {
+    if (visiting.has(itemId)) return true;
+    if (visited.has(itemId)) return false;
+    visiting.add(itemId);
+    for (const dependency of dependencies.get(itemId) ?? []) {
+      if (dependencies.has(dependency) && visit(dependency)) return true;
+    }
+    visiting.delete(itemId);
+    visited.add(itemId);
+    return false;
+  };
+
+  return items.some((item) => visit(item.id));
+}
+
+function dependsTransitivelyOn(
+  itemId: string,
+  dependencyId: string,
+  dependencies: ReadonlyMap<string, readonly string[]>,
+): boolean {
+  const pending = [...(dependencies.get(itemId) ?? [])];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined || visited.has(current)) continue;
+    if (current === dependencyId) return true;
+    visited.add(current);
+    pending.push(...(dependencies.get(current) ?? []));
+  }
+  return false;
+}
+
+/**
+ * Treats Agent output as an untrusted proposal and binds it to trusted Run/policy context.
+ * The returned object is safe to persist as `validated`; it is not approved to execute.
+ */
+export async function validateExecutionPlanProposal(
+  input: unknown,
+  context: ExecutionPlanValidationContext,
+): Promise<ExecutionPlanV1> {
+  const parsed = ExecutionPlanV1Schema.safeParse(input);
+  if (!parsed.success) {
+    throw new ExecutionPlanValidationError(
+      parsed.error.issues.map((issue) => ({
+        code: schemaIssueCode(issue),
+        path: issue.path.join('.'),
+        message: issue.message,
+      })),
+    );
+  }
+
+  const plan = parsed.data;
+  const issues: ExecutionPlanValidationIssue[] = [];
+  const push = (
+    code: ExecutionPlanValidationIssueCode,
+    path: string,
+    message: string,
+  ): void => {
+    issues.push({ code, path, message });
+  };
+
+  if (plan.status !== 'proposed') {
+    push('status_not_proposed', 'status', 'Agent-generated plans must be proposed');
+  }
+  if (plan.runId !== context.runId) {
+    push('run_mismatch', 'runId', 'plan run does not match trusted context');
+  }
+  if (plan.taskRevision !== context.taskRevision) {
+    push(
+      'task_revision_mismatch',
+      'taskRevision',
+      'plan task revision does not match trusted context',
+    );
+  }
+  if (plan.baseSha !== context.baseSha) {
+    push('base_sha_mismatch', 'baseSha', 'plan base SHA does not match trusted context');
+  }
+  if (plan.version !== context.expectedVersion) {
+    push('version_mismatch', 'version', 'plan version is not the expected next version');
+  }
+  if (duplicateValues(plan.assumptions)) {
+    push('duplicate_value', 'assumptions', 'assumptions must not contain duplicates');
+  }
+  if (duplicateValues(plan.evidenceRefs)) {
+    push('duplicate_value', 'evidenceRefs', 'evidenceRefs must not contain duplicates');
+  }
+
+  const itemIds = new Set<string>();
+  const allowedCommandRefs = new Set(context.allowedCommandRefs);
+  const allowedEffects = new Set(context.allowedEffects);
+  for (const [index, item] of plan.items.entries()) {
+    const itemPath = `items.${index}`;
+    if (!ITEM_ID_PATTERN.test(item.id)) {
+      push('item_id_invalid', `${itemPath}.id`, 'item id is not a stable identifier');
+    }
+    if (itemIds.has(item.id)) {
+      push('duplicate_item_id', `${itemPath}.id`, 'item id must be unique within the plan');
+    }
+    itemIds.add(item.id);
+
+    const arrays: Array<[string, readonly unknown[]]> = [
+      ['acceptanceCriteriaIndexes', item.acceptanceCriteriaIndexes],
+      ['doneWhen', item.doneWhen],
+      ['evidenceKinds', item.verification.evidenceKinds],
+      ['commandRefs', item.verification.commandRefs ?? []],
+      ['externalFacts', item.verification.externalFacts ?? []],
+      ['effects', item.effects],
+      ['dependsOn', item.dependsOn],
+    ];
+    for (const [name, values] of arrays) {
+      if (duplicateValues(values)) {
+        push('duplicate_value', `${itemPath}.${name}`, `${name} must not contain duplicates`);
+      }
+    }
+
+    for (const criterionIndex of item.acceptanceCriteriaIndexes) {
+      if (criterionIndex >= context.acceptanceCriteriaCount) {
+        push(
+          'acceptance_criterion_out_of_range',
+          `${itemPath}.acceptanceCriteriaIndexes`,
+          'acceptance criterion index is outside the trusted task snapshot',
+        );
+      }
+    }
+    for (const commandRef of item.verification.commandRefs ?? []) {
+      if (!allowedCommandRefs.has(commandRef)) {
+        push(
+          'command_ref_not_allowed',
+          `${itemPath}.verification.commandRefs`,
+          'command reference is not in the trusted delivery policy',
+        );
+      }
+    }
+    for (const effect of item.effects) {
+      if (!allowedEffects.has(effect)) {
+        push(
+          'effect_not_allowed',
+          `${itemPath}.effects`,
+          'effect exceeds the trusted task policy ceiling',
+        );
+      }
+    }
+  }
+
+  const coveredCriteria = new Set(
+    plan.items
+      .filter((item) => item.required)
+      .flatMap((item) => item.acceptanceCriteriaIndexes),
+  );
+  for (let criterionIndex = 0; criterionIndex < context.acceptanceCriteriaCount; criterionIndex += 1) {
+    if (!coveredCriteria.has(criterionIndex)) {
+      push(
+        'acceptance_criterion_uncovered',
+        'items',
+        `acceptance criterion ${criterionIndex} is not covered by a required item`,
+      );
+    }
+  }
+
+  const dependencies = new Map(plan.items.map((item) => [item.id, item.dependsOn]));
+  const verificationCommandRefs = new Set(
+    context.verificationCommandRefs ??
+      context.allowedCommandRefs.filter((ref) => /^(?:test|verify|lint|build):/.test(ref)),
+  );
+  const verifications = plan.items.filter(
+    (item) =>
+      item.kind === 'verification' &&
+      item.required &&
+      (item.verification.commandRefs ?? []).some((ref) => verificationCommandRefs.has(ref)) &&
+      item.verification.evidenceKinds.some((kind) =>
+        kind === 'test' || kind === 'lint' || kind === 'build'),
+  );
+  for (const [index, item] of plan.items.entries()) {
+    if (item.kind !== 'change' && !item.effects.includes('repo_write')) continue;
+    if (!verifications.some((verification) =>
+      dependsTransitivelyOn(verification.id, item.id, dependencies))) {
+      push(
+        'verification_required_after_change',
+        `items.${index}`,
+        'every change must feed a required trusted verification with test, lint, or build Evidence',
+      );
+    }
+  }
+
+  for (const [index, item] of plan.items.entries()) {
+    for (const dependency of item.dependsOn) {
+      if (!itemIds.has(dependency)) {
+        push(
+          'dependency_missing',
+          `items.${index}.dependsOn`,
+          'dependency does not reference an item in this plan',
+        );
+      }
+    }
+  }
+  if (dependencyGraphHasCycle(plan.items)) {
+    push('dependency_cycle', 'items', 'plan item dependency graph must be acyclic');
+  }
+
+  const expectedDigest = await computeExecutionPlanDigest(immutableBody(plan));
+  if (plan.digest !== expectedDigest) {
+    push('digest_mismatch', 'digest', 'plan digest does not match immutable plan content');
+  }
+
+  if (issues.length > 0) throw new ExecutionPlanValidationError(issues);
+  return plan;
+}
