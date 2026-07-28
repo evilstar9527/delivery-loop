@@ -159,6 +159,7 @@
 20. Codex `--json` stdout按行流式消费且不保留。只接受官方`turn.completed.usage`的四个数；thread ID、Agent message、reasoning、command/file/tool/web/search/plan事件、原始stdout和模型response均立即丢弃。D1只写per-call usage标量/source digest；查询不公开prompt、response、tool参数或raw错误。
 21. GitHub repository Secrets `OPENAI_API_KEY`与`OPENAI_BASE_URL`只在固定workflow的Agent step或无Task的手动provider preflight分别映射为`CODEX_API_KEY`与`OPENAI_BASE_URL`；把base URL放入Secret是更严格的存储边界，不把它变成凭证通道，其中仍不得包含key、userinfo、query或fragment。两者都不进入dispatch input、控制面、checkpoint、artifact、PR或日志；preflight安全结果只留`RUNNER_TEMP`且不上传，Agent子shell继续由environment policy排除`*KEY*/*SECRET*/*TOKEN*/*PASSWORD*`。
 22. 第三方模型中转是独立数据处理信任边界：即使URL通过公网HTTPS和host校验，中转方仍可能看到Task、代码、日志摘要、prompt及模型输出。接入前必须由owner确认其Responses API兼容性、exact model支持、数据保留与访问政策；中转响应仍按不可信模型输出处理，不能提升Plan effect、命令或credential authority。
+23. provider preflight只允许把已按敏感环境值脱敏且最多8 KiB的CLI stderr映射为固定失败枚举；分类器不返回原文，未知或恶意文本只返回`provider_process_failed`。raw stderr、第三方响应、URL、credential及其摘要不得写入Action log、artifact、manifest、D1或PROGRESS；分类枚举仅用于决定是否需要owner输入或受控修复，不构成provider成功证据。
 
 ## 5. Prompt Injection 防护
 

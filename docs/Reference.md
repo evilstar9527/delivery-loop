@@ -55,6 +55,8 @@ Round 146 按Codex官方manual核对第三方OpenAI-compatible中转接法：bui
 
 Round 147 把同一provider边界扩展到真实`CodexSessionAdapter`验收路径，并新增固定手动preflight workflow。它直接复用既有ephemeral/read-only/strict output/checkpoint/Git clean验收脚本，不复制第二套模型探针；新增的只有CI `CODEX_API_KEY`认证识别、同一validated base URL、可信exact model参数和无Task/Run/dispatch的最小Actions入口。preflight不输出模型正文、不上传artifact且无OIDC/write权限，只用一次无业务数据的结构化调用避免把第三方route/model不兼容消耗在唯一hibernate Task上；成功仍不能替代真实analysis/hibernate。
 
+Round 150 在首次真实preflight只得到generic failure后增加安全失败分类，不增加provider API、workflow input或credential scope。分类器只消费共享command runtime已经按当前敏感环境值脱敏且最多8 KiB的stderr，按固定优先级收敛为11个allowlisted code；model-specific 404优先于generic endpoint，未知/恶意文本只得到`provider_process_failed`。原始stderr、第三方响应、URL及其digest继续不进入Action log、artifact、manifest、D1或PROGRESS，分类只用于决定下一次受控修复，不是成功证据。
+
 Round 104 将“真实Action连续30～60秒heartbeat、正常写result且控制面/GitHub最终一致”收敛为`RunnerHeartbeatEvidenceManifestV1`。最新`attempts.heartbeat_at`无法证明cadence，因此新增append-only receipt链；每次成功CAS同batch保存generation、前后version/time和90秒lease，表结构没有token或token digest。verifier直接复用Round 103 Analysis Action verifier的GitHub App/Action/API/Runner全链路，只新增D1 receipt/result/final projection与Case 8 signed webhook核对。Watt固定commit仍直接贡献显式opt-in、仓库外64 KiB manifest、0/1/2退出、有界读取和不可信内容纪律；Watt没有heartbeat receipt或GitHub final-state业务模块，未虚构复制来源。完整流程见[Runner heartbeat 与 GitHub 最终状态真实验收](RunnerHeartbeatE2E.md)。
 
 编码纪律：step 可能重试；外部 API/Binding 必须幂等。状态只能来自 `step.do` 返回值或 D1/R2 引用，不依赖 step 外内存。受控 restart 会重跑目标及后续步骤，不能把“成功步骤缓存”误解为外部 exactly-once。锁定 Workers types 约定 restart target 为 `{name, type, count}`（count 1-based）；Round 25 本地 workerd 已从 completed instance 的 `verify-analysis-result/do/count=1` 实际 restart，并以 D1 replay Run version step-execution证明目标重跑、之前 analysis dispatch未重建。试点账户外部 restart 语义仍保留在实测清单。

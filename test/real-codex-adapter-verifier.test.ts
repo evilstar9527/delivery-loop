@@ -43,5 +43,7 @@ describe('real Codex adapter opt-in verifier', () => {
     expect(verifier).toContain('process.env.CODEX_API_KEY');
     expect(verifier).toContain('process.env.OPENAI_BASE_URL');
     expect(verifier).toContain('process.env.DELIVERY_LOOP_CODEX_ADAPTER_MODEL');
+    expect(verifier).toContain('classifyProviderProcessFailure(completion.stderr)');
+    expect(verifier).not.toContain('providerAuthenticationInvalid');
   });
 });

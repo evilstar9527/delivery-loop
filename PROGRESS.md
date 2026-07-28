@@ -3027,3 +3027,12 @@
 - 真实preflight：在确认历史run为0且兼容补丁/main CI成功后，只触发一次 [30375032363](https://github.com/evilstar9527/delivery-loop/actions/runs/30375032363)。该run为`completed/failure`，唯一`Verify exact provider route` step在约30秒后失败；只从GitHub failed log筛选仓库内固定安全行，结论为`real-codex-adapter-e2e: FAIL provider_process_failed`与process exit 1，没有复制第三方raw response、Secret值、URL、Task或模型正文。失败后未创建Task、Run、analysis Action、Workflow signal或Cloudflare deployment，也未重试preflight。
 - 勾选：Secret兼容默认分支子项已勾；真实preflight、analysis Action、dispatcher和hibernate父项保持未勾，失败Action不冒充成功。
 - Blocker与最小人工输入：当前固定分类无法在不暴露raw stderr的前提下区分中转认证、Responses API route或`gpt-5.6-terra` exact model不兼容。下一步需provider名称/公开兼容文档，或由owner确认该中转实际支持的exact model标识；不需要也不要提供Base URL或key。核对后才能有依据地调整profile/preflight并决定是否执行一次受控修复后复验。
+
+## Round 150 — 2026-07-29
+- 目标：继续Phase 1唯一hibernate DoD；修复首次真实provider preflight只返回generic错误、无法安全区分认证/model/Responses route的诊断缺口。最终父项仍只接受真实`DELIVERY_LOOP_WORKFLOW_HIBERNATE_E2E=1 ... pnpm run e2e:workflow-hibernate` exit 0。
+- 前置与权限：只读核对local/`origin/main`均为`4fac8426e52e241dca78db43b2b8e834e82d7c1d`且worktree clean；GitHub preflight inventory仍恰有一条`30375032363 completed/failure`。本轮未读取Secret值、第三方raw response或历史raw stderr，未触发provider、Task、Run、Action attempt、Workflow signal或Cloudflare deployment。
+- 设计与安全边界：新增纯函数只消费共享command runtime已经按当前敏感环境值脱敏的stderr，并再次限制为前8,192字符；固定返回认证、quota、限流、model、endpoint、Responses兼容、upstream、timeout、network、CLI contract或generic共11个枚举。model-specific 404优先于generic endpoint；未知或包含URL/query/key形状的恶意文本只能得到`provider_process_failed`。分类器不返回raw文本，raw stderr、第三方response、URL及其digest都不进入Action log、artifact、manifest、D1或PROGRESS。
+- 红绿证据：先新增`test/provider-preflight-failure.test.ts`，首次`pnpm exec vitest run test/provider-preflight-failure.test.ts test/real-codex-adapter-verifier.test.ts`按预期exit 1，provider classifier模块不存在且另一verifier 2项通过；实现并把真实adapter verifier接到分类器后，同命令exit 0，2 files / 19 tests。`pnpm run typecheck`与`pnpm run lint`均exit 0。
+- 规范同步：`docs/Proto.md`、`docs/Security.md`、`docs/Reference.md`与`docs/AgentAdapterE2E.md`同步固定分类、原文不出进程和两个repository Secret边界；按owner要求不更新llmdoc。
+- 全量验证：`pnpm run verify` → exit 0：typecheck、ESLint、Node 106 files / 459 tests、workerd 57 files / 308 tests、486文件Secret scan与docs links全绿；workerd的`User called terminate`仍是既有主动清理诊断，不是失败或skip。
+- 勾选：新增并勾选provider失败安全分类本地契约；真实preflight、analysis Action、dispatcher和hibernate父项保持未勾。诊断补丁进入`main`前不触发外部调用；进入后可按`LOOP.md`§2“第一次失败且修复后必须复验”执行一次受控诊断复验。
