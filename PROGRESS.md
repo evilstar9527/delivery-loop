@@ -2780,3 +2780,10 @@
 - 动作：`GitHubReviewFeedbackStore.apply` 在candidate不再eligible时重读同review feedback；如已由winner提交则记为`duplicate`，不再误记`ignored`。这保留stale/publication本来的ignored行为，只改变能证明已存在同review的竞态路径。
 - 验证：`pnpm exec vitest --config vitest.workflow.config.ts run test/workflow/github-review-feedback.test.ts`→exit 0，5 tests；连续8次重跑→8/8通过。修复尚未在远端CI验收，因此未勾选`DOD.md` CI父项。
 - 遗留：将修复和本轮红灯证据提交PR，等待`pull_request` CI通过后合并，再重跑main CI并执行`validate-task.yml` 的合法/非法workflow_dispatch。不使用本地结果冒充GitHub外部事实。
+
+## Round 131 — 2026-07-28
+- 目标：继续Phase 0 CI真实验收，处理PR #1 hosted runner暴露的第二个独立时序缺口。
+- 红灯证据：PR #1 [`30323876042`](https://github.com/evilstar9527/delivery-loop/actions/runs/30323876042)在`test/analysis-runner-bootstrap.test.ts`报`AnalysisRunnerError: attempt heartbeat failed during analysis`；详细原因是诊断测试的10ms heartbeat cadence在Ubuntu hosted上在第一次token rotation后又触发了第二次heartbeat，与单次rotation fixture竞0态，不能归因为业务状态机失败。
+- 动作：该诊断测试改为1s heartbeat cadence，仍保留“等待真实heartbeat后再执行logs→trace→Evidence→Plan”的验证，避免将hosted runner调度速度当成业务错误。
+- 验证：`pnpm exec vitest run test/analysis-runner-bootstrap.test.ts`→exit 0，1 file / 9 tests；最终`pnpm run verify`→exit 0，Node 102/412、workerd 57/308、Secret scan 483文件、docs links全绿。等待PR workflow重跑，未勾选CI DoD。
+- 遗留：提交该修复到PR #1，外部`pull_request` CI通过后才合并；如再发现时序缺口，按同一DoD继续修复而不下调验收标准。
