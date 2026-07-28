@@ -1,8 +1,8 @@
 import { parseDocument } from 'yaml';
 import { canonicalSha256 } from '../domain/digest.js';
 import {
-  PlatformLimitsEvidenceManifestV1Schema,
-  type PlatformLimitsEvidenceManifestV1,
+  PlatformLimitsEvidenceManifestV2Schema,
+  type PlatformLimitsEvidenceManifestV2,
 } from '../domain/platform-limits-evidence.js';
 import type { RunnerHeartbeatEvidenceManifestV1 } from
   '../domain/runner-heartbeat-evidence.js';
@@ -29,6 +29,7 @@ const MAX_JOBS_PER_RUN = 256;
 const MAX_JOB_PAGES = 3;
 const MIN_CONCURRENCY_JOB_DURATION_MS = 240_000;
 const MAX_CONCURRENCY_JOB_DURATION_MS = 600_000;
+const GITHUB_API_VERSION = '2026-03-10';
 
 export type PlatformLimitsEvidenceVerificationErrorCode =
   | 'manifest_invalid'
@@ -69,18 +70,21 @@ export interface PlatformLimitsEvidenceVerifierOptions {
 }
 
 export interface PlatformLimitsEvidenceVerificationSummary {
-  schemaVersion: '1';
+  schemaVersion: '2';
   evidenceId: string;
-  organization: string;
+  account: {
+    type: 'organization' | 'user';
+    login: string;
+  };
   repository: string;
   githubHostedMaximumMinutes: 360;
-  reviewedOrganizationConcurrency: number;
+  reviewedAccountConcurrency: number;
   observedMaximumConcurrency: number;
   concurrencyProbeJobCount: number;
   actionsUsageItemCount: number;
   actionsUsageDigest: string;
   githubDocumentationVerified: true;
-  githubOrganizationPolicyVerified: true;
+  githubAccountPolicyVerified: true;
   githubBillingVerified: true;
   githubConcurrencyProbeVerified: true;
   githubDurationProbeVerified: true;
@@ -171,7 +175,7 @@ async function getJson(
       headers: {
         accept: 'application/vnd.github+json',
         authorization: `Bearer ${token}`,
-        'x-github-api-version': '2022-11-28',
+        'x-github-api-version': GITHUB_API_VERSION,
       },
       redirect: 'error',
     });
@@ -258,8 +262,8 @@ async function verifyOfficialDocument(
   fetcher: typeof fetch,
   apiOrigin: string,
   token: string,
-  expected: PlatformLimitsEvidenceManifestV1['officialDocumentation']['githubActions'] |
-    PlatformLimitsEvidenceManifestV1['officialDocumentation']['cloudflareWorkflows'],
+  expected: PlatformLimitsEvidenceManifestV2['officialDocumentation']['githubActions'] |
+    PlatformLimitsEvidenceManifestV2['officialDocumentation']['cloudflareWorkflows'],
   patterns: readonly RegExp[],
 ): Promise<string> {
   const contentPath = expected.path.split('/').map(encodeURIComponent).join('/');
@@ -283,50 +287,86 @@ async function verifyOfficialDocument(
   return source;
 }
 
-async function verifyOrganizationPolicy(
-  manifest: PlatformLimitsEvidenceManifestV1,
+async function verifyAccountPolicy(
+  manifest: PlatformLimitsEvidenceManifestV2,
   fetcher: typeof fetch,
   apiOrigin: string,
   token: string,
 ): Promise<void> {
-  const org = encodeURIComponent(manifest.github.organization);
-  const [actionsResponse, workflowResponse, retentionResponse] = await Promise.all([
-    getJson(fetcher, `${apiOrigin}/orgs/${org}/actions/permissions`, token),
-    getJson(fetcher, `${apiOrigin}/orgs/${org}/actions/permissions/workflow`, token),
-    getJson(
-      fetcher,
-      `${apiOrigin}/orgs/${org}/actions/permissions/artifact-and-log-retention`,
-      token,
-    ),
-  ]);
-  for (const response of [actionsResponse, workflowResponse, retentionResponse]) {
+  const account = manifest.github.account;
+  const login = encodeURIComponent(account.login);
+  const policyPrefix = account.type === 'organization'
+    ? `${apiOrigin}/orgs/${login}`
+    : `${apiOrigin}/repos/${manifest.github.repository}`;
+  const [accountResponse, actionsResponse, workflowResponse, retentionResponse] =
+    await Promise.all([
+      getJson(fetcher, `${apiOrigin}/users/${login}`, token),
+      getJson(fetcher, `${policyPrefix}/actions/permissions`, token),
+      getJson(fetcher, `${policyPrefix}/actions/permissions/workflow`, token),
+      getJson(
+        fetcher,
+        `${policyPrefix}/actions/permissions/artifact-and-log-retention`,
+        token,
+      ),
+    ]);
+  for (const response of [
+    accountResponse, actionsResponse, workflowResponse, retentionResponse,
+  ]) {
     rejectPagination(response);
   }
+  const identity = record(accountResponse.body);
   const actions = record(actionsResponse.body);
   const workflow = record(workflowResponse.body);
   const retention = record(retentionResponse.body);
-  const enabledRepositories = actions?.enabled_repositories;
+  const liveType = account.type === 'organization' ? 'Organization' : 'User';
   const allowedActions = actions?.allowed_actions;
   const defaultWorkflowPermissions = workflow?.default_workflow_permissions;
   const canApprovePullRequestReviews = workflow?.can_approve_pull_request_reviews;
   const days = retention?.days;
   if (
-    !['all', 'none', 'selected'].includes(String(enabledRepositories)) ||
+    identity?.login !== account.login || identity.type !== liveType ||
     !['all', 'local_only', 'selected'].includes(String(allowedActions)) ||
     !['read', 'write'].includes(String(defaultWorkflowPermissions)) ||
     typeof canApprovePullRequestReviews !== 'boolean' ||
     typeof days !== 'number' || !Number.isSafeInteger(days) || days < 1 || days > 400
   ) throw new PlatformLimitsEvidenceVerificationError('github_policy_mismatch');
+  const expected = manifest.github.accountPolicy;
+  if (account.type === 'organization') {
+    const enabledRepositories = actions?.enabled_repositories;
+    if (
+      expected.type !== 'organization' ||
+      !['all', 'none', 'selected'].includes(String(enabledRepositories))
+    ) throw new PlatformLimitsEvidenceVerificationError('github_policy_mismatch');
+    const normalized = {
+      account: { type: account.type, login: account.login },
+      actions: { enabledRepositories, allowedActions },
+      workflow: { defaultWorkflowPermissions, canApprovePullRequestReviews },
+      artifactAndLogRetention: { days },
+    };
+    if (
+      await canonicalSha256(normalized) !== expected.digest ||
+      enabledRepositories !== expected.enabledRepositories ||
+      allowedActions !== expected.allowedActions ||
+      defaultWorkflowPermissions !== expected.defaultWorkflowPermissions ||
+      canApprovePullRequestReviews !== expected.canApprovePullRequestReviews ||
+      days !== expected.artifactAndLogRetentionDays
+    ) throw new PlatformLimitsEvidenceVerificationError('github_policy_mismatch');
+    return;
+  }
+  const enabled = actions?.enabled;
+  if (expected.type !== 'user' || typeof enabled !== 'boolean') {
+    throw new PlatformLimitsEvidenceVerificationError('github_policy_mismatch');
+  }
   const normalized = {
-    actions: { enabledRepositories, allowedActions },
+    account: { type: account.type, login: account.login },
+    repository: manifest.github.repository,
+    actions: { enabled, allowedActions },
     workflow: { defaultWorkflowPermissions, canApprovePullRequestReviews },
     artifactAndLogRetention: { days },
   };
-  const expected = manifest.github.organizationPolicy;
   if (
     await canonicalSha256(normalized) !== expected.digest ||
-    enabledRepositories !== expected.enabledRepositories ||
-    allowedActions !== expected.allowedActions ||
+    enabled !== expected.enabled || allowedActions !== expected.allowedActions ||
     defaultWorkflowPermissions !== expected.defaultWorkflowPermissions ||
     canApprovePullRequestReviews !== expected.canApprovePullRequestReviews ||
     days !== expected.artifactAndLogRetentionDays
@@ -351,7 +391,7 @@ interface NormalizedBillingItem extends RecordValue {
 
 function normalizeBillingItem(
   value: unknown,
-  organization: string,
+  account: PlatformLimitsEvidenceManifestV2['github']['account'],
   year: number,
   month: number,
 ): NormalizedBillingItem | null {
@@ -364,11 +404,18 @@ function normalizeBillingItem(
     !/^\d{4}-\d{2}-\d{2}$/.test(date) || !date.startsWith(monthPrefix) ||
     !Number.isFinite(parsedDate) || new Date(parsedDate).toISOString().slice(0, 10) !== date ||
     typeof item.sku !== 'string' || item.sku.length < 1 || item.sku.length > 200 ||
-    typeof item.unitType !== 'string' || item.unitType.length < 1 || item.unitType.length > 100 ||
-    item.organizationName !== organization ||
-    (item.repositoryName !== undefined && (
-      typeof item.repositoryName !== 'string' || item.repositoryName.length > 200
-    ))
+    typeof item.unitType !== 'string' || item.unitType.length < 1 || item.unitType.length > 100
+  ) return null;
+  const repositoryName = item.repositoryName;
+  if (
+    (repositoryName !== undefined && (
+      typeof repositoryName !== 'string' || repositoryName.length < 1 ||
+      repositoryName.length > 200 ||
+      (repositoryName.includes('/') && repositoryName.split('/')[0] !== account.login)
+    )) ||
+    (account.type === 'organization'
+      ? item.organizationName !== account.login
+      : item.organizationName !== undefined || typeof repositoryName !== 'string')
   ) return null;
   for (const key of BILLING_NUMERIC_KEYS) {
     if (typeof item[key] !== 'number' || !Number.isFinite(item[key]) || item[key] < 0) return null;
@@ -385,16 +432,20 @@ function normalizeBillingItem(
 }
 
 async function verifyBilling(
-  manifest: PlatformLimitsEvidenceManifestV1,
+  manifest: PlatformLimitsEvidenceManifestV2,
   fetcher: typeof fetch,
   apiOrigin: string,
   token: string,
 ): Promise<void> {
   const expected = manifest.github.billing;
-  const org = encodeURIComponent(manifest.github.organization);
+  const account = manifest.github.account;
+  const login = encodeURIComponent(account.login);
+  const billingPrefix = account.type === 'organization'
+    ? `${apiOrigin}/organizations/${login}`
+    : `${apiOrigin}/users/${login}`;
   const response = await getJson(
     fetcher,
-    `${apiOrigin}/organizations/${org}/settings/billing/usage` +
+    `${billingPrefix}/settings/billing/usage` +
       `?year=${expected.year}&month=${expected.month}`,
     token,
   );
@@ -414,7 +465,7 @@ async function verifyBilling(
     if (itemRecord.product.toLowerCase() !== 'actions') continue;
     const normalized = normalizeBillingItem(
       raw,
-      manifest.github.organization,
+      account,
       expected.year,
       expected.month,
     );
@@ -522,8 +573,8 @@ async function verifyProbeWorkflow(
   apiOrigin: string,
   token: string,
   repository: string,
-  expected: PlatformLimitsEvidenceManifestV1['github']['concurrencyProbe'] |
-    PlatformLimitsEvidenceManifestV1['github']['durationProbe'],
+  expected: PlatformLimitsEvidenceManifestV2['github']['concurrencyProbe'] |
+    PlatformLimitsEvidenceManifestV2['github']['durationProbe'],
   kind: 'concurrency' | 'duration',
 ): Promise<void> {
   const path = expected.workflowPath.split('/').map(encodeURIComponent).join('/');
@@ -641,7 +692,7 @@ function maximumOverlap(intervals: JobInterval[]): number {
 }
 
 async function verifyConcurrencyProbe(
-  manifest: PlatformLimitsEvidenceManifestV1,
+  manifest: PlatformLimitsEvidenceManifestV2,
   fetcher: typeof fetch,
   apiOrigin: string,
   token: string,
@@ -694,13 +745,13 @@ async function verifyConcurrencyProbe(
     firstStartedAt !== Date.parse(probe.startedAt) ||
     lastCompletedAt !== Date.parse(probe.completedAt) ||
     observedMaximum !== probe.observedMaximumConcurrency ||
-    observedMaximum !== probe.reviewedOrganizationLimit ||
+    observedMaximum !== probe.reviewedAccountLimit ||
     intervals.length <= observedMaximum
   ) throw new PlatformLimitsEvidenceVerificationError('github_concurrency_probe_mismatch');
 }
 
 async function verifyDurationProbe(
-  manifest: PlatformLimitsEvidenceManifestV1,
+  manifest: PlatformLimitsEvidenceManifestV2,
   fetcher: typeof fetch,
   apiOrigin: string,
   token: string,
@@ -733,7 +784,7 @@ async function verifyDurationProbe(
 }
 
 async function verifyReusedEvidence(
-  manifest: PlatformLimitsEvidenceManifestV1,
+  manifest: PlatformLimitsEvidenceManifestV2,
   options: PlatformLimitsEvidenceVerifierOptions,
 ): Promise<void> {
   const expected = manifest.reusedEvidence;
@@ -783,10 +834,10 @@ async function verifyReusedEvidence(
 }
 
 export async function verifyPlatformLimitsEvidence(
-  input: PlatformLimitsEvidenceManifestV1,
+  input: PlatformLimitsEvidenceManifestV2,
   options: PlatformLimitsEvidenceVerifierOptions,
 ): Promise<PlatformLimitsEvidenceVerificationSummary> {
-  const parsed = PlatformLimitsEvidenceManifestV1Schema.safeParse(input);
+  const parsed = PlatformLimitsEvidenceManifestV2Schema.safeParse(input);
   if (!parsed.success) throw new PlatformLimitsEvidenceVerificationError('manifest_invalid');
   if (!TOKEN_PATTERN.test(options.githubToken)) {
     throw new PlatformLimitsEvidenceVerificationError('configuration_invalid');
@@ -830,24 +881,24 @@ export async function verifyPlatformLimitsEvidence(
     !cloudflareSource.includes('50,000') ||
     !cloudflareSource.includes('10,000 concurrent instance limit')
   ) throw new PlatformLimitsEvidenceVerificationError('official_document_mismatch');
-  await verifyOrganizationPolicy(manifest, fetcher, apiOrigin, options.githubToken);
+  await verifyAccountPolicy(manifest, fetcher, apiOrigin, options.githubToken);
   await verifyBilling(manifest, fetcher, apiOrigin, options.githubToken);
   await verifyConcurrencyProbe(manifest, fetcher, apiOrigin, options.githubToken);
   await verifyDurationProbe(manifest, fetcher, apiOrigin, options.githubToken);
   await verifyReusedEvidence(manifest, options);
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     evidenceId: manifest.evidenceId,
-    organization: manifest.github.organization,
+    account: manifest.github.account,
     repository: manifest.github.repository,
     githubHostedMaximumMinutes: 360,
-    reviewedOrganizationConcurrency: manifest.github.concurrencyProbe.reviewedOrganizationLimit,
+    reviewedAccountConcurrency: manifest.github.concurrencyProbe.reviewedAccountLimit,
     observedMaximumConcurrency: manifest.github.concurrencyProbe.observedMaximumConcurrency,
     concurrencyProbeJobCount: manifest.github.concurrencyProbe.requestedJobCount,
     actionsUsageItemCount: manifest.github.billing.actionsUsageItemCount,
     actionsUsageDigest: manifest.github.billing.actionsUsageDigest,
     githubDocumentationVerified: true,
-    githubOrganizationPolicyVerified: true,
+    githubAccountPolicyVerified: true,
     githubBillingVerified: true,
     githubConcurrencyProbeVerified: true,
     githubDurationProbeVerified: true,

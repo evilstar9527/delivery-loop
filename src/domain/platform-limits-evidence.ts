@@ -213,3 +213,155 @@ export const PlatformLimitsEvidenceManifestV1Schema = z.object({
 export type PlatformLimitsEvidenceManifestV1 = z.infer<
   typeof PlatformLimitsEvidenceManifestV1Schema
 >;
+
+const GitHubAccountSchema = z.object({
+  type: z.enum(['organization', 'user']),
+  login: z.string().regex(ORGANIZATION_PATTERN),
+}).strict();
+
+const OrganizationAccountPolicySchema = z.object({
+  type: z.literal('organization'),
+  digest: z.string().regex(DIGEST_PATTERN),
+  enabledRepositories: z.enum(['all', 'none', 'selected']),
+  allowedActions: z.enum(['all', 'local_only', 'selected']),
+  defaultWorkflowPermissions: z.enum(['read', 'write']),
+  canApprovePullRequestReviews: z.boolean(),
+  artifactAndLogRetentionDays: z.number().int().min(1).max(400),
+}).strict();
+
+const UserAccountPolicySchema = z.object({
+  type: z.literal('user'),
+  digest: z.string().regex(DIGEST_PATTERN),
+  enabled: z.boolean(),
+  allowedActions: z.enum(['all', 'local_only', 'selected']),
+  defaultWorkflowPermissions: z.enum(['read', 'write']),
+  canApprovePullRequestReviews: z.boolean(),
+  artifactAndLogRetentionDays: z.number().int().min(1).max(400),
+}).strict();
+
+const AccountPolicySchema = z.discriminatedUnion('type', [
+  OrganizationAccountPolicySchema,
+  UserAccountPolicySchema,
+]);
+
+const BillingEvidenceSchema = z.object({
+  year: z.number().int().min(2024).max(2_100),
+  month: z.number().int().min(1).max(12),
+  actionsUsageDigest: z.string().regex(DIGEST_PATTERN),
+  actionsUsageItemCount: z.number().int().min(1).max(10_000),
+  unitTypes: z.array(z.string().min(1).max(100).regex(/^[A-Za-z0-9 _./-]+$/))
+    .min(1).max(100),
+  quantity: z.number().finite().nonnegative(),
+  grossAmount: z.number().finite().nonnegative(),
+  discountAmount: z.number().finite().nonnegative(),
+  netAmount: z.number().finite().nonnegative(),
+  reviewedAt: TIMESTAMP_SCHEMA,
+  auditUrl: SafeUrlSchema,
+}).strict();
+
+const AccountConcurrencyProbeSchema = WorkflowSourceSchema.extend({
+  workflowPath: z.literal('.github/workflows/platform-concurrency-probe.yml'),
+  runIds: z.array(z.string().regex(GITHUB_ID_PATTERN)).min(1).max(10),
+  requestedJobCount: z.number().int().min(2).max(2_560),
+  reviewedAccountLimit: z.number().int().min(1).max(1_000),
+  observedMaximumConcurrency: z.number().int().min(1).max(1_000),
+  startedAt: TIMESTAMP_SCHEMA,
+  completedAt: TIMESTAMP_SCHEMA,
+  auditUrls: z.array(SafeUrlSchema).min(1).max(10),
+}).strict();
+
+const DurationProbeSchema = WorkflowSourceSchema.extend({
+  workflowPath: z.literal('.github/workflows/platform-duration-probe.yml'),
+  runId: z.string().regex(GITHUB_ID_PATTERN),
+  maximumJobDurationMinutes: z.literal(360),
+  observedDurationMs: z.number().int().min(21_300_000).max(22_200_000),
+  startedAt: TIMESTAMP_SCHEMA,
+  completedAt: TIMESTAMP_SCHEMA,
+  conclusion: z.literal('failure'),
+  auditUrl: SafeUrlSchema,
+}).strict();
+
+/**
+ * V2 replaces the organization-only GitHub boundary with an explicit account
+ * discriminator. V1 remains exported only for parsing historical manifests;
+ * new live evidence must use V2.
+ */
+export const PlatformLimitsEvidenceManifestV2Schema = z.object({
+  schemaVersion: z.literal('2'),
+  evidenceId: z.string().regex(ID_PATTERN),
+  recordedAt: TIMESTAMP_SCHEMA,
+  officialDocumentation: z.object({
+    githubActions: authoritySchema(GITHUB_ACTIONS_LIMITS_AUTHORITY),
+    cloudflareWorkflows: authoritySchema(CLOUDFLARE_WORKFLOWS_LIMITS_AUTHORITY),
+  }).strict(),
+  github: z.object({
+    account: GitHubAccountSchema,
+    repository: z.string().regex(REPOSITORY_PATTERN),
+    accountPolicy: AccountPolicySchema,
+    billing: BillingEvidenceSchema,
+    concurrencyProbe: AccountConcurrencyProbeSchema,
+    durationProbe: DurationProbeSchema,
+  }).strict(),
+  cloudflare: z.object({
+    accountIdDigest: z.string().regex(DIGEST_PATTERN),
+    paidPlanReviewedAt: TIMESTAMP_SCHEMA,
+    paidPlanAuditUrl: SafeUrlSchema,
+    paidLimits: PaidLimitsSchema,
+  }).strict(),
+  reusedEvidence: z.object({
+    runnerHeartbeatEvidenceId: z.string().regex(ID_PATTERN),
+    workflowHibernateEvidenceId: z.string().regex(ID_PATTERN),
+    controlledReplayEvidenceId: z.string().regex(ID_PATTERN),
+  }).strict(),
+}).strict().superRefine((manifest, context) => {
+  const concurrency = manifest.github.concurrencyProbe;
+  const duration = manifest.github.durationProbe;
+  const account = manifest.github.account;
+  const recordedAt = Date.parse(manifest.recordedAt);
+  const concurrencyStart = Date.parse(concurrency.startedAt);
+  const concurrencyEnd = Date.parse(concurrency.completedAt);
+  const durationStart = Date.parse(duration.startedAt);
+  const durationEnd = Date.parse(duration.completedAt);
+  const billingReviewedAt = Date.parse(manifest.github.billing.reviewedAt);
+  const planReviewedAt = Date.parse(manifest.cloudflare.paidPlanReviewedAt);
+  if (
+    manifest.github.repository.split('/')[0] !== account.login ||
+    manifest.github.accountPolicy.type !== account.type ||
+    concurrency.workflowHeadSha !== duration.workflowHeadSha ||
+    new Set(concurrency.runIds).size !== concurrency.runIds.length ||
+    concurrency.auditUrls.length !== concurrency.runIds.length ||
+    concurrency.requestedJobCount <= concurrency.reviewedAccountLimit ||
+    concurrency.observedMaximumConcurrency !== concurrency.reviewedAccountLimit ||
+    concurrencyEnd <= concurrencyStart || durationEnd <= durationStart ||
+    durationEnd - durationStart !== duration.observedDurationMs ||
+    Math.max(concurrencyEnd, durationEnd, billingReviewedAt, planReviewedAt) > recordedAt
+  ) context.addIssue({ code: 'custom', message: 'platform limits evidence is inconsistent' });
+
+  for (const raw of [...concurrency.auditUrls, duration.auditUrl]) {
+    try {
+      const url = new URL(raw);
+      if (
+        url.hostname !== 'github.com' ||
+        !url.pathname.startsWith(`/${manifest.github.repository}/actions/runs/`)
+      ) context.addIssue({ code: 'custom', message: 'GitHub audit URL is not bound to repository' });
+    } catch { /* SafeUrlSchema reports the shape error. */ }
+  }
+  try {
+    const billingUrl = new URL(manifest.github.billing.auditUrl);
+    const expectedPath = account.type === 'organization'
+      ? `/organizations/${account.login}/settings/billing/usage`
+      : '/settings/billing/usage';
+    if (billingUrl.hostname !== 'github.com' || billingUrl.pathname !== expectedPath) {
+      context.addIssue({ code: 'custom', message: 'billing audit URL is not bound to account' });
+    }
+  } catch { /* SafeUrlSchema reports the shape error. */ }
+  try {
+    if (new URL(manifest.cloudflare.paidPlanAuditUrl).hostname !== 'dash.cloudflare.com') {
+      context.addIssue({ code: 'custom', message: 'Cloudflare audit URL is not authoritative' });
+    }
+  } catch { /* SafeUrlSchema reports the shape error. */ }
+});
+
+export type PlatformLimitsEvidenceManifestV2 = z.infer<
+  typeof PlatformLimitsEvidenceManifestV2Schema
+>;

@@ -474,7 +474,9 @@ export {
   CLOUDFLARE_WORKFLOWS_LIMITS_AUTHORITY,
   GITHUB_ACTIONS_LIMITS_AUTHORITY,
   PlatformLimitsEvidenceManifestV1Schema,
+  PlatformLimitsEvidenceManifestV2Schema,
   type PlatformLimitsEvidenceManifestV1,
+  type PlatformLimitsEvidenceManifestV2,
 } from './domain/platform-limits-evidence.js';
 export {
   PlatformLimitsEvidenceVerificationError,

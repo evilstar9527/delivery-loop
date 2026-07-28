@@ -489,7 +489,7 @@ Case 8 只投影上述 revision/source/approval lineage 的安全标量。仓库
 - 自动修复循环以`run + retry-scope-mode + plan/version/item`为scope，其中implement/review_fix共同归一为execution。verification fingerprint由固定code/site再绑定受信phase/command/exit fact digest；连续第2次相同fingerprint优先阻断，否则第3个Attempt失败时阻断。未达阈值的可信test failure与Attempt failed/token revoke、唯一review_fix Attempt、Item activeAttempt和execution dispatch同事务收敛；缺failed suite事实的Agent自报不会调度。本地固定workflow/bootstrap已接通这条链路，完整DoD仍等待真实试点Action与外部GitHub事实。
 - 合并前重新确认 base SHA/mergeability/required checks，避免长任务覆盖新提交。
 - raw retention只对显式registry行进行exact-key删除；claim有5分钟lease，R2 delete幂等，完成/失败audit与registry状态用D1 batch fencing。dry-run不claim、不移动cursor且不调用R2 delete。
-- 平台capacity不是D1业务状态，也不能由静态plan名称推断。GitHub hosted runner effective concurrency用受控matrix probe的跨run时间线重算，6小时上限用独立只读权限probe实测；Cloudflare大小/速率/retention/concurrency来自固定官方blob，create/sendEvent/redeploy/restart运行语义分别复用既有hibernate与controlled replay证据。verifier严格只读，真实probe与平台mutation由预算批准的操作者在外部先行完成；详见[平台边界真实验收](PlatformLimitsE2E.md)。
+- 平台capacity不是D1业务状态，也不能由静态plan名称推断。GitHub账号先以live API绑定为个人或组织：组织读取org policy/billing，个人读取repository policy和个人billing，不能因试点repository属于个人账号而伪造组织证据。hosted runner effective concurrency用受控matrix probe的跨run时间线重算，6小时上限用独立空权限probe实测；Cloudflare大小/速率/retention/concurrency来自固定官方blob，create/sendEvent/redeploy/restart运行语义分别复用既有hibernate与controlled replay证据。verifier严格只读，真实probe与平台mutation由预算批准的操作者在外部先行完成；详见[平台边界真实验收](PlatformLimitsE2E.md)。
 
 ## 7. 可观测性
 
