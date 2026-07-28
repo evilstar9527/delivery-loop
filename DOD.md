@@ -31,6 +31,7 @@
 - [ ] **安全回归**：跑本 Phase 的越权、重放、Secret 泄漏和不可信输入测试。
   - [x] Phase 0 证据：`TaskEnvelope`/Run/ExecutionPlan/CI/validate-task/repository-bootstrap/redaction 定向回归覆盖安全默认值与稳定 revision identity、非法状态与不可信输入拒绝、Agent effect/状态自提权拒绝、Actions `contents: read` 权限漂移、canary/credential 泄漏和错误回显；`pnpm exec vitest run test/task.test.ts test/run.test.ts test/plan.test.ts test/redaction.test.ts test/ci-evidence.test.ts test/validate-task-envelope.test.ts test/repository-bootstrap-evidence.test.ts` exit 0（7 files/42 tests），`pnpm run verify:secrets`扫描483个生产文件exit 0，随后`pnpm run verify`全绿。真实CI日志零canary继续由Phase 0已入账的immutable Actions runs与`CiEvidenceManifestV1`证明；一次性canary明文未持久化，不能为重跑反推或伪造。Phase 1及后续平台验签、OIDC、权限、重放与Secret场景仍需各自关门。
 - [ ] **证据入账**：命令、退出码、外部 run/PR/deployment URL 和摘要写入 `PROGRESS.md`。
+  - [x] Phase 0 证据：Round 1、132～134及136～139已逐项保存本地/全量命令与exit code、四类immutable GitHub Actions run、修复/验收PR、repository bootstrap live verifier和无Secret安全摘要；只读复核确认main/PR/合法dispatch成功、非法Task dispatch按预期失败，PR #2/#3/#4/#7/#12均merged，当前repository/branch/rules/origin重验exit 0。Phase 0范围不包含deployment且未发生deployment，明确记为N/A，不用dry-run伪造URL。账本anchor审计与`pnpm run verify`均exit 0；后续Phase仍必须各自写入真实Action/PR/deployment/tenant/Cloudflare证据，不能复用本子项。
 - [ ] **全量回归**：`pnpm run verify` 全绿；任何 skip 明确记录且不能替代 required DoD。
 - [ ] **质量关口**：从正确性、安全性、恢复性、三方契约和证据真实性五个维度 review，无 BLOCKER/MAJOR 未处理。
 
