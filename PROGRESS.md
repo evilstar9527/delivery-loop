@@ -3015,3 +3015,12 @@
 - 验证：`pnpm run verify` → exit 0：typecheck、ESLint、Node 105 files / 442 tests、workerd 57 files / 308 tests、485文件Secret scan与docs links全绿；`git diff --check` exit 0。Variable inventory仍为空。没有运行`pnpm run e2e:workflow-hibernate`或provider preflight，因默认/缺配置exit 2或失败Action都不能关门。
 - 勾选：无；真实provider preflight、analysis Action、dispatcher与hibernate父项保持未勾。
 - Blocker与最小人工输入：同一`OPENAI_BASE_URL`缺失已在Round 146、147、148连续三轮出现。按`LOOP.md` §2停止盲重试；owner在当前GitHub Actions Variable页面填写无credential/query/fragment的公网HTTPS Base URL并点击`Add variable`，然后回复“已保存”。恢复后第一步只读核对名称/安全形状，第二步只触发一次无Task provider preflight；success后才进入唯一Task/redeploy窗口。
+
+## Round 149 — 2026-07-28
+- 目标：恢复Phase 1唯一hibernate DoD；复用owner已实际保存的repository Secret，不要求重复填写中转地址。最终关门仍只接受真实`DELIVERY_LOOP_WORKFLOW_HIBERNATE_E2E=1 ... pnpm run e2e:workflow-hibernate` exit 0。
+- 外部配置事实：按安全inventory只读核对，repository Actions Variables仍为空；repository Actions Secrets包含`OPENAI_API_KEY`与`OPENAI_BASE_URL`，后者更新时间为`2026-07-28T15:23:57Z`。GitHub Secret值不可回读，因此本轮没有取得、打印或持久化URL；URL安全形状、Responses兼容和exact model只能由固定preflight进程内校验。
+- 决策与实现：现有fixed analysis/preflight workflow读取`${{ vars.OPENAI_BASE_URL }}`，直接触发会得到空值。为最大复用owner已完成的配置，把两个workflow的三个注入点切换为`${{ secrets.OPENAI_BASE_URL }}`；adapter原有trim/2048字符/公网HTTPS/无userinfo-query-fragment/非IP与非本地域名校验保持不变。`docs/Proto.md`、`docs/Security.md`与`docs/Reference.md`同步说明Secret是更严格的存储边界，不把base URL变成第二凭证通道；按owner要求不更新llmdoc。
+- 红绿证据：先只改workflow契约测试，`pnpm exec vitest run test/codex-provider-preflight-workflow.test.ts test/delivery-agent-workflow.test.ts`按预期exit 1，2 files / 2 failed，实际值仍为`${{ vars.OPENAI_BASE_URL }}`；实现后同命令exit 0，2 files / 2 tests。随后`pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`与`git diff --check`均exit 0。
+- 全量验证：`pnpm run verify` → exit 0：typecheck、ESLint、Node 105 files / 442 tests、workerd 57 files / 308 tests、485文件Secret scan与docs links全绿；workerd的`User called terminate`仍是既有主动清理诊断，不是失败或skip。
+- 唯一触发约束：`gh run list --workflow codex-provider-preflight.yml`返回空数组，证明当前没有历史preflight run；兼容补丁进入`main`前不触发，进入后只触发一次。当前没有创建Task、Run、Action attempt、Workflow signal或Cloudflare deployment。
+- 勾选：更新第三方中转本地配置契约并新增未勾的Secret兼容默认分支子项；真实preflight、analysis Action、dispatcher和hibernate父项保持未勾，不能由Secret名称或本地测试代替。

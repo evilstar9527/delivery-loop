@@ -45,7 +45,7 @@ describe('Codex provider preflight workflow', () => {
       DELIVERY_LOOP_CODEX_ADAPTER_E2E: '1',
       DELIVERY_LOOP_CODEX_ADAPTER_MODEL: 'gpt-5.6-terra',
       CODEX_API_KEY: '${{ secrets.OPENAI_API_KEY }}',
-      OPENAI_BASE_URL: '${{ vars.OPENAI_BASE_URL }}',
+      OPENAI_BASE_URL: '${{ secrets.OPENAI_BASE_URL }}',
     });
     expect(probe?.run).toBe(
       'pnpm run e2e:codex-adapter > "$RUNNER_TEMP/codex-provider-preflight.json"',
@@ -53,5 +53,6 @@ describe('Codex provider preflight workflow', () => {
     expect(JSON.stringify(workflow)).not.toContain('workflow_call');
     expect(JSON.stringify(workflow)).not.toContain('id-token');
     expect(JSON.stringify(workflow)).not.toContain('pull_request');
+    expect(JSON.stringify(workflow)).not.toContain('vars.OPENAI_BASE_URL');
   });
 });
