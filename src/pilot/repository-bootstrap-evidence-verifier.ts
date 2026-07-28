@@ -172,7 +172,12 @@ async function normalizeActiveRules(input: unknown): Promise<
     const type = rule?.type;
     const sourceType = rule?.ruleset_source_type;
     const source = rule?.ruleset_source;
-    const enforcement = rule?.enforcement;
+    // GitHub's effective `/rules/branches/:branch` endpoint omits the
+    // ruleset enforcement (some responses expose it as `null`); presence in
+    // this endpoint already means the rule is active. The `/rulesets` endpoint
+    // retains the explicit `active` value, so accept all three representations.
+    const enforcement = rule === null || !Object.hasOwn(rule, 'enforcement') ||
+      rule.enforcement === null ? 'active' : rule.enforcement;
     if (
       rule === null || id === null || typeof type !== 'string' || !RULE_TYPE_PATTERN.test(type) ||
       (sourceType !== 'Repository' && sourceType !== 'Organization' && sourceType !== 'Enterprise') ||

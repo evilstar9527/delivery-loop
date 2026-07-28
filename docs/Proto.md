@@ -1352,7 +1352,7 @@ Case 8 `answers.checks.productionApprovals` 只投影 release binding 的 approv
 
 branch rules按`ruleset ID + type + source type/source + active + parameters canonical digest`排序并整体计算rules digest；raw parameters、rules response、管理token和人审正文都没有manifest字段。repository source必须等于full-name，organization source必须等于owner；Enterprise source保留安全名称并由人工对照。decision确认时间不得早于repository创建时间，evidence记录时间不得早于确认时间。
 
-`pnpm run e2e:repository-bootstrap`先重算manifest rules/selection digest，再用固定argv读取本地`origin`并只接受无credential GitHub HTTPS/SSH URL；随后有界读取GitHub repository、default branch和`rules/branches/:branch`。repository identity/visibility/lifecycle、branch protected/head和全部active rules必须exact一致；响应1 MiB上限且拒绝下一页。工具只读且沿用Watt-derived显式opt-in/64 KiB/0-1-2/固定错误，完整步骤见[GitHub 仓库初始化外部证据验收](RepositoryBootstrapE2E.md)。exit 0仍须人工核对仓库外用户确认记录，不能由manifest或本地remote替代。
+`pnpm run e2e:repository-bootstrap`先重算manifest rules/selection digest，再用固定argv读取本地`origin`并只接受无credential GitHub HTTPS/SSH URL；随后有界读取GitHub repository、default branch和`rules/branches/:branch`。该 effective-rules endpoint 可能省略 `enforcement` 或返回 `null`，因其只返回已经生效的规则；verifier 将该形态规范化为 `active`，Rulesets API 的显式 `active` 仍按原值核对。repository identity/visibility/lifecycle、branch protected/head和全部active rules必须exact一致；响应1 MiB上限且拒绝下一页。工具只读且沿用Watt-derived显式opt-in/64 KiB/0-1-2/固定错误，完整步骤见[GitHub 仓库初始化外部证据验收](RepositoryBootstrapE2E.md)。exit 0仍须人工核对仓库外用户确认记录，不能由manifest或本地remote替代。
 
 ## §30. Runner heartbeat 与 GitHub 最终状态外部证据
 

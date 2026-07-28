@@ -159,8 +159,8 @@ function fakeFetch(input: Manifest, drift: Drift = 'none'): typeof fetch {
     }
     if (url.pathname === `/repos/${REPOSITORY}/rules/branches/main`) {
       const rules = RAW_RULES.map((rule, index) => drift === 'rules' && index === 0
-        ? { ...rule, parameters: { ...rule.parameters, strict_required_status_checks_policy: false } }
-        : rule);
+        ? { ...rule, enforcement: null, parameters: { ...rule.parameters, strict_required_status_checks_policy: false } }
+        : { ...rule, enforcement: null });
       return responseJson(
         rules,
         drift === 'pagination' ? { link: '<https://api.github.test/next>; rel="next"' } : undefined,
