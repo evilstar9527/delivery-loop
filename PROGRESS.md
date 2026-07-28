@@ -3039,3 +3039,22 @@
 - 修复后真实诊断：按`LOOP.md`§2“第一次失败且修复后必须复验”仅触发一次 [30377965649](https://github.com/evilstar9527/delivery-loop/actions/runs/30377965649)。run为`completed/failure`，exact provider step约36秒后失败；只筛选verifier固定行得到`provider_network_failed`与process exit 1，没有复制raw stderr、第三方response、URL、credential、Task或模型正文。preflight inventory现恰为首次generic失败与本次network失败两条；本轮不再重试。
 - 勾选：新增并勾选provider失败安全分类本地契约及默认分支交付；真实preflight、analysis Action、dispatcher和hibernate父项保持未勾，失败Action不冒充成功。
 - 遗留：`provider_network_failed`仍覆盖DNS/TCP/TLS与连接中断。下一轮先实现无模型、无API key、只输出固定枚举的Runner DNS/TLS reachability probe；探针通过后再判断是否需要把stream interruption从network分类中独立出来，失败则请求provider确认GitHub Actions网络准入。provider success前不创建唯一hibernate Task。
+
+## Round 151 — 2026-07-29
+- 目标：继续Phase 1唯一hibernate DoD；只闭环无模型、无API key的GitHub Runner DNS/TCP/TLS安全探针本地契约，provider成功前不创建唯一Task。真实hibernate父项仍只接受`DELIVERY_LOOP_WORKFLOW_HIBERNATE_E2E=1 ... pnpm run e2e:workflow-hibernate`读取live Cloudflare/D1/GitHub事实exit 0。
+- 前置与权限：本地Node/Vitest、公开Watt固定commit、GitHub PR/CI只读与既有PR #24 rebase merge；没有读取两个repository Secret的值，没有触发provider network workflow、Codex/模型、Task/Run/Attempt、Workflow signal或Cloudflare deployment。探针真实运行必须等受审workflow进入`main`后且最多一次。
+- 上轮证据收口：PR [#24](https://github.com/evilstar9527/delivery-loop/pull/24) required CI [30378323962](https://github.com/evilstar9527/delivery-loop/actions/runs/30378323962) success，reviews/requested changes/issue comments/line comments均为空；以rebase merge合入`main` head `d25210887c719940ca866f8cb3c7a126580a1474`，合并后main CI [30378808495](https://github.com/evilstar9527/delivery-loop/actions/runs/30378808495)再次success。随后按`pre-pr-rebase-main`技能把本地branch rebase到该head，patch-equivalent旧证据提交被Git安全跳过且无冲突。
+- Watt复用核对：对`/Users/jishihe/tokenrollal/Watt`固定commit`476e3cdd2490d725fde174e7c697ebf00899edc6`检索DNS lookup、TCP/TLS socket、OpenAI base URL和network preflight，只在其`PROGRESS.md`发现一次curl/DoH人工诊断，没有生产探针/parser/安全枚举可复制，等价业务代码直接复制量为零。本轮继续遵循项目已从Watt派生的显式opt-in、0/1/2退出与固定安全错误纪律，没有复制会传播raw curl/provider错误的路径。
+- 设计与实现：
+  - 抽出唯一`provider-base-url`真源，三个Codex adapter与新探针共同复用原有trim/2048字符/公网HTTPS/无userinfo-query-fragment/非IP与非本地域名/尾斜杠规范化契约；既有adapter argv行为不变。
+  - 独立探针只读取`OPENAI_BASE_URL`。最长10秒DNS lookup后拒绝没有公网地址的结果，直接连接最多四个受控解析IP避免DNS rebinding；TCP使用validated endpoint port（缺省443），TLS以原hostname做SNI并启用系统CA/hostname验证。底层hostname/IP/URL/证书/error/digest没有返回或日志容器。
+  - 固定结果只有8个allowlisted code与`dns/tcp/tls`布尔值。新手动workflow只有`contents:read`，无inputs/Environment/OIDC/write，只注入显式opt-in和base URL Secret；不注入`OPENAI_API_KEY/CODEX_API_KEY`、不启动Codex/provider HTTP/模型、不上传artifact。
+- 验证：
+  - 先写`test/provider-network-preflight{,-workflow}.test.ts`，首次`pnpm exec vitest run test/provider-network-preflight.test.ts test/provider-network-preflight-workflow.test.ts`按预期exit 1：探针模块与workflow不存在、package script缺失（1 suite / 2 tests failed）。
+  - 实现后`pnpm exec vitest run test/provider-network-preflight.test.ts test/provider-network-preflight-workflow.test.ts test/codex-analysis-adapter.test.ts test/codex-execution-adapter.test.ts test/codex-session-adapter.test.ts` → exit 0，5 files / 80 tests。覆盖URL/missing opt-in、DNS错误、21类IPv4/IPv6非公网解析与公网IPv6、TCP失败、TLS/证书失败、全通过、固定安全输出、workflow权限/Secret shape及三个既有adapter无回归。
+  - `pnpm run e2e:provider-network`（无opt-in）→ exit 2，固定`provider-network-preflight: opt-in missing`，在URL/Secret/network前结束。
+  - `pnpm run typecheck`、`pnpm run lint`、`pnpm run verify:docs`、`pnpm run verify:secrets`与`git diff --check` → exit 0；Secret scan为490个生产文件。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 108 files / 499 tests、workerd 57 files / 308 tests、490文件Secret scan和docs links全绿；workerd既有主动terminate诊断不是失败或skip。
+- 勾选：Phase 1真实Action下新增并勾选“provider network preflight本地契约”；真实network Action、真实provider preflight、analysis Action、dispatcher和hibernate父项保持未勾。本地fake resolver/socket、默认exit 2或workflow源码不能替代GitHub Runner事实。
+- 决策沉淀：`docs/Proto.md`、`docs/Security.md`、`docs/Reference.md`和`docs/AgentAdapterE2E.md`同步DNS rebinding、公网地址、SNI/CA/hostname验证、固定输出及diagnostic-only边界；按owner要求不更新llmdoc。
+- 遗留：先把探针经PR/main CI进入默认分支，再只手动运行一次。若DNS/TCP/TLS失败，请provider确认GitHub Actions网络准入、解析或证书链；若三层全通过，则把Codex连接中断从generic network继续拆为stream/route诊断。任一结果都不创建Task或冒充provider/hibernate成功。
