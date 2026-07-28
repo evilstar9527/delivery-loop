@@ -1,4 +1,5 @@
 import { readFile, stat } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import { isAbsolute, relative, resolve } from 'node:path';
 import {
   AgentCheckpointV1Schema,
@@ -15,6 +16,7 @@ import {
 
 const MAX_CHECKPOINT_FILE_BYTES = 256 * 1_024;
 const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
+const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
 export type AgentSessionStatus =
   | 'running'
@@ -63,12 +65,53 @@ export interface CodexSessionAdapterOptions {
   outputSchemaPath: string;
   command?: string;
   launch?: CommandProcessLauncher;
+  providerBaseUrl?: string;
+  model?: string;
 }
 
 interface PreparedPaths {
   workspacePath: string;
   contextFilePath: string;
   outputFilePath: string;
+}
+
+function validatedProviderBaseUrl(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  if (raw.length === 0 || raw.length > 2_048 || raw !== raw.trim()) {
+    throw new Error('Codex provider base URL is invalid');
+  }
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('Codex provider base URL is invalid');
+  }
+  const hostname = url.hostname.toLowerCase();
+  const ipCandidate = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+  if (
+    url.protocol !== 'https:' ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.search !== '' ||
+    url.hash !== '' ||
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local') ||
+    hostname.endsWith('.internal') ||
+    isIP(ipCandidate) !== 0
+  ) {
+    throw new Error('Codex provider base URL is invalid');
+  }
+  const pathname = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
+  return `${url.origin}${pathname}`;
+}
+
+function validatedModel(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  if (!MODEL_PATTERN.test(raw)) throw new Error('Codex model is invalid');
+  return raw;
 }
 
 function isInside(parent: string, child: string): boolean {
@@ -92,6 +135,8 @@ function commonArguments(
   workspacePath: string,
   outputFilePath: string,
   outputSchemaPath: string,
+  providerBaseUrl: string | undefined,
+  model: string | undefined,
 ): string[] {
   return [
     'exec',
@@ -109,6 +154,10 @@ function commonArguments(
     'shell_environment_policy.ignore_default_excludes=false',
     '-c',
     'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
+    ...(providerBaseUrl === undefined
+      ? []
+      : ['-c', `openai_base_url=${JSON.stringify(providerBaseUrl)}`]),
+    ...(model === undefined ? [] : ['--model', model]),
     '--output-schema',
     outputSchemaPath,
     '--output-last-message',
@@ -196,12 +245,16 @@ export class CodexSessionAdapter implements AgentAdapter {
   private readonly command: string;
   private readonly outputSchemaPath: string;
   private readonly launch: CommandProcessLauncher;
+  private readonly providerBaseUrl: string | undefined;
+  private readonly model: string | undefined;
   private readonly sessions = new WeakSet<ManagedAgentSession>();
 
   constructor(options: CodexSessionAdapterOptions) {
     this.command = options.command ?? 'codex';
     this.outputSchemaPath = resolve(options.outputSchemaPath);
     this.launch = options.launch ?? launchCommand;
+    this.providerBaseUrl = validatedProviderBaseUrl(options.providerBaseUrl);
+    this.model = validatedModel(options.model);
   }
 
   async start(input: AgentStartInput): Promise<AgentSession> {
@@ -310,6 +363,8 @@ export class CodexSessionAdapter implements AgentAdapter {
         paths.workspacePath,
         paths.outputFilePath,
         this.outputSchemaPath,
+        this.providerBaseUrl,
+        this.model,
       ),
       cwd: paths.workspacePath,
       stdin: prompt,

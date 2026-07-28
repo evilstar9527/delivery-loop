@@ -157,7 +157,7 @@
 18. Review feedback在验签/schema/head fence后仍按不可信数据处理：先以全部Worker配置Secret和credential形状扫描，命中时D1/R2/Attempt零写入；完整body只进私有R2，D1只保存ref/digest和安全lineage。Runner回读必须复验R2 metadata/schema/canonical body digest，context以`no-store`只交付active exact Attempt；dispatch、outbox、日志、Evidence和PR正文都不复制review body。
 19. 模型profile ID由Worker可信配置经固定workflow注入；D1 profile保存model、token上界和整数micro-USD价格，Task/PRD、Agent输出和tool结果没有价格或limit字段。reservation/usage时间统一由控制面接收时生成，Runner不能回填旧UTC日期或未过期override时刻；API extra `occurredAt`严格拒绝。
 20. Codex `--json` stdout按行流式消费且不保留。只接受官方`turn.completed.usage`的四个数；thread ID、Agent message、reasoning、command/file/tool/web/search/plan事件、原始stdout和模型response均立即丢弃。D1只写per-call usage标量/source digest；查询不公开prompt、response、tool参数或raw错误。
-21. GitHub repository Secret `OPENAI_API_KEY`只在固定workflow的Agent step映射为`CODEX_API_KEY`；repository Variable `OPENAI_BASE_URL`是可公开配置，不得包含key、userinfo、query或fragment。两者都不进入dispatch input、控制面、checkpoint、artifact、PR或日志；Agent子shell继续由environment policy排除`*KEY*/*SECRET*/*TOKEN*/*PASSWORD*`。
+21. GitHub repository Secret `OPENAI_API_KEY`只在固定workflow的Agent step或无Task的手动provider preflight映射为`CODEX_API_KEY`；repository Variable `OPENAI_BASE_URL`是可公开配置，不得包含key、userinfo、query或fragment。两者都不进入dispatch input、控制面、checkpoint、artifact、PR或日志；preflight安全结果只留`RUNNER_TEMP`且不上传，Agent子shell继续由environment policy排除`*KEY*/*SECRET*/*TOKEN*/*PASSWORD*`。
 22. 第三方模型中转是独立数据处理信任边界：即使URL通过公网HTTPS和host校验，中转方仍可能看到Task、代码、日志摘要、prompt及模型输出。接入前必须由owner确认其Responses API兼容性、exact model支持、数据保留与访问政策；中转响应仍按不可信模型输出处理，不能提升Plan effect、命令或credential authority。
 
 ## 5. Prompt Injection 防护

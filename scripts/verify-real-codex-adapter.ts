@@ -83,6 +83,9 @@ function checkpoint(headSha: string, sequence: number): AgentCheckpointV1 {
 }
 
 async function authenticationConfigured(): Promise<boolean> {
+  if (process.env.CODEX_API_KEY !== undefined && process.env.CODEX_API_KEY.length > 0) {
+    return true;
+  }
   try {
     await command('codex', ['login', 'status']);
     return true;
@@ -132,7 +135,13 @@ async function run(): Promise<void> {
     }));
     await privateFile(outputFilePath, '');
 
-    const adapter = new CodexSessionAdapter({ outputSchemaPath });
+    const providerBaseUrl = process.env.OPENAI_BASE_URL;
+    const model = process.env.DELIVERY_LOOP_CODEX_ADAPTER_MODEL;
+    const adapter = new CodexSessionAdapter({
+      outputSchemaPath,
+      ...(providerBaseUrl === undefined ? {} : { providerBaseUrl }),
+      ...(model === undefined ? {} : { model }),
+    });
     const session = await adapter.start({
       attemptId: 'attempt-real-codex-adapter-e2e',
       workspacePath: workspace,
