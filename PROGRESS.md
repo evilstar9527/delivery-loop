@@ -2804,3 +2804,14 @@
 - 勾选：Phase 0 `validate-task.yml` 父项及其真实外部证据子项已勾选；manifest 只保存 workflow/title/canary digest，完整日志仅在内存中扫描，未入库。
 - 决策沉淀：GitHub Actions 的普通 `workflow_dispatch` input 不是 Secret，声明为 step env 会被 runner diagnostics 自动回显；安全边界必须是从受控 `GITHUB_EVENT_PATH` 读取并让校验异常固定化。GitHub job-log REST 请求使用 `application/vnd.github+json`，不能假设 `text/plain` 可直接协商。
 - 遗留：`.github/workflows/ci.yml` 的 Phase 0 父项尚未在 DOD 中勾选；下一轮可复用同一 `CiEvidenceManifestV1` 真实证据关闭它，随后继续采集仓库外 `RepositoryBootstrapEvidenceManifestV1` 并运行真实 `pnpm run e2e:repository-bootstrap`。
+
+## Round 133 — 2026-07-28
+- 目标：Phase 0 / `.github/workflows/ci.yml` 在 GitHub `main`/`pull_request` 上实际运行成功且权限只有 `contents: read`。本轮只关闭该 CI 父项，复用 Round 132 已采集的四类仓库外 strict CI 证据。
+- 前置与权限：只读读取公开仓库的 Actions run、不可变 workflow blob、job 和有界日志；未触发新的任务或外部副作用，manifest 仍在仓库外，不保存 Task 正文、canary 或 token。
+- 验证：
+  - 合并后 main push [30326502593](https://github.com/evilstar9527/delivery-loop/actions/runs/30326502593) → `verify` job success；此前同一受审 workflow 的 pull_request [30326290357](https://github.com/evilstar9527/delivery-loop/actions/runs/30326290357) → `verify` job success。
+  - 合并后 `DELIVERY_LOOP_CI_E2E=1 CI_EVIDENCE_FILE=/tmp/delivery-loop-ci-evidence-20260728.json ... pnpm run e2e:ci` → exit 0，`caseCount=4`、`verifiedRunCount=4`、`verifiedJobCount=4`、`verifiedWorkflowCount=4`、`scannedLogCount=4`、`leakedCanaries=0`。verifier 按四条 run 的 immutable head SHA 重新读取 workflow blob，确认顶层权限严格为 `{contents: read}`、唯一 `verify` job 和有界完整日志。
+  - `pnpm run verify:docs` → exit 0；`git diff --check` → exit 0。
+- 勾选：Phase 0 `.github/workflows/ci.yml` 父项及其真实外部证据子项已勾选。
+- 决策沉淀：CI 的成功判据是 GitHub live run + immutable workflow/job/log 交叉事实；PR CI 成功不能单独代替 main push，静态 workflow 内容、fake API 或本地 `pnpm run verify` 也不能代替权限和日志证据。
+- 遗留：Phase 0 仅剩远端 repository bootstrap 父项（owner/visibility/default branch/protection 的仓库外 manifest 与 `pnpm run e2e:repository-bootstrap` live exit 0）；随后再按 Phase 顺序处理真实 Cloudflare/Agent/平台事实。
