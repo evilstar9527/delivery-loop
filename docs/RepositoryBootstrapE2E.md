@@ -5,7 +5,7 @@
 仓库外 `RepositoryBootstrapEvidenceManifestV1` 分成三层事实：
 
 - `decision`：用户确认记录的安全索引，只保存 decision ID/time、确认主体 digest，以及 `repository + visibility + defaultBranch + protectionRulesDigest` 的 canonical selection digest；
-- `repository/branch/protection`：GitHub repository ID、owner/type、visibility、默认分支 head，以及所有当前 `active` branch rule 的 type/ruleset/source/parameters digest；
+- `repository/branch/protection`：GitHub repository ID、owner/type、visibility、默认分支 head，以及所有当前 `active` branch rule 的 type/ruleset/source/parameters digest；GitHub `GET /rules/branches/:branch` 返回的是 effective rules，可能省略 `enforcement`（或返回 `null`），因为该 endpoint 本身只列出已生效规则，verifier 将其规范化为 `active`；
 - 本地 Git `origin`：命令运行时通过固定 argv `git remote get-url origin` 读取，不写 manifest；只接受无 credential 的 `https://github.com/...`、`git@github.com:...` 或 `ssh://git@github.com/...`。
 
 manifest 不能证明“用户本人确实确认过”；`decisionId/confirmedAt/confirmedByPrincipalDigest` 必须与仓库外的人审记录一起核对。verifier 负责证明该决策摘要与当前本地 `origin`、GitHub repository、默认分支和 active rules 完全一致，避免本地 `git init`、同名其他仓库或 manifest 自报冒充远端完成。
