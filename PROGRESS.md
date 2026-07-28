@@ -5,7 +5,7 @@
 ## 当前状态
 
 - **当前 Phase**：按 Phase 顺序回到 Phase 1 的真实平台关门。首个未完成父项是 `DeliveryRunWorkflow` 在真实 Cloudflare hibernate/redeploy 后复用成功步骤，并以唯一 GitHub analysis Action 证明 dispatch 只发生一次。
-- **已完成**：Phase 0 的本地契约、真实 `main/pull_request/workflow_dispatch` Actions、个人公开远端、protected `main` 和仓库bootstrap均已验收；Phase 1～7已有大量本地D1/workerd/安全边界及strict外部证据verifier，精确完成状态只以 `DOD.md` 复选框为准，不能由本摘要提前升级。
+- **已完成**：Phase 0 的本地契约、真实 `main/pull_request/workflow_dispatch` Actions、个人公开远端、protected `main`、仓库bootstrap及六项通用子证据均已验收；通用父项仍是跨Phase总门槛，保持未勾。Phase 1～7已有大量本地D1/workerd/安全边界及strict外部证据verifier，精确完成状态只以 `DOD.md` 复选框为准，不能由本摘要提前升级。
 - **未验证外部能力**：已选Cloudflare账号尚无本项目Worker/Workflow/D1/R2/Queue；GitHub App selected-repository installation、控制面HTTPS部署、真实analysis/heartbeat Action、飞书/Meegle tenant、真实tool-bridge、有效非交互Agent模型调用、测试/生产部署与七天试运行均未完成。
 - **下一目标**：取得明确外部写入与预算授权后，按 [`WorkflowHibernateE2E`](docs/WorkflowHibernateE2E.md) 创建最小测试资源并完成Phase 1真实hibernate/redeploy；授权前继续关闭不依赖真实平台写入的通用Phase门槛，不把dry-run或默认exit 2当成功。
 
@@ -2897,3 +2897,22 @@
 - 勾选：在`DOD.md`通用“全量回归”下新增并勾选Phase 0子证据；通用父项与后续Phase保持未勾。
 - 决策沉淀：全量回归必须区分“当前可重跑的本地/只读事实”与“需要一次性外部输入的新场景”。安全删除canary会牺牲无副作用重跑能力，但不能因此持久化明文或伪造exit 0；需要新CI日志证据时必须另获Actions授权并生成新canary/run。
 - 遗留：下一轮按LOOP完成Phase 0通用“五维质量关口”；通过后Phase 0通用六项子证据才齐，父项仍保留为跨Phase总门槛。Phase 1真实hibernate继续等待外部资源与预算授权。
+
+## Round 141 — 2026-07-28
+- 目标：Phase 0 通用关门门槛中的第六个子项——五维质量关口。按正确性、安全性、恢复性、三方契约与证据真实性逐维review；发现BLOCKER/MAJOR时先修复并重验，不以已有绿灯直接关门。
+- 前置与权限：本地Node/workerd、Wrangler dry-run、仓库外0600安全manifest及当前GitHub仓库/Actions只读事实；为修复后的CI契约显式触发轻量合法/非法`validate-task` workflow。未创建或部署Cloudflare资源、未安装GitHub App、未读取业务日志/数据库、未使用真实Secret。随机canary只驻留单次shell内存并仅以digest进入仓库外manifest，不进入命令参数、仓库、PROGRESS或Action日志。
+- 五维结论：
+  - 正确性：TaskEnvelope安全默认值/revision identity、Run主路径与修复/恢复边、ExecutionPlan DAG/doneWhen/Evidence/effect/version/digest/base绑定均由Phase 0定向矩阵覆盖；D1/Workflow/outbox/lease I/O矩阵与全量验证通过，未发现未处理BLOCKER/MAJOR。
+  - 安全性：review发现两个MAJOR：`.github/workflows/{ci,validate-task}.yml`仍用可变`@v4`，与Security不可变SHA规范冲突；合法校验输出的`dedupeKey`包含不可信`tenantKey/taskKey/revision`，可能把敏感标识带入Action日志。先改测试后定向运行出现5项预期失败；PR [#15](https://github.com/evilstar9527/delivery-loop/pull/15)固定三类Action受审SHA、让strict verifier拒绝tag，并把合法输出收敛为固定`{"valid":true}`，非法输出继续固定错误。修复后2 files / 11 tests全绿。
+  - 恢复性：复核`DeliveryRunWorkflow`只有稳定命名`step.do`/durable wait承担副作用边界，workerd restart后analysis Attempt/dispatch outbox保持唯一，D1投影/lease CAS回归通过；本结论严格限制为Phase 0本地恢复契约，真实Cloudflare hibernate/redeploy仍未发生且Phase 1父项保持未勾。
+  - 三方契约：仓库内不再存在`@vN/main/master/latest`第三方Action引用；GitHub immutable workflow、`contents:read`、唯一job和当前run由strict verifier核对。`CI=1 WRANGLER_SEND_METRICS=false pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-round141` exit 0，识别2 Workflow、2 Queue、D1与4 R2 binding但没有部署。GitHub对这三枚受审SHA提示Node 20声明被平台强制到Node 24，定级MINOR依赖升级跟进；当前PR/main/validate运行均成功或按预期安全失败，不构成未处理MAJOR。
+  - 证据真实性：PR #15已MERGED，required PR CI [30349937535](https://github.com/evilstar9527/delivery-loop/actions/runs/30349937535)和合并后main CI [30350227486](https://github.com/evilstar9527/delivery-loop/actions/runs/30350227486)均success；当前仓库ID`1314460432`、public/main/protected、4条active rules与main head`f1b37526818e141366f3b42f3a28e1ad95be7cca`由live API复核。合法 [30350744104](https://github.com/evilstar9527/delivery-loop/actions/runs/30350744104) success、非法 [30350788158](https://github.com/evilstar9527/delivery-loop/actions/runs/30350788158) failure；strict `pnpm run e2e:ci`最终exit 0，4 runs/jobs/workflows/logs且`leakedCanaries=0`。
+- 验证：
+  - `pnpm exec vitest run test/ci-evidence.test.ts test/validate-task-envelope.test.ts` → 修复前exit 1（5项按预期失败），修复后exit 0，2 files / 11 tests。
+  - `pnpm exec vitest run test/task.test.ts test/run.test.ts test/plan.test.ts test/redaction.test.ts test/ci-evidence.test.ts test/validate-task-envelope.test.ts test/repository-bootstrap-evidence.test.ts` → exit 0，7 files / 42 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-api.test.ts test/workflow/delivery-run-workflow.test.ts test/workflow/workflow-outbox.test.ts test/workflow/lease-cas.test.ts` → exit 0，4 files / 18 tests。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 103 files / 417 tests、workerd 57 files / 308 tests、483文件Secret scan、docs links全绿；workerd主动terminate清理诊断不是skip。
+  - 外部CI evidence首次因临时collector在`tsx -e`使用top-level await而exit 1；修正async IIFE后第二次因zsh`/dev/fd`未可靠穿过`pnpm`而manifest invalid/exit 1。纯只读schema诊断成功后改用仓库外0600 manifest，第三次`pnpm run e2e:ci`exit 0。两次工具失败未伪装成功，也没有复用失去canary authority的旧run。
+- 勾选：在`DOD.md`通用“质量关口”下新增并勾选Phase 0子证据；五维review后无未处理BLOCKER/MAJOR。六项Phase 0通用子证据至此齐全，但通用父项仍保持未勾，不能替代Phase 1～7关门。
+- 决策沉淀：供应链规范不仅要求最小`permissions`，还要求第三方Action不可变pin；strict外部verifier必须拒绝tag。Action成功日志也不能输出来源标识或去重键，因为“schema合法”不等于“内容可公开”。按用户要求不更新llmdoc。
+- 遗留：为全仓库第三方Action受审SHA安排独立依赖升级，消除GitHub Node 20→24强制运行提示（MINOR，不阻塞本门槛）。主线回到Phase 1真实hibernate；已选Cloudflare账号仍不代表资源创建、部署或预算授权，GitHub App selected-repository installation与Actions预算也仍需明确批准。
