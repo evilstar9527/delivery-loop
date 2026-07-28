@@ -3163,3 +3163,19 @@
 - 五维review：正确性上目录inventory、路径/大小/YAML/jobs/literal label均fail-closed；安全上阻止public repo通过变量、matrix、数组、reusable job或直接标签静默获得self-hosted宿主，且没有新增credential/Action入口；恢复性不改变Run/Workflow/Attempt状态或Runner生命周期，未来JIT仍必须独立证明一job/销毁/日志外送；三方契约以GitHub官方固定commit而非记忆或第三方文章为authority；证据真实性明确区分本地policy、官方事实和未执行的真实provider/JIT。review后无未处理BLOCKER/MAJOR。
 - 勾选：新增并勾选Phase 1“public repository Runner安全边界”子项；第三方provider真实preflight、analysis Action、dispatcher、heartbeat、hibernate及所有真实平台父项保持未勾。本轮没有把安全禁止项、失败Action、本地模型成功或默认CI冒充外部provider成功。
 - 遗留：Hosted Runner仍需中转方按UTC `2026-07-28T18:45:11Z`～`18:45:29Z`核对backend route、SSE关闭层、`response.completed`与出口限制，或先修复/allowlist后只做一次受控preflight。若owner选择替代出口，需在“隔离JIT disposable基础设施”和“private execution repository”之间另行拍板机器/费用/权限/日志保留；当前policy会在任何此类workflow进入main前先失败，防止静默扩大信任边界。
+
+## Round 161 — 2026-07-29
+- 目标：Phase 2“监控 adapter（若启用）只创建 candidate/triage，不自动获得 repo write；相同告警指纹在抑制窗口内合并”。本轮只做production disabled路径的live预审；正式关门命令先固定为仓库外`mode=disabled + decision=not_enabled` manifest、用途隔离Cloudflare settings-read token与synthetic canary运行`DELIVERY_LOOP_MONITOR_ALERT_E2E=1 ... pnpm run e2e:monitor-alert` exit 0。owner未决策前不把配置缺省解释成N/A。
+- 前置与权限：只读运行Wrangler identity、deployment与version inventory；没有创建Cloudflare API token、读取Secret值、修改binding/Variable、部署Worker、发送Sentry事件、调用模型、创建Task/Run/Attempt或触发GitHub Action。当前Wrangler OAuth含`workers/write`、D1/Queues等多项write scope，只能作为live预审，不是`docs/MonitorAlertE2E.md`要求的用途隔离settings-read credential。
+- Live预审：账号`b8488957e88658039d2a38fb8f160514`上的`delivery-loop-control-plane`当前production deployment为`774826c8-fc4a-4e70-aa95-15f34deb759f`，100%流量version为`026915b2-d688-4711-a10e-6aaa970117a9`，创建时间`2026-07-28T12:30:32.72889Z`。版本binding名称/type安全投影中`MONITOR_WEBHOOK_SECRET`、`MONITOR_TENANT_KEY`、`MONITOR_ALLOWED_REPOSITORIES`与`MONITOR_SUPPRESSION_WINDOW_SECONDS`全部不存在；未输出其他binding值或任何Secret。
+- 证据裁决：四binding缺失与disabled路径预期一致，但缺owner明确`not_enabled`决策、仓库外strict manifest和purpose-isolated read token，故没有运行会缺前置的formal verifier，也不勾父项/真实外部子项。Wrangler OAuth的广权限事实不能被包装成“最小只读”成功证据。
+- 同步发现的live漂移：同一version只读投影的`CODEX_MODEL_PROFILE_ID`仍是`codex-gpt-5p6-terra-20260728`，而当前仓库`wrangler.jsonc`要求`codex-gpt-5p6-sol-high-20260729`。这证明Round 155的Sol/high Worker配置未部署；本轮没有部署授权，保持production不变并把漂移单独入账，不能用repo配置冒充live readiness。
+- 验证：
+  - `pnpm exec wrangler whoami`、`pnpm exec wrangler deployments status --name delivery-loop-control-plane --json`与`pnpm exec wrangler versions view 026915b2-d688-4711-a10e-6aaa970117a9 --name delivery-loop-control-plane --json` → exit 0；deployment/version/traffic、OAuth scope和四binding absent安全投影符合上述事实。
+  - `jq -r '.vars.CODEX_MODEL_PROFILE_ID' wrangler.jsonc` → exit 0，仓库值为`codex-gpt-5p6-sol-high-20260729`，与live Terra profile不一致。
+  - `pnpm run verify:docs`、`pnpm run verify:secrets`与`git diff --check` → exit 0；文档链接、495文件Secret扫描和diff格式全绿。
+  - `pnpm run verify` → exit 0；typecheck、ESLint、Node 111 files / 520 tests、workerd 57 files / 309 tests、12 workflows / 12 jobs Runner policy、495文件Secret扫描和docs links全绿。workerd既有`User called terminate`是主动清理诊断，不是failure或skip。
+- 五维review：正确性上deployment→100% version→binding inventory链路完整；安全上没有把广权限OAuth冒充最小只读、没有读取binding值或Secret；恢复性上没有任何控制面或Workflow状态变更；三方契约以Wrangler官方live API读取production事实；证据真实性明确区分“binding absent预审”“owner决策缺失”“formal verifier未运行”和“live model drift”。review后无未处理BLOCKER/MAJOR。
+- 勾选：无；monitor父项与真实外部子项保持未勾，provider/analysis/hibernate真实项也不因本次配置读取获得进展。
+- 决策沉淀：`DOD.md`增加disabled live预审、凭证scope限制与model profile漂移；没有改变运行契约或`docs/`规范，按owner要求不更新llmdoc。
+- 遗留：owner需明确生产monitor是`not_enabled`还是`enabled`。若`not_enabled`，创建用途隔离Cloudflare production settings只读token和仓库外disabled manifest后运行一次正式verifier；若`enabled`，需另行授权生产配置、Sentry test project/observer与八次受控事件。修复live Terra→Sol/high还需独立deployment授权，不能与monitor决策捆绑或静默执行。
