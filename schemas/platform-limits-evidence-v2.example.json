@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "2",
+  "evidenceId": "replace-platform-limits-evidence",
+  "recordedAt": "2026-07-27T12:00:00.000Z",
+  "officialDocumentation": {
+    "githubActions": {
+      "owner": "github",
+      "repository": "docs",
+      "path": "content/actions/reference/limits.md",
+      "commit": "071ed75ada2d9e80348639adfc7cca5b3902ed16",
+      "blobSha": "f492e2ebd2859b4f91546cb2f270c83c7cae669a",
+      "contentDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "cloudflareWorkflows": {
+      "owner": "cloudflare",
+      "repository": "cloudflare-docs",
+      "path": "src/content/docs/workflows/reference/limits.mdx",
+      "commit": "862ae7b51ce028a30f1760e46e5d25ae76cc6832",
+      "blobSha": "926ed4527289522656999bbaa46efd8c4b98e247",
+      "contentDigest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  },
+  "github": {
+    "account": {
+      "type": "user",
+      "login": "example"
+    },
+    "repository": "example/delivery-target",
+    "accountPolicy": {
+      "type": "user",
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "enabled": true,
+      "allowedActions": "selected",
+      "defaultWorkflowPermissions": "read",
+      "canApprovePullRequestReviews": false,
+      "artifactAndLogRetentionDays": 90
+    },
+    "billing": {
+      "year": 2026,
+      "month": 7,
+      "actionsUsageDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "actionsUsageItemCount": 4,
+      "unitTypes": [
+        "Minutes"
+      ],
+      "quantity": 2400,
+      "grossAmount": 19.2,
+      "discountAmount": 4.8,
+      "netAmount": 14.4,
+      "reviewedAt": "2026-07-27T10:00:00.000Z",
+      "auditUrl": "https://github.com/settings/billing/usage"
+    },
+    "concurrencyProbe": {
+      "workflowPath": ".github/workflows/platform-concurrency-probe.yml",
+      "workflowHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "workflowBlobSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "workflowContentDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "runIds": [
+        "5001"
+      ],
+      "requestedJobCount": 40,
+      "reviewedAccountLimit": 20,
+      "observedMaximumConcurrency": 20,
+      "startedAt": "2026-07-26T22:00:00.000Z",
+      "completedAt": "2026-07-26T22:10:00.000Z",
+      "auditUrls": [
+        "https://github.com/example/delivery-target/actions/runs/5001"
+      ]
+    },
+    "durationProbe": {
+      "workflowPath": ".github/workflows/platform-duration-probe.yml",
+      "workflowHeadSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "workflowBlobSha": "cccccccccccccccccccccccccccccccccccccccc",
+      "workflowContentDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "runId": "6001",
+      "maximumJobDurationMinutes": 360,
+      "observedDurationMs": 21600000,
+      "startedAt": "2026-07-26T12:00:00.000Z",
+      "completedAt": "2026-07-26T18:00:00.000Z",
+      "conclusion": "failure",
+      "auditUrl": "https://github.com/example/delivery-target/actions/runs/6001"
+    }
+  },
+  "cloudflare": {
+    "accountIdDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "paidPlanReviewedAt": "2026-07-27T10:30:00.000Z",
+    "paidPlanAuditUrl": "https://dash.cloudflare.com/example/workers/plans",
+    "paidLimits": {
+      "workerScriptSizeMb": 10,
+      "defaultStepCpuMs": 30000,
+      "maximumStepCpuMs": 300000,
+      "stepWallClockUnlimited": true,
+      "nonStreamStepResultBytes": 1048576,
+      "eventPayloadBytes": 1048576,
+      "persistedStateBytes": 1073741824,
+      "maximumSleepDays": 365,
+      "defaultSteps": 10000,
+      "maximumSteps": 25000,
+      "concurrentInstances": 50000,
+      "accountCreatePerSecond": 300,
+      "workflowCreatePerSecond": 100,
+      "queuedInstances": 2000000,
+      "completedStateRetentionDays": 30,
+      "defaultSubrequests": 10000,
+      "maximumSubrequests": 10000000
+    }
+  },
+  "reusedEvidence": {
+    "runnerHeartbeatEvidenceId": "replace-runner-heartbeat-evidence",
+    "workflowHibernateEvidenceId": "replace-workflow-hibernate-evidence",
+    "controlledReplayEvidenceId": "replace-controlled-replay-evidence"
+  }
+}

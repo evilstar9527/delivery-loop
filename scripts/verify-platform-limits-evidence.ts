@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
-  PlatformLimitsEvidenceManifestV1Schema,
-  type PlatformLimitsEvidenceManifestV1,
+  PlatformLimitsEvidenceManifestV2Schema,
+  type PlatformLimitsEvidenceManifestV2,
 } from '../src/domain/platform-limits-evidence.js';
 import {
   RunnerHeartbeatEvidenceManifestV1Schema,
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   }
   const required = {
     platformFile: env('PLATFORM_LIMITS_EVIDENCE_FILE'),
-    githubOrgToken: env('PLATFORM_LIMITS_GITHUB_ORG_TOKEN'),
+    githubAccountToken: env('PLATFORM_LIMITS_GITHUB_ACCOUNT_TOKEN'),
     heartbeatFile: env('RUNNER_HEARTBEAT_EVIDENCE_FILE'),
     controlPlaneOrigin: env('RUNNER_HEARTBEAT_CONTROL_PLANE_URL'),
     controlPlaneToken: env('RUNNER_HEARTBEAT_CONTROL_PLANE_TOKEN'),
@@ -89,13 +89,13 @@ async function main(): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  let platform: PlatformLimitsEvidenceManifestV1;
+  let platform: PlatformLimitsEvidenceManifestV2;
   let heartbeat: RunnerHeartbeatEvidenceManifestV1;
   let hibernate: WorkflowHibernateEvidenceManifestV1;
   let replay: ControlledReplayEvidenceManifestV1;
   try {
     [platform, heartbeat, hibernate, replay] = await Promise.all([
-      readManifest(required.platformFile, PlatformLimitsEvidenceManifestV1Schema),
+      readManifest(required.platformFile, PlatformLimitsEvidenceManifestV2Schema),
       readManifest(required.heartbeatFile, RunnerHeartbeatEvidenceManifestV1Schema),
       readManifest(required.hibernateFile, WorkflowHibernateEvidenceManifestV1Schema),
       readManifest(required.replayFile, ControlledReplayEvidenceManifestV1Schema),
@@ -113,7 +113,7 @@ async function main(): Promise<void> {
   const replayGithubApiOrigin = env('CONTROLLED_REPLAY_GITHUB_API_URL');
   try {
     const summary = await verifyPlatformLimitsEvidence(platform, {
-      githubToken: required.githubOrgToken,
+      githubToken: required.githubAccountToken,
       ...(githubApiOrigin === '' ? {} : { githubApiOrigin }),
       runnerHeartbeat: {
         manifest: heartbeat,

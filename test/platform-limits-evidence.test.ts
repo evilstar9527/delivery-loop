@@ -7,8 +7,8 @@ import {
   CLOUDFLARE_PAID_WORKFLOW_LIMITS,
   CLOUDFLARE_WORKFLOWS_LIMITS_AUTHORITY,
   GITHUB_ACTIONS_LIMITS_AUTHORITY,
-  PlatformLimitsEvidenceManifestV1Schema,
-  type PlatformLimitsEvidenceManifestV1,
+  PlatformLimitsEvidenceManifestV2Schema,
+  type PlatformLimitsEvidenceManifestV2,
 } from '../src/domain/platform-limits-evidence.js';
 import { RunnerHeartbeatEvidenceManifestV1Schema } from
   '../src/domain/runner-heartbeat-evidence.js';
@@ -43,7 +43,7 @@ import {
 } from '../src/pilot/platform-limits-evidence-verifier.js';
 
 const API_ORIGIN = 'https://api.github.test';
-const GITHUB_TOKEN = 'CANARY_PLATFORM_LIMITS_GITHUB_ORG_TOKEN';
+const GITHUB_TOKEN = 'CANARY_PLATFORM_LIMITS_GITHUB_ACCOUNT_TOKEN';
 const REPOSITORY = 'example/delivery-target';
 const ORGANIZATION = 'example';
 const HEAD_SHA = 'a'.repeat(40);
@@ -95,8 +95,16 @@ const REPLAY_MANIFEST = ControlledReplayEvidenceManifestV1Schema.parse({
   repository: REPOSITORY,
 });
 
-const ACTIONS_POLICY = {
+const ORGANIZATION_ACTIONS_POLICY = {
+  account: { type: 'organization', login: ORGANIZATION },
   actions: { enabledRepositories: 'selected', allowedActions: 'selected' },
+  workflow: { defaultWorkflowPermissions: 'read', canApprovePullRequestReviews: false },
+  artifactAndLogRetention: { days: 90 },
+};
+const USER_ACTIONS_POLICY = {
+  account: { type: 'user', login: ORGANIZATION },
+  repository: REPOSITORY,
+  actions: { enabled: true, allowedActions: 'selected' },
   workflow: { defaultWorkflowPermissions: 'read', canApprovePullRequestReviews: false },
   artifactAndLogRetention: { days: 90 },
 };
@@ -113,6 +121,11 @@ const ACTIONS_USAGE_ITEM = {
   organizationName: ORGANIZATION,
   repositoryName: REPOSITORY,
 };
+const USER_ACTIONS_USAGE_ITEM = {
+  ...ACTIONS_USAGE_ITEM,
+  organizationName: undefined,
+  repositoryName: 'delivery-target',
+};
 const NORMALIZED_ACTIONS_USAGE = [{
   product: 'actions',
   date: '2026-07-01',
@@ -125,7 +138,9 @@ const NORMALIZED_ACTIONS_USAGE = [{
   netAmount: 4,
 }];
 
-async function manifest(): Promise<PlatformLimitsEvidenceManifestV1> {
+async function manifest(
+  accountType: 'organization' | 'user' = 'organization',
+): Promise<PlatformLimitsEvidenceManifestV2> {
   const concurrencySource = readFileSync(
     new URL('../.github/workflows/platform-concurrency-probe.yml', import.meta.url),
     'utf8',
@@ -135,7 +150,7 @@ async function manifest(): Promise<PlatformLimitsEvidenceManifestV1> {
     'utf8',
   );
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     evidenceId: 'platform-limits-evidence-example',
     recordedAt: '2026-07-27T12:00:00.000Z',
     officialDocumentation: {
@@ -149,16 +164,27 @@ async function manifest(): Promise<PlatformLimitsEvidenceManifestV1> {
       },
     },
     github: {
-      organization: ORGANIZATION,
+      account: { type: accountType, login: ORGANIZATION },
       repository: REPOSITORY,
-      organizationPolicy: {
-        digest: await canonicalSha256(ACTIONS_POLICY),
-        enabledRepositories: 'selected',
-        allowedActions: 'selected',
-        defaultWorkflowPermissions: 'read',
-        canApprovePullRequestReviews: false,
-        artifactAndLogRetentionDays: 90,
-      },
+      accountPolicy: accountType === 'organization'
+        ? {
+            type: 'organization',
+            digest: await canonicalSha256(ORGANIZATION_ACTIONS_POLICY),
+            enabledRepositories: 'selected',
+            allowedActions: 'selected',
+            defaultWorkflowPermissions: 'read',
+            canApprovePullRequestReviews: false,
+            artifactAndLogRetentionDays: 90,
+          }
+        : {
+            type: 'user',
+            digest: await canonicalSha256(USER_ACTIONS_POLICY),
+            enabled: true,
+            allowedActions: 'selected',
+            defaultWorkflowPermissions: 'read',
+            canApprovePullRequestReviews: false,
+            artifactAndLogRetentionDays: 90,
+          },
       billing: {
         year: 2026,
         month: 7,
@@ -170,7 +196,9 @@ async function manifest(): Promise<PlatformLimitsEvidenceManifestV1> {
         discountAmount: 0.8,
         netAmount: 4,
         reviewedAt: '2026-07-27T10:00:00.000Z',
-        auditUrl: 'https://github.com/organizations/example/settings/billing/usage',
+        auditUrl: accountType === 'organization'
+          ? 'https://github.com/organizations/example/settings/billing/usage'
+          : 'https://github.com/settings/billing/usage',
       },
       concurrencyProbe: {
         workflowPath: '.github/workflows/platform-concurrency-probe.yml',
@@ -179,7 +207,7 @@ async function manifest(): Promise<PlatformLimitsEvidenceManifestV1> {
         workflowContentDigest: await canonicalSha256(concurrencySource),
         runIds: [CONCURRENCY_RUN_ID],
         requestedJobCount: 3,
-        reviewedOrganizationLimit: 2,
+        reviewedAccountLimit: 2,
         observedMaximumConcurrency: 2,
         startedAt: '2026-07-26T22:00:00.000Z',
         completedAt: '2026-07-26T22:10:00.000Z',
@@ -217,8 +245,11 @@ type Drift =
   | 'none'
   | 'github_docs'
   | 'cloudflare_docs'
+  | 'account'
   | 'policy'
   | 'billing'
+  | 'user_organization_name'
+  | 'user_repository_owner'
   | 'concurrency'
   | 'duration'
   | 'oversize';
@@ -282,9 +313,16 @@ function durationJobs(drift: boolean): Response {
   });
 }
 
-function fetcher(drift: Drift = 'none'): typeof fetch {
-  return async (input) => {
+function fetcher(
+  drift: Drift = 'none',
+  accountType: 'organization' | 'user' = 'organization',
+  requests: string[] = [],
+  apiVersions: string[] = [],
+): typeof fetch {
+  return async (input, init) => {
     const url = String(input);
+    requests.push(url);
+    apiVersions.push(new Headers(init?.headers).get('x-github-api-version') ?? '');
     if (drift === 'oversize') return new Response('x'.repeat(1_048_577));
     if (url.includes('/repos/github/docs/contents/')) {
       return content(
@@ -300,6 +338,15 @@ function fetcher(drift: Drift = 'none'): typeof fetch {
         drift === 'cloudflare_docs' ? 'drift' : CLOUDFLARE_LIMITS_SOURCE,
       );
     }
+    if (url.endsWith(`/users/${ORGANIZATION}`)) {
+      const liveType = accountType === 'organization' ? 'Organization' : 'User';
+      return json({
+        login: ORGANIZATION,
+        type: drift === 'account'
+          ? (liveType === 'User' ? 'Organization' : 'User')
+          : liveType,
+      });
+    }
     if (url.includes(`/orgs/${ORGANIZATION}/actions/permissions/workflow`)) {
       return json({ default_workflow_permissions: 'read', can_approve_pull_request_reviews: false });
     }
@@ -313,11 +360,35 @@ function fetcher(drift: Drift = 'none'): typeof fetch {
         selected_actions_url: `${API_ORIGIN}/orgs/${ORGANIZATION}/actions/permissions/selected-actions`,
       });
     }
+    if (url.includes(`/repos/${REPOSITORY}/actions/permissions/workflow`)) {
+      return json({ default_workflow_permissions: 'read', can_approve_pull_request_reviews: false });
+    }
+    if (url.includes(`/repos/${REPOSITORY}/actions/permissions/artifact-and-log-retention`)) {
+      return json({ days: 90 });
+    }
+    if (url.includes(`/repos/${REPOSITORY}/actions/permissions`)) {
+      return json({
+        enabled: drift === 'policy' ? false : true,
+        allowed_actions: 'selected',
+        selected_actions_url: `${API_ORIGIN}/repos/${REPOSITORY}/actions/permissions/selected-actions`,
+      });
+    }
     if (url.includes(`/organizations/${ORGANIZATION}/settings/billing/usage`)) {
       return json({
         usageItems: drift === 'billing'
           ? [{ ...ACTIONS_USAGE_ITEM, netAmount: 5 }]
           : [ACTIONS_USAGE_ITEM],
+      });
+    }
+    if (url.includes(`/users/${ORGANIZATION}/settings/billing/usage`)) {
+      return json({
+        usageItems: drift === 'billing'
+          ? [{ ...USER_ACTIONS_USAGE_ITEM, netAmount: 5 }]
+          : drift === 'user_organization_name'
+            ? [{ ...USER_ACTIONS_USAGE_ITEM, organizationName: ORGANIZATION }]
+            : drift === 'user_repository_owner'
+              ? [{ ...USER_ACTIONS_USAGE_ITEM, repositoryName: 'other/delivery-target' }]
+            : [USER_ACTIONS_USAGE_ITEM],
       });
     }
     if (url.includes('/contents/.github/workflows/platform-concurrency-probe.yml')) {
@@ -350,18 +421,23 @@ function fetcher(drift: Drift = 'none'): typeof fetch {
   };
 }
 
-function options(drift: Drift = 'none'): PlatformLimitsEvidenceVerifierOptions {
+function options(
+  drift: Drift = 'none',
+  accountType: 'organization' | 'user' = 'organization',
+  requests: string[] = [],
+  apiVersions: string[] = [],
+): PlatformLimitsEvidenceVerifierOptions {
   const commonChild = {
     controlPlaneOrigin: 'https://control.example',
     operationsToken: 'CANARY_PLATFORM_LIMITS_OPERATIONS_TOKEN',
     githubToken: 'CANARY_PLATFORM_LIMITS_CHILD_GITHUB_TOKEN',
     githubApiOrigin: API_ORIGIN,
-    fetch: fetcher(drift),
+    fetch: fetcher(drift, accountType, requests, apiVersions),
   };
   return {
     githubToken: GITHUB_TOKEN,
     githubApiOrigin: API_ORIGIN,
-    fetch: fetcher(drift),
+    fetch: fetcher(drift, accountType, requests, apiVersions),
     runnerHeartbeat: {
       manifest: HEARTBEAT_MANIFEST,
       options: {
@@ -390,7 +466,7 @@ function options(drift: Drift = 'none'): PlatformLimitsEvidenceVerifierOptions {
         queryToken: 'CANARY_PLATFORM_LIMITS_QUERY_TOKEN',
         githubToken: commonChild.githubToken,
         githubApiOrigin: API_ORIGIN,
-        fetch: fetcher(drift),
+        fetch: fetcher(drift, accountType, requests, apiVersions),
       },
     },
   };
@@ -430,25 +506,25 @@ beforeEach(() => {
 describe('pilot platform limits evidence', () => {
   it('recomputes immutable docs, organization policy/billing, probes, and reused evidence', async () => {
     const input = await manifest();
-    expect(PlatformLimitsEvidenceManifestV1Schema.safeParse(input).success).toBe(true);
+    expect(PlatformLimitsEvidenceManifestV2Schema.safeParse(input).success).toBe(true);
     const example = JSON.parse(readFileSync(
-      new URL('../schemas/platform-limits-evidence-v1.example.json', import.meta.url),
+      new URL('../schemas/platform-limits-evidence-v2.example.json', import.meta.url),
       'utf8',
     )) as unknown;
-    expect(PlatformLimitsEvidenceManifestV1Schema.safeParse(example).success).toBe(true);
+    expect(PlatformLimitsEvidenceManifestV2Schema.safeParse(example).success).toBe(true);
     await expect(verifyPlatformLimitsEvidence(input, options())).resolves.toEqual({
-      schemaVersion: '1',
+      schemaVersion: '2',
       evidenceId: input.evidenceId,
-      organization: ORGANIZATION,
+      account: { type: 'organization', login: ORGANIZATION },
       repository: REPOSITORY,
       githubHostedMaximumMinutes: 360,
-      reviewedOrganizationConcurrency: 2,
+      reviewedAccountConcurrency: 2,
       observedMaximumConcurrency: 2,
       concurrencyProbeJobCount: 3,
       actionsUsageItemCount: 1,
       actionsUsageDigest: input.github.billing.actionsUsageDigest,
       githubDocumentationVerified: true,
-      githubOrganizationPolicyVerified: true,
+      githubAccountPolicyVerified: true,
       githubBillingVerified: true,
       githubConcurrencyProbeVerified: true,
       githubDurationProbeVerified: true,
@@ -463,10 +539,50 @@ describe('pilot platform limits evidence', () => {
     expect(verifyControlledReplayEvidence).toHaveBeenCalledOnce();
   });
 
+  it('verifies a personal account through repository policy and personal billing endpoints', async () => {
+    const requests: string[] = [];
+    const apiVersions: string[] = [];
+    const input = await manifest('user');
+    await expect(verifyPlatformLimitsEvidence(
+      input,
+      options('none', 'user', requests, apiVersions),
+    ))
+      .resolves.toMatchObject({
+        schemaVersion: '2',
+        account: { type: 'user', login: ORGANIZATION },
+        githubAccountPolicyVerified: true,
+        githubBillingVerified: true,
+      });
+    expect(requests).toContain(`${API_ORIGIN}/users/${ORGANIZATION}`);
+    expect(requests).toContain(`${API_ORIGIN}/repos/${REPOSITORY}/actions/permissions`);
+    expect(requests).toContain(
+      `${API_ORIGIN}/users/${ORGANIZATION}/settings/billing/usage?year=2026&month=7`,
+    );
+    expect(requests.some((url) => url.includes(`/orgs/${ORGANIZATION}/actions/permissions`)))
+      .toBe(false);
+    expect(requests.some((url) => url.includes(`/organizations/${ORGANIZATION}/settings/billing`)))
+      .toBe(false);
+    expect(apiVersions.length).toBeGreaterThan(0);
+    expect(new Set(apiVersions)).toEqual(new Set(['2026-03-10']));
+  });
+
+  it('rejects forged personal account identity and organization-scoped billing items', async () => {
+    await expect(verifyPlatformLimitsEvidence(
+      await manifest('user'), options('account', 'user'),
+    )).rejects.toMatchObject({ code: 'github_policy_mismatch' });
+    await expect(verifyPlatformLimitsEvidence(
+      await manifest('user'), options('user_organization_name', 'user'),
+    )).rejects.toMatchObject({ code: 'github_billing_mismatch' });
+    await expect(verifyPlatformLimitsEvidence(
+      await manifest('user'), options('user_repository_owner', 'user'),
+    )).rejects.toMatchObject({ code: 'github_billing_mismatch' });
+  });
+
   it('fails closed on official document, policy, billing, and live probe drift', async () => {
     const expected = {
       github_docs: 'official_document_mismatch',
       cloudflare_docs: 'official_document_mismatch',
+      account: 'github_policy_mismatch',
       policy: 'github_policy_mismatch',
       billing: 'github_billing_mismatch',
       concurrency: 'github_concurrency_probe_mismatch',
@@ -480,7 +596,7 @@ describe('pilot platform limits evidence', () => {
 
   it('rejects self-reported Cloudflare limits and reused evidence drift', async () => {
     const input = await manifest();
-    expect(PlatformLimitsEvidenceManifestV1Schema.safeParse({
+    expect(PlatformLimitsEvidenceManifestV2Schema.safeParse({
       ...input,
       cloudflare: {
         ...input.cloudflare,
@@ -512,6 +628,12 @@ describe('pilot platform limits evidence', () => {
   });
 
   it('keeps the real command behind the Watt-derived explicit opt-in gate', () => {
+    const verifier = readFileSync(
+      new URL('../scripts/verify-platform-limits-evidence.ts', import.meta.url),
+      'utf8',
+    );
+    expect(verifier).toContain("env('PLATFORM_LIMITS_GITHUB_ACCOUNT_TOKEN')");
+    expect(verifier).not.toContain('PLATFORM_LIMITS_GITHUB_ORG_TOKEN');
     const environment = { ...process.env };
     delete environment.DELIVERY_LOOP_PLATFORM_LIMITS_E2E;
     const result = spawnSync(
