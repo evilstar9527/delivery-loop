@@ -643,7 +643,11 @@ describe('analysis Runner bootstrap', () => {
       environment,
       fetch: fetchImplementation,
       agent,
-      heartbeatIntervalMs: 10,
+      // Leave enough time for the diagnostic mediation filesystem/tool
+      // round-trip after the first rotation; hosted runners are slower than
+      // the local workerd process and should not accidentally start a second
+      // heartbeat against this single-rotation fixture.
+      heartbeatIntervalMs: 1_000,
       snapshotWorkspace: async () => snapshots.shift() ?? 'unexpected',
       now: () => new Date('2026-07-25T00:01:00.000Z'),
     });

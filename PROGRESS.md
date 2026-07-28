@@ -2772,3 +2772,18 @@
 - 验证：`gh api user --jq '{login,name}'`→exit 0，身份为`evilstar9527`；`gh repo view evilstar9527/delivery-loop --json nameWithOwner,visibility,defaultBranchRef,url`→exit 1，repository not found；`git remote -v`→空。`docs/RepositoryBootstrapE2E.md`重新核对后确认manifest必须保存用户选定的`public|private|internal`和保护规则digest，本地不能代填。GraphQL plan字段不可用，未据此猜测账号计划，也未创建或push任何内容。
 - 勾选：无。owner决策已更新，但visibility、默认分支保护参数和创建/push授权尚未完整冻结，因此Phase 0远端DoD不勾。
 - 遗留：请选`public`或`private`。若选public，下一步创建`evilstar9527/delivery-loop`、推送`main`并设置protected branch；若选private，先需确认账号计划支持private branch protection，否则该DoD不能关闭。
+
+## Round 130 — 2026-07-28
+- 目标：Phase 0的 GitHub `main/pull_request` CI 真实验收。仓库已按用户决策创建为`evilstar9527/delivery-loop` public，但首次`main` push CI未通过，因此不勾 CI DoD。
+- 外部操作：以提交`04db522ba2acaa9f1f4e766b6858819f18ce7b82`创建并推送远端，配置`main` protection：只要求`verify`、strict status check、enforce admins、linear history、禁止force-push/deletion、conversation resolution，未强制单人仓库的额外reviewer。
+- 红灯证据：GitHub Actions [`30323475764`](https://github.com/evilstar9527/delivery-loop/actions/runs/30323475764)的`main` push 运行在hosted Ubuntu上失败；本地记录为同类本地测试全通，但远端`test/workflow/github-review-feedback.test.ts:441`实际期待20路里`applied=1, duplicate=19`，拿到`duplicate=18`，暴露并发状态竞态。
+- 动作：`GitHubReviewFeedbackStore.apply` 在candidate不再eligible时重读同review feedback；如已由winner提交则记为`duplicate`，不再误记`ignored`。这保留stale/publication本来的ignored行为，只改变能证明已存在同review的竞态路径。
+- 验证：`pnpm exec vitest --config vitest.workflow.config.ts run test/workflow/github-review-feedback.test.ts`→exit 0，5 tests；连续8次重跑→8/8通过。修复尚未在远端CI验收，因此未勾选`DOD.md` CI父项。
+- 遗留：将修复和本轮红灯证据提交PR，等待`pull_request` CI通过后合并，再重跑main CI并执行`validate-task.yml` 的合法/非法workflow_dispatch。不使用本地结果冒充GitHub外部事实。
+
+## Round 131 — 2026-07-28
+- 目标：继续Phase 0 CI真实验收，处理PR #1 hosted runner暴露的第二个独立时序缺口。
+- 红灯证据：PR #1 [`30323876042`](https://github.com/evilstar9527/delivery-loop/actions/runs/30323876042)在`test/analysis-runner-bootstrap.test.ts`报`AnalysisRunnerError: attempt heartbeat failed during analysis`；详细原因是诊断测试的10ms heartbeat cadence在Ubuntu hosted上在第一次token rotation后又触发了第二次heartbeat，与单次rotation fixture竞0态，不能归因为业务状态机失败。
+- 动作：该诊断测试改为1s heartbeat cadence，仍保留“等待真实heartbeat后再执行logs→trace→Evidence→Plan”的验证，避免将hosted runner调度速度当成业务错误。
+- 验证：`pnpm exec vitest run test/analysis-runner-bootstrap.test.ts`→exit 0，1 file / 9 tests；最终`pnpm run verify`→exit 0，Node 102/412、workerd 57/308、Secret scan 483文件、docs links全绿。等待PR workflow重跑，未勾选CI DoD。
+- 遗留：提交该修复到PR #1，外部`pull_request` CI通过后才合并；如再发现时序缺口，按同一DoD继续修复而不下调验收标准。

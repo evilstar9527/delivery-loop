@@ -182,15 +182,20 @@ export class GitHubReviewFeedbackStore {
     }
     const existing = await this.feedback(input.fact.reviewId);
     if (existing !== null) {
-      this.assertFeedback(existing, input);
-      await this.recordDuplicateDelivery(input, existing.feedback_id, input.receivedAt);
-      return { disposition: 'duplicate', ...(existing.review_attempt_id === null
-        ? {}
-        : { attemptId: existing.review_attempt_id }) };
+      return await this.recordExistingDuplicate(input, existing);
     }
 
     const candidate = await this.candidate(input.fact.repository, input.fact.number);
     if (candidate === null || !this.candidateEligible(candidate, input.fact)) {
+      // Another delivery for the same GitHub review can commit after the
+      // initial feedback lookup but before this candidate read. In that case
+      // the winner has already moved the Run/Item out of the eligible state;
+      // classify this delivery as the same logical duplicate instead of a
+      // misleading publication_not_eligible/stale_head observation.
+      const concurrent = await this.feedback(input.fact.reviewId);
+      if (concurrent !== null) {
+        return await this.recordExistingDuplicate(input, concurrent);
+      }
       await this.recordIgnoredDelivery(
         input,
         candidate?.publication_id ?? null,
@@ -625,6 +630,25 @@ export class GitHubReviewFeedbackStore {
       row.submitted_at !== input.fact.submittedAt ||
       row.body_digest !== input.fact.bodyDigest
     ) throw new GitHubReviewFeedbackError('review_conflict');
+  }
+
+  private async recordExistingDuplicate(
+    input: {
+      deliveryId: string;
+      payloadDigest: string;
+      fact: GitHubReviewFeedbackFact;
+      receivedAt: string;
+    },
+    existing: FeedbackRow,
+  ): Promise<GitHubReviewFeedbackResult> {
+    this.assertFeedback(existing, input);
+    await this.recordDuplicateDelivery(input, existing.feedback_id, input.receivedAt);
+    return {
+      disposition: 'duplicate',
+      ...(existing.review_attempt_id === null
+        ? {}
+        : { attemptId: existing.review_attempt_id }),
+    };
   }
 
   private async candidate(repository: string, number: number): Promise<ReviewCandidateRow | null> {
