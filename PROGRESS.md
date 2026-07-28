@@ -2932,3 +2932,22 @@
 - 阻塞裁决：同一外部authority缺口已在Round 135、138～141及本轮连续出现。按LOOP“连续3轮不闭环后停止盲重试”，本轮把blocker、已尝试只读路径和最小人工输入写实后停止；账号ID本身不能扩张授权范围。
 - 决策沉淀：真实hibernate不是单独`wrangler deploy`；必须与selected-install App、正常Task→D1 outbox→Action链路、在wait期间唯一after deployment及strict四方证据同窗发生。按用户要求不更新llmdoc。
 - 遗留：等待owner明确批准上述三类测试外部写入/预算。授权后从资源bootstrap与GitHub App selected installation开始；未授权前不再重复inventory/dry-run/default-exit-2轮次。
+
+## Round 143 — 2026-07-28
+- 目标：继续 Phase 1 / `DeliveryRunWorkflow` 真实 Cloudflare hibernate/redeploy。本轮先闭环已获授权的控制面 bootstrap、远程 D1 migration 阻塞与真实 analysis 模型配额前置；唯一最终关门仍是 `DELIVERY_LOOP_WORKFLOW_HIBERNATE_E2E=1 ... pnpm run e2e:workflow-hibernate` exit 0。
+- 前置与权限：owner已明确批准在 Cloudflare 账号 `b8488957e88658039d2a38fb8f160514` 创建本项目测试资源、部署 Worker/Workflow、创建并仅安装到 `evilstar9527/delivery-loop` 的 GitHub App与触发受控 Actions。两枚 Worker 服务 Secret 只经 stdin 写入并仅存长生命周期shell内存；本轮没有读取、输出或持久化其明文。
+- 动作：
+  - 创建 D1 `delivery-loop-control`（ID `8cd2d08d-1db1-4cd8-8598-caaca308c7fd`）、四个 `delivery-loop-{task-objects,checkpoint-objects,backups,raw-agent-objects}` 私有 R2 bucket，以及 workflow/Feishu ingress 两组主 Queue + DLQ + quarantine 共 6 个 Queue。
+  - 部署 [delivery-loop-control-plane](https://delivery-loop-control-plane.eve55265.workers.dev)；当前 100% Worker version 为 `19e73239-f9e0-4f4b-a085-61a4c7fbb23c`。部署 Workflow `delivery-run` 与 `control-plane-backup`，Wrangler live inventory 均指向 `delivery-loop-control-plane`。
+  - 首次远程migration的 0001～0049 成功，0050 因一个含三条投影语句的 trigger 在 D1 `/query` migration 路径返回 `SQLITE_ERROR: incomplete input`。修复为：0050 不再创建多语句 trigger，`MonitorAlertIngressStore` 使用同一 D1 atomic batch 发布 receipt/head/candidate/lineage，0061 删除可能经旧 import 路径存在的 trigger，并增加 Wrangler splitter 回归。`docs/{Architecture,Proto}.md` 已与该运行事实对齐。
+  - Cloudflare 在 Workflow 声明 `schedules: ["0 2 * * *"]` 时返回 403；去掉 schedule 后两个 Workflow 均成功部署。这只是当前 hibernate 演练 profile，不被冒充为 `docs/Proto.md` 要求的每日 02:00 backup；该平台计划/触发差异留待 backup DoD 独立闭环。
+  - 通过 OpenAI 官方 latest-model/model/pricing 资料选择均衡性能与成本的 `gpt-5.6-terra`；官方 standard 费率为输入 $2.50/百万 token、缓存输入 $0.25/百万、输出 $15.00/百万。远程 D1 新增 immutable profile `codex-gpt-5p6-terra-20260728`，单次预留上限 200k input + 40k output，最坏非缓存成本 $1.10；未在 repository Secret 就绪前调用模型。
+- 验证：
+  - `pnpm exec vitest run test/d1-migration-wrangler-compat.test.ts` → exit 0，1 file / 1 test；所有migration在Wrangler splitter下均把ledger insert保持为独立最后语句。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/monitor-alert-ingress.test.ts test/workflow/task-api.test.ts` → exit 0，2 files / 11 tests；20路monitor投影、重放/冲突、inclusive window和Task intake穿透全绿。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 104 files / 418 tests、workerd、Secret scan 与docs links全绿；workerd终止实例的 `User called terminate` 是既有清理诊断，不是 skip/失败。
+  - `CLOUDFLARE_ACCOUNT_ID=... pnpm exec wrangler d1 migrations list delivery-loop-control --remote` → exit 0 / `No migrations to apply`；远程安全SQL查询为 `migration_count=61` 且 `projection_trigger_count=0`。首次未显式传 account env 的 list 因本机有两个Cloudflare账号而exit 1，未当成通过；加上已授权account后复验exit 0。
+  - live inventory 重验确认1 D1/4本项目R2/6本项目Queue/2 Workflow存在，`GET /healthz` → 200 `{"ok":true,"service":"delivery-loop-control-plane"}`。
+- 勾选：在Phase 1 hibernate DoD下新增并勾选“真实控制面 bootstrap 前置”子证据；真实hibernate/redeploy子项与父项仍未勾。
+- 决策沉淀：D1 migration 的可部署形状必须以 Wrangler 远程migrate路径为准，不能用本地 SQLite 或 D1 import API 的成功替代；多表业务投影改用同一 D1 batch 保持原子性。OpenAI model profile使用版本化价格快照与有界预留，不使用Task/Agent自报模型或费率。OpenAI官方资料直接影响本轮选择：最新旗舰为Sol，但官方按工作负载建议Terra用于性能/成本平衡，因此没有盲目把单次分析全部路由到最贵层。按用户要求不更新llmdoc。
+- 遗留：GitHub自动化页面的登录标签未在用户主界面显示，已给出直接登录链接。待用户回复“已登录”后创建 GitHub App，仅selected-install `evilstar9527/delivery-loop`，生成private key后只经stdin设置Worker Secret。另需owner在repository Actions Secrets中设置`OPENAI_API_KEY`；本机与当前repository Secret inventory都没有该值，不从Codex登录态/keychain提取。

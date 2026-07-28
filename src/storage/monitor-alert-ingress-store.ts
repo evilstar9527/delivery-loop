@@ -236,37 +236,151 @@ export class MonitorAlertIngressStore {
     const expiresAt = new Date(now.getTime() + this.profile.suppressionWindowMs).toISOString();
     let result: D1Result<unknown>;
     try {
-      result = await this.db.prepare(
-        `INSERT INTO monitor_alert_receipts (
-           receipt_id, lineage_id, adapter, tenant_key, external_event_id,
-           exact_snapshot_digest, snapshot_ref, profile_digest, fingerprint_digest,
-           proposed_candidate_id, repository, alert_rule_id, resource_digest,
-           environment, severity, suppression_window_ms, occurred_at, received_at,
-           proposed_expires_at, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO NOTHING`,
-      ).bind(
-        receiptId,
-        lineageId,
-        this.profile.adapter,
-        this.profile.tenantKey,
-        event.eventId,
-        exactSnapshotDigest,
-        snapshotRef,
-        profileDigest,
-        fingerprintDigest,
-        proposedCandidateId,
-        event.alert.repository,
-        event.alert.ruleId,
-        resourceDigest,
-        event.alert.environment,
-        event.alert.severity,
-        this.profile.suppressionWindowMs,
-        event.occurredAt,
-        nowIso,
-        expiresAt,
-        nowIso,
-      ).run();
+      const results = await this.db.batch([
+        this.db.prepare(
+          `INSERT INTO monitor_alert_receipts (
+             receipt_id, lineage_id, adapter, tenant_key, external_event_id,
+             exact_snapshot_digest, snapshot_ref, profile_digest, fingerprint_digest,
+             proposed_candidate_id, repository, alert_rule_id, resource_digest,
+             environment, severity, suppression_window_ms, occurred_at, received_at,
+             proposed_expires_at, created_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT DO NOTHING`,
+        ).bind(
+          receiptId,
+          lineageId,
+          this.profile.adapter,
+          this.profile.tenantKey,
+          event.eventId,
+          exactSnapshotDigest,
+          snapshotRef,
+          profileDigest,
+          fingerprintDigest,
+          proposedCandidateId,
+          event.alert.repository,
+          event.alert.ruleId,
+          resourceDigest,
+          event.alert.environment,
+          event.alert.severity,
+          this.profile.suppressionWindowMs,
+          event.occurredAt,
+          nowIso,
+          expiresAt,
+          nowIso,
+        ),
+        this.db.prepare(
+          `INSERT INTO monitor_alert_suppression_heads (
+             fingerprint_digest, candidate_id, adapter, tenant_key, profile_digest,
+             repository, alert_rule_id, resource_digest, environment, severity,
+             suppression_window_ms, occurrence_count, first_seen_at, last_seen_at,
+             suppression_expires_at, created_at, updated_at
+           )
+           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?
+           WHERE NOT EXISTS (
+             SELECT 1 FROM monitor_alert_lineage WHERE receipt_id = ?
+           )
+           ON CONFLICT(fingerprint_digest) DO UPDATE SET
+             candidate_id = CASE
+               WHEN excluded.first_seen_at >
+                    monitor_alert_suppression_heads.suppression_expires_at
+               THEN excluded.candidate_id
+               ELSE monitor_alert_suppression_heads.candidate_id END,
+             occurrence_count = CASE
+               WHEN excluded.first_seen_at >
+                    monitor_alert_suppression_heads.suppression_expires_at
+               THEN 1 ELSE monitor_alert_suppression_heads.occurrence_count + 1 END,
+             first_seen_at = CASE
+               WHEN excluded.first_seen_at >
+                    monitor_alert_suppression_heads.suppression_expires_at
+               THEN excluded.first_seen_at
+               ELSE monitor_alert_suppression_heads.first_seen_at END,
+             last_seen_at = CASE
+               WHEN excluded.first_seen_at >
+                    monitor_alert_suppression_heads.suppression_expires_at
+               THEN excluded.last_seen_at
+               WHEN excluded.last_seen_at > monitor_alert_suppression_heads.last_seen_at
+               THEN excluded.last_seen_at
+               ELSE monitor_alert_suppression_heads.last_seen_at END,
+             suppression_expires_at = CASE
+               WHEN excluded.first_seen_at >
+                    monitor_alert_suppression_heads.suppression_expires_at
+               THEN excluded.suppression_expires_at
+               ELSE monitor_alert_suppression_heads.suppression_expires_at END,
+             created_at = CASE
+               WHEN excluded.first_seen_at >
+                    monitor_alert_suppression_heads.suppression_expires_at
+               THEN excluded.created_at
+               ELSE monitor_alert_suppression_heads.created_at END,
+             updated_at = CASE
+               WHEN excluded.updated_at > monitor_alert_suppression_heads.updated_at
+               THEN excluded.updated_at ELSE monitor_alert_suppression_heads.updated_at END`,
+        ).bind(
+          fingerprintDigest,
+          proposedCandidateId,
+          this.profile.adapter,
+          this.profile.tenantKey,
+          profileDigest,
+          event.alert.repository,
+          event.alert.ruleId,
+          resourceDigest,
+          event.alert.environment,
+          event.alert.severity,
+          this.profile.suppressionWindowMs,
+          nowIso,
+          nowIso,
+          expiresAt,
+          nowIso,
+          nowIso,
+          receiptId,
+        ),
+        this.db.prepare(
+          `INSERT INTO monitor_alert_candidates (
+             candidate_id, fingerprint_digest, adapter, tenant_key, profile_digest,
+             repository, alert_rule_id, resource_digest, environment, severity, status,
+             suppression_window_ms, occurrence_count, first_seen_at, last_seen_at,
+             suppression_expires_at, created_at, updated_at
+           )
+           SELECT candidate_id, fingerprint_digest, adapter, tenant_key, profile_digest,
+                  repository, alert_rule_id, resource_digest, environment, severity,
+                  'triaging', suppression_window_ms, occurrence_count, first_seen_at,
+                  last_seen_at, suppression_expires_at, created_at, updated_at
+           FROM monitor_alert_suppression_heads
+           WHERE fingerprint_digest = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM monitor_alert_lineage WHERE receipt_id = ?
+             )
+           ON CONFLICT(candidate_id) DO UPDATE SET
+             occurrence_count = excluded.occurrence_count,
+             last_seen_at = excluded.last_seen_at,
+             updated_at = excluded.updated_at`,
+        ).bind(fingerprintDigest, receiptId),
+        this.db.prepare(
+          `INSERT INTO monitor_alert_lineage (
+             lineage_id, candidate_id, receipt_id, occurrence_ordinal, suppressed,
+             occurred_at, received_at, created_at
+           )
+           SELECT ?, heads.candidate_id, ?, heads.occurrence_count,
+                  CASE WHEN heads.occurrence_count = 1 THEN 0 ELSE 1 END,
+                  ?, ?, ?
+           FROM monitor_alert_suppression_heads AS heads
+           WHERE heads.fingerprint_digest = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM monitor_alert_lineage WHERE receipt_id = ?
+             )
+           ON CONFLICT DO NOTHING`,
+        ).bind(
+          lineageId,
+          receiptId,
+          event.occurredAt,
+          nowIso,
+          nowIso,
+          fingerprintDigest,
+          receiptId,
+        ),
+      ]);
+      const receiptResult = results[0];
+      if (receiptResult === undefined) throw new Error('missing receipt result');
+      result = receiptResult;
     } catch {
       throw new MonitorAlertIngressError('state_conflict');
     }

@@ -71,8 +71,9 @@
 - [ ] `DeliveryRunWorkflow` 的副作用全部在稳定命名 `step.do`；强制 hibernate/restart Worker 后复用成功步骤，dispatch 只发生一次，D1 Run 投影仍正确。
   - [x] 本地 workerd 穿透：从 `await-analysis-result` restart 后复用 register/dispatch 步骤，D1 中 analysis attempt 与 dispatch outbox 始终各 1 条，引用回传后激活预存 Plan 并推进 Run 投影。
   - [x] 真实外部证据验收契约：strict `WorkflowHibernateEvidenceManifestV1` 与 `pnpm run e2e:workflow-hibernate` 交叉核对同一 `run_id` 的 D1 Run/active Plan/唯一analysis Attempt与dispatch outbox、Cloudflare instance七条稳定step、wait开始时生效的before Worker deployment、wait期间唯一after deployment，以及stable title下唯一GitHub Action。fake API、schema example、本地workerd restart、Wrangler dry-run或默认exit 2不能替代真实Cloudflare/GitHub事实。
+  - [x] 真实控制面 bootstrap 前置（不等于 hibernate 通过）：目标账号已创建 1 个 D1、4 个私有 R2 bucket、6 个 Queue，并部署 `delivery-loop-control-plane`、`delivery-run` 与 `control-plane-backup`；`/healthz` 真实返回 200。Wrangler 远程migration首次在 0050 的多语句 trigger 处失败后，已改为同一 D1 atomic batch 并由 0061 清理历史 trigger；远程现为 61 条migration、该 trigger 0 条，完整资源/ID/命令证据见 `PROGRESS.md` Round 143。
   - [ ] 真实 Cloudflare 环境强制 hibernate/Worker restart，并以 GitHub 外部 run 事实证明实际 Action dispatch 仅一次。
-    - Blocker（Round 142复核）：已确认目标Cloudflare账号为`b8488957e88658039d2a38fb8f160514`，但该账号仍无本项目Worker/Workflow/D1/R2/Queue；GitHub侧无`Delivery Agent` run且当前用户OAuth不能审计App installation。完成该子项仍需要owner明确批准创建测试资源、部署控制面、设置最小Secret、创建并selected-install GitHub App及使用Actions/Cloudflare预算；账号选择和本机已有write-capable OAuth都不等同于这份授权。
+    - 当前遗留（Round 143）：owner已授权资源、部署、单仓库 App 与受控 Actions；待 GitHub Web 重新登录后创建/selected-install App，并由 owner 在 repository Actions Secrets 安全设置 `OPENAI_API_KEY`。两项完成前不创建真实 Task，避免产生无法正常回调的半链路事实。
 - [x] ExecutionPlan v1 校验覆盖 Item ID/依赖无环、至少一条 doneWhen、Evidence 要求、delivery policy command ref、effect 上限、plan version/digest/base SHA 不变量。
 - [x] 状态迁移使用 compare-and-set；两个并发 worker 争抢同 attempt 时只有一个拿到带 lease generation 的写租约。
 - [ ] GitHub App 只安装到试点仓库；dispatcher 成功触发固定 workflow ref，dispatch payload 经过测试证明无 Secret/任务正文。
