@@ -2815,3 +2815,12 @@
 - 勾选：Phase 0 `.github/workflows/ci.yml` 父项及其真实外部证据子项已勾选。
 - 决策沉淀：CI 的成功判据是 GitHub live run + immutable workflow/job/log 交叉事实；PR CI 成功不能单独代替 main push，静态 workflow 内容、fake API 或本地 `pnpm run verify` 也不能代替权限和日志证据。
 - 遗留：Phase 0 仅剩远端 repository bootstrap 父项（owner/visibility/default branch/protection 的仓库外 manifest 与 `pnpm run e2e:repository-bootstrap` live exit 0）；随后再按 Phase 顺序处理真实 Cloudflare/Agent/平台事实。
+
+## Round 134 — 2026-07-28
+- 目标：关闭 Phase 0 远端 repository bootstrap；记录用户确认的个人公开仓库、默认分支保护和最新 main CI 真实证据。本轮不把 manifest、用户正文、token 或 GitHub raw response 写入仓库。
+- 用户决策：仓库放在个人账号 `evilstar9527` 下，名称 `delivery-loop`，visibility 为 `public`；明确不创建或修改 `TokenRollAI` 仓库。默认分支为 `main`，保护策略要求 `verify` 严格状态检查、管理员也执行、线性历史、conversation resolution，并禁止 force-push 和删除分支。
+- 真实外部事实：GitHub repository ID `1314460432`，owner `evilstar9527`，visibility `PUBLIC`，默认分支 `main`，非 archived；默认分支 head 为 `5beaf31b25023d30ce35d89eba66c25077f7a3cc`，本地无 credential `origin` 与远端一致且 `main` protected。repository ruleset `19869381` 为 active，四条规则为 `deletion`、`non_fast_forward`、`required_linear_history`、`required_status_checks`，无 bypass actor；旧式 branch protection API 另核对 `verify` + strict、enforce admins、conversation resolution、禁止 force-push/删除。
+- PR #7（`fix: normalize effective repository rule enforcement`）的 pull_request CI [30327993216](https://github.com/evilstar9527/delivery-loop/actions/runs/30327993216) 成功；合并后的 main push CI [30328213150](https://github.com/evilstar9527/delivery-loop/actions/runs/30328213150) 的唯一 `verify` job 成功（约 4 分钟）。该修复记录了 GitHub effective rules API 省略 `enforcement` 时按 endpoint 语义规范化为 active，避免把真实有效规则误判为缺失。
+- 验证：仓库外 manifest 经 `DELIVERY_LOOP_REPOSITORY_BOOTSTRAP_E2E=1 REPOSITORY_BOOTSTRAP_EVIDENCE_FILE=/tmp/delivery-loop-repository-bootstrap-20260728.json REPOSITORY_BOOTSTRAP_GITHUB_TOKEN="$(gh auth token)" pnpm run e2e:repository-bootstrap`（运行时使用短期读取凭据）→ exit 0，摘要为 `repository=evilstar9527/delivery-loop`、`visibility=public`、`defaultBranch=main`、`githubRepositoryId=1314460432`、`activeRuleCount=4`、`localOriginMatched=true`。实际命令使用了当前受控 GitHub 登录态，token 未输出、未写入 manifest 或仓库；此处不保存 token 值。
+- DoD：Phase 0 repository bootstrap 父项及其真实外部证据子项已勾选。manifest 仍位于仓库外；`decisionId/confirmedAt/confirmedByPrincipalDigest` 只能作为安全索引，用户确认真实性仍由外部人工 authority 复核，不能由 verifier 自证。
+- 遗留/下一步：Phase 0 已完成；后续按 Phase 顺序进入真实 Cloudflare/Agent/平台事实。当前没有因此获得 Cloudflare 部署、GitHub App 安装、试点仓库写入或生产发布授权。
