@@ -9,13 +9,13 @@ manifest 固定包含四类 run：
 - `validate_valid_success`：`.github/workflows/validate-task.yml` 的合法 `TaskEnvelope v1` 手动校验成功；
 - `validate_invalid_failure`：含受控 canary 且缺少验收标准的输入在 `Validate without printing the task body` 步骤失败，前置步骤均成功，完整 job log 不含 canary。
 
-每个 case 绑定 repository、run ID/event/conclusion/head SHA/branch、workflow path/blob SHA/content digest、run title digest 和 job 结果。verifier 用 run 的不可变 `headSha` 读取 workflow blob，解析 YAML 后要求 trigger、唯一 job、setup/validation 命令与仓库内固定契约完全一致，且顶层 `permissions` 恰好只有 `contents: read`；因此 main/PR 的可移动分支、本地 workflow 文件或同名伪步骤不能覆盖实际运行版本。
+每个 case 绑定 repository、run ID/event/conclusion/head SHA/branch、workflow path/blob SHA/content digest、run title digest 和 job 结果。verifier 用 run 的不可变 `headSha` 读取 workflow blob，解析 YAML 后要求 trigger、唯一 job、setup/validation 命令与仓库内固定契约完全一致；第三方 setup Action 必须固定到受审的不可变 commit SHA，顶层 `permissions` 必须恰好只有 `contents: read`。因此 main/PR 的可移动分支、本地 workflow 文件、可变 Action tag 或同名伪步骤都不能覆盖实际运行版本。
 
 ## 真实运行与证据准备
 
 1. 在受控远端让 main push 和一个 PR 各完成一次 CI；记录两个 Actions run URL。
-2. 手动运行 `validate-task.yml` 一次合法 TaskEnvelope，确认命名校验步骤成功。
-3. 生成只用于本次验收的随机 canary，把它放在 invalid Task 的 `intent.description` 中，并令 `intent.acceptanceCriteria=[]`；手动运行 workflow，确认只有命名校验步骤因 schema 拒绝而失败。不要把 canary 写入仓库、manifest、命令参数或 PROGRESS。
+2. 生成只用于本次验收的随机 canary，把它放在合法 Task 的一个 source 标识字段中，通过标准输入手动运行 `validate-task.yml`；确认命名校验步骤成功且固定输出不含任何 Task 派生值。
+3. 把同一 canary 放在 invalid Task 的 `intent.description` 中，并令 `intent.acceptanceCriteria=[]`；再次通过标准输入运行 workflow，确认只有命名校验步骤因 schema 拒绝而失败。不要把 canary 写入仓库、manifest、命令参数或 PROGRESS。
 4. 按 [`ci-evidence-v1.example.json`](../schemas/ci-evidence-v1.example.json) 在仓库外创建 manifest。`displayTitleDigest`、`workflowContentDigest` 和 `logCanaryDigest` 都是 canonical SHA-256；manifest 只保存 digest，不保存 run title、Task JSON、日志、token 或 canary。
 5. 使用只限定该仓库且仅有 Actions/Contents read 的短期 token 执行：
 

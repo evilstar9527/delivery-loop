@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { TaskEnvelopeSchema, taskDedupeKey } from '../src/domain/task.js';
+import { TaskEnvelopeSchema } from '../src/domain/task.js';
 
 function taskJsonInput(): string {
   const direct = process.env.DELIVERY_TASK_JSON;
@@ -21,10 +21,8 @@ function taskJsonInput(): string {
 }
 
 try {
-  const task = TaskEnvelopeSchema.parse(JSON.parse(taskJsonInput()) as unknown);
-  process.stdout.write(
-    `${JSON.stringify({ valid: true, dedupeKey: taskDedupeKey(task) })}\n`,
-  );
+  TaskEnvelopeSchema.parse(JSON.parse(taskJsonInput()) as unknown);
+  process.stdout.write(`${JSON.stringify({ valid: true })}\n`);
 } catch {
   // Task input is untrusted and may contain secrets or sensitive user content.
   // Never let JSON/Zod errors (which include the rejected input) reach Action logs.

@@ -11,6 +11,9 @@ const TOKEN_PATTERN = /^[^\0\r\n]{1,2000}$/;
 const CANARY_PATTERN = /^[^\0\r\n]{8,20000}$/;
 const MAX_RESPONSE_BYTES = 1 * 1024 * 1024;
 const MAX_LOG_BYTES = 8 * 1024 * 1024;
+const CHECKOUT_ACTION = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262';
+const PNPM_SETUP_ACTION = 'pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1';
+const NODE_SETUP_ACTION = 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020';
 
 export type CiEvidenceVerificationErrorCode =
   | 'manifest_invalid'
@@ -152,10 +155,10 @@ function workflowContractMatches(
   const setupNode = record(steps[2]);
   const setupNodeWith = setupNode === null ? null : record(setupNode.with);
   if (
-    !exactUsesStep(steps[0], 'actions/checkout@v4') ||
-    !exactUsesStep(steps[1], 'pnpm/action-setup@v4') ||
+    !exactUsesStep(steps[0], CHECKOUT_ACTION) ||
+    !exactUsesStep(steps[1], PNPM_SETUP_ACTION) ||
     setupNode === null || !exactKeys(setupNode, ['uses', 'with']) ||
-    setupNode.uses !== 'actions/setup-node@v4' || setupNodeWith === null ||
+    setupNode.uses !== NODE_SETUP_ACTION || setupNodeWith === null ||
     !exactKeys(setupNodeWith, ['node-version', 'cache']) ||
     setupNodeWith['node-version'] !== 22 || setupNodeWith.cache !== 'pnpm' ||
     !exactRunStep(steps[3], 'pnpm install --frozen-lockfile')
