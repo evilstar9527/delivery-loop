@@ -17,7 +17,19 @@ describe('provider preflight failure classification', () => {
     ['error decoding response body', 'provider_responses_incompatible'],
     ['upstream returned 503 Service Unavailable', 'provider_upstream_unavailable'],
     ['request deadline exceeded', 'provider_timeout'],
+    [
+      'stream disconnected before completion: stream closed before response.completed',
+      'provider_stream_interrupted',
+    ],
+    ['SSE stream interrupted before response.completed', 'provider_stream_interrupted'],
+    ['Responses SSE stream ended before completion', 'provider_stream_interrupted'],
+    [
+      'connection closed before response.completed while reading the SSE stream',
+      'provider_stream_interrupted',
+    ],
     ['TLS certificate verification failed', 'provider_network_failed'],
+    ['connection closed before response.completed', 'provider_network_failed'],
+    ['connection reset by peer', 'provider_network_failed'],
     ['error: unexpected argument --example', 'provider_cli_contract_failed'],
     ['opaque provider failure', 'provider_process_failed'],
     [undefined, 'provider_process_failed'],
@@ -29,6 +41,11 @@ describe('provider preflight failure classification', () => {
     expect(classifyProviderProcessFailure(
       '404 Not Found: model gpt-example was not found',
     )).toBe('provider_model_unavailable');
+  });
+
+  it('keeps the failure code inventory closed at twelve values', () => {
+    expect(PROVIDER_PROCESS_FAILURE_CODES).toHaveLength(12);
+    expect(new Set(PROVIDER_PROCESS_FAILURE_CODES).size).toBe(12);
   });
 
   it('returns only an allowlisted code for untrusted credential-shaped text', () => {
