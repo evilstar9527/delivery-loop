@@ -42,8 +42,8 @@
 - [x] `pnpm run verify` 本地全绿：typecheck + lint + unit + docs link check。
 - [x] TaskEnvelope 单测覆盖安全默认值、至少一条验收标准、稳定 revision 去重键和非法输入拒绝。
 - [x] Run 状态机单测覆盖主路径、测试修复循环、review 修复循环、blocked/failed 恢复、非法越级和终态。
-- [ ] `.github/workflows/ci.yml` 在 GitHub main/pull_request 上实际运行成功，权限只有 `contents: read`。
-  - [x] 真实外部证据验收契约：strict `CiEvidenceManifestV1` 与 `pnpm run e2e:ci` 固定要求 main push 和 pull_request 两条成功 run，以不可变 head SHA 读取实际 workflow blob，解析 YAML 后要求顶层权限恰好只有 `contents: read`，并核对唯一 `verify` job 与有界完整日志。fake API、schema example、本地 verify、dry-run 或默认 exit 2 不能替代真实 Actions URL/API。
+- [x] `.github/workflows/ci.yml` 在 GitHub main/pull_request 上实际运行成功，权限只有 `contents: read`。
+  - [x] 真实外部证据验收契约：strict `CiEvidenceManifestV1` 与 `pnpm run e2e:ci` 固定要求 main push 和 pull_request 两条成功 run，以不可变 head SHA 读取实际 workflow blob，解析 YAML 后要求顶层权限恰好只有 `contents: read`，并核对唯一 `verify` job 与有界完整日志。真实 main push [30326502593](https://github.com/evilstar9527/delivery-loop/actions/runs/30326502593) 与 pull_request [30326290357](https://github.com/evilstar9527/delivery-loop/actions/runs/30326290357) 均成功；合并后 `pnpm run e2e:ci` exit 0，四类 case、四个 job、四份 workflow 和四份完整日志核对通过，`leakedCanaries=0`。fake API、schema example、本地 verify、dry-run 或默认 exit 2 不能替代真实 Actions URL/API。
 - [x] `validate-task.yml` 在 GitHub 手动输入一份 TaskEnvelope 后成功；输入无验收标准/非法 schema 时失败且日志不打印正文。
   - [x] 真实外部证据验收契约：同一 `CiEvidenceManifestV1` 固定要求合法 TaskEnvelope 成功、含仓库外 canary 且无验收标准的输入在命名 validation step 失败；前置步骤必须成功，canary 只以 digest 入 manifest，并用 GitHub job log 全文扫描证明正文零泄漏。真实 `workflow_dispatch` 已由 [30325724853](https://github.com/evilstar9527/delivery-loop/actions/runs/30325724853)（合法成功）和 [30325739134](https://github.com/evilstar9527/delivery-loop/actions/runs/30325739134)（非法失败）证明，并由 `pnpm run e2e:ci` 以不可变 workflow/job/log 事实交叉核对。
 - [x] 文档 review 明确回答：为什么需要控制面、状态真源在哪里、Secret 如何进入 Runner、恢复如何实现、哪些动作必须人审。
