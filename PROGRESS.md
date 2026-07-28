@@ -2850,3 +2850,17 @@
 - 勾选：在 `DOD.md` 通用“测试覆盖”下新增并勾选 Phase 0 子证据；通用父项保持未勾选，后续 Phase 仍需独立覆盖。
 - 决策沉淀：Phase 0 的 I/O 穿透以 workerd+D1/R2/Workflow/outbox 测试为准，不把 fake HTTP 或 schema example当作真实平台事实；Phase 1 真实 Cloudflare/GitHub App blocker不因本地测试绿灯而改变。
 - 遗留：下一轮按 LOOP 处理“安全回归（Phase 0）”子项，或在 owner 提供外部 authority 后恢复 Phase 1。
+
+## Round 138 — 2026-07-28
+- 目标：Phase 0 通用关门门槛中的第三个子项——安全回归。只关闭 Phase 0 的越权、重放identity、Secret泄漏和不可信输入测试证据；通用父项及 Phase 1+ 安全关口保持未完成。
+- 前置与权限：用户已选择一个 Cloudflare account。本轮只读查询该账号的Worker deployments、Workflows、D1与Queues，并执行本地Wrangler dry-run；没有创建D1/R2/Queue/Workflow/Worker、部署、触发Action、安装GitHub App或产生受控probe费用。账号选择不等同于外部资源写入/部署授权。
+- Phase 1只读事实：`delivery-loop-control-plane` Worker不存在（Cloudflare API code 10007）；账号没有已部署Workflow，D1 inventory为空；现有两个`friend-avatar-jobs*` Queue与本项目无关。`wrangler deploy --dry-run` exit 0，bundle为2737.84 KiB / gzip 459.07 KiB，并识别双Workflow、双Queue、D1和四个R2 binding；dry-run不能证明资源存在、hibernate/redeploy或GitHub dispatch。
+- 安全覆盖裁决：Phase 0的越权判据由Plan effect ceiling/self-promotion拒绝与CI最小权限漂移拒绝回答；重放只证明Task source revision稳定identity和manifest/run identity不可漂移，不扩大为Phase 1业务exactly-once；不可信Task/Plan输入必须在执行前拒绝且固定错误不回显；redactor/scanner、validate-task canary与CI日志canary共同回答Secret边界。
+- 验证：
+  - `pnpm exec vitest run test/task.test.ts test/run.test.ts test/plan.test.ts test/redaction.test.ts test/ci-evidence.test.ts test/validate-task-envelope.test.ts test/repository-bootstrap-evidence.test.ts` → exit 0，7 files / 42 tests。
+  - `pnpm run verify:secrets` → exit 0，483个生产文件通过静态credential/Secret扫描。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 103 files / 417 tests、workerd 57 files / 308 tests、Secret scan 483 files、docs links全绿；workerd仅输出既有测试主动`User called terminate`清理诊断。
+  - Round 132的仓库外CI manifest仍存在，但一次性invalid-task canary明文按安全约定未持久化且当前环境不存在；没有为重跑反推输入或擅自触发新Action。真实日志零泄漏继续引用已入账的immutable runs [30325724853](https://github.com/evilstar9527/delivery-loop/actions/runs/30325724853)、[30325739134](https://github.com/evilstar9527/delivery-loop/actions/runs/30325739134)与既有`e2e:ci` exit 0证据。
+- 勾选：在`DOD.md`通用“安全回归”下新增并勾选Phase 0子证据；通用父项保持未勾，不能替代后续Phase的真实webhook/OIDC/replay/Secret场景。
+- 决策沉淀：一次性canary不为方便重跑而持久化；若将来需要重新核对新的Action日志，必须在明确Actions授权下生成新canary和新invalid workflow run，不能用旧digest自证。
+- 遗留：Phase 1真实hibernate/redeploy仍需owner明确批准在已选Cloudflare账号创建测试资源、部署控制面及预算，并完成selected-repository GitHub App安装与Actions触发授权。未取得该authority前，下一轮按LOOP处理Phase 0通用“证据入账”子证据，不盲重试外部部署。
