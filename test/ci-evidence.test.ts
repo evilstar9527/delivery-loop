@@ -150,7 +150,7 @@ function responseJson(value: unknown, headers?: Record<string, string>): Respons
 }
 
 function fakeFetch(input: CiEvidenceManifestV1, drift: Drift = 'none'): typeof fetch {
-  return (async (request) => {
+  return (async (request, init) => {
     const url = new URL(String(request));
     if (url.pathname.includes('/contents/')) {
       const item = input.cases.find((candidate) => candidate.headSha === url.searchParams.get('ref'));
@@ -222,6 +222,9 @@ function fakeFetch(input: CiEvidenceManifestV1, drift: Drift = 'none'): typeof f
     }
     const logMatch = /\/actions\/jobs\/(\d+)\/logs$/.exec(url.pathname);
     if (logMatch !== null) {
+      if (new Headers(init?.headers).get('accept') !== 'application/vnd.github+json') {
+        return new Response('unsupported media type', { status: 415 });
+      }
       const item = input.cases.find(
         (candidate) => Number(candidate.runId) + 1_000_000 === Number(logMatch[1]),
       );
