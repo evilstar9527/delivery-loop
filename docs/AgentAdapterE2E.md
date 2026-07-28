@@ -20,4 +20,6 @@ CI中可用`CODEX_API_KEY`代替本机Codex登录态；可选`OPENAI_BASE_URL`�
 
 成功后只允许打印 `AgentAdapterEvidenceManifestV1` 的 digest/枚举/安全 SHA 投影。manifest 示例不是事实证据；未设置 opt-in 时 `pnpm run e2e:agent-adapter` 必须 exit 2 且不会启动 Codex。已认证模型调用仍需真实凭证，`help`、fake executor 或无效凭证不能勾选真实 DoD。
 
-仓库的`.github/workflows/codex-provider-preflight.yml`是为第三方route准备的手动、无inputs最小入口：只有`contents:read`，没有Environment/OIDC/写权限，固定使用repository Secret/Variable与`gpt-5.6-terra`运行上述验收，并把安全manifest重定向到`RUNNER_TEMP`后丢弃。它不读取真实Task或控制面，不创建Run/Attempt，也不能替代`Delivery Agent`或Workflow hibernate verifier。
+仓库的`.github/workflows/codex-provider-preflight.yml`是为第三方route准备的手动、无inputs最小入口：只有`contents:read`，没有Environment/OIDC/写权限，固定使用两个repository Secret与`gpt-5.6-terra`运行上述验收，并把安全manifest重定向到`RUNNER_TEMP`后丢弃。它不读取真实Task或控制面，不创建Run/Attempt，也不能替代`Delivery Agent`或Workflow hibernate verifier。
+
+provider进程失败时，CLI stderr仍只在受控进程内以8 KiB上限采集，并先按当前敏感环境值脱敏。preflight随后只能把它映射为认证、quota、限流、model、endpoint、Responses兼容、upstream、timeout、network、CLI contract或generic这11个固定枚举；未知文本一律收敛为generic。原始stderr、provider响应、URL和错误摘要/digest均不打印、不上传、不进入manifest或控制面。

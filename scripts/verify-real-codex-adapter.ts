@@ -13,6 +13,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { CodexSessionAdapter } from '../src/agent/codex-session-adapter.js';
+import { classifyProviderProcessFailure } from '../src/agent/provider-preflight-failure.js';
 import { AgentSessionResultV1Schema } from '../src/domain/agent-session-result.js';
 import {
   computeAgentCheckpointDigest,
@@ -39,11 +40,6 @@ class PrerequisiteFailure extends Error {
     super(code);
     this.name = 'PrerequisiteFailure';
   }
-}
-
-function providerAuthenticationInvalid(stderr: string | undefined): boolean {
-  return stderr !== undefined &&
-    /(?:invalid_api_key|auth error code:\s*invalid_api_key)/i.test(stderr);
 }
 
 async function command(commandName: string, args: string[], cwd?: string): Promise<string> {
@@ -155,10 +151,11 @@ async function run(): Promise<void> {
     const checkpointDigest = await computeAgentCheckpointDigest(exportedCheckpoint);
     const completion = await session.completion;
     if (completion.exitCode !== 0 || session.status !== 'completed') {
-      if (providerAuthenticationInvalid(completion.stderr)) {
-        throw new PrerequisiteFailure('codex_authentication_invalid');
+      const failureCode = classifyProviderProcessFailure(completion.stderr);
+      if (failureCode === 'provider_authentication_failed') {
+        throw new PrerequisiteFailure(failureCode);
       }
-      throw new VerificationFailure('provider_process_failed');
+      throw new VerificationFailure(failureCode);
     }
 
     const metadata = await stat(outputFilePath);
