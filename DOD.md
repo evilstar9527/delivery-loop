@@ -47,8 +47,9 @@
 - [x] `validate-task.yml` 在 GitHub 手动输入一份 TaskEnvelope 后成功；输入无验收标准/非法 schema 时失败且日志不打印正文。
   - [x] 真实外部证据验收契约：同一 `CiEvidenceManifestV1` 固定要求合法 TaskEnvelope 成功、含仓库外 canary 且无验收标准的输入在命名 validation step 失败；前置步骤必须成功，canary 只以 digest 入 manifest，并用 GitHub job log 全文扫描证明正文零泄漏。真实 `workflow_dispatch` 已由 [30325724853](https://github.com/evilstar9527/delivery-loop/actions/runs/30325724853)（合法成功）和 [30325739134](https://github.com/evilstar9527/delivery-loop/actions/runs/30325739134)（非法失败）证明，并由 `pnpm run e2e:ci` 以不可变 workflow/job/log 事实交叉核对。
 - [x] 文档 review 明确回答：为什么需要控制面、状态真源在哪里、Secret 如何进入 Runner、恢复如何实现、哪些动作必须人审。
-- [ ] 新仓库远端、owner、visibility 和默认分支保护由用户确认后创建；本地初始化不能冒充远端已完成。
+- [x] 新仓库远端、owner、visibility 和默认分支保护由用户确认后创建；本地初始化不能冒充远端已完成。
   - [x] 真实外部证据验收契约：strict `RepositoryBootstrapEvidenceManifestV1` 与 `pnpm run e2e:repository-bootstrap` 绑定仓库外用户决策 digest、本地无 credential `origin`、GitHub repository ID/owner/visibility/lifecycle、默认分支 protected/head及所有 active branch rules/parameters digest；只读 verifier 不创建或修改远端。decision manifest 自报、fake API、本地 `git init`、schema example或默认 exit 2不能替代真实用户确认和GitHub事实。
+  - [x] 用户已确认个人公开仓库 `evilstar9527/delivery-loop`（不使用 `TokenRollAI`）；真实 GitHub repository ID 为 `1314460432`，visibility 为 `public`，默认分支为 `main`，本地 `origin` 与远端匹配，`main` 受保护。有效 ruleset `19869381` 为 active，包含 deletion、non_fast_forward、required_linear_history、required_status_checks（唯一 required check 为 `verify`，strict policy）；旧式 branch protection 同时验证 enforce admins、conversation resolution、禁止 force-push/删除。`DELIVERY_LOOP_REPOSITORY_BOOTSTRAP_E2E=1 ... pnpm run e2e:repository-bootstrap` exit 0，摘要核对 repository/branch/rules digest 与 `localOriginMatched=true`。用户确认正文与 token 不入库，manifest 保留在仓库外；manifest 不能单独证明用户确认，仍需外部人工 authority 复核。
 
 ## 3. Phase 1 — 人工触发的最小纵向闭环
 
