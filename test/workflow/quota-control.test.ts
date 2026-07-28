@@ -158,6 +158,26 @@ beforeEach(async () => {
 });
 
 describe('durable multi-dimensional quota control', () => {
+  it('installs the immutable Sol/high relay profile selected by Wrangler', async () => {
+    const profile = await env.DB_CONTROL.prepare(
+      `SELECT provider, model, max_input_tokens, max_output_tokens,
+              input_microusd_per_million, cached_input_microusd_per_million,
+              output_microusd_per_million, enabled
+       FROM quota_model_profiles WHERE profile_id = ?`,
+    ).bind('codex-gpt-5p6-sol-high-20260729').first<Record<string, unknown>>();
+
+    expect(profile).toEqual({
+      provider: 'delivery_loop_relay',
+      model: 'gpt-5.6-sol',
+      max_input_tokens: 200_000,
+      max_output_tokens: 40_000,
+      input_microusd_per_million: 5_000_000,
+      cached_input_microusd_per_million: 500_000,
+      output_microusd_per_million: 30_000_000,
+      enabled: 1,
+    });
+  });
+
   it('installs every resource limit for tenant/repository/user/run', async () => {
     const rows = await env.DB_CONTROL.prepare(
       `SELECT scope_type, resource_type, limit_value, window_kind

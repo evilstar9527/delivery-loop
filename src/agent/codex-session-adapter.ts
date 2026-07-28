@@ -12,6 +12,7 @@ import {
   type CommandProcessHandle,
   type CommandProcessLauncher,
 } from './command-runtime.js';
+import { codexProviderProfileArguments } from './codex-provider-profile.js';
 import { normalizeProviderBaseUrl } from './provider-base-url.js';
 
 const MAX_CHECKPOINT_FILE_BYTES = 256 * 1_024;
@@ -121,9 +122,7 @@ function commonArguments(
     'shell_environment_policy.ignore_default_excludes=false',
     '-c',
     'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
-    ...(providerBaseUrl === undefined
-      ? []
-      : ['-c', `openai_base_url=${JSON.stringify(providerBaseUrl)}`]),
+    ...codexProviderProfileArguments(providerBaseUrl),
     ...(model === undefined ? [] : ['--model', model]),
     '--output-schema',
     outputSchemaPath,

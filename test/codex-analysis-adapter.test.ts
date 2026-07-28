@@ -187,7 +187,7 @@ describe('Codex analysis Agent adapter', () => {
     expect(plan.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
-  it('routes the built-in OpenAI provider through a validated relay base URL', async () => {
+  it('routes a validated relay through the trusted Responses/SSE provider profile', async () => {
     const paths = await tempInput();
     let observed: CommandExecutionRequest | undefined;
     const adapter = new CodexAnalysisAdapter({
@@ -218,7 +218,13 @@ describe('Codex analysis Agent adapter', () => {
 
     expect(observed?.args).toEqual(expect.arrayContaining([
       '-c',
-      'openai_base_url="https://relay.example.com/openai/v1"',
+      'model_provider="delivery_loop_relay"',
+      '-c',
+      'model_providers.delivery_loop_relay.wire_api="responses"',
+      '-c',
+      'model_providers.delivery_loop_relay.supports_websockets=false',
+      '-c',
+      'model_reasoning_effort="high"',
     ]));
     expect(observed?.args.join(' ')).not.toContain('OPENAI_API_KEY');
   });

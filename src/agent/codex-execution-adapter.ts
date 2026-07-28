@@ -7,6 +7,7 @@ import {
 } from './command-runtime.js';
 import type { CodexModelUsage } from '../domain/quota.js';
 import { CodexUsageAccumulator } from './codex-usage.js';
+import { codexProviderProfileArguments } from './codex-provider-profile.js';
 import { normalizeProviderBaseUrl } from './provider-base-url.js';
 
 const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
@@ -150,9 +151,7 @@ export class CodexExecutionAdapter implements ExecutionAgent {
           'shell_environment_policy.ignore_default_excludes=false',
           '-c',
           'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
-          ...(this.providerBaseUrl === undefined
-            ? []
-            : ['-c', `openai_base_url=${JSON.stringify(this.providerBaseUrl)}`]),
+          ...codexProviderProfileArguments(this.providerBaseUrl),
           '--output-last-message',
           outputFilePath,
           '--cd',
