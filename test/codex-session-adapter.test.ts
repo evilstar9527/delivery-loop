@@ -97,7 +97,12 @@ describe('Codex AgentAdapter session contract', () => {
       observed = request;
       return process.handle;
     };
-    const adapter = new CodexSessionAdapter({ outputSchemaPath: OUTPUT_SCHEMA_PATH, launch });
+    const adapter = new CodexSessionAdapter({
+      outputSchemaPath: OUTPUT_SCHEMA_PATH,
+      providerBaseUrl: 'https://relay.example.com/openai/v1/',
+      model: 'gpt-5.6-terra',
+      launch,
+    });
     const session = await adapter.start({
       attemptId: 'attempt-session-start',
       workspacePath: paths.workspace,
@@ -126,6 +131,10 @@ describe('Codex AgentAdapter session contract', () => {
       'shell_environment_policy.ignore_default_excludes=false',
       '-c',
       'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
+      '-c',
+      'openai_base_url="https://relay.example.com/openai/v1"',
+      '--model',
+      'gpt-5.6-terra',
       '--output-schema',
       OUTPUT_SCHEMA_PATH,
       '--output-last-message',
@@ -155,6 +164,27 @@ describe('Codex AgentAdapter session contract', () => {
     process.finish({ exitCode: 0 });
     expect(await session.completion).toEqual({ exitCode: 0 });
     expect(session.status).toBe('completed');
+  });
+
+  it.each([
+    'http://relay.example.com/v1',
+    'https://user:password@relay.example.com/v1',
+    'https://relay.example.com/v1?token=credential',
+    'https://relay.example.com/v1#fragment',
+    'https://localhost/v1',
+    'https://[::1]/v1',
+  ])('rejects unsafe relay base URL %s', (providerBaseUrl) => {
+    expect(() => new CodexSessionAdapter({
+      outputSchemaPath: OUTPUT_SCHEMA_PATH,
+      providerBaseUrl,
+    })).toThrow('Codex provider base URL is invalid');
+  });
+
+  it.each(['', ' model', 'model name', 'model?token=value'])('rejects invalid model %s', (model) => {
+    expect(() => new CodexSessionAdapter({
+      outputSchemaPath: OUTPUT_SCHEMA_PATH,
+      model,
+    })).toThrow('Codex model is invalid');
   });
 
   it('resumes through a digest-verified semantic checkpoint without invoking native session resume', async () => {

@@ -39,5 +39,9 @@ describe('real Codex adapter opt-in verifier', () => {
     };
     expect(packageJson.scripts['e2e:codex-adapter'])
       .toBe('tsx scripts/verify-real-codex-adapter.ts');
+    const verifier = readFileSync(resolve('scripts/verify-real-codex-adapter.ts'), 'utf8');
+    expect(verifier).toContain('process.env.CODEX_API_KEY');
+    expect(verifier).toContain('process.env.OPENAI_BASE_URL');
+    expect(verifier).toContain('process.env.DELIVERY_LOOP_CODEX_ADAPTER_MODEL');
   });
 });
