@@ -745,7 +745,11 @@ export async function runExecutionAttempt(
   let heartbeatTask: Promise<void> = Promise.resolve();
   let modelReservation: z.infer<typeof ModelReservationResponseSchema> | null = null;
   let measuredUsage: CodexModelUsage | null = null;
-  const executionAgent = options.agent ?? new CodexExecutionAdapter();
+  const executionAgent = options.agent ?? new CodexExecutionAdapter({
+    ...(environment.OPENAI_BASE_URL === undefined || environment.OPENAI_BASE_URL === ''
+      ? {}
+      : { providerBaseUrl: environment.OPENAI_BASE_URL }),
+  });
 
   try {
     if (

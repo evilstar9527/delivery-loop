@@ -2951,3 +2951,47 @@
 - 勾选：在Phase 1 hibernate DoD下新增并勾选“真实控制面 bootstrap 前置”子证据；真实hibernate/redeploy子项与父项仍未勾。
 - 决策沉淀：D1 migration 的可部署形状必须以 Wrangler 远程migrate路径为准，不能用本地 SQLite 或 D1 import API 的成功替代；多表业务投影改用同一 D1 batch 保持原子性。OpenAI model profile使用版本化价格快照与有界预留，不使用Task/Agent自报模型或费率。OpenAI官方资料直接影响本轮选择：最新旗舰为Sol，但官方按工作负载建议Terra用于性能/成本平衡，因此没有盲目把单次分析全部路由到最贵层。按用户要求不更新llmdoc。
 - 遗留：GitHub自动化页面的登录标签未在用户主界面显示，已给出直接登录链接。待用户回复“已登录”后创建 GitHub App，仅selected-install `evilstar9527/delivery-loop`，生成private key后只经stdin设置Worker Secret。另需owner在repository Actions Secrets中设置`OPENAI_API_KEY`；本机与当前repository Secret inventory都没有该值，不从Codex登录态/keychain提取。
+
+## Round 144 — 2026-07-28
+- 目标：继续 Phase 1 / `DeliveryRunWorkflow` 真实 Cloudflare hibernate/redeploy。本轮闭环单仓库 GitHub App、Worker private-key Secret与完整运行配置前置；最终关门仍保持 `DELIVERY_LOOP_WORKFLOW_HIBERNATE_E2E=1 ... pnpm run e2e:workflow-hibernate` exit 0，不以App创建或部署代替真实hibernate。
+- 前置与权限：owner已在GitHub Web重新登录，并延续此前“直接创建”、只安装到`evilstar9527/delivery-loop`、触发受控Actions的明确授权。未读取或索取GitHub密码、OpenAI key、App private key明文；GitHub页面、manifest conversion响应与外部载荷均按不可信输入处理。
+- 动作：
+  - 读取GitHub官方immutable文档commit `cd664a7b671173b1b4c35060017ad9d694f73297`的App Manifest flow，按契约把`state`放入manifest POST URL query，并改为permissions逐字段/键集合比较、events无序精确集合比较；一次性helper只监听`127.0.0.1:8765`，响应no-store并限制form action。
+  - 初次manifest名`delivery-loop-evilstar9527-20260728`被GitHub明确拒绝为超过34字符，App未创建；缩短为`delivery-loop-evilstar-0728`后重新开始同一manifest flow，未把失败伪装为成功。
+  - 创建private GitHub App `delivery-loop-evilstar-0728`：App ID `4415140`，slug=`delivery-loop-evilstar-0728`；GitHub安装页显示权限为code/metadata read与Actions read/write，事件由conversion response精确核对为唯一`workflow_run`。
+  - 安装页默认`All repositories`时未提交；显式切换为`Only select repositories`并只选择`evilstar9527/delivery-loop`后安装。installation ID `149587996`，settings URL为`https://github.com/settings/installations/149587996`，页面显示Selected 1 repository且唯一条目为`evilstar9527/delivery-loop`。
+  - manifest conversion得到的private key只保存在helper内存；以App JWT签发未传`repositories/repository_ids`的短期audit token，完整`/installation/repositories` inventory核对`repository_selection=selected`、total/count均为1且唯一full_name匹配后立即撤销audit token；private key只经stdin执行`wrangler secret put GITHUB_APP_PRIVATE_KEY`，成功后从helper内存清空并停止本地服务。
+  - `wrangler.jsonc`增加完整非Secret配置：App/installation ID、单仓库allowlist、OIDC audience、真实control-plane URL和immutable model profile ID；真实部署Worker version `026915b2-d688-4711-a10e-6aaa970117a9`。Workflow schedule仍是Round 143为本次live演练临时移除的状态，不冒充每日backup DoD完成。
+- 验证：
+  - `node --check /tmp/delivery-loop-github-app-bootstrap.mjs` → exit 0；本地status在清理前返回`phase=complete`、App/installation/repository/permission/event安全标量全部匹配，未返回pem、token或webhook secret。
+  - GitHub安装完成页与settings页事实：owner=`evilstar9527`、installation=`149587996`、Only select repositories、Selected 1 repository=`evilstar9527/delivery-loop`、权限code/metadata read + Actions write。额外尝试用普通`gh` OAuth token读取`/user/installations`和repository inventory均按GitHub契约403，未扩scope、未把这两条失败调用当证据；安装inventory证据来自前述App installation audit token与settings页。
+  - `CLOUDFLARE_ACCOUNT_ID=... pnpm exec wrangler secret list` → exit 0，只输出Secret名称；`GITHUB_APP_PRIVATE_KEY`、`OPERATIONS_TOKEN`、`TASK_INTAKE_TOKEN`均存在，无值输出。
+  - `pnpm exec vitest run test/external-fact-reconciliation-config.test.ts test/outbox-dead-letter-config.test.ts test/data-retention-config.test.ts` → exit 0，3 files / 3 tests。
+  - `CLOUDFLARE_ACCOUNT_ID=... pnpm exec wrangler deploy --dry-run --outdir /tmp/delivery-loop-worker-config-dry-run` → exit 0，完整D1/R2/Queue/Workflow/GitHub/OIDC/model bindings可解析；随后真实`wrangler deploy` → exit 0，Worker version `026915b2-d688-4711-a10e-6aaa970117a9`；`GET /healthz` → 200 `{"ok":true,"service":"delivery-loop-control-plane"}`。
+  - `pnpm run verify` → exit 0：typecheck、ESLint、Node 104 files / 418 tests、workerd 57 files / 308 tests、484文件Secret scan与docs links全绿；workerd清理时的`User called terminate`仍是既有主动终止诊断，不是测试失败或skip。
+- 勾选：在Phase 1 hibernate条目新增并勾选“真实GitHub App前置”；把原先混合的“单仓库installation + Action实际触发”拆成已完成installation子项和仍未完成的真实Action子项。父级GitHub dispatcher与hibernate条目保持未勾，避免用配置事实冒充Action/hibernate事实。
+- 遗留：repository Actions Secrets仍没有`OPENAI_API_KEY`。该Secret必须由owner在GitHub安全设置页录入，不从Codex登录态、keychain、shell history或聊天提取；存在后才创建真实Task并执行wait期间唯一redeploy与strict external verifier。
+
+## Round 145 — 2026-07-28
+- 目标：继续 Phase 1 / `DeliveryRunWorkflow` 真实 Cloudflare hibernate/redeploy；本轮只复核Round 144的唯一外部前置，不创建缺模型凭证的半链路Task。
+- 前置与权限：只读GitHub repository Secret名称inventory、Worker health和本地worktree；未读取Secret值，未触发Action、模型、Task、Workflow signal或新deployment。
+- 动作：
+  - 再次读取`evilstar9527/delivery-loop` Actions Secret inventory，结果仍为空；不能从Codex登录态、keychain、浏览器字段或聊天提取`OPENAI_API_KEY`，也不能用空值/假key触发真实计费链路。
+  - Round 144已把GitHub Actions Secret新建页打开，预填名称`OPENAI_API_KEY`并把焦点留在Secret值输入框；owner尚未提交前不重复打开页面、不创建Task、不做Worker after deployment。
+  - 该相同前置已在Round 143、144、145连续出现；按`LOOP.md` §2与仓库AGENTS纪律停止盲重试，记录最小人工输入后暂停本DoD，避免把等待用户输入伪装为工程进展。
+- 验证：
+  - `pwd && git status --short --branch` → exit 0，仍在`/Users/jishihe/delivery-loop`的`codex/phase1-hibernate-live`，仅DOD/PROGRESS/wrangler本轮相关改动。
+  - `gh secret list --repo evilstar9527/delivery-loop` → exit 0且输出为空，证明当前repository Actions Secret inventory没有可用条目；命令不返回Secret值。
+  - `GET https://delivery-loop-control-plane.eve55265.workers.dev/healthz` → 200 `{"ok":true,"service":"delivery-loop-control-plane"}`，只证明Worker存活，不替代GitHub/模型/Workflow E2E。
+- 勾选：无；真实hibernate、真实Action、dispatcher父项全部保持未勾。
+- 决策沉淀：无规范变更；按既有Secret最小权限与三轮blocker规则执行。
+- Blocker与最小人工输入：owner在`https://github.com/evilstar9527/delivery-loop/settings/secrets/actions/new`保存名为`OPENAI_API_KEY`的有效Secret（值只进入GitHub页面，不发到聊天），然后回复“已保存”。恢复后先只读确认Secret名称存在，再创建唯一真实Task并执行正式hibernate窗口。
+
+## Round 146 — 2026-07-28
+- 目标：继续Phase 1真实hibernate前置；owner明确没有官方OpenAI key而使用第三方中转，本轮只闭环Codex官方支持的key/base URL接线、安全边界与可重跑本地证据，不在`OPENAI_BASE_URL`外部配置就绪前创建真实Task。最终父项关门命令仍是`DELIVERY_LOOP_WORKFLOW_HIBERNATE_E2E=1 ... pnpm run e2e:workflow-hibernate` exit 0。
+- 外部配置事实：`gh secret list --repo evilstar9527/delivery-loop`只读输出名称`OPENAI_API_KEY`与更新时间`2026-07-28T12:47:04Z`，不返回值，Round 145 blocker因此解除。`gh variable list --repo evilstar9527/delivery-loop`当前为空；GitHub Actions Variable新建页已预填名称`OPENAI_BASE_URL`，Value与保存动作留给owner，未读取clipboard、浏览器存储或任何credential。
+- 规范裁决：按Codex官方manual，built-in OpenAI provider使用`openai_base_url`，CLI支持`-c key=value`单次覆盖，非交互API key使用进程变量`CODEX_API_KEY`。因此保留owner已录入的GitHub Secret名`OPENAI_API_KEY`，只在固定analysis/execution step映射为`CODEX_API_KEY`；普通repository Variable `OPENAI_BASE_URL`映射给Runner后，经trim/2048字符/公网HTTPS/无userinfo-query-fragment/非IP与非localhost/`.local`/`.internal`校验及尾斜杠规范化，再作为`-c openai_base_url="<validated-url>"`传入。两者都不增加dispatch input，不写仓库配置/argv key/控制面/Plan/artifact/日志。
+- 第三方边界：中转站必须兼容OpenAI Responses API并支持D1 immutable profile绑定的`gpt-5.6-terra`；HTTPS校验不代表数据受OpenAI官方政策保护，中转方仍可看到Task、代码、诊断上下文、prompt和模型输出，接入前需owner确认数据保留/访问政策。中转返回仍是不可信Agent输出，不能提升effect、命令或credential authority。`docs/Proto.md`、`docs/Security.md`、`docs/Reference.md`已同步；按owner要求不更新llmdoc。
+- 实现与测试：先为analysis/execution adapter和fixed workflow写失败测试，首次定向运行exit 1（3 files，15 failed / 12 passed）。随后两个adapter增加同一严格URL边界，Runner传递可选`OPENAI_BASE_URL`，workflow完成Secret/Variable映射；修复后定向`pnpm exec vitest run test/codex-analysis-adapter.test.ts test/codex-execution-adapter.test.ts test/delivery-agent-workflow.test.ts` → exit 0，3 files / 27 tests。`pnpm run typecheck`首次因`exactOptionalPropertyTypes`的两处field声明exit 2，改为显式`string | undefined`后exit 0；`pnpm run lint`与`git diff --check`均exit 0。
+- 全量验证：首次`pnpm run verify`的Node阶段为103 files / 430 passed、1个既有same-PR Git远端竞态test在默认5秒超时；独立复跑仍在5秒超时，但`--testTimeout=20000`时2/2通过且完整用时约8秒，证明不是语义失败。为该真实多repo/clone/push测试设置局部15秒上限后默认定向2/2通过。最终`pnpm run verify` → exit 0：typecheck、ESLint、Node 104 files / 431 tests、workerd 57 files / 308 tests、484文件Secret scan与docs links全绿；workerd主动terminate诊断仍不是skip。
+- 勾选：在Phase 1真实Action下新增并勾选“第三方中转本地配置契约”；真实Action、dispatcher、hibernate父项保持未勾。当前唯一人工前置是owner保存`OPENAI_BASE_URL`；保存后只读核对安全形状与Responses API/exact-model兼容性，再把本分支固定workflow合入默认分支后启动唯一真实Task与wait期间唯一redeploy。

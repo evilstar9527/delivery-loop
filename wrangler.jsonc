@@ -1,10 +1,19 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "delivery-loop-control-plane",
+  "account_id": "b8488957e88658039d2a38fb8f160514",
   "send_metrics": false,
   "main": "src/worker.ts",
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "GITHUB_APP_ID": "4415140",
+    "GITHUB_APP_INSTALLATION_ID": "149587996",
+    "GITHUB_ALLOWED_REPOSITORIES": "[\"evilstar9527/delivery-loop\"]",
+    "GITHUB_OIDC_AUDIENCE": "delivery-loop-control-plane",
+    "CONTROL_PLANE_URL": "https://delivery-loop-control-plane.eve55265.workers.dev",
+    "CODEX_MODEL_PROFILE_ID": "codex-gpt-5p6-terra-20260728"
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
@@ -27,7 +36,7 @@
     {
       "binding": "DB_CONTROL",
       "database_name": "delivery-loop-control",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "8cd2d08d-1db1-4cd8-8598-caaca308c7fd",
       "migrations_dir": "migrations"
     }
   ],
@@ -103,7 +112,6 @@
       "name": "control-plane-backup",
       "binding": "CONTROL_PLANE_BACKUP",
       "class_name": "ControlPlaneBackupWorkflow",
-      "schedules": ["0 2 * * *"],
       "limits": {
         "steps": 300
       }

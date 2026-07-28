@@ -21,6 +21,7 @@ describe('Codex execution adapter', () => {
     await writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' });
     let observed: CommandExecutionRequest | undefined;
     const adapter = new CodexExecutionAdapter({
+      providerBaseUrl: 'https://relay.example.com/openai/v1/',
       execute: async (request) => {
         observed = request;
         await writeFile(join(workspace, 'fixed.txt'), 'fixed\n');
@@ -57,6 +58,8 @@ describe('Codex execution adapter', () => {
       'shell_environment_policy.ignore_default_excludes=false',
       '-c',
       'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
+      '-c',
+      'openai_base_url="https://relay.example.com/openai/v1"',
       '--output-last-message',
       outputFilePath,
       '--cd',
@@ -69,6 +72,18 @@ describe('Codex execution adapter', () => {
     expect(observed?.stdin).toContain('untrusted reference material');
     expect(observed?.stdin).toContain('request_replan is forbidden');
     expect(await readFile(join(workspace, 'fixed.txt'), 'utf8')).toBe('fixed\n');
+  });
+
+  it.each([
+    'http://relay.example.com/v1',
+    'https://user:password@relay.example.com/v1',
+    'https://relay.example.com/v1?token=credential',
+    'https://relay.example.com/v1#fragment',
+    'https://localhost/v1',
+    'https://[::1]/v1',
+  ])('rejects unsafe relay base URL %s', (providerBaseUrl) => {
+    expect(() => new CodexExecutionAdapter({ providerBaseUrl }))
+      .toThrow('Codex provider base URL is invalid');
   });
 
   it('rejects context/output files inside the repository and non-zero Agent exit', async () => {
