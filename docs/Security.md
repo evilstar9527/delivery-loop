@@ -160,6 +160,7 @@
 21. GitHub repository Secrets `OPENAI_API_KEY`与`OPENAI_BASE_URL`只在固定workflow的Agent step或无Task的手动provider preflight分别映射为`CODEX_API_KEY`与`OPENAI_BASE_URL`；把base URL放入Secret是更严格的存储边界，不把它变成凭证通道，其中仍不得包含key、userinfo、query或fragment。两者都不进入dispatch input、控制面、checkpoint、artifact、PR或日志；preflight安全结果只留`RUNNER_TEMP`且不上传，Agent子shell继续由environment policy排除`*KEY*/*SECRET*/*TOKEN*/*PASSWORD*`。
 22. 第三方模型中转是独立数据处理信任边界：即使URL通过公网HTTPS和host校验，中转方仍可能看到Task、代码、日志摘要、prompt及模型输出。接入前必须由owner确认其Responses API兼容性、exact model支持、数据保留与访问政策；中转响应仍按不可信模型输出处理，不能提升Plan effect、命令或credential authority。
 23. provider preflight只允许把已按敏感环境值脱敏且最多8 KiB的CLI stderr映射为固定失败枚举；分类器不返回原文，未知或恶意文本只返回`provider_process_failed`。raw stderr、第三方响应、URL、credential及其摘要不得写入Action log、artifact、manifest、D1或PROGRESS；分类枚举仅用于决定是否需要owner输入或受控修复，不构成provider成功证据。
+24. provider network preflight只读取`OPENAI_BASE_URL`，不能读取API key、启动Codex、向provider发送HTTP或上传artifact。它与三个adapter共用同一URL parser；DNS结果还必须至少包含一个公网地址，私网、loopback、link-local、documentation、multicast和reserved地址不得进入socket。TCP直接连接受控DNS结果以避免二次解析/rebinding，TLS仍以原hostname做SNI及系统CA/hostname校验。Action日志只允许固定code和三个布尔值，不允许hostname、IP、URL、证书、底层错误或digest；该诊断workflow只有`contents:read`且没有input/Environment/OIDC/write。
 
 ## 5. Prompt Injection 防护
 

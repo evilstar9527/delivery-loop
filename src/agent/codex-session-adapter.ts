@@ -1,5 +1,4 @@
 import { readFile, stat } from 'node:fs/promises';
-import { isIP } from 'node:net';
 import { isAbsolute, relative, resolve } from 'node:path';
 import {
   AgentCheckpointV1Schema,
@@ -13,6 +12,7 @@ import {
   type CommandProcessHandle,
   type CommandProcessLauncher,
 } from './command-runtime.js';
+import { normalizeProviderBaseUrl } from './provider-base-url.js';
 
 const MAX_CHECKPOINT_FILE_BYTES = 256 * 1_024;
 const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
@@ -73,39 +73,6 @@ interface PreparedPaths {
   workspacePath: string;
   contextFilePath: string;
   outputFilePath: string;
-}
-
-function validatedProviderBaseUrl(raw: string | undefined): string | undefined {
-  if (raw === undefined) return undefined;
-  if (raw.length === 0 || raw.length > 2_048 || raw !== raw.trim()) {
-    throw new Error('Codex provider base URL is invalid');
-  }
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    throw new Error('Codex provider base URL is invalid');
-  }
-  const hostname = url.hostname.toLowerCase();
-  const ipCandidate = hostname.startsWith('[') && hostname.endsWith(']')
-    ? hostname.slice(1, -1)
-    : hostname;
-  if (
-    url.protocol !== 'https:' ||
-    url.username !== '' ||
-    url.password !== '' ||
-    url.search !== '' ||
-    url.hash !== '' ||
-    hostname === 'localhost' ||
-    hostname.endsWith('.localhost') ||
-    hostname.endsWith('.local') ||
-    hostname.endsWith('.internal') ||
-    isIP(ipCandidate) !== 0
-  ) {
-    throw new Error('Codex provider base URL is invalid');
-  }
-  const pathname = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
-  return `${url.origin}${pathname}`;
 }
 
 function validatedModel(raw: string | undefined): string | undefined {
@@ -253,7 +220,7 @@ export class CodexSessionAdapter implements AgentAdapter {
     this.command = options.command ?? 'codex';
     this.outputSchemaPath = resolve(options.outputSchemaPath);
     this.launch = options.launch ?? launchCommand;
-    this.providerBaseUrl = validatedProviderBaseUrl(options.providerBaseUrl);
+    this.providerBaseUrl = normalizeProviderBaseUrl(options.providerBaseUrl);
     this.model = validatedModel(options.model);
   }
 
