@@ -2787,3 +2787,20 @@
 - 动作：该诊断测试改为1s heartbeat cadence，仍保留“等待真实heartbeat后再执行logs→trace→Evidence→Plan”的验证，避免将hosted runner调度速度当成业务错误。
 - 验证：`pnpm exec vitest run test/analysis-runner-bootstrap.test.ts`→exit 0，1 file / 9 tests；最终`pnpm run verify`→exit 0，Node 102/412、workerd 57/308、Secret scan 483文件、docs links全绿。等待PR workflow重跑，未勾选CI DoD。
 - 遗留：提交该修复到PR #1，外部`pull_request` CI通过后才合并；如再发现时序缺口，按同一DoD继续修复而不下调验收标准。
+
+## Round 132 — 2026-07-28
+- 目标：Phase 0 / `validate-task.yml` 在 GitHub 手动输入合法与非法 TaskEnvelope；非法输入失败且日志不打印正文。本轮只关闭这一项，CI 父项和远端 bootstrap 其他项不在本轮勾选。
+- 前置与权限：使用公开仓库 `evilstar9527/delivery-loop`、受保护 `main`、GitHub hosted runner 和仓库外 `/tmp` strict `CiEvidenceManifestV1`；只触发本轮所需的两次 `workflow_dispatch`，不写入仓库、manifest 或 `PROGRESS.md` 任何 Task 正文、canary 或 token。
+- 红灯与动作：
+  - 首次修复把 `TaskEnvelopeSchema.parse`/`JSON.parse` 异常统一为固定 `TaskEnvelope validation failed`，本地新增合法、非法 JSON、非法 schema、缺失输入测试；PR [#2](https://github.com/evilstar9527/delivery-loop/pull/2) 的 `pull_request` CI [30324971250](https://github.com/evilstar9527/delivery-loop/actions/runs/30324971250) 成功并合并。
+  - 首次真实非法 workflow [30325217040](https://github.com/evilstar9527/delivery-loop/actions/runs/30325217040) 仍发现 runner 自动打印 step `env`，原始 `DELIVERY_TASK_JSON` 被泄漏；改为从 `GITHUB_EVENT_PATH.inputs.task_json` 读取，保留本地 direct env 入口，并让证据 verifier 要求校验 step 不声明任务正文环境变量。PR [#3](https://github.com/evilstar9527/delivery-loop/pull/3) 的 CI [30325519017](https://github.com/evilstar9527/delivery-loop/actions/runs/30325519017) 成功并合并。
+  - 合并后重新触发合法 [30325724853](https://github.com/evilstar9527/delivery-loop/actions/runs/30325724853) 与非法 [30325739134](https://github.com/evilstar9527/delivery-loop/actions/runs/30325739134) workflow。非法日志首次安全扫描得到 `markerPresent=false`、`validationFailurePresent=true`、`rawPayloadFieldPresent=false`；合法日志同样未出现任务字段。
+  - 首次真实 `pnpm run e2e:ci` 暴露 GitHub job-log API 对 verifier 的 `Accept: text/plain` 返回 HTTP 415；先让 fake API 对旧 media type 返回 415（聚焦测试红灯 3/6），再改用 `application/vnd.github+json`。PR [#4](https://github.com/evilstar9527/delivery-loop/pull/4) 的 `pull_request` CI [30326290357](https://github.com/evilstar9527/delivery-loop/actions/runs/30326290357) 成功并合并。
+- 验证：
+  - `pnpm exec vitest run test/validate-task-envelope.test.ts` → exit 0，5 tests；`pnpm exec vitest run test/ci-evidence.test.ts` → exit 0，6 tests；媒体类型修复前 fake API 真实返回 415，未把失败伪装为业务失败。
+  - `DELIVERY_LOOP_CI_E2E=1 CI_EVIDENCE_FILE=/tmp/delivery-loop-ci-evidence-20260728.json ... pnpm run e2e:ci`（合并前修复版）→ exit 0，`caseCount=4`、`verifiedRunCount=4`、`verifiedJobCount=4`、`verifiedWorkflowCount=4`、`scannedLogCount=4`、`leakedCanaries=0`；合并后以 `main` verifier 对同一四条 immutable run 重跑仍 exit 0、摘要完全一致。
+  - 合并后 `main` push CI [30326502593](https://github.com/evilstar9527/delivery-loop/actions/runs/30326502593) 成功；此前同一受审 workflow 的 main CI [30325709518](https://github.com/evilstar9527/delivery-loop/actions/runs/30325709518) 也成功。PR CI 的真实成功事实见 [30326290357](https://github.com/evilstar9527/delivery-loop/actions/runs/30326290357)。
+  - `pnpm run verify` → exit 0：Node 103 files / 417 tests、workerd 57 files / 308 tests、Secret scan 483 files、文档链接通过；`git diff --check` → exit 0。
+- 勾选：Phase 0 `validate-task.yml` 父项及其真实外部证据子项已勾选；manifest 只保存 workflow/title/canary digest，完整日志仅在内存中扫描，未入库。
+- 决策沉淀：GitHub Actions 的普通 `workflow_dispatch` input 不是 Secret，声明为 step env 会被 runner diagnostics 自动回显；安全边界必须是从受控 `GITHUB_EVENT_PATH` 读取并让校验异常固定化。GitHub job-log REST 请求使用 `application/vnd.github+json`，不能假设 `text/plain` 可直接协商。
+- 遗留：`.github/workflows/ci.yml` 的 Phase 0 父项尚未在 DOD 中勾选；下一轮可复用同一 `CiEvidenceManifestV1` 真实证据关闭它，随后继续采集仓库外 `RepositoryBootstrapEvidenceManifestV1` 并运行真实 `pnpm run e2e:repository-bootstrap`。
