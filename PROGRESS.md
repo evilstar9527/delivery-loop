@@ -2833,3 +2833,12 @@
 - 验证：`pnpm run e2e:workflow-hibernate`（未设置 opt-in）→ exit 2，固定输出 `workflow-hibernate-e2e: opt-in missing`；`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/delivery-run-workflow.test.ts test/workflow/workflow-outbox.test.ts` → exit 0，2 files / 7 tests。既有 local workerd restart contract保持通过，但不构成真实 Cloudflare 证据。
 - 勾选：无。Phase 1 hibernate/redeploy父项及其真实 Cloudflare 子项保持未勾选；当前不存在可安全填写的外部 manifest 或 Action URL。
 - 决策/阻塞：继续推进该项至少需要 owner 明确选择 Cloudflare account、批准创建 D1/R2/Queues/Workflow/Worker 的测试资源及预算，并提供已部署 HTTPS control-plane/query/operations 访问；同时需要 GitHub App owner、最小权限/selected 单仓库安装和 Actions 预算。未获得这些外部 authority 前不执行 deploy、trigger、App installation 或计费 probe；本轮仅记录一次 blocker，不把它标为永久 blocked。
+
+## Round 136 — 2026-07-28
+- 目标：Phase 0 通用关门门槛中的第一个子项——契约一致。只核对 Phase 0 已实现的 TaskEnvelope、Run、ExecutionPlan、Workflow `step.do`、CI/validate-task 与规范/源码/测试的对应关系；不把 Phase 1 真实外部缺口误标为完成。
+- 验收命令与成功判据：`pnpm run verify` 必须完整通过；并核对 `docs/Proto.md`、`docs/Architecture.md`、`docs/Security.md` 对 Phase 0 的 schema/state/effect/permission 约束与源码、migration、测试锚点均存在。后续 Phase 的新 API/event/state/plan/evidence 仍需独立证据，不能复用本轮子项。
+- 动作：复读 Proto 的 TaskEnvelope/Workflow/ExecutionPlan/CI 边界、Architecture 的控制面与 Run/Attempt/Workflow 真源、Security 的最小权限与 Secret 边界；以 `rg` 交叉核对 `src/domain`、`src/workflows`、`.github/workflows` 与对应规范锚点。未发现 Phase 0 规范与实现的未记录漂移；未改变运行时契约或 schema version。
+- 验证：`pnpm run verify` → exit 0：typecheck、ESLint、Node 103 files / 417 tests、workerd 57 files / 308 tests、生产 Secret scan 483 files、文档链接全部通过；workerd 仅输出已有的终止清理诊断，不是失败 suite。`git diff --check` → exit 0。
+- 勾选：在 `DOD.md` 通用“契约一致”下新增并勾选 Phase 0 子证据；通用父项保持未勾选，不能代表 Phase 1 及后续契约已完成。
+- 决策沉淀：Phase 0 允许用同一规范锚点 + 编译/测试/链接回归证明契约未漂移；Phase 1 的真实 Cloudflare/GitHub App 事实继续按各自严格 verifier 验收。
+- 遗留：下一轮按 LOOP 处理通用门槛的下一个“测试覆盖（Phase 0）”子项，或在 owner 提供 Cloudflare/GitHub App 外部 authority 后恢复 Phase 1 真实演练。

@@ -25,6 +25,7 @@
 每个 Phase 关门前必须满足：
 
 - [ ] **契约一致**：新增 API/event/state/plan/evidence 与 `docs/Proto.md` 一致，破坏性变化提升 schema version。
+  - [x] Phase 0 证据：TaskEnvelope v1、Run 状态机、ExecutionPlan v1、DeliveryRunWorkflow 稳定 `step.do`、CI/validate-task 权限契约均有对应 `docs/{Proto,Architecture,Security}.md` 规范与源码/测试锚点；`pnpm run verify`（typecheck、lint、103 Node files/417 tests、57 workerd files/308 tests、Secret scan、docs links）exit 0。Phase 0 的真实 GitHub/仓库 bootstrap 外部证据已分别在本文件与 `PROGRESS.md` 入账；Phase 1 及后续新增契约仍需各自关门，不能由本子项提前替代。
 - [ ] **测试覆盖**：状态机、权限、幂等、签名、redaction 等纯逻辑必须有正反用例；I/O 至少一条穿透集成测试。
 - [ ] **安全回归**：跑本 Phase 的越权、重放、Secret 泄漏和不可信输入测试。
 - [ ] **证据入账**：命令、退出码、外部 run/PR/deployment URL 和摘要写入 `PROGRESS.md`。
