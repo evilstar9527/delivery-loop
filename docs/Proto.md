@@ -1342,7 +1342,7 @@ Case 8 `answers.checks.productionApprovals` 只投影 release binding 的 approv
 
 `CiEvidenceManifestV1` 是仓库外 strict 安全索引，固定且仅允许 `ci_main_success`、`ci_pull_request_success`、`validate_valid_success`、`validate_invalid_failure` 四类唯一 case。每条绑定 repository、run ID/event/completed conclusion、head SHA/branch、workflow path/blob SHA/content digest、display title digest、唯一 job 和可选 canary digest；原始 title、TaskEnvelope、workflow/log/API response、token 和 canary 明文都没有 schema 字段。invalid case 必须携 canary digest，其余 case 必须为 null。
 
-`pnpm run e2e:ci` 先按 run 的 exact head SHA 用 GitHub Contents API 读取 workflow blob，重算 content digest并解析 YAML，要求 trigger、唯一 job、setup/validation 命令与固定 workflow 契约完全一致，且顶层 `permissions` 恰好 `{contents: read}`；再复用生产 `GitHubActionsApiClient` 核对 run event/repository/path/head/status/conclusion/title digest。每条 run 必须只有一个与 case 匹配的 job；validate 两条还要求唯一命名 validation step，invalid case 的所有前置 steps 必须成功且 validation step 自身失败。四份 job log 均有界读取并用显式 opt-in canary 扫描。
+`pnpm run e2e:ci` 先按 run 的 exact head SHA 用 GitHub Contents API 读取 workflow blob，重算 content digest并解析 YAML，要求 trigger、唯一 job、setup/validation 命令与固定 workflow 契约完全一致；所有第三方 setup Action 必须固定到受审的不可变 commit SHA，顶层 `permissions` 必须恰好为 `{contents: read}`。随后复用生产 `GitHubActionsApiClient` 核对 run event/repository/path/head/status/conclusion/title digest。每条 run 必须只有一个与 case 匹配的 job；validate 两条还要求唯一命名 validation step，invalid case 的所有前置 steps 必须成功且 validation step 自身失败。合法校验只允许输出固定 `{valid:true}`，不得输出 Task 派生的去重键或标识；四份 job log 均有界读取并用显式 opt-in canary 扫描。
 
 工具直接沿用 Watt `476e3cd` 的仓库外 64 KiB manifest、显式 opt-in、固定 0/1/2、安全错误、有界 HTTPS 和分页 fail-closed；JSON 1 MiB、单 job log 8 MiB。完整真实步骤见[GitHub CI 外部证据验收](CIE2E.md)。fake API、schema example、本地 `verify`、dry-run 或默认 exit 2 都不能关闭 Phase 0 的真实 GitHub DoD。
 

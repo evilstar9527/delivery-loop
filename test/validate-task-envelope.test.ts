@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 const TSX = resolve('node_modules/.bin/tsx');
 const SCRIPT = resolve('scripts/validate-task-envelope.ts');
 const CANARY = 'CANARY_INVALID_TASK_BODY_7f93b2';
+const VALID_TASK_CANARY = 'CANARY_VALID_TASK_SOURCE_2e451a';
 
 const validTask = {
   schemaVersion: '1',
@@ -14,7 +15,7 @@ const validTask = {
   occurredAt: '2026-07-27T09:30:00.000+08:00',
   source: {
     system: 'manual',
-    tenantKey: 'tenant-1',
+    tenantKey: VALID_TASK_CANARY,
     taskKey: 'task-1',
     revision: 'revision-1',
   },
@@ -50,14 +51,12 @@ function run(taskJson: string | undefined, eventPath?: string) {
 }
 
 describe('validate-task-envelope log boundary', () => {
-  it('accepts a valid envelope and only prints its stable dedupe key', () => {
+  it('accepts a valid envelope and prints no Task-derived value', () => {
     const result = run(JSON.stringify(validTask));
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
-    expect(JSON.parse(result.stdout)).toEqual({
-      valid: true,
-      dedupeKey: 'manual:tenant-1:task-1:revision-1',
-    });
+    expect(JSON.parse(result.stdout)).toEqual({ valid: true });
+    expect(result.stdout).not.toContain(VALID_TASK_CANARY);
   });
 
   it('reads workflow_dispatch input from the runner event file', () => {
@@ -66,10 +65,8 @@ describe('validate-task-envelope log boundary', () => {
     writeFileSync(eventPath, JSON.stringify({ inputs: { task_json: JSON.stringify(validTask) } }));
     const result = run(undefined, eventPath);
     expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toEqual({
-      valid: true,
-      dedupeKey: 'manual:tenant-1:task-1:revision-1',
-    });
+    expect(JSON.parse(result.stdout)).toEqual({ valid: true });
+    expect(result.stdout).not.toContain(VALID_TASK_CANARY);
   });
 
   it.each([

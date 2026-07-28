@@ -13,6 +13,9 @@ const REPOSITORY = 'example/delivery-loop';
 const GITHUB_TOKEN = 'CANARY_CI_GITHUB_TOKEN';
 const INVALID_TASK_CANARY = 'CANARY_INVALID_TASK_BODY_7f93b2';
 const API_ORIGIN = 'https://api.github.test';
+const CHECKOUT_ACTION = 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262';
+const PNPM_SETUP_ACTION = 'pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1';
+const NODE_SETUP_ACTION = 'actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020';
 const CI_WORKFLOW = `name: CI
 
 on:
@@ -28,9 +31,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: ${CHECKOUT_ACTION}
+      - uses: ${PNPM_SETUP_ACTION}
+      - uses: ${NODE_SETUP_ACTION}
         with:
           node-version: 22
           cache: pnpm
@@ -38,7 +41,7 @@ jobs:
       - run: pnpm run verify
 `;
 const CI_WORKFLOW_WRITE = CI_WORKFLOW.replace('contents: read', 'contents: write');
-const CI_WORKFLOW_ACTION_DRIFT = CI_WORKFLOW.replace('actions/checkout@v4', 'actions/checkout@v3');
+const CI_WORKFLOW_ACTION_DRIFT = CI_WORKFLOW.replace(CHECKOUT_ACTION, 'actions/checkout@v4');
 const VALIDATE_WORKFLOW = `name: Validate task contract
 
 on:
@@ -57,9 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: ${CHECKOUT_ACTION}
+      - uses: ${PNPM_SETUP_ACTION}
+      - uses: ${NODE_SETUP_ACTION}
         with:
           node-version: 22
           cache: pnpm
