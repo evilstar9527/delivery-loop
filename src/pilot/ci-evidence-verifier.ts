@@ -190,7 +190,9 @@ async function fetchLogs(
   let response: Response;
   try {
     response = await fetcher(url, {
-      method: 'GET', headers: { accept: 'text/plain', authorization: `Bearer ${token}` }, redirect: 'manual',
+      method: 'GET',
+      headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${token}` },
+      redirect: 'manual',
     });
   } catch { throw new CiEvidenceVerificationError('github_api_unavailable'); }
   if ([301, 302, 303, 307, 308].includes(response.status)) {
