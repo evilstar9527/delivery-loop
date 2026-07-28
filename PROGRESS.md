@@ -2882,3 +2882,18 @@
 - 勾选：在`DOD.md`通用“证据入账”下新增并勾选Phase 0子证据；通用父项保持未勾，后续Phase必须各自记录真实run/PR/deployment/tenant/Cloudflare事实。
 - 决策沉淀：repository bootstrap manifest是当前事实索引，默认分支前进后旧head必须使live verifier失败并重新采集；不能把曾经exit 0的manifest永久当作当前仓库证据。失败命令、预期负向Action与N/A deployment都明确入账，避免只保留成功样本。
 - 遗留：下一轮按LOOP处理Phase 0通用“全量回归”子证据；Phase 1真实hibernate仍等待Cloudflare资源/部署预算和GitHub App/Actions明确授权。
+
+## Round 140 — 2026-07-28
+- 目标：Phase 0 通用关门门槛中的第五个子项——全量回归。重跑当前代码/文档的Phase 0本地验收与完整`pnpm run verify`，只读复核可重跑外部事实，并明确记录无法安全重跑的CI canary前置；只关闭Phase 0子证据。
+- 前置与权限：本地Node/workerd、仓库外repository bootstrap manifest及GitHub公开仓库只读GET；未触发workflow、生成新canary、修改GitHub设置或部署。完整`e2e:ci`所需invalid-task canary明文按安全契约未持久化，本轮不通过历史digest反推，也不擅自触发新workflow。
+- 验证：
+  - `pnpm exec vitest run test/task.test.ts test/run.test.ts test/plan.test.ts test/redaction.test.ts test/ci-evidence.test.ts test/validate-task-envelope.test.ts test/repository-bootstrap-evidence.test.ts` → exit 0，7 files / 42 tests。
+  - `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-api.test.ts test/workflow/delivery-run-workflow.test.ts test/workflow/workflow-outbox.test.ts test/workflow/lease-cas.test.ts` → exit 0，4 files / 18 tests；D1/Workflow/outbox/lease I/O均真实穿透workerd。
+  - 文档边界检索重新定位Architecture的持久控制面/D1真源与双层恢复、Proto的Secret/OIDC/checkpoint边界、Security §7人审闸门；未发现Phase 0文档验收答案缺失。
+  - GitHub live只读复核：main push [30326502593](https://github.com/evilstar9527/delivery-loop/actions/runs/30326502593)、pull_request [30326290357](https://github.com/evilstar9527/delivery-loop/actions/runs/30326290357)、合法dispatch [30325724853](https://github.com/evilstar9527/delivery-loop/actions/runs/30325724853)仍为completed/success；非法dispatch [30325739134](https://github.com/evilstar9527/delivery-loop/actions/runs/30325739134)仍为completed/failure，符合strict负向判据。
+  - 仓库外bootstrap manifest刷新`recordedAt + branch.headSha`到本轮`origin/main`后，live `pnpm run e2e:repository-bootstrap` → exit 0：public/main/repository ID `1314460432`、4条active rule、`localOriginMatched=true`；decision/rules digest未改。
+  - 最终`pnpm run verify` → exit 0：typecheck、ESLint、Node 103 files / 417 tests、workerd 57 files / 308 tests、483个生产文件Secret scan与docs links全部通过。Vitest未报告skip；workerd既有`User called terminate`是测试清理诊断，不是失败或skip。
+- 未重跑项：仓库外CI manifest仍存在，但`CI_INVALID_TASK_CANARY`当前明确缺失；因此完整`pnpm run e2e:ci`本轮未执行，也没有把默认/缺配置exit 2写成通过。Phase 0真实CI required DoD仍由Round 132/133保存的同一immutable run/workflow/job/log verifier exit 0证明，本轮live run状态复核只做补强、不能单独替代日志canary证据。
+- 勾选：在`DOD.md`通用“全量回归”下新增并勾选Phase 0子证据；通用父项与后续Phase保持未勾。
+- 决策沉淀：全量回归必须区分“当前可重跑的本地/只读事实”与“需要一次性外部输入的新场景”。安全删除canary会牺牲无副作用重跑能力，但不能因此持久化明文或伪造exit 0；需要新CI日志证据时必须另获Actions授权并生成新canary/run。
+- 遗留：下一轮按LOOP完成Phase 0通用“五维质量关口”；通过后Phase 0通用六项子证据才齐，父项仍保留为跨Phase总门槛。Phase 1真实hibernate继续等待外部资源与预算授权。

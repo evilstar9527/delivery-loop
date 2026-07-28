@@ -33,6 +33,7 @@
 - [ ] **证据入账**：命令、退出码、外部 run/PR/deployment URL 和摘要写入 `PROGRESS.md`。
   - [x] Phase 0 证据：Round 1、132～134及136～139已逐项保存本地/全量命令与exit code、四类immutable GitHub Actions run、修复/验收PR、repository bootstrap live verifier和无Secret安全摘要；只读复核确认main/PR/合法dispatch成功、非法Task dispatch按预期失败，PR #2/#3/#4/#7/#12均merged，当前repository/branch/rules/origin重验exit 0。Phase 0范围不包含deployment且未发生deployment，明确记为N/A，不用dry-run伪造URL。账本anchor审计与`pnpm run verify`均exit 0；后续Phase仍必须各自写入真实Action/PR/deployment/tenant/Cloudflare证据，不能复用本子项。
 - [ ] **全量回归**：`pnpm run verify` 全绿；任何 skip 明确记录且不能替代 required DoD。
+  - [x] Phase 0 证据：重新运行Phase 0 Node定向回归（7 files/42 tests）、D1/workerd I/O回归（4 files/18 tests）、文档边界检索、四条immutable Actions live事实和当前repository bootstrap verifier，全部符合既有DoD；最终`pnpm run verify` exit 0（103 Node files/417 tests、57 workerd files/308 tests、483文件Secret scan、docs links），没有测试skip，workerd主动terminate清理诊断不是skip。完整`e2e:ci`因一次性invalid-task canary按安全契约未持久化而明确未重跑，不能用缺前置的exit 2替代；其required外部结果继续由既有manifest exit 0与immutable run/job/log事实证明。后续Phase须各自重新跑对应全量/opt-in命令。
 - [ ] **质量关口**：从正确性、安全性、恢复性、三方契约和证据真实性五个维度 review，无 BLOCKER/MAJOR 未处理。
 
 ## 2. Phase 0 — DOD 初始化与可执行契约
