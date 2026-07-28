@@ -171,18 +171,15 @@ function workflowContractMatches(
   const inputs = dispatch === null ? null : record(dispatch.inputs);
   const taskInput = inputs === null ? null : record(inputs.task_json);
   const validation = record(steps[4]);
-  const validationEnv = validation === null ? null : record(validation.env);
   return workflow.name === 'Validate task contract' && exactKeys(triggers, ['workflow_dispatch']) &&
     dispatch !== null && exactKeys(dispatch, ['inputs']) && inputs !== null &&
     exactKeys(inputs, ['task_json']) && taskInput !== null &&
     exactKeys(taskInput, ['description', 'required', 'type']) &&
     taskInput.description === 'TaskEnvelope v1 JSON (contract validation only)' &&
     taskInput.required === true && taskInput.type === 'string' && steps.length === 5 &&
-    validation !== null && exactKeys(validation, ['name', 'run', 'env']) &&
+    validation !== null && exactKeys(validation, ['name', 'run']) &&
     validation.name === 'Validate without printing the task body' &&
-    validation.run === 'pnpm validate:task' && validationEnv !== null &&
-    exactKeys(validationEnv, ['DELIVERY_TASK_JSON']) &&
-    validationEnv.DELIVERY_TASK_JSON === '${{ inputs.task_json }}';
+    validation.run === 'pnpm validate:task';
 }
 
 async function fetchLogs(

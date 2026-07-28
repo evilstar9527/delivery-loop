@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const TSX = resolve('node_modules/.bin/tsx');
@@ -27,12 +29,17 @@ const validTask = {
   policy: {},
 };
 
-function run(taskJson: string | undefined) {
+function run(taskJson: string | undefined, eventPath?: string) {
   const env = { ...process.env };
   if (taskJson === undefined) {
     delete env.DELIVERY_TASK_JSON;
   } else {
     env.DELIVERY_TASK_JSON = taskJson;
+  }
+  if (eventPath === undefined) {
+    delete env.GITHUB_EVENT_PATH;
+  } else {
+    env.GITHUB_EVENT_PATH = eventPath;
   }
   return spawnSync(TSX, [SCRIPT], {
     cwd: resolve('.'),
@@ -47,6 +54,18 @@ describe('validate-task-envelope log boundary', () => {
     const result = run(JSON.stringify(validTask));
     expect(result.status).toBe(0);
     expect(result.stderr).toBe('');
+    expect(JSON.parse(result.stdout)).toEqual({
+      valid: true,
+      dedupeKey: 'manual:tenant-1:task-1:revision-1',
+    });
+  });
+
+  it('reads workflow_dispatch input from the runner event file', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'delivery-loop-validate-'));
+    const eventPath = join(directory, 'event.json');
+    writeFileSync(eventPath, JSON.stringify({ inputs: { task_json: JSON.stringify(validTask) } }));
+    const result = run(undefined, eventPath);
+    expect(result.status).toBe(0);
     expect(JSON.parse(result.stdout)).toEqual({
       valid: true,
       dedupeKey: 'manual:tenant-1:task-1:revision-1',

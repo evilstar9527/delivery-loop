@@ -66,8 +66,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Validate without printing the task body
         run: pnpm validate:task
-        env:
-          DELIVERY_TASK_JSON: \${{ inputs.task_json }}
 `;
 
 type CiCase = CiEvidenceManifestV1['cases'][number];

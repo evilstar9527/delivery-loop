@@ -1,12 +1,27 @@
+import { readFileSync } from 'node:fs';
 import { TaskEnvelopeSchema, taskDedupeKey } from '../src/domain/task.js';
 
-try {
-  const raw = process.env.DELIVERY_TASK_JSON;
-  if (!raw) {
-    throw new Error('missing task input');
-  }
+function taskJsonInput(): string {
+  const direct = process.env.DELIVERY_TASK_JSON;
+  if (direct !== undefined) return direct;
 
-  const task = TaskEnvelopeSchema.parse(JSON.parse(raw) as unknown);
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (eventPath === undefined) throw new Error('task input is unavailable');
+  const event = JSON.parse(readFileSync(eventPath, 'utf8')) as unknown;
+  if (typeof event !== 'object' || event === null || Array.isArray(event)) {
+    throw new Error('workflow event is invalid');
+  }
+  const inputs = (event as { inputs?: unknown }).inputs;
+  if (typeof inputs !== 'object' || inputs === null || Array.isArray(inputs)) {
+    throw new Error('workflow inputs are unavailable');
+  }
+  const taskJson = (inputs as { task_json?: unknown }).task_json;
+  if (typeof taskJson !== 'string') throw new Error('task input is unavailable');
+  return taskJson;
+}
+
+try {
+  const task = TaskEnvelopeSchema.parse(JSON.parse(taskJsonInput()) as unknown);
   process.stdout.write(
     `${JSON.stringify({ valid: true, dedupeKey: taskDedupeKey(task) })}\n`,
   );
