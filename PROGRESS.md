@@ -2842,3 +2842,11 @@
 - 勾选：在 `DOD.md` 通用“契约一致”下新增并勾选 Phase 0 子证据；通用父项保持未勾选，不能代表 Phase 1 及后续契约已完成。
 - 决策沉淀：Phase 0 允许用同一规范锚点 + 编译/测试/链接回归证明契约未漂移；Phase 1 的真实 Cloudflare/GitHub App 事实继续按各自严格 verifier 验收。
 - 遗留：下一轮按 LOOP 处理通用门槛的下一个“测试覆盖（Phase 0）”子项，或在 owner 提供 Cloudflare/GitHub App 外部 authority 后恢复 Phase 1 真实演练。
+
+## Round 137 — 2026-07-28
+- 目标：Phase 0 通用关门门槛中的第二个子项——测试覆盖。验证状态机、权限边界、幂等、redaction/Secret scan 等纯逻辑都有正反用例，并至少有一条 D1/Workflow I/O 穿透集成测试。
+- 验收命令与成功判据：纯逻辑定向 suite 必须覆盖 TaskEnvelope、Run、Plan、CI/validate/repository evidence、redaction；workerd suite 必须覆盖 Task API、Workflow durable handoff、outbox/create replay 和 lease CAS；两组 exit 0 后再以 `pnpm run verify` 作为全量回归。
+- 验证：`pnpm exec vitest run test/task.test.ts test/run.test.ts test/plan.test.ts test/redaction.test.ts test/ci-evidence.test.ts test/validate-task-envelope.test.ts test/repository-bootstrap-evidence.test.ts` → exit 0，7 files / 42 tests；`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-api.test.ts test/workflow/delivery-run-workflow.test.ts test/workflow/workflow-outbox.test.ts test/workflow/lease-cas.test.ts` → exit 0，4 files / 18 tests；随后 `pnpm run verify` → exit 0，Node 103 files / 417 tests、workerd 57 files / 308 tests、Secret scan 483 files、docs links 全绿。
+- 勾选：在 `DOD.md` 通用“测试覆盖”下新增并勾选 Phase 0 子证据；通用父项保持未勾选，后续 Phase 仍需独立覆盖。
+- 决策沉淀：Phase 0 的 I/O 穿透以 workerd+D1/R2/Workflow/outbox 测试为准，不把 fake HTTP 或 schema example当作真实平台事实；Phase 1 真实 Cloudflare/GitHub App blocker不因本地测试绿灯而改变。
+- 遗留：下一轮按 LOOP 处理“安全回归（Phase 0）”子项，或在 owner 提供外部 authority 后恢复 Phase 1。

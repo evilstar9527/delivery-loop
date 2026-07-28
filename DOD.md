@@ -27,6 +27,7 @@
 - [ ] **契约一致**：新增 API/event/state/plan/evidence 与 `docs/Proto.md` 一致，破坏性变化提升 schema version。
   - [x] Phase 0 证据：TaskEnvelope v1、Run 状态机、ExecutionPlan v1、DeliveryRunWorkflow 稳定 `step.do`、CI/validate-task 权限契约均有对应 `docs/{Proto,Architecture,Security}.md` 规范与源码/测试锚点；`pnpm run verify`（typecheck、lint、103 Node files/417 tests、57 workerd files/308 tests、Secret scan、docs links）exit 0。Phase 0 的真实 GitHub/仓库 bootstrap 外部证据已分别在本文件与 `PROGRESS.md` 入账；Phase 1 及后续新增契约仍需各自关门，不能由本子项提前替代。
 - [ ] **测试覆盖**：状态机、权限、幂等、签名、redaction 等纯逻辑必须有正反用例；I/O 至少一条穿透集成测试。
+  - [x] Phase 0 证据：正反逻辑覆盖 TaskEnvelope/Run 状态机/ExecutionPlan、CI evidence/validate-task/repository bootstrap、redaction/Secret scan；`pnpm exec vitest run test/task.test.ts test/run.test.ts test/plan.test.ts test/redaction.test.ts test/ci-evidence.test.ts test/validate-task-envelope.test.ts test/repository-bootstrap-evidence.test.ts` exit 0（7 files/42 tests），D1/Workflow I/O 穿透 `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/task-api.test.ts test/workflow/delivery-run-workflow.test.ts test/workflow/workflow-outbox.test.ts test/workflow/lease-cas.test.ts` exit 0（4 files/18 tests）。后续 Phase 的权限/签名/重放/Agent 测试仍需各自关门。
 - [ ] **安全回归**：跑本 Phase 的越权、重放、Secret 泄漏和不可信输入测试。
 - [ ] **证据入账**：命令、退出码、外部 run/PR/deployment URL 和摘要写入 `PROGRESS.md`。
 - [ ] **全量回归**：`pnpm run verify` 全绿；任何 skip 明确记录且不能替代 required DoD。
