@@ -104,7 +104,8 @@ describe('fixed delivery Agent workflow', () => {
       DELIVERY_CHECKOUT_SHA: '${{ inputs.checkout_sha }}',
       DELIVERY_CONTROL_PLANE_URL: '${{ inputs.control_plane_url }}',
       DELIVERY_MODEL_PROFILE_ID: '${{ inputs.model_profile_id }}',
-      OPENAI_API_KEY: '${{ secrets.OPENAI_API_KEY }}',
+      CODEX_API_KEY: '${{ secrets.OPENAI_API_KEY }}',
+      OPENAI_BASE_URL: '${{ vars.OPENAI_BASE_URL }}',
     });
 
     const execution = steps.find((step) => step.name === 'Run approved execution attempt');
@@ -123,7 +124,8 @@ describe('fixed delivery Agent workflow', () => {
       DELIVERY_PLAN_ITEM_ID: '${{ inputs.plan_item_id }}',
       DELIVERY_CONTROL_PLANE_URL: '${{ inputs.control_plane_url }}',
       DELIVERY_MODEL_PROFILE_ID: '${{ inputs.model_profile_id }}',
-      OPENAI_API_KEY: '${{ secrets.OPENAI_API_KEY }}',
+      CODEX_API_KEY: '${{ secrets.OPENAI_API_KEY }}',
+      OPENAI_BASE_URL: '${{ vars.OPENAI_BASE_URL }}',
     });
 
     const zeroWrite = steps.find((step) => step.name === 'Verify read-only workspace');

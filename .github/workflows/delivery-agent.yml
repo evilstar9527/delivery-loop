@@ -106,7 +106,8 @@ jobs:
           DELIVERY_ATTEMPT_MODE: ${{ inputs.mode }}
           DELIVERY_MODEL_PROFILE_ID: ${{ inputs.model_profile_id }}
           DELIVERY_CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
 
       - name: Run approved execution attempt
         if: inputs.mode == 'implement' || inputs.mode == 'review_fix'
@@ -123,7 +124,8 @@ jobs:
           DELIVERY_PLAN_VERSION: ${{ inputs.plan_version }}
           DELIVERY_PLAN_ITEM_ID: ${{ inputs.plan_item_id }}
           DELIVERY_CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
 
       - name: Verify read-only workspace
         if: always() && inputs.mode == 'analysis'

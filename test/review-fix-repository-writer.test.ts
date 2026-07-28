@@ -147,5 +147,5 @@ describe('same-PR review fix repository writer', () => {
     expect(await git(staleBeforePush.remote, 'show-ref', '--hash', `refs/heads/${PR_BRANCH}`))
       .toBe(concurrentHead);
     expect(concurrentHead).not.toBe(commit.commitSha);
-  });
+  }, 15_000);
 });

@@ -187,6 +187,56 @@ describe('Codex analysis Agent adapter', () => {
     expect(plan.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
+  it('routes the built-in OpenAI provider through a validated relay base URL', async () => {
+    const paths = await tempInput();
+    let observed: CommandExecutionRequest | undefined;
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      providerBaseUrl: 'https://relay.example.com/openai/v1/',
+      execute: async (request) => {
+        observed = request;
+        await writeFile(paths.outputFile, JSON.stringify(validContent()));
+        return { exitCode: 0 };
+      },
+    });
+
+    await adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-relay-analysis-v1',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-codex-analysis',
+      },
+      validation: validationContext(),
+    });
+
+    expect(observed?.args).toEqual(expect.arrayContaining([
+      '-c',
+      'openai_base_url="https://relay.example.com/openai/v1"',
+    ]));
+    expect(observed?.args.join(' ')).not.toContain('OPENAI_API_KEY');
+  });
+
+  it.each([
+    'http://relay.example.com/v1',
+    'https://user:password@relay.example.com/v1',
+    'https://relay.example.com/v1?token=credential',
+    'https://relay.example.com/v1#fragment',
+    'https://localhost/v1',
+    'https://127.0.0.1/v1',
+  ])('rejects unsafe relay base URL %s', (providerBaseUrl) => {
+    expect(() => new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      providerBaseUrl,
+    })).toThrow('Codex provider base URL is invalid');
+  });
+
   it('uses JSONL for a trusted model profile and returns only turn.completed usage', async () => {
     const paths = await tempInput();
     let observed: CommandExecutionRequest | undefined;

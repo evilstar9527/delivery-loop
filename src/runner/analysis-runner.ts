@@ -1001,6 +1001,9 @@ export async function runAnalysisAttempt(
       options.agent ??
       new CodexAnalysisAdapter({
         outputSchemaPath: join(config.workspacePath, 'schemas/analysis-plan-content-v1.schema.json'),
+        ...(environment.OPENAI_BASE_URL === undefined || environment.OPENAI_BASE_URL === ''
+          ? {}
+          : { providerBaseUrl: environment.OPENAI_BASE_URL }),
       });
     let localPlan: ExecutionPlanV1;
     try {

@@ -1,4 +1,5 @@
 import { lstat, readFile, realpath } from 'node:fs/promises';
+import { isIP } from 'node:net';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import {
@@ -39,6 +40,40 @@ export interface ExecutionAgent {
 export interface CodexExecutionAdapterOptions {
   command?: string;
   execute?: CommandExecutor;
+  providerBaseUrl?: string;
+}
+
+function validatedProviderBaseUrl(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  if (raw.length === 0 || raw.length > 2_048 || raw !== raw.trim()) {
+    throw new Error('Codex provider base URL is invalid');
+  }
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('Codex provider base URL is invalid');
+  }
+  const hostname = url.hostname.toLowerCase();
+  const ipCandidate = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+  if (
+    url.protocol !== 'https:' ||
+    url.username !== '' ||
+    url.password !== '' ||
+    url.search !== '' ||
+    url.hash !== '' ||
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname.endsWith('.local') ||
+    hostname.endsWith('.internal') ||
+    isIP(ipCandidate) !== 0
+  ) {
+    throw new Error('Codex provider base URL is invalid');
+  }
+  const pathname = url.pathname === '/' ? '' : url.pathname.replace(/\/+$/, '');
+  return `${url.origin}${pathname}`;
 }
 
 function isInside(parent: string, child: string): boolean {
@@ -85,10 +120,12 @@ export class CodexExecutionAdapter implements ExecutionAgent {
   readonly usesMeteredModel = true as const;
   private readonly command: string;
   private readonly execute: CommandExecutor;
+  private readonly providerBaseUrl: string | undefined;
 
   constructor(options: CodexExecutionAdapterOptions = {}) {
     this.command = options.command ?? 'codex';
     this.execute = options.execute ?? executeCommand;
+    this.providerBaseUrl = validatedProviderBaseUrl(options.providerBaseUrl);
   }
 
   async apply(input: CodexExecutionInput): Promise<ExecutionAgentDecision> {
@@ -146,6 +183,9 @@ export class CodexExecutionAdapter implements ExecutionAgent {
           'shell_environment_policy.ignore_default_excludes=false',
           '-c',
           'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
+          ...(this.providerBaseUrl === undefined
+            ? []
+            : ['-c', `openai_base_url=${JSON.stringify(this.providerBaseUrl)}`]),
           '--output-last-message',
           outputFilePath,
           '--cd',

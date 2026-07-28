@@ -27,7 +27,7 @@
 | Schema | Zod | Task/checkpoint/API 单一运行时契约 |
 | GitHub | GitHub App + Octokit | installation 最小权限、webhook、PR/Actions API |
 | 飞书 | 官方 OpenAPI SDK/原生 HTTP 验签 | 卡片、消息、身份解析；不自造协议模型 |
-| Agent | Adapter 接口 | 不绑定供应商；统一 checkpoint/evidence |
+| Agent | Adapter 接口 + 锁定Codex CLI | 不绑定供应商；统一 checkpoint/evidence；可选受控OpenAI-compatible中转 |
 | 测试 | Vitest | 单测、状态机和协议契约；外部 E2E opt-in |
 | 可观测性 | OpenTelemetry + 平台日志 | task/run/attempt/trace 关联 |
 
@@ -50,6 +50,8 @@ Round 101 将“wait跨Worker发布后继续”收敛为可重跑外部证据契
 Round 102 将“App只安装到试点repo并实际触发一次固定workflow”收敛为四方证据：GitHub App JWT读取App/installation/repo installation，未按repo二次narrowing的短期installation token读取完整selected repository inventory与immutable workflow/Action/job，控制面Case 8提供Attempt/outbox lineage，installation settings与credential issuance审计补足token provenance。`GitHubAppDispatchEvidenceManifestV1`只保存安全ID、权限/事件白名单、digest和无query链接。Watt `476e3cd`没有GitHub App、installation repository inventory、workflow blob或Actions REST模块；本轮只直接复用其显式opt-in/0-1-2门禁，Action parser继续复用delivery-loop production `GitHubActionsApiClient`，没有伪造Watt来源。完整流程见[GitHub App 单仓库安装与固定 dispatch 真实验收](GitHubAppDispatchE2E.md)。
 
 Round 103 将“真实Action读取反馈/PRD并以锁定Codex产出带Evidence refs的合法Plan且零写入”收敛为`AnalysisActionEvidenceManifestV1`。verifier直接调用Round 102完整dispatch verifier，再读Task/Plan/Case 8和Action exact SHA上的固定Runner source-set；`@openai/codex`必须由package与pnpm lock双重固定，source聚合digest还要匹配manifest外release review记录。workflow最终关口从单一clean检查收紧为exact HEAD、detached HEAD和clean三联检查。Watt固定commit `476e3cdd2490d725fde174e7c697ebf00899edc6`仍直接贡献显式opt-in、仓库外64 KiB manifest、0/1/2退出和不可信内容纪律；Watt没有delivery-loop的Task/ExecutionPlan/Case 8/Runner source contract模块，因此这些核对为本项目新增，没有虚构复制来源。完整流程见[只读 Analysis Action 真实验收](AnalysisActionE2E.md)。
+
+Round 146 按Codex官方manual核对第三方OpenAI-compatible中转接法：built-in OpenAI provider使用`openai_base_url`配置覆盖，`codex exec -c key=value`可在单次CI运行注入，非交互API key使用`CODEX_API_KEY`。因此仓库保留owner已录入的Actions Secret名`OPENAI_API_KEY`，只在固定step映射为`CODEX_API_KEY`；中转地址使用普通Actions Variable `OPENAI_BASE_URL`，经公网HTTPS/无凭证/无query/非IP与非本地域名校验后传`-c openai_base_url=...`，不新增dispatch字段。中转方必须兼容Responses API与当前D1 profile的exact model，且作为能看到模型输入输出的独立信任边界接受owner审查。官方参考：[Advanced configuration / custom model providers](https://learn.chatgpt.com/docs/config-file/config-advanced#custom-model-providers)、[Non-interactive mode / API key auth](https://learn.chatgpt.com/docs/non-interactive-mode#use-api-key-auth)。
 
 Round 104 将“真实Action连续30～60秒heartbeat、正常写result且控制面/GitHub最终一致”收敛为`RunnerHeartbeatEvidenceManifestV1`。最新`attempts.heartbeat_at`无法证明cadence，因此新增append-only receipt链；每次成功CAS同batch保存generation、前后version/time和90秒lease，表结构没有token或token digest。verifier直接复用Round 103 Analysis Action verifier的GitHub App/Action/API/Runner全链路，只新增D1 receipt/result/final projection与Case 8 signed webhook核对。Watt固定commit仍直接贡献显式opt-in、仓库外64 KiB manifest、0/1/2退出、有界读取和不可信内容纪律；Watt没有heartbeat receipt或GitHub final-state业务模块，未虚构复制来源。完整流程见[Runner heartbeat 与 GitHub 最终状态真实验收](RunnerHeartbeatE2E.md)。
 
