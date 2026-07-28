@@ -72,6 +72,7 @@
   - [x] 本地 workerd 穿透：从 `await-analysis-result` restart 后复用 register/dispatch 步骤，D1 中 analysis attempt 与 dispatch outbox 始终各 1 条，引用回传后激活预存 Plan 并推进 Run 投影。
   - [x] 真实外部证据验收契约：strict `WorkflowHibernateEvidenceManifestV1` 与 `pnpm run e2e:workflow-hibernate` 交叉核对同一 `run_id` 的 D1 Run/active Plan/唯一analysis Attempt与dispatch outbox、Cloudflare instance七条稳定step、wait开始时生效的before Worker deployment、wait期间唯一after deployment，以及stable title下唯一GitHub Action。fake API、schema example、本地workerd restart、Wrangler dry-run或默认exit 2不能替代真实Cloudflare/GitHub事实。
   - [ ] 真实 Cloudflare 环境强制 hibernate/Worker restart，并以 GitHub 外部 run 事实证明实际 Action dispatch 仅一次。
+    - Blocker（Round 142复核）：已确认目标Cloudflare账号为`b8488957e88658039d2a38fb8f160514`，但该账号仍无本项目Worker/Workflow/D1/R2/Queue；GitHub侧无`Delivery Agent` run且当前用户OAuth不能审计App installation。完成该子项仍需要owner明确批准创建测试资源、部署控制面、设置最小Secret、创建并selected-install GitHub App及使用Actions/Cloudflare预算；账号选择和本机已有write-capable OAuth都不等同于这份授权。
 - [x] ExecutionPlan v1 校验覆盖 Item ID/依赖无环、至少一条 doneWhen、Evidence 要求、delivery policy command ref、effect 上限、plan version/digest/base SHA 不变量。
 - [x] 状态迁移使用 compare-and-set；两个并发 worker 争抢同 attempt 时只有一个拿到带 lease generation 的写租约。
 - [ ] GitHub App 只安装到试点仓库；dispatcher 成功触发固定 workflow ref，dispatch payload 经过测试证明无 Secret/任务正文。
