@@ -4,23 +4,24 @@
 
 ## 当前状态
 
-- **当前 Phase**：Phase 3 — 安全 Context 与可恢复 Agent Runner（controlled replay已有真实可达terminal Plan Item step、Case 8审计与外部验收器；父项等待真实Cloudflare/GitHub replay演练）。
-- **已完成**：本地仓库已创建；规范/DOD/Loop 骨架、TaskEnvelope v1、Run 状态机、CI workflow 已写入；Phase 0 本地 4 项已完成；Phase 1 已完成 manual Task API、migration/transactional intake、Workflow create/signal outbox、Workflow/D1 本地恢复子项、ExecutionPlan v1 校验、Run/Attempt CAS + generation 写租约、D1-only Task/Plan 安全查询、GitHub OIDC exchange、固定 analysis workflow/Runner bootstrap、GitHub webhook + App API 外部事实 reconciliation，以及双 destination Queue dispatch 生产接线的本地契约；Phase 3 已完成用途隔离的run/tool短期credential exchange、triage五项read/diagnostic scope与write/destructive PEP拒绝、complete/cancel/heartbeat-timeout token撤销、AgentCheckpoint v1/sequence CAS、Workflow callback replay/late-result fencing、tool-bridge metadata trace与prompt-injection对抗DoD，并完成schema-aware redaction/Secret scanner对Task/checkpoint/source、唯一控制面结构化日志sink、固定Runner JSON日志、execution Codex raw transcript双层扫描/AES-256-GCM producer及Draft PR effect前重扫的本地覆盖；Codex session adapter本地已具备start/resume/interrupt/exportCheckpoint与真实子进程中断契约；Runner kill recovery已完成D1/R2/Git本地穿透，并具备交叉核对Plan/correlation、两条Action/job、Git commit和passed Item零重跑的显式opt-in真实验收器；controlled replay已完成D1 approval/effect/reconciliation snapshot、fenced outbox、正常`completed Plan`终态的真实workerd Plan Item verification-step restart、Case 8 digest-verified replay/effect outbox投影，以及交叉核对Action/PR/Deployment零重复的显式opt-in真实验收器；bounded failure policy已完成D1/Runner/API/query安全投影，真实飞书卡片仍待接入。Phase 4 已完成 commit-bound `delivery.yaml v1`、canonical command ref与无shell命令执行边界、ready/dependency/active Plan fencing下的Plan Item首次Attempt领取、exact repo_write approval绑定的单仓库GitHub写凭证签发/撤销、task/attempt derived branch与固定bot/no-force push边界、workflow/CODEOWNERS/Secret/deploy等高风险path的staged-tree审批暂停与安全diff投影，以及targeted→全部required verify的顺序执行与command/exit/duration/head Evidence入账。
-- **未验证外部能力**：远端 GitHub repo、GitHub App、飞书应用、控制面部署、真实 tool-bridge service binding、真实已认证 Agent 模型调用均未配置/执行。
-- **下一目标**：配置真实试点GitHub/Cloudflare与有效Codex credential后，先按`docs/ControlledReplayE2E.md`从真实completed Plan verification step重放并运行`DELIVERY_LOOP_CONTROLLED_REPLAY_E2E=1 pnpm run e2e:controlled-replay`；exit 0、Workflow restart和Action/PR/Deployment URL共同闭环，不能用本地fake替代。
+- **当前 Phase**：按 Phase 顺序回到 Phase 1 的真实平台关门。首个未完成父项是 `DeliveryRunWorkflow` 在真实 Cloudflare hibernate/redeploy 后复用成功步骤，并以唯一 GitHub analysis Action 证明 dispatch 只发生一次。
+- **已完成**：Phase 0 的本地契约、真实 `main/pull_request/workflow_dispatch` Actions、个人公开远端、protected `main` 和仓库bootstrap均已验收；Phase 1～7已有大量本地D1/workerd/安全边界及strict外部证据verifier，精确完成状态只以 `DOD.md` 复选框为准，不能由本摘要提前升级。
+- **未验证外部能力**：已选Cloudflare账号尚无本项目Worker/Workflow/D1/R2/Queue；GitHub App selected-repository installation、控制面HTTPS部署、真实analysis/heartbeat Action、飞书/Meegle tenant、真实tool-bridge、有效非交互Agent模型调用、测试/生产部署与七天试运行均未完成。
+- **下一目标**：取得明确外部写入与预算授权后，按 [`WorkflowHibernateE2E`](docs/WorkflowHibernateE2E.md) 创建最小测试资源并完成Phase 1真实hibernate/redeploy；授权前继续关闭不依赖真实平台写入的通用Phase门槛，不把dry-run或默认exit 2当成功。
 
 ## Blockers / 待用户决策
 
-- 新远端仓库的 GitHub owner/organization、最终名称与 visibility 未指定；当前只创建本地 `/Users/jishihe/delivery-loop`。
-- 首批试点 repo、飞书入口形态、Agent adapter 和 MVP 是否包含测试部署尚未拍板，详见 [Reference §9](docs/Reference.md#9-尚未拍板的产品决策)；控制面默认 Cloudflare 栈已在 Round 2 拍板。
-- Phase 3 Secret父DoD的剩余证据需要真实试点GitHub repository/App/Actions与已部署Worker/R2；当前仓库无remote、D1 ID仍为占位值，不能产生可信Action log、持久化远端ciphertext registry或真实PR页面。
-- 本机`codex-cli 0.145.0`保存的API key已被provider以`invalid_api_key`拒绝；重新认证属于用户credential authority，仓库代码不能生成、替换或输出该Secret。真实Adapter子项在有效credential前保持未勾。
-- Phase 3真实Runner恢复仍缺试点GitHub remote/App/Actions、已部署控制面D1/R2和有效Agent credential；当前`git remote -v`为空且Wrangler D1 ID为占位值，无法产生两条真实Action、外部checkpoint/result commit或只读live API证据。`pnpm run e2e:runner-recovery`默认exit 2是正确前置状态，不是通过。
-- Phase 3真实controlled replay仍缺同一组试点GitHub/Cloudflare资源与已完成真实PR/deployment Run；当前无法产生Cloudflare restart、live Case 8/correlation或GitHub inventory证据。`pnpm run e2e:controlled-replay`默认exit 2是正确前置状态，不是通过。
+- 已选择Cloudflare账号，但尚未明确批准创建D1/R2/Queues/Workflows/Worker、部署控制面或使用测试预算；`wrangler.jsonc`的D1 ID仍是占位值。
+- GitHub App owner、最小permissions、selected单仓库installation、installation audit token签发审计和Actions预算尚未授权；公开仓库存在不等于App authority存在。
+- 本机锁定版Codex曾被provider以`invalid_api_key`拒绝；重新认证属于用户credential authority，仓库代码不能生成、替换或输出该Secret。
+- 真实飞书/Meegle tenant与应用owner/scopes、tool-bridge测试BaseURL/broker scope/SK撤销、测试部署Environment/OIDC/云审计及生产lane治理仍待外部决策和配置。
+- hosted runner饱和并发与约6小时duration probe、Cloudflare Paid Workflows限制演练和七天试运行都会产生费用/外部影响，必须另行批准预算；默认exit 2与本地fake均不是完成证据。
 
 ## 外部前置核对
 
-尚未开始。Phase 1 前按 [DOD §10](DOD.md#10-外部前置与人工决策) 逐项记录，不以本机已有登录态推断组织权限。
+- GitHub：用户已确认并创建 `evilstar9527/delivery-loop` public，`main`受保护；真实CI、validate-task与repository bootstrap已通过，详见Round 132～134。
+- Cloudflare：用户已选择账号；Round 135/138只读确认本项目Worker/Workflow/D1/R2/Queue均不存在，dry-run bundle可构建。账号选择没有被解释成资源写入、部署或费用授权。
+- 其余：GitHub App、Actions预算、飞书/Meegle、tool-bridge、Agent认证、部署Environment与合规/数据驻留仍按 [DOD §10](DOD.md#10-外部前置与人工决策) 逐项补齐。
 
 ## Round 日志
 
@@ -2864,3 +2865,20 @@
 - 勾选：在`DOD.md`通用“安全回归”下新增并勾选Phase 0子证据；通用父项保持未勾，不能替代后续Phase的真实webhook/OIDC/replay/Secret场景。
 - 决策沉淀：一次性canary不为方便重跑而持久化；若将来需要重新核对新的Action日志，必须在明确Actions授权下生成新canary和新invalid workflow run，不能用旧digest自证。
 - 遗留：Phase 1真实hibernate/redeploy仍需owner明确批准在已选Cloudflare账号创建测试资源、部署控制面及预算，并完成selected-repository GitHub App安装与Actions触发授权。未取得该authority前，下一轮按LOOP处理Phase 0通用“证据入账”子证据，不盲重试外部部署。
+
+## Round 139 — 2026-07-28
+- 目标：Phase 0 通用关门门槛中的第四个子项——证据入账。逐项审计命令/exit code、Actions run、PR、repository bootstrap和安全摘要是否真实写入`PROGRESS.md`；只关闭Phase 0子证据，通用父项保持未勾。
+- 前置与权限：仅用当前GitHub登录态做公开仓库Actions/PR/repository/rules只读GET，并使用仓库外bootstrap manifest；未触发workflow、创建PR、改仓库设置、部署或访问Cloudflare写API。Phase 0范围没有deployment且本阶段从未部署，deployment URL明确为N/A，Wrangler dry-run不算外部deployment。
+- 账本一致性修复：审计前顶部“当前状态/Blockers”仍自报“无remote/远端未开始”，与Round 132～134及live GitHub事实冲突。本轮只更新可变摘要为当前Phase 1外部门槛、已完成GitHub bootstrap和真实外部缺口；历史Round不改，llmdoc按项目约定不更新。
+- Actions/PR外部复核：
+  - main push [30326502593](https://github.com/evilstar9527/delivery-loop/actions/runs/30326502593)为`push/completed/success`；pull request [30326290357](https://github.com/evilstar9527/delivery-loop/actions/runs/30326290357)为`pull_request/completed/success`。
+  - 合法Task [30325724853](https://github.com/evilstar9527/delivery-loop/actions/runs/30325724853)为`workflow_dispatch/completed/success`；非法Task [30325739134](https://github.com/evilstar9527/delivery-loop/actions/runs/30325739134)为`workflow_dispatch/completed/failure`，失败是既有strict verifier要求的安全结果，不重标为成功。
+  - 修复/验收PR [#2](https://github.com/evilstar9527/delivery-loop/pull/2)、[#3](https://github.com/evilstar9527/delivery-loop/pull/3)、[#4](https://github.com/evilstar9527/delivery-loop/pull/4)、[#7](https://github.com/evilstar9527/delivery-loop/pull/7)及上一轮证据PR [#12](https://github.com/evilstar9527/delivery-loop/pull/12)均由live API确认`MERGED`；#12合并后的main CI [30346128084](https://github.com/evilstar9527/delivery-loop/actions/runs/30346128084)为success。
+- repository bootstrap重验：旧仓库外manifest冻结Round 134后的旧main head，首次live `pnpm run e2e:repository-bootstrap`正确exit 1 / `github_branch_mismatch`，没有当成通过。只更新仓库外`recordedAt + branch.headSha`到当前main后重跑exit 0：`repository=evilstar9527/delivery-loop`、`public`、`main`、repository ID `1314460432`、4条active rule、`localOriginMatched=true`；decision/rules digest未改，token与raw响应未入manifest/仓库/日志。
+- 验证：
+  - 13项固定账本anchor审计（Round 1命令、四run、PR #2/#3/#4/#7、两条live verifier摘要）→ exit 0；此前审计在PR #7仅有CI URL而无PR URL时exit 1，本Round补安全PR链接后才通过。
+  - `pnpm run verify:docs`与`git diff --check` → exit 0。
+  - 最终`pnpm run verify` → exit 0：typecheck、ESLint、Node 103 files / 417 tests、workerd 57 files / 308 tests、483个生产文件Secret scan与文档链接全部通过；workerd仅输出既有测试主动terminate清理诊断。
+- 勾选：在`DOD.md`通用“证据入账”下新增并勾选Phase 0子证据；通用父项保持未勾，后续Phase必须各自记录真实run/PR/deployment/tenant/Cloudflare事实。
+- 决策沉淀：repository bootstrap manifest是当前事实索引，默认分支前进后旧head必须使live verifier失败并重新采集；不能把曾经exit 0的manifest永久当作当前仓库证据。失败命令、预期负向Action与N/A deployment都明确入账，避免只保留成功样本。
+- 遗留：下一轮按LOOP处理Phase 0通用“全量回归”子证据；Phase 1真实hibernate仍等待Cloudflare资源/部署预算和GitHub App/Actions明确授权。
