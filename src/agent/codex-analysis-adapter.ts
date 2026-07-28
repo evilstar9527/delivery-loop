@@ -26,6 +26,7 @@ import {
 import type { CodexModelUsage } from '../domain/quota.js';
 import { SecretScanner } from '../security/redaction.js';
 import { CodexUsageAccumulator } from './codex-usage.js';
+import { codexProviderProfileArguments } from './codex-provider-profile.js';
 import { normalizeProviderBaseUrl } from './provider-base-url.js';
 import type { z } from 'zod';
 
@@ -382,9 +383,7 @@ export class CodexAnalysisAdapter {
           'shell_environment_policy.ignore_default_excludes=false',
           '-c',
           'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
-          ...(this.providerBaseUrl === undefined
-            ? []
-            : ['-c', `openai_base_url=${JSON.stringify(this.providerBaseUrl)}`]),
+          ...codexProviderProfileArguments(this.providerBaseUrl),
           '--output-schema',
           outputSchemaPath,
           '--output-last-message',

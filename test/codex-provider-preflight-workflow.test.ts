@@ -43,7 +43,7 @@ describe('Codex provider preflight workflow', () => {
     const probe = job?.steps.find((step) => step.name === 'Verify exact provider route');
     expect(probe?.env).toEqual({
       DELIVERY_LOOP_CODEX_ADAPTER_E2E: '1',
-      DELIVERY_LOOP_CODEX_ADAPTER_MODEL: 'gpt-5.6-terra',
+      DELIVERY_LOOP_CODEX_ADAPTER_MODEL: 'gpt-5.6-sol',
       CODEX_API_KEY: '${{ secrets.OPENAI_API_KEY }}',
       OPENAI_BASE_URL: '${{ secrets.OPENAI_BASE_URL }}',
     });
