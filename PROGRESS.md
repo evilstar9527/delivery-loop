@@ -11,8 +11,8 @@
 
 ## Blockers / 待用户决策
 
-- 已选择Cloudflare账号，但尚未明确批准创建D1/R2/Queues/Workflows/Worker、部署控制面或使用测试预算；`wrangler.jsonc`的D1 ID仍是占位值。
-- GitHub App owner、最小permissions、selected单仓库installation、installation audit token签发审计和Actions预算尚未授权；公开仓库存在不等于App authority存在。
+- 已确认目标Cloudflare账号为`b8488957e88658039d2a38fb8f160514`；Round 142只读复核仍无本项目D1/R2/Queues/Workflows/Worker，且尚未明确批准创建资源、部署控制面或使用测试预算；`wrangler.jsonc`的D1 ID仍是占位值。
+- GitHub App owner、最小permissions、selected单仓库installation、installation audit token签发审计和Actions预算尚未授权；Round 142当前用户OAuth无法读取installation inventory，仓库也没有`Delivery Agent` run，公开仓库存在不等于App authority存在。
 - 本机锁定版Codex曾被provider以`invalid_api_key`拒绝；重新认证属于用户credential authority，仓库代码不能生成、替换或输出该Secret。
 - 真实飞书/Meegle tenant与应用owner/scopes、tool-bridge测试BaseURL/broker scope/SK撤销、测试部署Environment/OIDC/云审计及生产lane治理仍待外部决策和配置。
 - hosted runner饱和并发与约6小时duration probe、Cloudflare Paid Workflows限制演练和七天试运行都会产生费用/外部影响，必须另行批准预算；默认exit 2与本地fake均不是完成证据。
@@ -2916,3 +2916,19 @@
 - 勾选：在`DOD.md`通用“质量关口”下新增并勾选Phase 0子证据；五维review后无未处理BLOCKER/MAJOR。六项Phase 0通用子证据至此齐全，但通用父项仍保持未勾，不能替代Phase 1～7关门。
 - 决策沉淀：供应链规范不仅要求最小`permissions`，还要求第三方Action不可变pin；strict外部verifier必须拒绝tag。Action成功日志也不能输出来源标识或去重键，因为“schema合法”不等于“内容可公开”。按用户要求不更新llmdoc。
 - 遗留：为全仓库第三方Action受审SHA安排独立依赖升级，消除GitHub Node 20→24强制运行提示（MINOR，不阻塞本门槛）。主线回到Phase 1真实hibernate；已选Cloudflare账号仍不代表资源创建、部署或预算授权，GitHub App selected-repository installation与Actions预算也仍需明确批准。
+
+## Round 142 — 2026-07-28
+- 目标：Phase 1 / `DeliveryRunWorkflow`真实Cloudflare hibernate/redeploy，并以唯一GitHub analysis Action证明dispatch只发生一次。本轮先按既定strict verifier做外部readiness复核；缺authority时不创建资源、不部署、不触发Action，也不以dry-run或默认exit 2关门。
+- 验收命令与成功判据：唯一关门命令仍是`DELIVERY_LOOP_WORKFLOW_HIBERNATE_E2E=1 ... pnpm run e2e:workflow-hibernate` exit 0，并同时核对同一Run的D1/Case 8、Cloudflare before/after deployment与七条稳定step、零controlled replay及GitHub stable-title唯一Action；本地workerd、fake API和manifest自报不能替代。
+- 前置与权限：只读使用已选Cloudflare账号、当前Wrangler OAuth与GitHub OAuth查询资源/Actions；两枚OAuth即使技术scope含write，也没有被解释为owner对本轮资源创建、部署、App安装或预算的业务授权。未读取或输出token，未创建/修改Cloudflare/GitHub资源，未触发Action或部署。
+- 当前外部事实：
+  - `wrangler deployments list --name delivery-loop-control-plane` → exit 1 / Cloudflare code `10007`，目标Worker不存在；`wrangler d1 list --json` → exit 0 / 空数组；`wrangler workflows list` → exit 0 / 无已部署Workflow。
+  - R2 inventory只有5个无关bucket，Queues inventory只有`friend-avatar-jobs`及其DLQ；不存在`delivery-loop-*`的4个R2 bucket或6个Queue。既有资源名称只作排除，不被复用或修改。
+  - GitHub当前用户OAuth读取`/user/installations`返回403、repository installations端点返回404，不能证明App installation；`gh run list --workflow "Delivery Agent"` → exit 0 / 空数组，当前没有真实analysis Action事实。
+- 验证：`pnpm run e2e:workflow-hibernate`（未设置opt-in）→ exit 2 / `workflow-hibernate-e2e: opt-in missing`，只证明前置缺失，不是成功。既有本地workerd与strict verifier子证据保持不变，本轮没有重复执行无意义fake/dry-run测试。
+- 勾选：无。真实Cloudflare子项及父DoD保持未勾；当前没有可填写的真实Run、deployment、Workflow instance、D1或Action URL。
+- 用户输入：确认本轮目标Cloudflare账号为`b8488957e88658039d2a38fb8f160514`；该输入只锁定目标账号，不单独构成资源创建、部署或费用授权。
+- 最小授权请求：允许在该账号创建1个D1、4个私有R2 bucket、6个Queue并部署`delivery-loop-control-plane`及2个Workflow；允许在个人仓库`evilstar9527/delivery-loop`创建/安装selected-repository GitHub App、配置协议要求的最小permissions/events与受控Actions；批准该测试演练的Cloudflare/Actions预算。Secret由owner在受控绑定/Environment中设置，不发送到聊天、argv、仓库或PROGRESS。
+- 阻塞裁决：同一外部authority缺口已在Round 135、138～141及本轮连续出现。按LOOP“连续3轮不闭环后停止盲重试”，本轮把blocker、已尝试只读路径和最小人工输入写实后停止；账号ID本身不能扩张授权范围。
+- 决策沉淀：真实hibernate不是单独`wrangler deploy`；必须与selected-install App、正常Task→D1 outbox→Action链路、在wait期间唯一after deployment及strict四方证据同窗发生。按用户要求不更新llmdoc。
+- 遗留：等待owner明确批准上述三类测试外部写入/预算。授权后从资源bootstrap与GitHub App selected installation开始；未授权前不再重复inventory/dry-run/default-exit-2轮次。
