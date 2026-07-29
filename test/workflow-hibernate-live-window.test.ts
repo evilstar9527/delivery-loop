@@ -14,6 +14,7 @@ import {
   WorkflowHibernateLiveWindowError,
   WorkflowHibernateWindowAuthorizationV1Schema,
   executeWorkflowHibernateLiveWindow,
+  resumeWorkflowHibernateLiveWindow,
   workflowHibernateWindowAuthorityDigest,
   type WorkflowHibernateLiveWindowDependencies,
   type WorkflowHibernateWindowAuthorizationV1,
@@ -258,6 +259,43 @@ describe('live Workflow hibernate window orchestration', () => {
     expect(deps.taskExists).toHaveBeenCalledOnce();
     expect(deps.createTask).toHaveBeenCalledOnce();
     expect(deps.deployAfter).toHaveBeenCalledOnce();
+  });
+
+  it('resumes an existing exact Task without a second Task POST', async () => {
+    const auth = await authorization({ resumeExistingTask: true });
+    const deps = dependencies(auth, { taskExists: vi.fn().mockResolvedValue(true) });
+    await expect(resumeWorkflowHibernateLiveWindow(auth, task(), deps)).resolves.toEqual({
+      schemaVersion: '1',
+      authorizationId: auth.authorizationId,
+      taskId: auth.task.taskId,
+      runId: auth.task.runId,
+      attemptId: auth.task.attemptId,
+      actionBaseSha: ACTION_SHA,
+      beforeDeploymentId: BEFORE_DEPLOYMENT_ID,
+      afterDeploymentId: AFTER_DEPLOYMENT_ID,
+      afterVersionId: AFTER_VERSION_ID,
+      taskCreateRequests: 0,
+      afterDeployRequests: 1,
+      rollbackRequests: 0,
+    });
+    expect(deps.taskExists).toHaveBeenCalledOnce();
+    expect(deps.createTask).not.toHaveBeenCalled();
+    expect(deps.deployAfter).toHaveBeenCalledOnce();
+  });
+
+  it('requires explicit resume authority and the pre-existing exact Task', async () => {
+    const normal = await authorization();
+    const normalDeps = dependencies(normal);
+    await expect(resumeWorkflowHibernateLiveWindow(normal, task(), normalDeps))
+      .rejects.toMatchObject({ code: 'authorization_invalid' });
+    expect(normalDeps.verifyFrozenSource).not.toHaveBeenCalled();
+
+    const resume = await authorization({ resumeExistingTask: true });
+    const missingDeps = dependencies(resume, { taskExists: vi.fn().mockResolvedValue(false) });
+    await expect(resumeWorkflowHibernateLiveWindow(resume, task(), missingDeps))
+      .rejects.toMatchObject({ code: 'task_not_found' });
+    expect(missingDeps.createTask).not.toHaveBeenCalled();
+    expect(missingDeps.deployAfter).not.toHaveBeenCalled();
   });
 
   it('rejects expired or Task-drifted authority before any live read', async () => {

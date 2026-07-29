@@ -1,8 +1,85 @@
 import { exportPKCS8, generateKeyPair, jwtVerify } from 'jose';
+import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { GitHubAppInstallationTokenProvider } from '../src/auth/github-app-installation-token.js';
 
 describe('GitHub App installation token provider', () => {
+  it('accepts the PKCS#1 PEM returned by the GitHub App manifest conversion', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2_048 });
+    const privateKeyPem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+    expect(privateKeyPem).toContain('BEGIN RSA PRIVATE KEY');
+    let requested = false;
+    const provider = new GitHubAppInstallationTokenProvider({
+      appId: '7890',
+      installationId: '123456',
+      privateKeyPem,
+      allowedRepositories: ['example/delivery-target'],
+      fetch: async (_input, init) => {
+        requested = true;
+        expect(new Headers(init?.headers).get('authorization')).toMatch(/^Bearer /);
+        return Response.json({
+          token: 'CANARY_PKCS1_INSTALLATION_TOKEN',
+          expires_at: '2026-07-25T13:00:00.000Z',
+        }, { status: 201 });
+      },
+      now: () => new Date('2026-07-25T12:00:00.000Z'),
+    });
+
+    await expect(provider.getInstallationToken('example/delivery-target')).resolves.toBe(
+      'CANARY_PKCS1_INSTALLATION_TOKEN',
+    );
+    expect(requested).toBe(true);
+  });
+
+  it('rejects malformed, duplicated, trailing, or oversized PEM input', () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2_048 });
+    const pkcs1 = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString().trim();
+    const edge = '-----';
+    const unknown = [
+      `${edge}BEGIN EC PRIVATE KEY${edge}`,
+      btoa('invalid-key-shape'.repeat(6)),
+      `${edge}END EC PRIVATE KEY${edge}`,
+    ].join('\n');
+    const candidates = [
+      unknown,
+      `${pkcs1}\n${pkcs1}`,
+      `${pkcs1}\ntrailing-data`,
+      'x'.repeat(20_001),
+    ];
+    for (const privateKeyPem of candidates) {
+      expect(() => new GitHubAppInstallationTokenProvider({
+        appId: '7890',
+        installationId: '123456',
+        privateKeyPem,
+        allowedRepositories: ['example/delivery-target'],
+      })).toThrow('GitHub App private key is invalid');
+    }
+  });
+
+  it('rejects malformed PKCS#8 DER before the GitHub request', async () => {
+    const edge = '-----';
+    const privateKeyPem = [
+      `${edge}BEGIN PRIVATE KEY${edge}`,
+      btoa('invalid-der'.repeat(10)),
+      `${edge}END PRIVATE KEY${edge}`,
+    ].join('\n');
+    let requested = false;
+    const provider = new GitHubAppInstallationTokenProvider({
+      appId: '7890',
+      installationId: '123456',
+      privateKeyPem,
+      allowedRepositories: ['example/delivery-target'],
+      fetch: async () => {
+        requested = true;
+        return new Response(null, { status: 500 });
+      },
+    });
+
+    await expect(provider.getInstallationToken('example/delivery-target'))
+      .rejects.toThrow('GitHub App private key could not be loaded');
+    expect(requested).toBe(false);
+  });
+
   it('signs a short App JWT, narrows the token to the allowed repository, and caches it', async () => {
     const keys = await generateKeyPair('RS256', { extractable: true });
     const privateKeyPem = await exportPKCS8(keys.privateKey);

@@ -55,6 +55,7 @@ export const WorkflowHibernateWindowAuthorizationV1Schema = z.object({
     versionId: z.string().regex(UUID_PATTERN),
     createdAt: z.iso.datetime({ offset: true }),
   }).strict(),
+  resumeExistingTask: z.literal(true).optional(),
   effects: z.object({
     taskCreates: z.literal(1),
     analysisActions: z.literal(1),
@@ -92,6 +93,7 @@ export type WorkflowHibernateLiveWindowErrorCode =
   | 'source_verification_failed'
   | 'before_deployment_mismatch'
   | 'task_already_exists'
+  | 'task_not_found'
   | 'task_create_failed'
   | 'task_create_response_mismatch'
   | 'external_unavailable'
@@ -154,7 +156,7 @@ export interface WorkflowHibernateLiveWindowSummary {
   beforeDeploymentId: string;
   afterDeploymentId: string;
   afterVersionId: string;
-  taskCreateRequests: 1;
+  taskCreateRequests: 0 | 1;
   afterDeployRequests: 1;
   rollbackRequests: 0;
 }
@@ -258,6 +260,7 @@ export async function executeWorkflowHibernateLiveWindow(
   const parsed = WorkflowHibernateWindowAuthorizationV1Schema.safeParse(authorizationInput);
   if (!parsed.success) fail('authorization_invalid');
   const authorization = parsed.data;
+  if (authorization.resumeExistingTask === true) fail('authorization_invalid');
   const now = dependencies.now ?? (() => new Date());
   const startedAt = now().getTime();
   if (
@@ -307,6 +310,61 @@ export async function executeWorkflowHibernateLiveWindow(
     afterDeploymentId: after.afterDeploymentId,
     afterVersionId: after.afterVersionId,
     taskCreateRequests: 1,
+    afterDeployRequests: 1,
+    rollbackRequests: 0,
+  };
+}
+
+/** Resumes the same exact live window after a pre-Task operator failure without another POST. */
+export async function resumeWorkflowHibernateLiveWindow(
+  authorizationInput: WorkflowHibernateWindowAuthorizationV1,
+  taskInput: TaskEnvelope,
+  dependencies: WorkflowHibernateLiveWindowDependencies,
+): Promise<WorkflowHibernateLiveWindowSummary> {
+  const parsed = WorkflowHibernateWindowAuthorizationV1Schema.safeParse(authorizationInput);
+  if (!parsed.success || parsed.data.resumeExistingTask !== true) fail('authorization_invalid');
+  const authorization = parsed.data;
+  const now = dependencies.now ?? (() => new Date());
+  const startedAt = now().getTime();
+  if (
+    !Number.isFinite(startedAt) ||
+    startedAt < Date.parse(authorization.authorizedAt) ||
+    startedAt >= Date.parse(authorization.expiresAt)
+  ) fail('authorization_inactive');
+  if (
+    await workflowHibernateWindowAuthorityDigest(authorization) !==
+    authorization.authorityDigest
+  ) fail('authorization_invalid');
+  await assertTaskAuthority(authorization, taskInput);
+  assertSource(await dependencies.verifyFrozenSource(authorization), authorization);
+  assertBefore(await dependencies.readBeforeDeployment(authorization), authorization);
+  if (!await dependencies.taskExists(authorization)) fail('task_not_found');
+
+  await waitForEligibleSnapshot(authorization, dependencies, startedAt);
+  const after = await executeConditionalHibernateAfter({
+    runId: authorization.task.runId,
+    attemptId: authorization.task.attemptId,
+    sourceSha: authorization.source.sha,
+    bundleSha256: authorization.source.bundleSha256,
+    beforeDeploymentId: authorization.beforeDeployment.deploymentId,
+    beforeVersionId: authorization.beforeDeployment.versionId,
+    maximumSnapshotAgeMs: 5_000,
+  }, {
+    readSnapshot: async () => await dependencies.readSnapshot(authorization),
+    deployAfter: dependencies.deployAfter,
+    now,
+  });
+  return {
+    schemaVersion: '1',
+    authorizationId: authorization.authorizationId,
+    taskId: authorization.task.taskId,
+    runId: authorization.task.runId,
+    attemptId: authorization.task.attemptId,
+    actionBaseSha: authorization.analysisWorkflowHeadSha,
+    beforeDeploymentId: after.beforeDeploymentId,
+    afterDeploymentId: after.afterDeploymentId,
+    afterVersionId: after.afterVersionId,
+    taskCreateRequests: 0,
     afterDeployRequests: 1,
     rollbackRequests: 0,
   };
