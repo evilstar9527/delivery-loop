@@ -248,6 +248,15 @@ function assertFreshSnapshot(
   if (snapshot.workflow.resumedStepCount !== 0) fail('workflow_already_resumed');
 }
 
+export function verifyWorkflowHibernateWindowSnapshot(
+  expected: WorkflowHibernateWindowExpectation,
+  snapshot: WorkflowHibernateWindowSnapshot,
+  now = new Date(),
+): void {
+  assertExpectation(expected);
+  assertFreshSnapshot(snapshot, expected, now);
+}
+
 function assertSameGuardIdentity(
   first: WorkflowHibernateWindowSnapshot,
   second: WorkflowHibernateWindowSnapshot,

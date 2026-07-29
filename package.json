@@ -44,6 +44,7 @@
     "e2e:ci": "tsx scripts/verify-ci-evidence.ts",
     "e2e:repository-bootstrap": "tsx scripts/verify-repository-bootstrap-evidence.ts",
     "e2e:workflow-hibernate": "tsx scripts/verify-workflow-hibernate-evidence.ts",
+    "ops:workflow-hibernate-window": "tsx scripts/run-workflow-hibernate-window.ts",
     "e2e:github-app-dispatch": "tsx scripts/verify-github-app-dispatch-evidence.ts",
     "e2e:analysis-action": "tsx scripts/verify-analysis-action-evidence.ts",
     "e2e:runner-heartbeat": "tsx scripts/verify-runner-heartbeat-evidence.ts",

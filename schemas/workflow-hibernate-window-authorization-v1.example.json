@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "1",
+  "authorizationId": "hibernate-window-authorization-20260729",
+  "authorizedAt": "2026-07-29T05:49:00.000Z",
+  "expiresAt": "2026-07-29T06:19:00.000Z",
+  "authorityDigest": "sha256:1b8d93651f861085697aaff6b4813ae8ea57e06718bf55ae7ee6868e7e5e8a0e",
+  "repository": "evilstar9527/delivery-loop",
+  "baseBranch": "main",
+  "analysisWorkflowHeadSha": "a02831a15a985bb691c2f6c76f8866f09418cea6",
+  "task": {
+    "envelopeDigest": "sha256:74ad861694d05750b0aa5bb8c3ac8ee653e6d0b610c97803558501d415e09970",
+    "revisionDigest": "sha256:4c6eb5577fa1ece29d4f67652c68e5101f45ecae882d25ed414077725d4744cd",
+    "taskId": "task_556791be5a6442412f587539a0a3961427757356642eb0dcdac77820",
+    "runId": "run_556791be5a6442412f587539a0a3961427757356642eb0dcdac77820",
+    "attemptId": "analysis-run_556791be5a6442412f587539a0a3961427757356642eb0dcdac77820-1",
+    "idempotencyKey": "hibernate-window-20260729-v1"
+  },
+  "source": {
+    "sha": "e14d11e5420e04d49c042a01c562ff5432ebb98c",
+    "bundleSha256": "14b3ea16dd1d62b41639abe5680882a1f5dced3f19aee50305d95ac01b3adef8",
+    "bundleBytes": 2808881
+  },
+  "beforeDeployment": {
+    "deploymentId": "8b646225-4d71-4867-aff3-f22d137a8fa5",
+    "versionId": "6911feca-acf7-476a-b10c-cc61e71aedad",
+    "createdAt": "2026-07-29T04:56:43.836Z"
+  },
+  "effects": {
+    "taskCreates": 1,
+    "analysisActions": 1,
+    "afterDeployments": 1,
+    "rollbacks": 0
+  }
+}

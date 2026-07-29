@@ -1313,3 +1313,20 @@ export {
   type ReplayFailureE2EEvidenceVerificationSummary,
   type ReplayFailureE2EEvidenceVerifierOptions,
 } from './pilot/replay-failure-e2e-evidence-verifier.js';
+export {
+  WorkflowHibernateLiveWindowError,
+  WorkflowHibernateWindowAuthorizationV1Schema,
+  executeWorkflowHibernateLiveWindow,
+  workflowHibernateWindowAuthorityDigest,
+  type FrozenWorkerSourceVerification,
+  type LiveBeforeDeployment,
+  type WorkflowHibernateLiveWindowDependencies,
+  type WorkflowHibernateLiveWindowErrorCode,
+  type WorkflowHibernateLiveWindowSummary,
+  type WorkflowHibernateWindowAuthorizationV1,
+} from './pilot/workflow-hibernate-live-window.js';
+export {
+  createWorkflowHibernateLiveWindowDependencies,
+  type WorkflowHibernateCommandExecutor,
+  type WorkflowHibernateLiveAdapterOptions,
+} from './pilot/workflow-hibernate-live-adapters.js';
