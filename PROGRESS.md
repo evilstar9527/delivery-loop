@@ -3407,3 +3407,17 @@
 - 勾选：新增并勾选“hotfix合并后冻结 + 零写恢复preflight”子项；真实hibernate、唯一Action、analysis/heartbeat与formal verifier继续未完成。
 - 决策沉淀：现有API token按owner决定继续使用，轻微历史泄漏不触发本轮轮换；仍不把token写入仓库、日志或authority。新source/bundle只是readiness，不能由CLI自授权。按owner要求不更新llmdoc。
 - 遗留：唯一当前外部前置是owner明确授权两个production deployment——先把`main=9c3ffa3...`/bundle=`43bf9523...`发布为新before，再生成最长30分钟且`resumeExistingTask=true`的fresh authority，只在双guard成立时发布唯一after。授权不得扩展到第二Task/Action、Secret轮换、rollback或repo write。
+
+## Round 177 — 2026-07-29
+- 目标：继续Phase 1“真实Cloudflare hibernate/Worker restart且GitHub dispatch一次”，本轮完成同一production恢复授权blocker的第三轮审计并停止盲重试；真实父项仍只接受`DELIVERY_LOOP_WORKFLOW_HIBERNATE_E2E=1 ... pnpm run e2e:workflow-hibernate`读取同一Run的D1、Cloudflare与GitHub外部事实后exit 0。
+- 前置与权限：owner明确确认现有API token的轻微历史暴露可接受，要求直接继续使用；因此五枚Keychain credential保持原值且不轮换，也不会输出或写入仓库。该输入只解决credential处置选择，不自动扩张Round 175已消费并绑定旧before的production effect授权。本轮没有D1写、Worker deploy、Task POST、Action、模型调用、after、rollback、Secret轮换或repo write外部effect。
+- 三轮审计：Round 175唯一operator创建exact Task后在relay前暴露PKCS#1兼容根因，安全停止于Task=1、Action=0、after=0，并首次明确恢复需要hotfix before与guarded after两次新deployment；Round 176完成修复合并、clean detached source、确定双build和零写live preflight，但没有新deployment授权；Round 177取得“不轮换、直接使用现有token”的credential决策，production effect授权仍未出现。重复运行旧authority会因过期且`resumeExistingTask=false`而失败，重复Task/operator会违反exact-once，绕过before直接等待则生产运行时仍无法加载App key，因此没有安全的无授权执行路径。
+- Phase 1依赖审计：未完成的真实hibernate、GitHub App实际dispatch、analysis Action与heartbeat四项都必须复用现有Task/Run并先发布hotfix before；它们不能拆成不触发production effect的替代闭环。platform-limits父项另需owner授权Runner并发分钟、约六小时probe及personal billing `Plan: read`，也不能用本轮readiness代替。既有Round 175/176生产D1、deployment、Workflow与Action安全投影保持有效，本轮按“减少数据库查询”要求不重复远端查询。
+- 验证：
+  - `git diff --check` → exit 0。
+  - `pnpm run verify:docs` → exit 0。
+  - `pnpm run verify:secrets` → exit 0，504个生产文件扫描通过。
+  - `pnpm run verify` → exit 0；typecheck、lint、115 Node files / 577 tests、57 workerd files / 309 tests、13 workflows / 13 jobs runner policy、504文件Secret scan与docs links全绿。
+- 勾选：无。真实hibernate、唯一GitHub Action、analysis与heartbeat继续未完成；凭证可继续使用不等于production恢复成功或部署授权。
+- 决策沉淀：`DOD.md`把当前blocker更新为Round 177第三轮停止盲重试；按owner要求不更新llmdoc。现有token继续留在macOS Keychain，仍不进入authority、日志、artifact或仓库。
+- Blocker与最小人工输入：owner明确回复或等价确认：`授权生产恢复：发布9c3ffa3 hotfix为新before；恢复现有Task；双guard成立时发布唯一after；不创建第二Task/Action，不轮换Secret，不rollback。`收到后重新只读核对main/current deployment/exact Task投影，生成最长30分钟且`resumeExistingTask=true`的fresh authority，并只运行一次operator。
