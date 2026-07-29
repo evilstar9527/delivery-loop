@@ -163,6 +163,8 @@
 23. provider preflight只允许把已按敏感环境值脱敏且最多8 KiB的CLI stderr映射为12个固定失败枚举；分类器不返回原文。`provider_stream_interrupted`只匹配Codex官方`stream disconnected before completion`或同一行明确带Responses/SSE stream语义的提前close/end/interruption，必须先于普通network分类；裸`connection closed/reset`不能被提升成stream，未知或恶意文本只返回`provider_process_failed`。raw stderr、第三方响应、URL、credential及其摘要不得写入Action log、artifact、manifest、D1或PROGRESS；分类枚举仅用于决定是否需要owner输入或受控修复，不构成provider成功证据。
 24. provider network preflight只读取`OPENAI_BASE_URL`，不能读取API key、启动Codex、向provider发送HTTP或上传artifact。它与三个adapter共用同一URL parser；DNS结果还必须至少包含一个公网地址，私网、loopback、link-local、documentation、multicast和reserved地址不得进入socket。TCP直接连接受控DNS结果以避免二次解析/rebinding，TLS仍以原hostname做SNI及系统CA/hostname校验。Action日志只允许固定code和三个布尔值，不允许hostname、IP、URL、证书、底层错误或digest；该诊断workflow只有`contents:read`且没有input/Environment/OIDC/write。
 
+25. provider Secret等价诊断只允许用一次性32-byte随机proof key，分别对`OPENAI_API_KEY`与`OPENAI_BASE_URL`的exact UTF-8字节计算field-domain-separated HMAC；proof key与两份期望proof都只能以短期repository Secret进入固定只读workflow，期望/实际proof、credential、URL及其长度不得进入日志、artifact或持久状态。比较使用常量时间，每项只输出固定`match/mismatch/invalid`枚举，不调用provider、Codex、控制面或模型。外部run结算后立即删除三枚proof Secret；两项match只排除GitHub Secret字节漂移，不能证明provider可用、Responses stream完整或hibernate成功。
+
 ## 5. Prompt Injection 防护
 
 - 系统策略与用户任务分离；外部内容使用带来源、时间和 digest 的引用块。
