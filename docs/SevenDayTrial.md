@@ -2,15 +2,22 @@
 
 本页定义Phase 6最后一项的真实外部证据流程。默认`pnpm run verify`不会访问网络；`pnpm run e2e:seven-day-trial`没有显式opt-in时固定exit 2。任何本地fake、重复执行10080次循环、修改时间或Wrangler dry-run都不能替代连续七个自然日的已部署运行。
 
-## 1. 当前阻塞事实
+## 1. 当前 readiness 与阻塞事实
 
-截至2026-07-26，当前仓库满足以下事实：
+截至2026-07-29，资源bootstrap已经不再是阻塞项：
 
-- `git remote -v`为空，没有可核对的GitHub远端或试点仓库；
-- `wrangler.jsonc`的D1 database ID仍为全零占位值，控制面没有真实部署证据；
-- 没有真实Worker日志/metrics/Secret alert查询端点，也没有连续七天的Run/PR/deployment外部事实。
+- `origin`绑定真实试点仓库`evilstar9527/delivery-loop`；
+- `wrangler.jsonc`绑定真实D1、四个私有R2 bucket、六个Queue、两个Workflow和每分钟Cron，控制面已有production deployment/version证据；
+- 这些事实只证明资源存在，不证明live observability、保留期、detector或七天窗口有效。仓库期望配置不能替代Cloudflare/日志平台live facts。
 
-因此父DoD保持未勾。先完成本页前置、开始真实窗口并等待完整七天；不能把本仓库示例manifest当成试运行报告。
+当前真正缺失的是：
+
+- production D1安全聚合仍为Task 0/Run 0，没有满足“至少一个真实Run”的非空试运行；
+- 没有冻结started/ended时间的10080分钟窗口、完整minute buckets或digest-bound observability report；
+- 没有用途隔离的operations/GitHub/observability只读token，也没有metrics/log/Secret alert永久查询链接和人工Reviewer记录；
+- 当前production Worker仍是早于仓库Sol/high配置的version，任何后续deployment与试运行开始都须独立授权和重新冻结deployment identity，不能静默沿用仓库期望值。
+
+因此父DoD保持未勾。完成live readiness review后才可开始真实窗口并等待完整七天；不能把资源bootstrap、仓库配置、示例manifest或本地循环当成试运行报告。
 
 ## 2. 三个独立事实源
 
