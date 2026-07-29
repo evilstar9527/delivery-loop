@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "1",
+  "eventId": "hibernate-drill-20260729",
+  "occurredAt": "2026-07-29T05:50:00.000Z",
+  "source": {
+    "system": "manual",
+    "tenantKey": "delivery-loop-owner",
+    "taskKey": "phase1-hibernate-drill-20260729",
+    "revision": "1"
+  },
+  "actor": {
+    "type": "user",
+    "id": "owner"
+  },
+  "target": {
+    "owner": "evilstar9527",
+    "repo": "delivery-loop",
+    "baseBranch": "main",
+    "environment": "none"
+  },
+  "intent": {
+    "kind": "requirement",
+    "title": "Read-only Workflow hibernate drill",
+    "description": "Inspect the repository and propose a read-only execution plan.",
+    "acceptanceCriteria": [
+      "The proposed plan uses read-only effects."
+    ],
+    "priority": "p2"
+  },
+  "policy": {
+    "allowRepositoryWrite": false,
+    "allowTestDeploy": false,
+    "allowProductionDeploy": false,
+    "requireHumanApproval": true
+  }
+}
