@@ -67,8 +67,8 @@ describe('public repository GitHub workflow runner policy', () => {
       source: await readFile(resolve(directory, entry.name), 'utf8'),
     })));
     expect(verifyPublicRepositoryWorkflowRunnerPolicy(sources)).toEqual({
-      workflowCount: 12,
-      jobCount: 12,
+      workflowCount: 13,
+      jobCount: 13,
     });
   });
 });
