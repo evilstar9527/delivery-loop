@@ -80,6 +80,7 @@
   - [x] 真实hibernate exact Task候选前置（不等于owner授权、Task创建或外部执行）：Round 170在仓库外0600文件冻结一份只读requirement Task，policy固定repo/test/production write全false且require human approval；schema与canonical算法得到envelope/revision digest及deterministic Task/Run/analysis Attempt，production D1只读查询证明三者均为0且`rows_written=0`。当前五枚用途隔离运行凭证全部未注入，30分钟authorization也未生成，因此没有Task、Action、after或rollback；安全摘要与exact ID见`PROGRESS.md` Round 170。
   - [ ] 真实 Cloudflare 环境强制 hibernate/Worker restart，并以 GitHub 外部 run 事实证明实际 Action dispatch 仅一次。
     - Provider前置已在Round 164解除：一次性field-domain HMAC诊断先证明GitHub Actions中的API key与Base URL都不等于CC Switch active provider；两项经stdin覆盖后，同一run attempt 2固定输出双`match`并成功，三枚临时proof Secret随即删除。随后main上的Sol/high真实preflight [30416517222](https://github.com/evilstar9527/delivery-loop/actions/runs/30416517222) `completed/success`。这纠正了Round 163基于owner口头“相同配置”的条件结论：历史stream失败至少包含凭据/URL漂移，不能继续归因为Hosted Runner出口。hibernate父项仍需真实Task/Attempt、current Worker deployment、受控restart和唯一dispatch外部事实，不能由preflight替代。
+    - 当前blocker（Round 171）：Round 169～171连续三轮仍未取得绑定exact Task/effects的owner authorization，且Task/operations/GitHub/Cloudflare-read/Cloudflare-deploy五枚用途隔离凭证均未注入。按停止盲重试纪律暂停该目标；恢复所需最小人工输入见`PROGRESS.md` Round 171，未经输入不得创建Task、Action、after或轮换Secret。
 - [x] ExecutionPlan v1 校验覆盖 Item ID/依赖无环、至少一条 doneWhen、Evidence 要求、delivery policy command ref、effect 上限、plan version/digest/base SHA 不变量。
 - [x] 状态迁移使用 compare-and-set；两个并发 worker 争抢同 attempt 时只有一个拿到带 lease generation 的写租约。
 - [ ] GitHub App 只安装到试点仓库；dispatcher 成功触发固定 workflow ref，dispatch payload 经过测试证明无 Secret/任务正文。

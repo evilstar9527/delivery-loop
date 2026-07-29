@@ -3330,3 +3330,16 @@
 - 勾选：新增并勾选“真实hibernate exact Task候选前置”子项；真实Cloudflare hibernate、唯一dispatch、analysis Action与heartbeat父项继续未完成。
 - 决策沉淀：Task内容可提前冻结，但`WorkflowHibernateWindowAuthorizationV1`最长30分钟，只有owner明确批准后才能按当时live main head/current before重新生成并验digest；提前造一份未来时间或复用过期example都不是authority。当前before锚点仍为source `e14d11e...`及deployment `8b646225...`，当前main `91c2a8c...`只作为拟触发Action head，二者不得混用。按owner要求不更新llmdoc。
 - 遗留：同一外部前置连续第二轮仍缺：owner尚未明确授权一个Task、一个付费Action及guard成立时一个after，五枚用途隔离token也未安全注入。若现有TASK/operations原值不可取，需要owner另行批准Secret轮换和新的before基线；未经批准不得用宽权限GitHub登录态或Wrangler OAuth绕过operator隔离。
+
+## Round 171 — 2026-07-29
+- 目标：Phase 1“真实 Cloudflare 环境强制hibernate/Worker restart并证明dispatch一次”的三轮blocker审计。本轮不再重跑production查询或构建，而是按`AGENTS.md`/`LOOP.md`记录重复阻塞、已完成路径和恢复所需最小人工输入后停止盲重试；父项保持未勾。
+- 前置与权限：仅检查当前Git分支、仓库外Task文件权限和五个credential环境变量的present/missing状态；没有读取值，没有调用D1/控制面/GitHub/Cloudflare网络，没有Task、Action、模型、deployment、rollback、Secret轮换或repo write effect。Round 170的production D1零identity事实仍可复用，不重复查询数据库。
+- 已完成尝试：Round 168完成并验证默认关闭的live-window operator、五token用途隔离、双guard与exact no-bundle after；Round 169经PR [#40](https://github.com/evilstar9527/delivery-loop/pull/40)及PR/main CI把operator交付到默认分支；Round 170冻结0600只读Task候选、计算canonical digest与deterministic Task/Run/Attempt，并只读证明production对应计数全0。三轮均严格保持Task/Action/after/rollback为0，没有用本地契约冒充真实hibernate。
+- 当前重复blocker：owner尚未明确批准exact effects=`taskCreates:1 + paid analysisActions:1 + guarded afterDeployments:1 + rollbacks:0 + repoWrite:0`；`WORKFLOW_HIBERNATE_WINDOW_{TASK_TOKEN,OPERATIONS_TOKEN,GITHUB_TOKEN,CLOUDFLARE_READ_TOKEN,CLOUDFLARE_DEPLOY_TOKEN}`仍全部missing。现有`gh`登录态与Wrangler OAuth权限更宽，按安全契约不能替代五枚用途隔离token。
+- 验证：
+  - `git status --short --branch`与仓库外`stat` → exit 0；分支此前提交均已推送，Task候选仍为普通0600文件、1,134 bytes。
+  - 五环境变量只做非空presence检查 → exit 0，结果全部missing；未输出value、长度、digest或来源。
+  - `pnpm run verify:docs`、`pnpm run verify:secrets`与`git diff --check` → exit 0；504个生产文件Secret扫描和文档链接全绿。不重跑D1、build、Action或deploy，因为外部状态和授权前置没有变化。
+- 勾选：无。真实hibernate、唯一dispatch、analysis Action与heartbeat父项全部保持未完成；不以blocker记录替代DoD证据。
+- 决策沉淀：满足“三轮未闭环即停止盲重试”阈值，将持续目标置为blocked而不是继续制造无效子契约。已冻结Task候选与before锚点保留，但30分钟authorization必须在恢复时按live main/current before重新生成，旧口头授权、过期example或宽权限credential均不可复用。按owner要求不更新llmdoc。
+- 恢复所需最小人工输入：owner回复以下二者之一——`授权exact演练；现有TASK/OPS原值可安全取用`，或`授权exact演练；TASK/OPS原值不可取，并授权轮换两枚Secret、重新发布before及创建最小权限GitHub/Cloudflare token`。Secret不得粘贴到聊天；恢复后通过系统钥匙串/已登录控制台安全注入，再执行唯一一次operator与formal verifier。
