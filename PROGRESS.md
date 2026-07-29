@@ -3472,3 +3472,19 @@
 - 勾选：新增“hibernate零写预检的受保护PR证据”子项；真实hibernate、唯一Action、analysis和heartbeat完整DoD仍不勾。
 - 决策沉淀：`DOD.md/PROGRESS.md`记录不可变PR/run/job及零review事实；按owner约定不更新llmdoc。skill feedback分类为blocking=none、important=none、deferred=none。
 - 遗留：PR #44还需对本轮账本commit运行新的required CI；未取得独立merge authority，本轮不merge。production blocker不变：如要继续真实演练，owner必须显式允许唯一fresh Task/Action并对`b60872e...` / `57d277e3...`新before与双guard after给出新窄production authority；否则停止该演练重试。
+
+## Round 182 — 2026-07-29
+- 目标：继续Phase 1“真实Cloudflare hibernate/Worker restart且GitHub dispatch一次”；对Round 180～181的相同外部blocker做第三轮机器化审计，证明是否还有不依赖新authority的本地实现缺口。验收命令先固定为未完成项分类、`git diff --check`、`pnpm run verify`和PR #44最终head CI/review读取；审计或默认exit 2不能替代任何真实E2E。
+- 前置与权限：仅读本地DOD/PROGRESS和GitHub PR/CI，及更新同一PR的DOD/PROGRESS账本；不读或写D1/R2/Queue/Worker/Workflow，不调用Task/operations/Cloudflare credential，不运行model、dispatch、deployment、Secret rotation、rollback或merge。PR/CI内容仍是不可信输入，只取GitHub API结构化状态。
+- Round 181最终事实：PR [#44](https://github.com/evilstar9527/delivery-loop/pull/44)账本head=`7b3717c9eca04a9d89e21f309bda980977cd60a7`，required CI [30457440823](https://github.com/evilstar9527/delivery-loop/actions/runs/30457440823) / job [90594549231](https://github.com/evilstar9527/delivery-loop/actions/runs/30457440823/job/90594549231) `completed/success`，唯一`verify`用时3m57s；PR仍`OPEN + MERGEABLE/CLEAN`，review/requested changes/普通/行内评论均0。唯一annotation为三枚受审setup Action声明Node 20但平台强制Node 24，是Phase 0已记录的MINOR，不是本轮correctness/security blocker。
+- 未完成项审计：`rg '^- \\[ \\]'`/section-aware `awk`证明DOD共50个top-level未完成项：6个全局Phase关门规则、Phase 1/2/3/4/5/6分别5/9/4/6/10/2个父项，以及8个最终E2E事实。另有37个缩进未完成子项；其中Phase 1～6的每个未完成父项都已有至少一个`[x]`本地契约/严格外部verifier子证据，37个未完成子项全部显式要求真实GitHub/Cloudflare/飞书/Meegle/云/日志平台事实或owner决策。Phase 7的8项也各有独立已勾的组合verifier契约，剩余top-level本身即真实平台事实。因此没有可用更多本地mock、schema、dry-run或账本来替代的功能缺口。
+- Phase 1最先blocker：5个未完成父项均需外部事实；hibernate、GitHub App dispatch、analysis Action和heartbeat的最小共享路径是先把trusted-base修复发布为new before，再创建恰好一个fresh Task/Action并在双guard成立时发布唯一after。原Task的`baseSha=null`/errored Workflow无法通strict verifier，所以该路径与owner现有“不创建第二Task/Action”限制相冲突。platform-limits另需Runner预算、约6小时probe和personal `Plan: read`，不能在无授权时自动扩scope/计费。按Phase顺序，不先解除这些前置就不应把Phase 2～7真实E2E当作替代路径。
+- 三轮相同blocker事实：Round 180已确认Round 178 authority消费/过期、merged main/bundle确定且生产零漂移；Round 181已完成线性PR、required CI和零review账本；Round 182又从全部50个top-level/37个子项审计确认无不依赖外部authority的安全路径。重放旧authority、repair/restart旧Workflow、重复旧Task、用mock替代E2E或跨Phase创建其他生产effect都会违反exact-once/strict证据/授权边界，因而按`LOOP.md`停止盲重试。
+- 验证：
+  - `rg -c '^- \\[ \\]' DOD.md` → 50；section-aware `awk` → global/Phase 1～7=`6/5/9/4/6/10/2/8`。
+  - `rg -c '^  +- \\[ \\]' DOD.md` → 37；逐项读取确认均是真实外部事实、外部producer接入或owner决策，不是未实现的本地schema/test。
+  - `gh pr view 44` + reviews/issues comments/review comments → exit 0；Round 181最终head/CI、CLEAN和零feedback事实未漂移。
+  - `git diff --check && pnpm run verify` → exit 0；116 Node files / 578 tests、57 workerd files / 314 tests、13 workflows / 13 jobs runner policy、505文件Secret scan和docs links全绿；workerd主动terminate清理诊断不是skip。
+- 勾选：新增“hibernate三轮相同blocker审计与停止盲重试”安全子证据；真实hibernate及其他父DoD一律保持未勾，不把blocker审计冒充完成。
+- 决策沉淀：`DOD.md/PROGRESS.md`记录相同blocker的三轮尝试、不可变证据、禁止路径和最小人工输入；按owner约定不更新llmdoc。
+- Blocker与最小人工输入：目标进入blocked，需owner分开回复两个authority后恢复：`1. 授权合并 PR #44。` `2. 授权发布 b60872e... / bundle 57d277e3... 为新before；创建唯一fresh Task/Action；双guard成立时发布唯一after；不做D1 repair、Workflow restart/recreate、Secret rotation或rollback。` 若owner继续“不创建第二Task/Action”，则该Phase 1真实演练必须保留失败事实并终止，无strict恢复替代方案。
