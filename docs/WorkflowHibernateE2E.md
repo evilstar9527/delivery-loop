@@ -53,6 +53,31 @@ Task进入`await-analysis-result`并确认唯一dispatch后，第二次after发�
 
 第二次快照任何identity、状态、流量、计数或时间漂移都必须在调用Wrangler前返回固定错误，生产写为0。只有两次guard均成立才能以`--strict`调用一次after；调用后还必须证明新deployment/version不同、100% traffic、wait内deployment总数恰好1且`after.createdAt < wait.endedAt`（或wait仍未结束）。post-check失败只把本次演练判失败，不获得自动rollback权限，也不能重新创建Task/Action或执行第二次after。纯函数测试不能替代live collector、Wrangler执行或formal verifier。
 
+仓库内`pnpm run ops:workflow-hibernate-window`把该协调契约接到真实控制面、GitHub、Cloudflare与Wrangler，但默认在任何文件、命令或网络前exit 2。它只能读取两份仓库外、普通文件、非symlink、权限不宽于0600且各不超过64 KiB的输入：一份完整TaskEnvelope和一份`WorkflowHibernateWindowAuthorizationV1`。示例[Task](../schemas/workflow-hibernate-window-task-v1.example.json)与[authorization](../schemas/workflow-hibernate-window-authorization-v1.example.json)已经过期，只说明shape，不能复制后运行。authorization固定且只允许30分钟窗口，绑定exact Task envelope/revision及其deterministic Task/Run/analysis Attempt、目标repository/base、Action head SHA、冻结source/bundle bytes+digest、before deployment/version/time和`Task=1 + Action=1 + after=1 + rollback=0`。`authorityDigest`是除自身外全部authorization字段的canonical digest，只用于发现文件漂移，不是签名或自授权；真正的production authority来自owner对该digest的外部批准以及仅向本次进程注入的用途隔离凭证。
+
+CLI在Task写入前依次证明authorization仍生效且digest未变、Task正文/digest/只读policy匹配、冻结worktree干净且HEAD精确、两次独立Wrangler build的bytes/hash一致、before仍为当前100% deployment、deterministic Task尚不存在。随后只发送一次带稳定Idempotency-Key的`POST /v1/tasks`，最长5分钟只重试`live_snapshot_not_ready`；identity冲突、callback、duplicate、分页、响应超限、Secret命中或source/deployment漂移立即停止且after为0。进入wait后，再由既有guard读取两次fresh snapshot。adapter把首次双构建的精确bundle只保存在内存，after时写入仓库外0600临时文件，并用锁定Wrangler的`deploy <worker.js> --no-bundle --strict`上传该字节串；本地对照已经证明普通dry-run与no-bundle dry-run的`worker.js`字节和SHA-256完全相同。每条Wrangler命令还显式使用临时0600空`--env-file`并把HOME/XDG隔离到同一临时目录，避免ignored dotenv或本机OAuth成为隐式输入。该adapter每个实例最多尝试一次Task POST和一次strict deploy，忽略Wrangler stdout/stderr并在finally清理临时bundle；失败仍不提供rollback dependency。
+
+真实执行必须为五个互不相同的凭证：Task intake/Run Plan、operations Case 8、GitHub Actions read、Cloudflare Workflow/deployment read、Cloudflare Worker deploy。它们只进入对应Authorization header或deploy子进程环境，均不进入argv、输入文件、summary或错误。所有HTTP固定HTTPS、10秒、1 MiB、拒绝redirect与next-page，并在JSON parse前扫描五枚token和通用credential形状；命令输出固定1 MiB/120秒但从不向上游传播。配置如下：
+
+```text
+DELIVERY_LOOP_WORKFLOW_HIBERNATE_WINDOW=1
+WORKFLOW_HIBERNATE_WINDOW_AUTHORIZATION_FILE=<仓库外0600绝对路径>
+WORKFLOW_HIBERNATE_WINDOW_TASK_FILE=<仓库外0600绝对路径>
+WORKFLOW_HIBERNATE_WINDOW_SOURCE_DIRECTORY=<冻结source SHA的clean worktree绝对路径>
+WORKFLOW_HIBERNATE_WINDOW_WRANGLER_BINARY=<锁定Wrangler绝对路径>
+WORKFLOW_HIBERNATE_WINDOW_CONTROL_PLANE_URL=<控制面HTTPS origin>
+WORKFLOW_HIBERNATE_WINDOW_TASK_TOKEN=<Task intake + Run Plan token>
+WORKFLOW_HIBERNATE_WINDOW_OPERATIONS_TOKEN=<Case 8 token>
+WORKFLOW_HIBERNATE_WINDOW_GITHUB_TOKEN=<单仓库Actions read token>
+WORKFLOW_HIBERNATE_WINDOW_CLOUDFLARE_READ_TOKEN=<目标account Workflow/deployment read token>
+WORKFLOW_HIBERNATE_WINDOW_CLOUDFLARE_DEPLOY_TOKEN=<目标Worker deploy token>
+WORKFLOW_HIBERNATE_WINDOW_CLOUDFLARE_ACCOUNT_ID=<目标account ID>
+WORKFLOW_HIBERNATE_WINDOW_GITHUB_API_URL=<可选；默认https://api.github.com>
+WORKFLOW_HIBERNATE_WINDOW_CLOUDFLARE_API_URL=<可选；默认https://api.cloudflare.com/client/v4>
+```
+
+`ops:workflow-hibernate-window`成功只输出Task/Run/Attempt、before/after deployment/version、Action base SHA和固定effect计数；执行/外部不一致exit 1，未opt-in、配置或文件缺失exit 2，其他失败只输出固定code。它会真实创建Task并可能执行一次production after，因此只能在owner对exact authorization明确批准后运行；CLI exit 0仍必须继续正常callback与本文件§3 formal verifier，不能单独关门hibernate DoD。
+
 1. 发布before版本，记录deployment/version ID与时间；创建一个真实Task/Run，并确认`run_id`就是Workflow instance ID。
 2. 等待instance进入`await-analysis-result`。Cloudflare instance详情必须显示`register-run`与`dispatch-analysis-attempt`已经成功，D1只有一个analysis Attempt和一个`analysis_dispatch` outbox；GitHub stable title `delivery-loop/<attemptId>`只有一个Action。
 3. 在正常analysis callback入账前取得上述两次fresh guard；任一guard失败则不发布。guard成立时立即发布一次after Worker版本。受控窗口内在wait开始前生效的最后一个deployment必须是before，wait期间只能有这一个after deployment。
