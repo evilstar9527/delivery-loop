@@ -42,11 +42,20 @@ pnpm exec wrangler deploy --strict --message "phase1-hibernate-before main@<main
 
 发布后必须重新核对100% traffic、Sol/high profile binding、三枚既有Secret binding名称、D1/R2/Queue/Workflow/cron/observability安全投影和`/healthz=200`。healthz只证明isolate liveness；profile/D1、GitHub dispatch或provider成功仍需各自事实。发布前的100% version只作为人工review的rollback anchor；`wrangler rollback`是独立production写操作，未经新的明确授权不得自动执行。
 
-Task进入`await-analysis-result`并确认唯一dispatch后，第二次after发布也需要明确production授权，继续使用相同main SHA、bundle digest与`--strict`，message绑定安全run ID。wait窗口内只能出现这一个after deployment；发布失败时停止演练，不发送analysis result或改写D1。
+Task进入`await-analysis-result`并确认唯一dispatch后，第二次after发布也需要明确production授权，继续使用相同main SHA、bundle digest与`--strict`，message绑定安全run ID。固定Runner在Plan提交后会立即执行正常callback，不能假设操作者一定来得及在Task创建后再等待一次人工授权。安全窗口应一次性授权“仅当exact guard成立时执行一次after”：授权绑定本次before deployment/version、冻结source/bundle和唯一Run/Attempt，不是任意未来Worker发布权限。wait窗口内只能出现这一个after deployment；发布失败时停止演练，不发送额外signal、不改写D1且不自动rollback。
+
+仓库内`executeConditionalHibernateAfter`是这条conditional-after的纯协调契约，不会因函数参数或测试通过而自行产生production authority。实际操作者必须先取得上述exact授权，再让live collector提供两次连续、最多5秒陈旧的快照；每次都同时证明：
+
+- source worktree干净且HEAD等于冻结SHA，两次独立bundle build都等于冻结digest；
+- 当前100% deployment/version仍是before，wait开始后尚无其他deployment；
+- 同一Run仍为`planning`且无active Plan，Workflow instance恰好1个，`register-run`与`dispatch-analysis-attempt`成功而`await-analysis-result`仍未结束，恢复步骤为0；
+- analysis Attempt、已settled dispatch outbox及stable-title GitHub Action各恰好1个；Attempt只能是`pending|starting|running`，Action只能是`queued|in_progress`且result signal outbox为0，因此正常callback尚未入账。
+
+第二次快照任何identity、状态、流量、计数或时间漂移都必须在调用Wrangler前返回固定错误，生产写为0。只有两次guard均成立才能以`--strict`调用一次after；调用后还必须证明新deployment/version不同、100% traffic、wait内deployment总数恰好1且`after.createdAt < wait.endedAt`（或wait仍未结束）。post-check失败只把本次演练判失败，不获得自动rollback权限，也不能重新创建Task/Action或执行第二次after。纯函数测试不能替代live collector、Wrangler执行或formal verifier。
 
 1. 发布before版本，记录deployment/version ID与时间；创建一个真实Task/Run，并确认`run_id`就是Workflow instance ID。
 2. 等待instance进入`await-analysis-result`。Cloudflare instance详情必须显示`register-run`与`dispatch-analysis-attempt`已经成功，D1只有一个analysis Attempt和一个`analysis_dispatch` outbox；GitHub stable title `delivery-loop/<attemptId>`只有一个Action。
-3. 不发送analysis result，等待该instance处于`waiting`，然后发布after Worker版本。受控窗口内在wait开始前生效的最后一个deployment必须是before，wait期间只能有这一个after deployment。
+3. 在正常analysis callback入账前取得上述两次fresh guard；任一guard失败则不发布。guard成立时立即发布一次after Worker版本。受控窗口内在wait开始前生效的最后一个deployment必须是before，wait期间只能有这一个after deployment。
 4. 发布完成后再让同一个Action通过正常reference-only callback/outbox发送analysis result；不得手工改D1或直接调用Workflow内部方法。
 5. 等待同一instance继续执行`verify-analysis-result`、`activate-analysis-plan`与`observe-run-control-state`，随后进入`await-run-terminal`。Run/Plan投影必须为`awaiting_approval + active Plan`，Case 8不得出现controlled replay，Workflow reconciliation不得出现restart/recreate repair。
 6. 从Cloudflare instance API取得七条安全step标量并计算canonical digest；raw output/error只在采集进程内丢弃。再次读取并重算Case 8 report digest，再读GitHub API，确认analysis Attempt、dispatch outbox、Workflow instance和stable-title Action各为1。
