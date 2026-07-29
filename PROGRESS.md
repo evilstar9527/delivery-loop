@@ -3358,3 +3358,17 @@
 - 勾选：新增并勾选“owner authority恢复与execution preflight”子项；真实hibernate/唯一dispatch/analysis/heartbeat仍未完成。
 - 决策沉淀：本轮browser skill要求token创建优先用purpose-built surface；GitHub CLI/Cloudflare Wrangler都不能签发所需最小token，才回退已有登录态UI。技能的action-time确认由owner本轮exact授权覆盖，但sudo/Cloudflare登录仍由owner本人完成。30分钟authority不会在人工认证前提前生成或伪造有效期；按owner要求不更新llmdoc。
 - 遗留：等待owner在GitHub标签页完成sudo verification、在Cloudflare标签页登录，并在Terminal完成TASK/OPS两次Keychain隐藏输入后回复“已完成”。随后创建并立即安全存储GitHub Actions-read、Cloudflare Workflow/deployment-read及Worker-deploy三枚token，核对五值互异和scope，再生成fresh authority并执行唯一operator。
+
+## Round 173 — 2026-07-29
+- 目标：Phase 1真实hibernate演练恢复后的三轮credential handoff blocker审计。owner exact effects授权已存在，但本人认证/隐藏输入连续三轮未完成；按`AGENTS.md`/`LOOP.md`再次停止盲重试并保留安全handoff，父项保持未勾。
+- 前置与权限：只检查macOS Keychain service是否存在、helper进程名、Git状态与Cloudflare tab的URL/title；没有使用`security -w`读取值，没有读取browser cookie/storage/password/验证码，没有点击登录/生成token，也没有D1/Task/Action/model/Cloudflare deployment/rollback/Secret rotation外部effect。
+- 三轮事实：Round 172首次打开GitHub sudo、Cloudflare login及TASK/OPS Keychain helper；随后只读复核发现GitHub sudo已完成并到达fine-grained token表单，但Cloudflare仍为login，helper仍等待第一枚TASK token。第三次复核结果相同：`delivery-loop-hibernate-{task,operations}-token`均missing，helper进程仍运行，Cloudflare URL仍为`/login?redirect_uri=/profile/api-tokens`。未把GitHub单项进展冒充credential ready。
+- 已尝试路径：两次把GitHub/Cloudflare页面保留为in-app browser handoff；仓库外0700 helper已在Terminal运行并使用系统隐藏输入接口；每轮明确要求不要把Secret发到聊天。重复打开页面、猜登录方式、读取密码管理器/clipboard/keychain value、用Wrangler OAuth代替隔离token或提前提交GitHub token表单都不会解除本人认证边界，因此不再执行。
+- 验证：
+  - `security find-generic-password -s <service>`仅以exit code检查metadata → 两项missing；未请求`-w`且零value输出。
+  - `pgrep -fl store-task-ops.command` → helper仍在等待；只输出进程名/路径，不含stdin。
+  - browser tab list → GitHub fine-grained token form ready，Cloudflare仍在login；未读取或保存raw DOM/截图到仓库。
+  - `pnpm run verify:docs`、`pnpm run verify:secrets`与`git diff --check` → exit 0；504个生产文件Secret扫描和文档链接全绿。不重跑source/build/D1/live preflight，因为Round 172事实仍冻结且credential前置未变。
+- 勾选：无。真实hibernate、唯一dispatch、analysis Action与heartbeat继续未完成；owner authorization和GitHub sudo不替代五token或外部effect证据。
+- 决策沉淀：目标重新置为blocked不是撤销owner authority，而是防止30分钟authorization在本人认证前被提前生成/过期或生产窗口被部分执行。恢复时必须重新只读核对main/before/Task identity并生成fresh文件；现有source worktree、Task候选、浏览器tabs和Terminal helper保留。按owner要求不更新llmdoc。
+- 恢复所需最小人工输入：owner在Cloudflare页完成登录、在Terminal完成TASK/OPS两次隐藏输入后回复`已完成`。不要在聊天中发送Secret；收到确认后先metadata/最小scope核对，再在提交GitHub/Cloudflare token创建表单前使用owner本轮确认作为action-time authority，随后执行唯一operator。
