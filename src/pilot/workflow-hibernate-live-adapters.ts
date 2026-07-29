@@ -13,6 +13,7 @@ import {
   type WorkflowHibernateLiveWindowDependencies,
   type WorkflowHibernateWindowAuthorizationV1,
 } from './workflow-hibernate-live-window.js';
+import { normalizeCloudflareWorkflowStepName } from './cloudflare-workflow-step.js';
 import type {
   WorkflowHibernateAfterRequest,
   WorkflowHibernateAfterResult,
@@ -568,9 +569,13 @@ class LiveHttpAdapter {
     const registerEnd = isoDate(register.end);
     const dispatchEnd = isoDate(dispatch.end);
     if (
-      register.name !== 'register-run' || register.type !== 'step' || register.success !== true ||
-      dispatch.name !== 'dispatch-analysis-attempt' || dispatch.type !== 'step' ||
-      dispatch.success !== true || waitStep.name !== 'await-analysis-result' ||
+      normalizeCloudflareWorkflowStepName(register.name, 'register-run') === null ||
+      register.type !== 'step' || register.success !== true ||
+      normalizeCloudflareWorkflowStepName(
+        dispatch.name, 'dispatch-analysis-attempt',
+      ) === null || dispatch.type !== 'step' ||
+      dispatch.success !== true ||
+      normalizeCloudflareWorkflowStepName(waitStep.name, 'await-analysis-result') === null ||
       waitStep.type !== 'waitForEvent' || registerEnd === null || dispatchEnd === null
     ) fail('live_snapshot_conflict');
     return {
@@ -606,7 +611,8 @@ class LiveHttpAdapter {
     const steps = Array.isArray(instance.steps)
       ? instance.steps.map(record).filter((step): step is Record<string, unknown> => step !== null)
       : [];
-    const waits = steps.filter((step) => step.name === 'await-analysis-result');
+    const waits = steps.filter((step) =>
+      normalizeCloudflareWorkflowStepName(step.name, 'await-analysis-result') !== null);
     if (waits.length === 0) fail('live_snapshot_not_ready');
     if (waits.length !== 1) fail('live_snapshot_conflict');
     const wait = waits[0]!;

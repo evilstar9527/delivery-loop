@@ -42,7 +42,12 @@ async function reset(): Promise<void> {
   ]);
 }
 
-async function seedRun(runId: string, state: RunState, version: number): Promise<void> {
+async function seedRun(
+  runId: string,
+  state: RunState,
+  version: number,
+  baseSha: string | null = 'b'.repeat(40),
+): Promise<void> {
   const taskId = `task-${runId}`;
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare(
@@ -61,7 +66,7 @@ async function seedRun(runId: string, state: RunState, version: number): Promise
          run_id, task_id, task_revision, task_digest, base_sha,
          workflow_instance_id, state, version, created_at, updated_at
        ) VALUES (?, ?, '1', ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(runId, taskId, DIGEST, 'b'.repeat(40), runId, state, version, NOW, NOW),
+    ).bind(runId, taskId, DIGEST, baseSha, runId, state, version, NOW, NOW),
   ]);
 }
 
@@ -277,6 +282,63 @@ describe('Cloudflare Workflow ↔ D1 Run reconciliation', () => {
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM outbox WHERE kind LIKE 'workflow_reconcile_%'`,
     ).first()).toEqual({ count: 0 });
+  });
+
+  it('never creates or restarts a Workflow while the trusted base SHA is unresolved', async () => {
+    await seedRun('run-null-base-create', 'queued', 0, null);
+    await seedRun('run-null-base-restart', 'planning', 1, null);
+    const client = new FakeStatusClient();
+    client.statuses.set('run-null-base-create', 'unknown');
+    client.statuses.set('run-null-base-restart', 'errored');
+    const reconciler = new WorkflowInstanceReconciler(
+      env.DB_CONTROL,
+      client,
+      () => new Date(NOW),
+    );
+
+    await expect(reconciler.reconcileRun('run-null-base-create')).resolves.toBe(
+      'base_sha_unresolved',
+    );
+    await expect(reconciler.reconcileRun('run-null-base-restart')).resolves.toBe(
+      'base_sha_unresolved',
+    );
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox WHERE kind LIKE 'workflow_reconcile_%'`,
+    ).first()).toEqual({ count: 0 });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM workflow_instance_reconciliation_state',
+    ).first()).toEqual({ count: 2 });
+  });
+
+  it('rechecks base SHA before executing an already queued reconciliation repair', async () => {
+    await seedRun('run-base-cleared-after-reconcile', 'queued', 0);
+    const client = new FakeStatusClient();
+    const reconciler = new WorkflowInstanceReconciler(
+      env.DB_CONTROL,
+      client,
+      () => new Date(NOW),
+    );
+    expect(await reconciler.reconcileRun('run-base-cleared-after-reconcile')).toBe(
+      'recreate_requested',
+    );
+    const outbox = await repairOutbox('run-base-cleared-after-reconcile');
+    await env.DB_CONTROL.prepare(
+      'UPDATE runs SET base_sha = NULL WHERE run_id = ?',
+    ).bind('run-base-cleared-after-reconcile').run();
+    const effects = new FakeWorkflowEffects();
+    const processor = new WorkflowOutboxProcessor(env.DB_CONTROL, effects, {
+      now: () => new Date(NOW),
+    });
+
+    await expect(processor.deliver(outbox.outbox_id)).resolves.toBe('retry');
+    expect(effects.ensureRun).not.toHaveBeenCalled();
+    expect(effects.restartRunForReconciliation).not.toHaveBeenCalled();
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT delivery_state, last_error_code FROM outbox WHERE outbox_id = ?',
+    ).bind(outbox.outbox_id).first()).toEqual({
+      delivery_state: 'pending',
+      last_error_code: 'base_sha_unresolved',
+    });
   });
 
   it('uses the durable last-checked cursor so a batch limit cannot starve later Runs', async () => {

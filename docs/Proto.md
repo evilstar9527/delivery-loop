@@ -381,7 +381,12 @@ monitor body strict固定为`schemaVersion/eventId/occurredAt/status='firing'/al
 `202 { accepted: true, taskId, runId }` 并指向同一持久化 Task/Run。相同 `Idempotency-Key`
 与相同 canonical request 可安全重放；同 key 更换 request 返回 `409 conflict`，不得创建第二套业务记录。
 Idempotency key 仅保存 digest，不写日志或 R2。规范化 Task 正文写受控 R2，D1/Workflow 只持有引用与
-digest。intake 不信任客户端提供 base SHA；控制面必须在 analysis dispatch 前从受信 GitHub 事实解析并固定。
+digest。intake 不信任客户端提供 base SHA；manual intake在Secret扫描后先按key/request digest读取既有
+idempotency projection，同一已完成请求不再依赖GitHub可用性。只有新请求才用repository-scoped、
+`contents:read`的GitHub App installation token读取exact `refs/heads/<Task baseBranch>`，严格要求对象类型为
+commit且SHA为40位小写hex，并在第一次D1/R2写入前把该SHA传给`TaskIntakeStore`固定到Run。配置缺失、
+repository未授权、ref不存在或响应非法统一返回安全的`503 unavailable`且Task/Run/outbox/R2为零；caller没有
+base SHA字段，不能用Task正文或请求参数覆盖该事实。
 Task schema 校验后、计算 identity 或写 D1/R2 前，控制面必须扫描当前 Worker 已配置 Secret 与常见
 credential 形状；命中返回固定 `policy_denied`，响应与 finding 不包含原始值，也不得留下部分业务记录。
 
@@ -889,6 +894,7 @@ Cloudflare Workflow实例事实与D1 Run业务投影遵循另一条双向reconci
 - 官方platform status仅允许`queued/running/paused/waiting/waitingForPause/errored/terminated/complete/unknown`。adapter只返回该枚举；`InstanceStatus.error/output`和`.get/status`异常正文一律丢弃，失败收窄为`unknown`；
 - D1 `received/triaging/awaiting_approval/queued/planning/executing/verifying/pull_request_open/awaiting_review/ready_to_merge/merging/deploying`要求Workflow active；`blocked/failed/succeeded/cancelled`要求Workflow inactive。前者配terminal生成`restart_workflow`，配unknown生成`recreate_workflow`；后者配active生成`terminate_workflow`；
 - 每次检查以safe fact digest更新`workflow_instance_reconciliation_state`，batch按最久未检查排序。只有mismatch写immutable observation与`workflow_reconcile_create|restart|terminate` outbox；Cron不直接产生平台effect。20路相同scan由`(run,version,status,action)`和dedupe key收敛；
+- `runs.base_sha IS NULL`时，active Run配unknown/terminal只返回固定`base_sha_unresolved`并保留scan事实，不创建recreate/restart observation或outbox。processor执行任何已经排队的recreate/restart repair前还必须重新读取Run并做同一检查；未解析时回pending且外部Workflow effect为零，不能借自动repair绕过普通`workflow_create`的base guard；
 - processor重新绑定observation、原outbox、Run state/version与active/inactive关系。stale或已resolved只settle固定码；create使用相同run ID，restart先识别已经active，terminate对unknown/terminal幂等。effect成功仅写`repairObservedAt`，下一次看到一致关系才把observation resolved；Run version前进则以`run_advanced`结案旧记录；
 - pending controlled replay拥有terminal instance的显式优先权，自动create/restart不与它竞争。Task/Run查询只返回latest status/fact digest/check time和最近20条action/outbox/time/resolution，不返回平台error/output；
 - Plan激活后Workflow进入`await-run-terminal`，timeout固定365天（官方允许上限）。D1业务终态不会由event自证；scheduled terminate结束waiting实例。若365天到期令平台errored而D1仍active，自动restart从D1当前Plan恢复控制wait。长期恢复不依赖已完成实例超过平台3/30天的history retention。
@@ -915,13 +921,13 @@ Workflow input 不携带任务正文。Workflow 从 D1/R2 引用读取经过授�
 - 所有副作用和非确定性值都在 `step.do` 内；步骤名由 `plan-v<version>-item-<id>-<action>` 或稳定系统步骤名生成。
 - `waitForEvent` 只接收带 `eventId/runId/type/payloadRef/digest/sequence` 的小型信号；外部 callback 先在 D1 按完整不可变内容去重并写 outbox，processor 重新核对 Attempt/Plan/Run 资格后才允许 `sendEvent`。
 - Workflow create/signal outbox 经 Queue 投递，状态为 pending → delivering → settled；delivery claim 带 lease token/expiry，确定失败回 pending，过期 lease 可被新 token 接管。无需 effect 的 late/stale/already-applied callback 也进入 settled，但 `last_error_code` 保存不含敏感内容的 terminal disposition；Queue/relay 重放同一 outbox ID 不得重复实例或业务推进。
-- `id = runId` 的 create 返回不确定错误时必须先查 instance status；实例已存在视为幂等成功，不能删除 D1 Run。Run 尚无受信 base SHA 时 create outbox 保持 pending 并标记 `base_sha_unresolved`。
+- `id = runId` 的 create 返回不确定错误时必须先查 instance status；实例已存在视为幂等成功，不能删除 D1 Run。Run 尚无受信 base SHA 时普通create和reconciliation create/restart都不得调用平台；原create/既有repair outbox保持pending并标记`base_sha_unresolved`，reconciler本身不新增repair intent。
 - Workflow step result 不超过平台限制，且不保存 Secret、完整用户正文、原始日志/数据库行或未脱敏 transcript。
 - D1 是对外业务状态和长期审计真源；Cloudflare Workflow status 只用于控制流诊断，不直接覆盖 Run state。
 - Workflow 普通恢复与 Agent resume 是两层不同机制；前者复用成功步骤，后者从 Git/checkpoint 恢复一次 GitHub attempt。
 - `verify-analysis-result` 是当前受控 replay 的稳定系统 step：先核对 reference-only Plan，再按 Run version 写 `workflow_step_executions`，随后 `activate-analysis-plan` 仍以 D1 幂等/CAS 收敛。任意 step name、dispatch/wait step 或未知 occurrence不能从 API 直接 restart。
 - terminal Run不直接从内存拼动态target。`load-terminal-verification-steps`只在D1 Run=`succeeded`、active Plan identity/digest一致且Plan=`active|completed`时，读取最多200个`kind=verification + progress=passed + current passed verification decision`的Item；随后每项执行`plan-v<version>-item-<id>-verify`，以单条`INSERT ... SELECT`重新核对同一D1条件并按当前Run version写`workflow_step_executions`。该step没有dispatch/PR/deploy effect；completed Plan只允许从plan_item target重放，analysis system step仍拒绝。
-- 普通hibernate/Worker redeploy外部验收使用strict `WorkflowHibernateEvidenceManifestV1`，只保存Run/Plan/Attempt/outbox安全标量、Cloudflare account digest、before/after deployment与version ID、instance version/status/start、七条normalized step的canonical digest、三个Dashboard链接及GitHub Action标量。时间线必须证明`register-run/dispatch-analysis-attempt`在`await-analysis-result`前完成，wait开始时生效的最后一个deployment为before，wait期间恰有一个after deployment，result回传后的三个`step.do`均在wait结束后继续，最后停在`await-run-terminal`；instance output/error、step output/error、raw API响应和token没有schema入口。
+- 普通hibernate/Worker redeploy外部验收使用strict `WorkflowHibernateEvidenceManifestV1`，只保存Run/Plan/Attempt/outbox安全标量、Cloudflare account digest、before/after deployment与version ID、instance version/status/start、七条normalized step的canonical digest、三个Dashboard链接及GitHub Action标量。Cloudflare API可能把同一稳定step暴露为`<stable-name>-<attempt>`；collector只接受exact名称或十进制`1..20`后缀并归一为稳定名，`-0/-01/>20`及任意其他后缀fail-closed。时间线必须证明`register-run/dispatch-analysis-attempt`在`await-analysis-result`前完成，wait开始时生效的最后一个deployment为before，wait期间恰有一个after deployment，result回传后的三个`step.do`均在wait结束后继续，最后停在`await-run-terminal`；instance output/error、step output/error、raw API响应和token没有schema入口。
 - 只读verifier实时读取`GET /v1/runs/:id/plan`、Case 8、Cloudflare instance/deployments和GitHub run/inventory。D1必须仍为`awaiting_approval + active Plan`且无Workflow repair，analysis Attempt/outbox与stable-title Action各恰好一个；manifest自报、任意两条历史deployment或本地workerd不能证明真实跨版本恢复。完整演练见[Workflow hibernate / Worker redeploy 真实验收](WorkflowHibernateE2E.md)。
 
 外部信号形状：

@@ -32,6 +32,7 @@ export type WorkflowInstanceReconciliationDisposition =
   | 'restart_requested'
   | 'recreate_requested'
   | 'terminate_requested'
+  | 'base_sha_unresolved'
   | 'duplicate'
   | 'not_found';
 
@@ -50,6 +51,7 @@ interface RunRow {
   workflow_instance_id: string;
   state: RunState;
   version: number;
+  base_sha: string | null;
 }
 
 interface ObservationRow {
@@ -144,6 +146,12 @@ export class WorkflowInstanceReconciler {
     if (action === null) {
       await this.resolveOpen(run, fact.status, observedAt);
       return 'consistent';
+    }
+    if (
+      run.base_sha === null &&
+      (action === 'restart_workflow' || action === 'recreate_workflow')
+    ) {
+      return 'base_sha_unresolved';
     }
     if (
       (action === 'restart_workflow' || action === 'recreate_workflow') &&
@@ -300,7 +308,7 @@ export class WorkflowInstanceReconciler {
 
   private async run(runId: string): Promise<RunRow | null> {
     return await this.db.prepare(
-      `SELECT run_id, workflow_instance_id, state, version
+      `SELECT run_id, workflow_instance_id, state, version, base_sha
        FROM runs WHERE run_id = ?`,
     ).bind(runId).first<RunRow>();
   }

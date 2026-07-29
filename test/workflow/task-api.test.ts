@@ -1,12 +1,25 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 
-import { env, SELF } from 'cloudflare:test';
+import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { TaskEnvelope } from '../../src/domain/task.js';
+import { taskApi } from '../../src/http/task-api.js';
 import { SecretScanner } from '../../src/security/redaction.js';
 
 const BASE_URL = 'https://delivery-loop.test';
 const TEST_TOKEN = 'test-task-intake-token';
+const BASE_SHA = 'b'.repeat(40);
+const baseResolutionCalls: Array<{ repository: string; baseBranch: string }> = [];
+let baseResolutionFails = false;
+const APP = taskApi({
+  baseShaResolverFromEnv: () => ({
+    async resolveBaseSha(repository, baseBranch) {
+      baseResolutionCalls.push({ repository, baseBranch });
+      if (baseResolutionFails) throw new Error('untrusted upstream detail');
+      return BASE_SHA;
+    },
+  }),
+});
 
 function taskEnvelope(taskKey = 'api-task'): TaskEnvelope {
   return {
@@ -59,11 +72,11 @@ async function postTask(args: {
   if (args.correlationId !== undefined) {
     headers.set('x-correlation-id', args.correlationId);
   }
-  return await SELF.fetch(`${BASE_URL}/v1/tasks`, {
+  return await APP.request(`${BASE_URL}/v1/tasks`, {
     method: 'POST',
     headers,
     body: JSON.stringify(args.task),
-  });
+  }, env);
 }
 
 async function count(table: 'tasks' | 'runs' | 'outbox' | 'idempotency_keys'): Promise<number> {
@@ -75,6 +88,8 @@ async function count(table: 'tasks' | 'runs' | 'outbox' | 'idempotency_keys'): P
 }
 
 beforeEach(async () => {
+  baseResolutionCalls.length = 0;
+  baseResolutionFails = false;
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM idempotency_keys'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
@@ -111,6 +126,12 @@ describe('POST /v1/tasks', () => {
     expect(await count('runs')).toBe(1);
     expect(await count('outbox')).toBe(1);
     expect(await count('idempotency_keys')).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT base_sha FROM runs WHERE run_id = ?',
+    ).bind(first.runId).first()).toEqual({ base_sha: BASE_SHA });
+    expect(baseResolutionCalls).toHaveLength(20);
+    expect(baseResolutionCalls.every((call) =>
+      call.repository === 'example/delivery-target' && call.baseBranch === 'main')).toBe(true);
 
     const listed = await env.TASK_OBJECTS.list({ prefix: `tasks/${first.taskId}/` });
     expect(listed.objects).toHaveLength(1);
@@ -139,6 +160,7 @@ describe('POST /v1/tasks', () => {
       token: TEST_TOKEN,
     };
     const first = await postTask(args);
+    baseResolutionFails = true;
     const second = await postTask(args);
 
     expect(first.status).toBe(202);
@@ -146,6 +168,7 @@ describe('POST /v1/tasks', () => {
     expect(await second.json()).toEqual(await first.json());
     expect(await count('tasks')).toBe(1);
     expect(await count('runs')).toBe(1);
+    expect(baseResolutionCalls).toHaveLength(1);
   });
 
   it('rejects reusing an Idempotency-Key with another payload without creating it', async () => {
@@ -155,6 +178,7 @@ describe('POST /v1/tasks', () => {
       token: TEST_TOKEN,
     });
     expect(first.status).toBe(202);
+    expect(baseResolutionCalls).toHaveLength(1);
 
     const conflict = await postTask({
       task: taskEnvelope('api-different'),
@@ -168,6 +192,7 @@ describe('POST /v1/tasks', () => {
     expect(await count('outbox')).toBe(1);
     expect(await count('idempotency_keys')).toBe(1);
     expect((await env.TASK_OBJECTS.list()).objects).toHaveLength(1);
+    expect(baseResolutionCalls).toHaveLength(1);
   });
 
   it('rejects unauthenticated, missing-key, and invalid Task requests without echoing content', async () => {
@@ -267,6 +292,29 @@ describe('POST /v1/tasks', () => {
     expect(await count('tasks')).toBe(0);
     expect(await count('runs')).toBe(0);
     expect(await count('outbox')).toBe(0);
+    expect((await env.TASK_OBJECTS.list()).objects).toHaveLength(0);
+  });
+
+  it('fails closed before D1/R2 persistence when the trusted GitHub base is unavailable', async () => {
+    baseResolutionFails = true;
+    const response = await postTask({
+      task: taskEnvelope('api-base-unavailable'),
+      idempotencyKey: 'api-base-unavailable-key',
+      token: TEST_TOKEN,
+    });
+
+    expect(response.status).toBe(503);
+    const text = await response.text();
+    expect(text).not.toContain('untrusted upstream detail');
+    expect(JSON.parse(text)).toMatchObject({ code: 'unavailable', retryable: true });
+    expect(baseResolutionCalls).toEqual([{
+      repository: 'example/delivery-target',
+      baseBranch: 'main',
+    }]);
+    expect(await count('tasks')).toBe(0);
+    expect(await count('runs')).toBe(0);
+    expect(await count('outbox')).toBe(0);
+    expect(await count('idempotency_keys')).toBe(0);
     expect((await env.TASK_OBJECTS.list()).objects).toHaveLength(0);
   });
 });

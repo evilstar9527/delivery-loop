@@ -8,6 +8,8 @@ import {
   taskRevisionIds,
 } from '../domain/task.js';
 import type { Bindings } from '../env.js';
+import type { GitHubBaseShaResolver } from '../reconciliation/github-base-observation-reconciler.js';
+import { githubBaseShaResolverFromEnv } from '../reconciliation/github-base-observation-runtime.js';
 import { SecretScanner } from '../security/redaction.js';
 import { configuredSecrets } from '../security/runtime-secrets.js';
 import {
@@ -55,6 +57,7 @@ const TASK_API_SCOPE = 'POST /v1/tasks';
 const MAX_REQUEST_BODY_BYTES = 256 * 1024;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const RESOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
+const BASE_SHA_PATTERN = /^[a-f0-9]{40}$/;
 const CancelRunBodySchema = z
   .object({ expectedRunVersion: z.number().int().nonnegative() })
   .strict();
@@ -118,8 +121,13 @@ function isAuthenticated(configuredToken: string | undefined, authorization: str
   );
 }
 
-export function taskApi(): Hono<{ Bindings: Bindings }> {
+export interface TaskApiOptions {
+  baseShaResolverFromEnv?: (env: Bindings) => GitHubBaseShaResolver | null;
+}
+
+export function taskApi(options: TaskApiOptions = {}): Hono<{ Bindings: Bindings }> {
   const app = new Hono<{ Bindings: Bindings }>();
+  const baseShaResolver = options.baseShaResolverFromEnv ?? githubBaseShaResolverFromEnv;
 
   app.get('/v1/tasks/:taskId', async (c) => {
     if (!isAuthenticated(c.env.TASK_INTAKE_TOKEN, c.req.header('authorization'))) {
@@ -551,27 +559,17 @@ export function taskApi(): Hono<{ Bindings: Bindings }> {
         false,
       );
     }
-    const ids = await taskRevisionIds(task);
-    const taskDigest = await taskRevisionDigest(task);
-    const objectKey = `tasks/${ids.taskId}/${taskDigest.slice('sha256:'.length)}.json`;
-    const payloadRef = `r2://${objectKey}`;
     const requestDigest = await canonicalSha256(task);
     const keyDigest = await canonicalSha256({ scope: TASK_API_SCOPE, key: idempotencyKey });
-
-    let result: TaskIntakeResult;
+    const idempotency = {
+      scope: TASK_API_SCOPE,
+      keyDigest,
+      requestDigest,
+    };
+    const store = new TaskIntakeStore(c.env.DB_CONTROL);
+    let result: TaskIntakeResult | null;
     try {
-      result = await new TaskIntakeStore(c.env.DB_CONTROL).acceptIdempotentTaskRevision(
-        {
-          task,
-          payloadRef,
-          now: new Date().toISOString(),
-        },
-        {
-          scope: TASK_API_SCOPE,
-          keyDigest,
-          requestDigest,
-        },
-      );
+      result = await store.findIdempotentTaskRevision(idempotency);
     } catch (error) {
       if (error instanceof IdempotencyConflictError) {
         return errorResponse(
@@ -582,16 +580,69 @@ export function taskApi(): Hono<{ Bindings: Bindings }> {
           false,
         );
       }
-      if (error instanceof TaskRevisionConflictError) {
-        return errorResponse(
-          c,
-          409,
-          'stale_revision',
-          'source revision content conflicts with the stored snapshot',
-          false,
-        );
-      }
       throw error;
+    }
+    let baseSha: string;
+    try {
+      if (result !== null) {
+        baseSha = result.baseSha ?? '';
+      } else {
+        const resolver = baseShaResolver(c.env);
+        if (resolver === null) throw new Error('base SHA resolver is unavailable');
+        baseSha = await resolver.resolveBaseSha(
+          `${task.target.owner}/${task.target.repo}`,
+          task.target.baseBranch,
+        );
+        if (!BASE_SHA_PATTERN.test(baseSha)) {
+          throw new Error('base SHA resolver returned an invalid commit');
+        }
+      }
+    } catch {
+      return errorResponse(
+        c,
+        503,
+        'unavailable',
+        'target repository base is unavailable',
+        true,
+      );
+    }
+    const ids = await taskRevisionIds(task);
+    const taskDigest = await taskRevisionDigest(task);
+    const objectKey = `tasks/${ids.taskId}/${taskDigest.slice('sha256:'.length)}.json`;
+    const payloadRef = `r2://${objectKey}`;
+
+    if (result === null) {
+      try {
+        result = await store.acceptIdempotentTaskRevision(
+          {
+            task,
+            baseSha,
+            payloadRef,
+            now: new Date().toISOString(),
+          },
+          idempotency,
+        );
+      } catch (error) {
+        if (error instanceof IdempotencyConflictError) {
+          return errorResponse(
+            c,
+            409,
+            'conflict',
+            'Idempotency-Key is already bound to another request',
+            false,
+          );
+        }
+        if (error instanceof TaskRevisionConflictError) {
+          return errorResponse(
+            c,
+            409,
+            'stale_revision',
+            'source revision content conflicts with the stored snapshot',
+            false,
+          );
+        }
+        throw error;
+      }
     }
 
     try {

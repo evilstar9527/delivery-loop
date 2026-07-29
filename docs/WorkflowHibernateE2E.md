@@ -55,7 +55,7 @@ Task进入`await-analysis-result`并确认唯一dispatch后，第二次after发�
 
 仓库内`pnpm run ops:workflow-hibernate-window`把该协调契约接到真实控制面、GitHub、Cloudflare与Wrangler，但默认在任何文件、命令或网络前exit 2。它只能读取两份仓库外、普通文件、非symlink、权限不宽于0600且各不超过64 KiB的输入：一份完整TaskEnvelope和一份`WorkflowHibernateWindowAuthorizationV1`。示例[Task](../schemas/workflow-hibernate-window-task-v1.example.json)与[authorization](../schemas/workflow-hibernate-window-authorization-v1.example.json)已经过期，只说明shape，不能复制后运行。authorization固定且只允许30分钟窗口，绑定exact Task envelope/revision及其deterministic Task/Run/analysis Attempt、目标repository/base、Action head SHA、冻结source/bundle bytes+digest、before deployment/version/time和`Task=1 + Action=1 + after=1 + rollback=0`。`authorityDigest`是除自身外全部authorization字段的canonical digest，只用于发现文件漂移，不是签名或自授权；真正的production authority来自owner对该digest的外部批准以及仅向本次进程注入的用途隔离凭证。
 
-CLI在Task写入前依次证明authorization仍生效且digest未变、Task正文/digest/只读policy匹配、冻结worktree干净且HEAD精确、两次独立Wrangler build的bytes/hash一致、before仍为当前100% deployment、deterministic Task尚不存在。随后只发送一次带稳定Idempotency-Key的`POST /v1/tasks`，最长5分钟只重试`live_snapshot_not_ready`；identity冲突、callback、duplicate、分页、响应超限、Secret命中或source/deployment漂移立即停止且after为0。进入wait后，再由既有guard读取两次fresh snapshot。adapter把首次双构建的精确bundle只保存在内存，after时写入仓库外0600临时文件，并用锁定Wrangler的`deploy <worker.js> --no-bundle --strict`上传该字节串；本地对照已经证明普通dry-run与no-bundle dry-run的`worker.js`字节和SHA-256完全相同。每条Wrangler命令还显式使用临时0600空`--env-file`并把HOME/XDG隔离到同一临时目录，避免ignored dotenv或本机OAuth成为隐式输入。该adapter每个实例最多尝试一次Task POST和一次strict deploy，忽略Wrangler stdout/stderr并在finally清理临时bundle；失败仍不提供rollback dependency。
+CLI在Task写入前依次证明authorization仍生效且digest未变、Task正文/digest/只读policy匹配、冻结worktree干净且HEAD精确、两次独立Wrangler build的bytes/hash一致、before仍为当前100% deployment、deterministic Task尚不存在。随后只发送一次带稳定Idempotency-Key的`POST /v1/tasks`；控制面必须先用GitHub App读取authorization绑定repository/base branch的exact commit，并把解析出的SHA作为Run base原子写入，返回202但`baseSha=null`不算成功前置。最长5分钟只重试`live_snapshot_not_ready`；identity冲突、callback、duplicate、分页、响应超限、Secret命中或source/deployment漂移立即停止且after为0。进入wait后，再由既有guard读取两次fresh snapshot。adapter把首次双构建的精确bundle只保存在内存，after时写入仓库外0600临时文件，并用锁定Wrangler的`deploy <worker.js> --no-bundle --strict`上传该字节串；本地对照已经证明普通dry-run与no-bundle dry-run的`worker.js`字节和SHA-256完全相同。每条Wrangler命令还显式使用临时0600空`--env-file`并把HOME/XDG隔离到同一临时目录，避免ignored dotenv或本机OAuth成为隐式输入。该adapter每个实例最多尝试一次Task POST和一次strict deploy，忽略Wrangler stdout/stderr并在finally清理临时bundle；失败仍不提供rollback dependency。
 
 真实执行必须为五个互不相同的凭证：Task intake/Run Plan、operations Case 8、GitHub Actions read、Cloudflare Workflow/deployment read、Cloudflare Worker deploy。它们只进入对应Authorization header或deploy子进程环境，均不进入argv、输入文件、summary或错误。所有HTTP固定HTTPS、10秒、1 MiB、拒绝redirect与next-page，并在JSON parse前扫描五枚token和通用credential形状；命令输出固定1 MiB/120秒但从不向上游传播。配置如下：
 
@@ -101,6 +101,8 @@ activate-analysis-plan
 observe-run-control-state
 await-run-terminal
 ```
+
+Cloudflare live API当前可能返回`register-run-1`等带执行attempt后缀的名称。采集器和formal verifier只把exact稳定名或`-1`至`-20`归一为上表名称；`-0`、前导零、超界或任意其他后缀均拒绝，manifest与digest继续只使用上表稳定名。
 
 前两条step及其attempt必须在wait/redeploy前完成；后三条`step.do`必须在wait结束与after deployment之后开始；最后一条wait保持未结束。步骤、attempt和deployment时间线任一倒序、wait期间额外deployment、失败step或重复Action都必须拒绝。
 

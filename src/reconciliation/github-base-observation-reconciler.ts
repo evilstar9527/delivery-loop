@@ -31,6 +31,10 @@ export interface GitHubBaseObservationTokenProvider {
   getBaseObservationToken(repository: string): Promise<string>;
 }
 
+export interface GitHubBaseShaResolver {
+  resolveBaseSha(repository: string, baseBranch: string): Promise<string>;
+}
+
 export interface GitHubBaseApiClientOptions {
   apiBaseUrl?: string;
   fetch?: typeof globalThis.fetch;
@@ -134,7 +138,9 @@ async function responseJson(response: Response, operation: string): Promise<unkn
 }
 
 /** Read-only GitHub REST adapter: exact ref head plus explicit commit relationship. */
-export class GitHubBaseApiClient implements GitHubBaseExternalFactClient {
+export class GitHubBaseApiClient implements
+  GitHubBaseExternalFactClient,
+  GitHubBaseShaResolver {
   private readonly apiBaseUrl: string;
   private readonly fetcher: typeof globalThis.fetch;
 
@@ -144,6 +150,10 @@ export class GitHubBaseApiClient implements GitHubBaseExternalFactClient {
   ) {
     this.apiBaseUrl = apiOrigin(options.apiBaseUrl ?? 'https://api.github.com');
     this.fetcher = options.fetch ?? globalThis.fetch;
+  }
+
+  async resolveBaseSha(repository: string, baseBranch: string): Promise<string> {
+    return (await this.readBaseReference(repository, baseBranch)).headSha;
   }
 
   async observeBase(
@@ -156,43 +166,9 @@ export class GitHubBaseApiClient implements GitHubBaseExternalFactClient {
       !safeBranch(baseBranch) ||
       !SHA_PATTERN.test(beforeSha)
     ) throw new Error('GitHub base observation request is invalid');
-    const token = await this.tokenProvider.getBaseObservationToken(repository);
-    if (token.length < 1 || token.length > 2_000 || /[\0\r\n]/.test(token)) {
-      throw new Error('GitHub base observation token is unavailable');
-    }
-    const headers = {
-      accept: 'application/vnd.github+json',
-      authorization: `Bearer ${token}`,
-      'x-github-api-version': '2022-11-28',
-    };
-    const encodedBranch = baseBranch.split('/').map(encodeURIComponent).join('/');
-    let referenceResponse: Response;
-    try {
-      referenceResponse = await this.fetcher(
-        `${this.apiBaseUrl}/repos/${repository}/git/ref/heads/${encodedBranch}`,
-        { method: 'GET', headers },
-      );
-    } catch {
-      throw new Error('GitHub base reference query failed');
-    }
-    const referenceBody = object(await responseJson(
-      referenceResponse,
-      'GitHub base reference query',
-    ));
-    const referenceObject = object(referenceBody?.object);
-    const afterSha = referenceObject?.sha;
-    if (
-      referenceBody?.ref !== `refs/heads/${baseBranch}` ||
-      referenceObject?.type !== 'commit' ||
-      typeof afterSha !== 'string' ||
-      !SHA_PATTERN.test(afterSha)
-    ) throw new Error('GitHub base reference response is invalid');
+    const reference = await this.readBaseReference(repository, baseBranch);
+    const { headSha: afterSha, headers, referenceDigest } = reference;
     if (afterSha === beforeSha) return { disposition: 'unchanged', headSha: beforeSha };
-    const referenceDigest = await canonicalSha256({
-      ref: referenceBody.ref,
-      objectType: referenceObject.type,
-      sha: afterSha,
-    });
 
     let comparisonResponse: Response;
     try {
@@ -268,6 +244,56 @@ export class GitHubBaseApiClient implements GitHubBaseExternalFactClient {
         comparisonDigest,
       }),
     };
+  }
+
+  private async readBaseReference(
+    repository: string,
+    baseBranch: string,
+  ): Promise<{
+    headSha: string;
+    referenceDigest: string;
+    headers: Record<string, string>;
+  }> {
+    if (!REPOSITORY_PATTERN.test(repository) || !safeBranch(baseBranch)) {
+      throw new Error('GitHub base reference request is invalid');
+    }
+    const token = await this.tokenProvider.getBaseObservationToken(repository);
+    if (token.length < 1 || token.length > 2_000 || /[\0\r\n]/.test(token)) {
+      throw new Error('GitHub base observation token is unavailable');
+    }
+    const headers = {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${token}`,
+      'x-github-api-version': '2022-11-28',
+    };
+    const encodedBranch = baseBranch.split('/').map(encodeURIComponent).join('/');
+    let referenceResponse: Response;
+    try {
+      referenceResponse = await this.fetcher(
+        `${this.apiBaseUrl}/repos/${repository}/git/ref/heads/${encodedBranch}`,
+        { method: 'GET', headers },
+      );
+    } catch {
+      throw new Error('GitHub base reference query failed');
+    }
+    const referenceBody = object(await responseJson(
+      referenceResponse,
+      'GitHub base reference query',
+    ));
+    const referenceObject = object(referenceBody?.object);
+    const afterSha = referenceObject?.sha;
+    if (
+      referenceBody?.ref !== `refs/heads/${baseBranch}` ||
+      referenceObject?.type !== 'commit' ||
+      typeof afterSha !== 'string' ||
+      !SHA_PATTERN.test(afterSha)
+    ) throw new Error('GitHub base reference response is invalid');
+    const referenceDigest = await canonicalSha256({
+      ref: referenceBody.ref,
+      objectType: referenceObject.type,
+      sha: afterSha,
+    });
+    return { headSha: afterSha, referenceDigest, headers };
   }
 }
 

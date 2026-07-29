@@ -4,6 +4,7 @@ import {
   type WorkflowHibernateEvidenceManifestV1,
 } from '../domain/workflow-hibernate-evidence.js';
 import { SecretScanner } from '../security/redaction.js';
+import { normalizeCloudflareWorkflowStepName } from './cloudflare-workflow-step.js';
 
 const TOKEN_PATTERN = /^[^\0\r\n]{1,2000}$/;
 const ACCOUNT_ID_PATTERN = /^[a-f0-9]{32}$/;
@@ -222,11 +223,14 @@ function normalizePlatformSteps(input: unknown): Array<Record<string, unknown>> 
   const normalized: Array<Record<string, unknown>> = [];
   input.forEach((value, index) => {
     const step = record(value);
-    const name = step?.name;
+    const name = normalizeCloudflareWorkflowStepName(
+      step?.name,
+      EXPECTED_STEP_NAMES[index]!,
+    );
     const type = step?.type;
     const start = date(step?.start);
     const end = step?.end === undefined ? undefined : date(step.end);
-    if (step === null || name !== EXPECTED_STEP_NAMES[index] || start === null) {
+    if (step === null || name === null || start === null) {
       throw new WorkflowHibernateEvidenceVerificationError('cloudflare_instance_mismatch');
     }
     if (type === 'waitForEvent') {
