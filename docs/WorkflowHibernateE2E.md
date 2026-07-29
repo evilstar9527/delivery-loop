@@ -13,6 +13,37 @@ verifier 严格只读，不负责部署 Worker、发送 signal 或触发 Action�
 
 ## 2. 真实演练
 
+### 2.1 发布前置与授权边界
+
+真实窗口开始前必须先完成一次无写入readiness检查；它只证明待发布内容可构建，不授权D1或Worker生产变更：
+
+```bash
+export CLOUDFLARE_ACCOUNT_ID=b8488957e88658039d2a38fb8f160514
+pnpm exec wrangler d1 migrations list DB_CONTROL --remote
+pnpm exec wrangler deploy --dry-run --outdir <仓库外临时目录>
+pnpm exec wrangler deployments status --name delivery-loop-control-plane --json
+```
+
+多账号OAuth下所有D1/Worker命令都必须显式绑定受审account ID；不能依赖交互选择或仅假定`wrangler.jsonc`会被每个子命令采用。保存dry-run `worker.js`的byte size与SHA-256、当前100% deployment/version ID和安全binding投影；bundle、metafile和source map不进入仓库或Evidence。
+
+当前Sol/high配置依赖migration `0062_codex_sol_relay_profile.sql`。若list只返回该migration，取得独立production D1授权后必须先运行：
+
+```bash
+pnpm exec wrangler d1 migrations apply DB_CONTROL --remote
+```
+
+Wrangler会在apply前创建D1 backup，单条migration失败时回滚该migration；命令成功后仍须只读确认Sol profile恰好1条、Terra profile仍恰好1条且unapplied list为空。不得先发布引用缺失profile的Worker。migration成功而Worker发布失败时保留新增immutable profile，不手写DELETE回退。
+
+随后取得第一次production Worker发布授权，以`--strict`发布before版本并记录main SHA、bundle digest、deployment/version ID与时间；`--strict`发现远端漂移时停止，不以`--keep-vars`或覆盖Dashboard配置绕过：
+
+```bash
+pnpm exec wrangler deploy --strict --message "phase1-hibernate-before main@<main-sha>"
+```
+
+发布后必须重新核对100% traffic、Sol/high profile binding、三枚既有Secret binding名称、D1/R2/Queue/Workflow/cron/observability安全投影和`/healthz=200`。healthz只证明isolate liveness；profile/D1、GitHub dispatch或provider成功仍需各自事实。发布前的100% version只作为人工review的rollback anchor；`wrangler rollback`是独立production写操作，未经新的明确授权不得自动执行。
+
+Task进入`await-analysis-result`并确认唯一dispatch后，第二次after发布也需要明确production授权，继续使用相同main SHA、bundle digest与`--strict`，message绑定安全run ID。wait窗口内只能出现这一个after deployment；发布失败时停止演练，不发送analysis result或改写D1。
+
 1. 发布before版本，记录deployment/version ID与时间；创建一个真实Task/Run，并确认`run_id`就是Workflow instance ID。
 2. 等待instance进入`await-analysis-result`。Cloudflare instance详情必须显示`register-run`与`dispatch-analysis-attempt`已经成功，D1只有一个analysis Attempt和一个`analysis_dispatch` outbox；GitHub stable title `delivery-loop/<attemptId>`只有一个Action。
 3. 不发送analysis result，等待该instance处于`waiting`，然后发布after Worker版本。受控窗口内在wait开始前生效的最后一个deployment必须是before，wait期间只能有这一个after deployment。
