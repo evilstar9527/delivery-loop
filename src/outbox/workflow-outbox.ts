@@ -496,7 +496,7 @@ export class WorkflowOutboxProcessor {
               observations.status AS observation_status,
               observations.repair_outbox_id,
               runs.state AS current_run_state, runs.version AS current_run_version,
-              runs.task_id, runs.task_revision, runs.task_digest
+              runs.task_id, runs.task_revision, runs.task_digest, runs.base_sha
        FROM workflow_instance_reconciliation_observations AS observations
        JOIN runs ON runs.run_id = observations.run_id
        WHERE observations.observation_id = ? AND observations.run_id = ?`,
@@ -512,6 +512,7 @@ export class WorkflowOutboxProcessor {
       task_id: string;
       task_revision: string;
       task_digest: string;
+      base_sha: string | null;
     }>();
     if (repair === null || repair.repair_outbox_id !== outbox.outboxId) {
       throw new OutboxEffectError('workflow_reconciliation_binding_invalid');
@@ -532,6 +533,10 @@ export class WorkflowOutboxProcessor {
         ? !['blocked', 'failed', 'succeeded', 'cancelled'].includes(repair.current_run_state)
         : ['blocked', 'failed', 'succeeded', 'cancelled'].includes(repair.current_run_state))
     ) return { settledCode: 'workflow_reconciliation_stale' };
+    if (
+      repair.base_sha === null &&
+      (repair.action === 'recreate_workflow' || repair.action === 'restart_workflow')
+    ) throw new OutboxEffectError('base_sha_unresolved');
 
     if (repair.action === 'recreate_workflow') {
       await this.effects.ensureRun({

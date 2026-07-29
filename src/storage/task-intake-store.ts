@@ -92,6 +92,43 @@ interface IdempotencyRow {
 export class TaskIntakeStore {
   constructor(private readonly db: D1Database) {}
 
+  async findIdempotentTaskRevision(
+    idempotency: TaskIdempotencyInput,
+  ): Promise<TaskIntakeResult | null> {
+    const parsed = TaskIdempotencyInputSchema.parse(idempotency);
+    const reservation = await this.db
+      .prepare(
+        `SELECT request_digest, task_id, run_id, outbox_id
+         FROM idempotency_keys
+         WHERE scope = ? AND key_digest = ?`,
+      )
+      .bind(parsed.scope, parsed.keyDigest)
+      .first<IdempotencyRow>();
+    if (reservation === null) return null;
+    if (reservation.request_digest !== parsed.requestDigest) {
+      throw new IdempotencyConflictError();
+    }
+    const row = await this.db.prepare(
+      `SELECT tasks.task_id, tasks.task_digest, runs.run_id, runs.base_sha,
+              runs.state AS run_state, outbox.outbox_id,
+              outbox.delivery_state AS outbox_state
+       FROM tasks
+       JOIN runs ON runs.run_id = ? AND runs.task_id = tasks.task_id
+       JOIN outbox ON outbox.outbox_id = ? AND outbox.run_id = runs.run_id
+                  AND outbox.kind = 'workflow_create'
+       WHERE tasks.task_id = ? AND runs.run_id = ?`,
+    ).bind(
+      reservation.run_id,
+      reservation.outbox_id,
+      reservation.task_id,
+      reservation.run_id,
+    ).first<IntakeProjectionRow>();
+    if (row === null || row.outbox_id !== reservation.outbox_id) {
+      throw new TaskIntakePersistenceError('incomplete_projection');
+    }
+    return this.result(row);
+  }
+
   async acceptTaskRevision(input: TaskIntakeInput): Promise<TaskIntakeResult> {
     return await this.accept(input);
   }
@@ -290,6 +327,10 @@ export class TaskIntakeStore {
     }
     if (row.task_digest !== digest) throw new TaskRevisionConflictError();
 
+    return this.result(row);
+  }
+
+  private result(row: IntakeProjectionRow): TaskIntakeResult {
     const result: TaskIntakeResult = {
       taskId: row.task_id,
       runId: row.run_id,

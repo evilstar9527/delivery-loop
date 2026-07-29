@@ -199,15 +199,15 @@ function fixture(options: FixtureOptions = {}): {
         status: 'waiting',
         steps: [
           {
-            name: 'register-run', type: 'step', success: true,
+            name: 'register-run-1', type: 'step', success: true,
             start: '2026-07-29T05:51:59.000Z', end: '2026-07-29T05:52:00.000Z',
           },
           {
-            name: 'dispatch-analysis-attempt', type: 'step', success: true,
+            name: 'dispatch-analysis-attempt-1', type: 'step', success: true,
             start: '2026-07-29T05:52:00.100Z', end: '2026-07-29T05:52:01.000Z',
           },
           {
-            name: 'await-analysis-result', type: 'waitForEvent',
+            name: 'await-analysis-result-1', type: 'waitForEvent',
             start: '2026-07-29T05:52:01.100Z',
           },
         ],

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { canonicalSha256 } from '../../src/domain/digest.js';
 import { taskRevisionDigest, type TaskEnvelope } from '../../src/domain/task.js';
 import {
+  GitHubBaseApiClient,
   GitHubBaseObservationReconciler,
   type GitHubBaseExternalFactClient,
   type GitHubBaseObservationResult,
@@ -248,6 +249,68 @@ async function seed(): Promise<void> {
 beforeEach(async () => {
   await reset();
   await seed();
+});
+
+describe('trusted GitHub base SHA resolution', () => {
+  it('resolves the exact target branch through a repository-scoped read token', async () => {
+    const requests: Array<{ url: string; authorization: string | null }> = [];
+    const client = new GitHubBaseApiClient({
+      async getBaseObservationToken(repository) {
+        expect(repository).toBe(REPOSITORY);
+        return 'test-github-base-read-token';
+      },
+    }, {
+      apiBaseUrl: 'https://github-api.example.test',
+      fetch: async (input, init) => {
+        const headers = new Headers(init?.headers);
+        requests.push({
+          url: String(input),
+          authorization: headers.get('authorization'),
+        });
+        return new Response(JSON.stringify({
+          ref: 'refs/heads/release/phase-1',
+          object: { type: 'commit', sha: AFTER_SHA },
+        }), { status: 200 });
+      },
+    });
+
+    await expect(client.resolveBaseSha(REPOSITORY, 'release/phase-1')).resolves.toBe(AFTER_SHA);
+    expect(requests).toEqual([{
+      url: 'https://github-api.example.test/repos/example/delivery-target/git/ref/heads/release/phase-1',
+      authorization: 'Bearer test-github-base-read-token',
+    }]);
+  });
+
+  it('rejects unsafe branches and malformed GitHub reference facts', async () => {
+    let tokenRequests = 0;
+    let fetchRequests = 0;
+    const client = new GitHubBaseApiClient({
+      async getBaseObservationToken() {
+        tokenRequests += 1;
+        return 'test-github-base-read-token';
+      },
+    }, {
+      apiBaseUrl: 'https://github-api.example.test',
+      fetch: async () => {
+        fetchRequests += 1;
+        return new Response(JSON.stringify({
+          ref: 'refs/heads/main',
+          object: { type: 'tag', sha: AFTER_SHA },
+        }), { status: 200 });
+      },
+    });
+
+    await expect(client.resolveBaseSha(REPOSITORY, '../main')).rejects.toThrow(
+      'GitHub base reference request is invalid',
+    );
+    expect(tokenRequests).toBe(0);
+    expect(fetchRequests).toBe(0);
+    await expect(client.resolveBaseSha(REPOSITORY, 'main')).rejects.toThrow(
+      'GitHub base reference response is invalid',
+    );
+    expect(tokenRequests).toBe(1);
+    expect(fetchRequests).toBe(1);
+  });
 });
 
 describe('GitHub base observation reconciliation', () => {

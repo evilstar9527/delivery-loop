@@ -88,6 +88,10 @@ function platformSteps(drift: Drift = 'none'): Array<Record<string, unknown>> {
   ];
 }
 
+function cloudflareApiPlatformSteps(drift: Drift = 'none'): Array<Record<string, unknown>> {
+  return platformSteps(drift).map((step) => ({ ...step, name: `${String(step.name)}-1` }));
+}
+
 async function safeStepDigest(): Promise<string> {
   return await canonicalSha256(platformSteps());
 }
@@ -292,7 +296,7 @@ function fakeFetch(input: Manifest, drift: Drift = 'none'): typeof fetch {
           versionId: INSTANCE_VERSION_ID,
           status: 'waiting',
           start: INSTANCE_STARTED_AT,
-          steps: platformSteps(drift),
+          steps: cloudflareApiPlatformSteps(drift),
         }));
       }
       if (url.pathname.endsWith('/workers/scripts/delivery-loop-control-plane/deployments')) {

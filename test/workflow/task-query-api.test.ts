@@ -1,9 +1,10 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 
-import { env, SELF } from 'cloudflare:test';
+import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { canonicalSha256 } from '../../src/domain/digest.js';
 import type { TaskEnvelope } from '../../src/domain/task.js';
+import { taskApi } from '../../src/http/task-api.js';
 
 const BASE_URL = 'https://delivery-loop.test';
 const TEST_TOKEN = 'test-task-intake-token';
@@ -16,6 +17,13 @@ const PLAN_ASSUMPTION_CANARY = 'CANARY_PRIVATE_PLAN_ASSUMPTION';
 const PLAN_EVIDENCE_REF = 'd1://evidence/private-analysis-source-reference';
 const RESULT_EVENT_ID = 'event-query-result';
 const ACTION_RUN_ID = '940001';
+const APP = taskApi({
+  baseShaResolverFromEnv: () => ({
+    async resolveBaseSha() {
+      return BASE_SHA;
+    },
+  }),
+});
 
 function taskEnvelope(taskKey: string): TaskEnvelope {
   return {
@@ -55,11 +63,11 @@ function taskEnvelope(taskKey: string): TaskEnvelope {
 async function apiGet(path: string, authenticated = true): Promise<Response> {
   const headers = new Headers();
   if (authenticated) headers.set('authorization', `Bearer ${TEST_TOKEN}`);
-  return await SELF.fetch(`${BASE_URL}${path}`, { headers });
+  return await APP.request(`${BASE_URL}${path}`, { headers }, env);
 }
 
 async function createTask(taskKey: string): Promise<{ taskId: string; runId: string }> {
-  const response = await SELF.fetch(`${BASE_URL}/v1/tasks`, {
+  const response = await APP.request(`${BASE_URL}/v1/tasks`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${TEST_TOKEN}`,
@@ -67,7 +75,7 @@ async function createTask(taskKey: string): Promise<{ taskId: string; runId: str
       'idempotency-key': `query-${taskKey}`,
     },
     body: JSON.stringify(taskEnvelope(taskKey)),
-  });
+  }, env);
   expect(response.status).toBe(202);
   return (await response.json()) as { taskId: string; runId: string };
 }
