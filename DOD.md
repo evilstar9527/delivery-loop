@@ -82,6 +82,7 @@
   - [ ] 真实 Cloudflare 环境强制 hibernate/Worker restart，并以 GitHub 外部 run 事实证明实际 Action dispatch 仅一次。
     - Provider前置已在Round 164解除：一次性field-domain HMAC诊断先证明GitHub Actions中的API key与Base URL都不等于CC Switch active provider；两项经stdin覆盖后，同一run attempt 2固定输出双`match`并成功，三枚临时proof Secret随即删除。随后main上的Sol/high真实preflight [30416517222](https://github.com/evilstar9527/delivery-loop/actions/runs/30416517222) `completed/success`。这纠正了Round 163基于owner口头“相同配置”的条件结论：历史stream失败至少包含凭据/URL漂移，不能继续归因为Hosted Runner出口。hibernate父项仍需真实Task/Attempt、current Worker deployment、受控restart和唯一dispatch外部事实，不能由preflight替代。
     - 历史blocker（Round 171，authority部分已在Round 172解除）：Round 169～171连续三轮未取得owner authorization且五枚credential均未注入，按纪律暂停；Round 172 owner已恢复exact authority，当前只等待本人完成GitHub/Cloudflare认证与Keychain隐藏输入。凭证ready前仍不得创建Task、Action或after。
+    - 当前blocker（Round 173）：恢复后连续三轮检查仍显示Cloudflare停在登录页、TASK/operations Keychain条目均missing且隐藏输入helper等待中；GitHub sudo虽已完成，但不能替代其余本人认证或任一token。按停止盲重试纪律再次暂停，保留页面/Terminal handoff；恢复所需输入见`PROGRESS.md` Round 173。
 - [x] ExecutionPlan v1 校验覆盖 Item ID/依赖无环、至少一条 doneWhen、Evidence 要求、delivery policy command ref、effect 上限、plan version/digest/base SHA 不变量。
 - [x] 状态迁移使用 compare-and-set；两个并发 worker 争抢同 attempt 时只有一个拿到带 lease generation 的写租约。
 - [ ] GitHub App 只安装到试点仓库；dispatcher 成功触发固定 workflow ref，dispatch payload 经过测试证明无 Secret/任务正文。
