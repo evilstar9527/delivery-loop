@@ -9,10 +9,97 @@ import type { GitHubDeliveryPolicyTokenProvider } from '../reconciliation/test-r
 import type { GitHubWriteCredentialProvider } from '../storage/repo-write-credential-store.js';
 
 const TOKEN_REFRESH_SKEW_MS = 60_000;
+const PEM_EDGE = '-----';
+const PKCS1_BEGIN = `${PEM_EDGE}BEGIN RSA PRIVATE KEY${PEM_EDGE}`;
+const PKCS1_END = `${PEM_EDGE}END RSA PRIVATE KEY${PEM_EDGE}`;
+const PKCS8_BEGIN = `${PEM_EDGE}BEGIN PRIVATE KEY${PEM_EDGE}`;
+const PKCS8_END = `${PEM_EDGE}END PRIVATE KEY${PEM_EDGE}`;
+const RSA_ALGORITHM_IDENTIFIER = Uint8Array.from([
+  0x30, 0x0d,
+  0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01,
+  0x05, 0x00,
+]);
 
 interface CachedToken {
   token: string;
   expiresAt: number;
+}
+
+function derLength(length: number): Uint8Array {
+  if (!Number.isSafeInteger(length) || length < 0) {
+    throw new Error('GitHub App private key is invalid');
+  }
+  if (length < 0x80) return Uint8Array.of(length);
+  const bytes: number[] = [];
+  let remaining = length;
+  while (remaining > 0) {
+    bytes.unshift(remaining & 0xff);
+    remaining = Math.floor(remaining / 0x100);
+  }
+  return Uint8Array.of(0x80 | bytes.length, ...bytes);
+}
+
+function concatBytes(...parts: readonly Uint8Array[]): Uint8Array {
+  const result = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
+function decodePemBody(pem: string, begin: string, end: string): Uint8Array {
+  const start = pem.indexOf(begin);
+  const finish = pem.indexOf(end);
+  if (start !== 0 || finish <= begin.length || pem.indexOf(begin, 1) !== -1) {
+    throw new Error('GitHub App private key is invalid');
+  }
+  const suffix = pem.slice(finish + end.length).trim();
+  const body = pem.slice(begin.length, finish).replaceAll(/\s/g, '');
+  if (suffix !== '' || body === '' || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) {
+    throw new Error('GitHub App private key is invalid');
+  }
+  let binary: string;
+  try {
+    binary = atob(body);
+  } catch {
+    throw new Error('GitHub App private key is invalid');
+  }
+  if (binary.length < 64 || binary.length > 16_384) {
+    throw new Error('GitHub App private key is invalid');
+  }
+  return Uint8Array.from(binary, (value) => value.charCodeAt(0));
+}
+
+function encodePem(bytes: Uint8Array): string {
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 8_192) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8_192));
+  }
+  const base64 = btoa(binary);
+  const lines = base64.match(/.{1,64}/g);
+  if (lines === null) throw new Error('GitHub App private key is invalid');
+  return `${PKCS8_BEGIN}\n${lines.join('\n')}\n${PKCS8_END}`;
+}
+
+function normalizePrivateKeyPem(input: string): string {
+  const pem = input.trim();
+  if (pem.length < 100 || pem.length > 20_000) {
+    throw new Error('GitHub App private key is invalid');
+  }
+  if (pem.startsWith(PKCS8_BEGIN)) {
+    decodePemBody(pem, PKCS8_BEGIN, PKCS8_END);
+    return pem;
+  }
+  if (!pem.startsWith(PKCS1_BEGIN)) {
+    throw new Error('GitHub App private key is invalid');
+  }
+  const pkcs1 = decodePemBody(pem, PKCS1_BEGIN, PKCS1_END);
+  const version = Uint8Array.of(0x02, 0x01, 0x00);
+  const privateKey = concatBytes(Uint8Array.of(0x04), derLength(pkcs1.length), pkcs1);
+  const body = concatBytes(version, RSA_ALGORITHM_IDENTIFIER, privateKey);
+  return encodePem(concatBytes(Uint8Array.of(0x30), derLength(body.length), body));
 }
 
 export interface GitHubAppInstallationTokenProviderOptions {
@@ -101,10 +188,7 @@ export class GitHubAppInstallationTokenProvider implements
   constructor(options: GitHubAppInstallationTokenProviderOptions) {
     this.appId = numericId(options.appId, 'GitHub App ID');
     this.installationId = numericId(options.installationId, 'GitHub App installation ID');
-    if (!options.privateKeyPem.includes('BEGIN PRIVATE KEY') || options.privateKeyPem.length > 20_000) {
-      throw new Error('GitHub App private key is invalid');
-    }
-    this.privateKeyPem = options.privateKeyPem;
+    this.privateKeyPem = normalizePrivateKeyPem(options.privateKeyPem);
     this.allowedRepositories = new Set(options.allowedRepositories);
     if (this.allowedRepositories.size === 0) {
       throw new Error('GitHub repository allowlist must not be empty');

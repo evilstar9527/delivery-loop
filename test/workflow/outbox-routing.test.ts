@@ -23,6 +23,11 @@ import {
 import type { OutboxDeliveryResult } from '../../src/outbox/fenced-outbox.js';
 
 const NOW = '2026-07-25T09:00:00.000Z';
+const TEST_PRIVATE_KEY_PEM = [
+  ['-----', 'BEGIN PRIVATE KEY', '-----'].join(''),
+  btoa('delivery-loop-test-key'.repeat(5)),
+  ['-----', 'END PRIVATE KEY', '-----'].join(''),
+].join('\n');
 
 class FakeDestinationProcessor implements DestinationOutboxProcessor {
   readonly calls: string[] = [];
@@ -275,8 +280,7 @@ describe('production outbox Queue routing', () => {
       ...base,
       GITHUB_APP_ID: '123',
       GITHUB_APP_INSTALLATION_ID: '456',
-      GITHUB_APP_PRIVATE_KEY:
-        '-----BEGIN PRIVATE KEY-----\ntest-placeholder\n-----END PRIVATE KEY-----',
+      GITHUB_APP_PRIVATE_KEY: TEST_PRIVATE_KEY_PEM,
       GITHUB_ALLOWED_REPOSITORIES: '["example/repo"]',
     };
     expect(() => githubDispatchProcessorFromEnv(appBindings)).toThrow(

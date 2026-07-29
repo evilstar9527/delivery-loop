@@ -1317,6 +1317,7 @@ export {
   WorkflowHibernateLiveWindowError,
   WorkflowHibernateWindowAuthorizationV1Schema,
   executeWorkflowHibernateLiveWindow,
+  resumeWorkflowHibernateLiveWindow,
   workflowHibernateWindowAuthorityDigest,
   type FrozenWorkerSourceVerification,
   type LiveBeforeDeployment,

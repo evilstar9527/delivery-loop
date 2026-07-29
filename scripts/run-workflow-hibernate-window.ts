@@ -7,6 +7,7 @@ import {
   WorkflowHibernateLiveWindowError,
   WorkflowHibernateWindowAuthorizationV1Schema,
   executeWorkflowHibernateLiveWindow,
+  resumeWorkflowHibernateLiveWindow,
 } from '../src/pilot/workflow-hibernate-live-window.js';
 import { createWorkflowHibernateLiveWindowDependencies } from
   '../src/pilot/workflow-hibernate-live-adapters.js';
@@ -136,7 +137,10 @@ async function main(): Promise<void> {
     return;
   }
   try {
-    const summary = await executeWorkflowHibernateLiveWindow(
+    const execute = authorization.data.resumeExistingTask === true
+      ? resumeWorkflowHibernateLiveWindow
+      : executeWorkflowHibernateLiveWindow;
+    const summary = await execute(
       authorization.data,
       task.data,
       createWorkflowHibernateLiveWindowDependencies({
