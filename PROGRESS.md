@@ -3343,3 +3343,18 @@
 - 勾选：无。真实hibernate、唯一dispatch、analysis Action与heartbeat父项全部保持未完成；不以blocker记录替代DoD证据。
 - 决策沉淀：满足“三轮未闭环即停止盲重试”阈值，将持续目标置为blocked而不是继续制造无效子契约。已冻结Task候选与before锚点保留，但30分钟authorization必须在恢复时按live main/current before重新生成，旧口头授权、过期example或宽权限credential均不可复用。按owner要求不更新llmdoc。
 - 恢复所需最小人工输入：owner回复以下二者之一——`授权exact演练；现有TASK/OPS原值可安全取用`，或`授权exact演练；TASK/OPS原值不可取，并授权轮换两枚Secret、重新发布before及创建最小权限GitHub/Cloudflare token`。Secret不得粘贴到聊天；恢复后通过系统钥匙串/已登录控制台安全注入，再执行唯一一次operator与formal verifier。
+
+## Round 172 — 2026-07-29
+- 目标：Phase 1真实hibernate演练的authority恢复与无副作用execution preflight。owner选择Round 171的第一条恢复路径后，本轮只准备clean before源码、重验production冻结事实并建立安全credential handoff；30分钟authorization要等全部凭证ready后才生成，父项保持未勾。
+- 前置与权限：owner明确回复`授权exact演练；现有TASK/OPS原值可安全取用`。授权精确覆盖一个只读Task、一次付费analysis Action、双guard成立时一次after deployment、零rollback/零repo write；不允许Secret轮换、额外deployment、第二Task/Action或宽权限credential旁路。本轮只用GitHub/Cloudflare/D1只读查询、本地依赖安装/双build和已登录浏览器登录页；没有生产写。
+- 动作：在仓库外创建detached worktree `/Users/jishihe/.codex/delivery-loop/hibernate-before-e14d11e`并锁定source `e14d11e5420e04d49c042a01c562ff5432ebb98c`，`pnpm install --frozen-lockfile`只复用本机store。首次把尚不存在目录设为command workdir导致进程创建前失败；随后分两步成功。第一次从旧worktree运行当前operator import因该commit尚无模块而本地exit 1；改从当前受审operator分支调用、sourceDirectory仍指向detached before后双build成功，外部effect始终为0。
+- 冻结与live preflight：operator的真实`verifyFrozenSource`以临时0600空env和隔离HOME/XDG运行两次Wrangler dry-run，得到clean=true、matching builds=2、2,808,881 bytes与SHA-256 `14b3ea16dd1d62b41639abe5680882a1f5dced3f19aee50305d95ac01b3adef8`，精确匹配Round 165/166 before。GitHub read返回`main=91c2a8c4b316a664f6da29f72d8b8580d5c4e0f3`；Wrangler read返回deployment `8b646225...`/version `6911feca...`仍100%；D1 exact identity count仍Task=Run=Attempt=0、`rows_written=0`；healthz 200。
+- Credential handoff：按browser skill先确认没有适用的token-create connector/API/CLI，再使用in-app browser打开GitHub fine-grained token页与Cloudflare API token页。GitHub要求owner完成sudo verification，Cloudflare要求owner登录；没有读取验证码、密码、cookie、storage或提交表单。仓库外0700 helper只调用macOS`security add-generic-password ... -w`的系统隐藏输入，把现有TASK/OPS原值直接放Keychain；脚本不含value且不写history/仓库，已在Terminal打开等待owner输入。三个页面/终端都不是credential-ready证据。
+- 验证：
+  - detached worktree `git rev-parse HEAD`、`git status --porcelain`与`pnpm install --frozen-lockfile` → exit 0，exact head且tracked/untracked clean。
+  - `verifyFrozenSource` → exit 0，输出仅上述source/hash/bytes/build count/clean安全字段；raw Wrangler输出与本地fake token不落账本。
+  - GitHub main、Cloudflare deployment、D1 identity聚合、healthz四条只读查询 → exit 0，结果如上且D1零写。
+  - `pnpm run verify:docs`、`pnpm run verify:secrets`与`git diff --check` → exit 0；504个生产文件Secret扫描与文档链接全绿，credential值、验证码、登录信息和browser raw state不进入仓库/账本。
+- 勾选：新增并勾选“owner authority恢复与execution preflight”子项；真实hibernate/唯一dispatch/analysis/heartbeat仍未完成。
+- 决策沉淀：本轮browser skill要求token创建优先用purpose-built surface；GitHub CLI/Cloudflare Wrangler都不能签发所需最小token，才回退已有登录态UI。技能的action-time确认由owner本轮exact授权覆盖，但sudo/Cloudflare登录仍由owner本人完成。30分钟authority不会在人工认证前提前生成或伪造有效期；按owner要求不更新llmdoc。
+- 遗留：等待owner在GitHub标签页完成sudo verification、在Cloudflare标签页登录，并在Terminal完成TASK/OPS两次Keychain隐藏输入后回复“已完成”。随后创建并立即安全存储GitHub Actions-read、Cloudflare Workflow/deployment-read及Worker-deploy三枚token，核对五值互异和scope，再生成fresh authority并执行唯一operator。
