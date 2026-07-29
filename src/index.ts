@@ -436,6 +436,17 @@ export {
   type WorkflowHibernateEvidenceVerifierOptions,
 } from './pilot/workflow-hibernate-evidence-verifier.js';
 export {
+  WorkflowHibernateWindowGuardError,
+  executeConditionalHibernateAfter,
+  type ConditionalHibernateAfterDependencies,
+  type ConditionalHibernateAfterSummary,
+  type WorkflowHibernateAfterRequest,
+  type WorkflowHibernateAfterResult,
+  type WorkflowHibernateWindowExpectation,
+  type WorkflowHibernateWindowGuardErrorCode,
+  type WorkflowHibernateWindowSnapshot,
+} from './pilot/workflow-hibernate-window-guard.js';
+export {
   GitHubAppDispatchEvidenceManifestV1Schema,
   type GitHubAppDispatchEvidenceManifestV1,
 } from './domain/github-app-dispatch-evidence.js';
