@@ -164,6 +164,7 @@
 24. provider network preflight只读取`OPENAI_BASE_URL`，不能读取API key、启动Codex、向provider发送HTTP或上传artifact。它与三个adapter共用同一URL parser；DNS结果还必须至少包含一个公网地址，私网、loopback、link-local、documentation、multicast和reserved地址不得进入socket。TCP直接连接受控DNS结果以避免二次解析/rebinding，TLS仍以原hostname做SNI及系统CA/hostname校验。Action日志只允许固定code和三个布尔值，不允许hostname、IP、URL、证书、底层错误或digest；该诊断workflow只有`contents:read`且没有input/Environment/OIDC/write。
 
 25. provider Secret等价诊断只允许用一次性32-byte随机proof key，分别对`OPENAI_API_KEY`与`OPENAI_BASE_URL`的exact UTF-8字节计算field-domain-separated HMAC；proof key与两份期望proof都只能以短期repository Secret进入固定只读workflow，期望/实际proof、credential、URL及其长度不得进入日志、artifact或持久状态。比较使用常量时间，每项只输出固定`match/mismatch/invalid`枚举，不调用provider、Codex、控制面或模型。外部run结算后立即删除三枚proof Secret；两项match只排除GitHub Secret字节漂移，不能证明provider可用、Responses stream完整或hibernate成功。
+26. control-plane真实hibernate窗口包含一次production D1 migration和两次production Worker发布，三者都需要明确且分离的生产授权；readiness只读检查或一次授权不得自动扩展到后续动作。多账号Wrangler命令显式绑定受审account ID，Sol/high migration必须先于引用它的before Worker，发布固定`--strict`并冻结main SHA、bundle digest、100% deployment/version和安全binding投影；远端漂移即停止。before版本只作为人工rollback anchor，rollback仍是新的production写权限，不能由失败、文档命令或Agent自批。after发布只能发生在唯一wait窗口内；任何发布失败都不发送analysis result、不手写D1、不用healthz冒充profile、dispatch或Workflow恢复成功。
 
 ## 5. Prompt Injection 防护
 
