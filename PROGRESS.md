@@ -3317,3 +3317,16 @@
 - 勾选：不新增父项勾选；仅把Round 168已勾live-window本地契约的默认分支、PR CI与main CI外部交付证据补入`DOD.md`。真实hibernate、唯一dispatch、真实analysis Action与heartbeat父项继续未完成。
 - 决策沉淀：当前生产before仍固定source `e14d11e5420e04d49c042a01c562ff5432ebb98c`、bundle SHA-256 `14b3ea16dd1d62b41639abe5680882a1f5dced3f19aee50305d95ac01b3adef8`、deployment `8b646225-4d71-4867-aff3-f22d137a8fa5`和version `6911feca-acf7-476a-b10c-cc61e71aedad`；operator进入main不改变该before锚点。after必须从独立clean detached source复核并上传exact before bundle，不能把当前main重新构建物当同一窗口after。按owner要求不更新llmdoc。
 - 遗留：下一步仍需owner批准一份30分钟内fresh exact authority，scope只能是一个只读Task、一个付费analysis Action、guard成立时一个after deployment、零rollback/repo write；并需在操作者环境安全注入五枚用途隔离且互不相同的凭证。Task/Action/after任一未明确授权或credential不齐时不得运行`ops:workflow-hibernate-window`；可继续推进的最小人工输入是确认该exact演练并完成凭证注入。
+
+## Round 170 — 2026-07-29
+- 目标：Phase 1“真实 Cloudflare 环境强制hibernate/Worker restart并证明dispatch一次”的exact Task候选前置。本轮只冻结后续owner authority要绑定的数据对象并证明production尚无同identity业务记录；不生成有时效authority、不创建Task或执行任何外部effect，父项保持未勾。
+- 前置与权限：仓库外目录`/Users/jishihe/.codex/delivery-loop/hibernate-window`权限0700，Task文件权限0600且不含Secret；使用当前仓库schema/canonical算法和现有Wrangler OAuth只读D1。仅检查五个运行环境变量是否present/missing，全部为missing且没有读取、打印或搜索其值；未调用控制面、GitHub API/Action、模型、Cloudflare Workflow/deployment写API。
+- 动作：冻结一份synthetic只读requirement Task，目标为`evilstar9527/delivery-loop@main`，要求只读分析下一个Phase 1未完成DoD并以repo evidence给出Plan；policy精确为repo/test/production write全false、require human approval=true。Task schema解析后用生产相同算法计算envelope/revision digest与deterministic identity；首次临时`tsx -e`因CJS不支持top-level await而exit 1，改为async IIFE后成功，未改变Task文件或触发外部effect。
+- 验证：
+  - `stat`与`TaskEnvelopeSchema.parse` → exit 0；仓库外Task文件为0600、1,134 bytes，schema合法且不进入Git。envelope digest=`sha256:13ac498adbe3d208e781dc408f6c40f87a40754f9e2fdc33d80f677d9ef7634b`，revision digest=`sha256:071ae4b46ae1ee8c46747c4c979418265440b3d356c00c198952d4a014470d0c`。
+  - deterministic identity：Task=`task_f9694dd75862aa4aa674cb003f43253d71627b9f7e9ab1cda2b4e944`，Run=`run_f9694dd75862aa4aa674cb003f43253d71627b9f7e9ab1cda2b4e944`，Attempt=`analysis-run_f9694dd75862aa4aa674cb003f43253d71627b9f7e9ab1cda2b4e944-1`；拟用idempotency key仅作为待授权数据，尚未发送。
+  - `wrangler d1 execute DB_CONTROL --remote --command <exact identity counts> --json` → exit 0；Task/Run/Attempt count均为0，`changes=0`、`rows_written=0`。该只读事实只证明identity未占用，不是Task创建或hibernate Evidence。
+  - `pnpm run verify:docs`、`pnpm run verify:secrets`与`git diff --check` → exit 0；504个生产文件Secret扫描与文档链接全绿，Task正文、credential值和raw D1行不进入账本。
+- 勾选：新增并勾选“真实hibernate exact Task候选前置”子项；真实Cloudflare hibernate、唯一dispatch、analysis Action与heartbeat父项继续未完成。
+- 决策沉淀：Task内容可提前冻结，但`WorkflowHibernateWindowAuthorizationV1`最长30分钟，只有owner明确批准后才能按当时live main head/current before重新生成并验digest；提前造一份未来时间或复用过期example都不是authority。当前before锚点仍为source `e14d11e...`及deployment `8b646225...`，当前main `91c2a8c...`只作为拟触发Action head，二者不得混用。按owner要求不更新llmdoc。
+- 遗留：同一外部前置连续第二轮仍缺：owner尚未明确授权一个Task、一个付费Action及guard成立时一个after，五枚用途隔离token也未安全注入。若现有TASK/operations原值不可取，需要owner另行批准Secret轮换和新的before基线；未经批准不得用宽权限GitHub登录态或Wrangler OAuth绕过operator隔离。
