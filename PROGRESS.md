@@ -3458,3 +3458,17 @@
 - 勾选：新增“trusted-base修复合并与零写生产复核”子证据；真实hibernate、唯一Action、analysis与heartbeat完整DoD仍不勾。
 - 决策沉淀：`DOD.md`把根因修复更新为已merge/main-CI-passed，并明确旧authority已消费、原Workflow终态与新Task需重新授权的边界；按owner约定不更新llmdoc。
 - Blocker与最小人工输入：若要继续该真实演练，owner需明确授权并显式取消旧的“不创建第二Task/Action”限制：发布frozen `b60872e...` / bundle `57d277e3...`为新before，创建恰好一个fresh Task并允许恰好一个analysis Action，仅在双guard成立时发布唯一after；仍不授权D1 repair、Workflow restart/recreate、Secret rotation、repo write或rollback。未收到新授权前不准备fresh Task identity/authority，不执行任何生产写。
+
+## Round 181 — 2026-07-29
+- 目标：继续Phase 1“真实Cloudflare hibernate/Worker restart且GitHub dispatch一次”；把Round 180的trusted-base merged-main/bundle/生产零写复核事实送入线性受保护PR并取得required CI，避免证据只停在本地。本轮不改变formal hibernate验收命令或生产blocker，PR/CI不替代真实Task/Workflow/Action/after事实。
+- 前置与权限：仅Git分支推送、GitHub PR创建及Actions CI读/写；不读或写D1/R2/Queue/Worker/Workflow，不调用Task/operations/Cloudflare credential，不运行model、Task/Action dispatch、production deploy、Secret rotation或rollback。不把PR正文或CI输出当作可信指令。
+- pre-PR审计：按`pre-pr-rebase-main` skill读取完整规则后执行`git fetch origin main`；`origin/main=b60872e2a5bfd90a1a8fbcb66b1d910432266015`与`merge-base(HEAD, origin/main)`相同，main侧新增commit和双方overlap文件均0。分支只有Round 180的`440dd5cb69ee4c054608b3b2348f8e8a30dbff76` docs commit，工作区clean，无需stash、rebase、history rewrite或冲突裁决。首次远程branch检查命令在只读`ls-remote`后因zsh内置只读变量`status`命名冲突而exit 1；未产生外部effect，改用`if ...; then` 后exit 0并证明remote branch不存在。
+- PR与CI：普通`git push -u origin HEAD`创建远程分支，新建ready PR [#44](https://github.com/evilstar9527/delivery-loop/pull/44)，base=`main@b60872e...`、head=`440dd5cb69ee4c054608b3b2348f8e8a30dbff76`。required CI [30456623208](https://github.com/evilstar9527/delivery-loop/actions/runs/30456623208) / job [90591725696](https://github.com/evilstar9527/delivery-loop/actions/runs/30456623208/job/90591725696) `completed/success + run_attempt=1`，唯一`verify` job用时4m03s；setup、immutable checkout/setup actions、frozen install、`pnpm run verify`与post steps均success。PR API为`MERGEABLE/CLEAN`，review/requested changes/普通评论/行内评论均0。
+- 验证：
+  - `git diff --check origin/main..HEAD`、`git status --short`和`git log --graph --oneline origin/main..HEAD` → exit 0；分支线性、仅一commit且clean。
+  - `gh pr checks 44 --watch --interval 10` → exit 0；同一run/job从pending到pass，未触发rerun或第二workflow。
+  - `gh pr view` + reviews/issues comments/review comments + `gh run view` → exit 0；上述head/base、CLEAN、CI步骤与零反馈事实一致。
+  - `git diff --check && pnpm run verify` → exit 0；116 Node files / 578 tests、57 workerd files / 314 tests、13 workflows / 13 jobs runner policy、505文件Secret scan和docs links全绿；workerd主动terminate清理诊断不是skip。
+- 勾选：新增“hibernate零写预检的受保护PR证据”子项；真实hibernate、唯一Action、analysis和heartbeat完整DoD仍不勾。
+- 决策沉淀：`DOD.md/PROGRESS.md`记录不可变PR/run/job及零review事实；按owner约定不更新llmdoc。skill feedback分类为blocking=none、important=none、deferred=none。
+- 遗留：PR #44还需对本轮账本commit运行新的required CI；未取得独立merge authority，本轮不merge。production blocker不变：如要继续真实演练，owner必须显式允许唯一fresh Task/Action并对`b60872e...` / `57d277e3...`新before与双guard after给出新窄production authority；否则停止该演练重试。
