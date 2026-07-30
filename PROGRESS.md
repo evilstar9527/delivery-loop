@@ -3573,3 +3573,19 @@
 - 勾选：新增“readiness before发布与单次readiness固定失败”子证据；真实hibernate、唯一Action、analysis和heartbeat父项仍不勾。
 - 决策沉淀：`docs/WorkflowHibernateE2E.md`和`docs/Security.md`补充一次性readiness-before session、路径敏感bundle与GET失败不扩大authority的边界；`DOD.md/PROGRESS.md`记录外部事实。按owner约定不更新llmdoc。
 - 遗留：当前production已包含readiness路由，但唯一获授权请求是`request_failed`而非200，不能据此执行Task。若继续，先在零生产写边界内定位caller transport失败，再由owner另行批准至多一次新的exact readiness；只有返回200，才可分开申请第二次同identity Task POST及后续唯一Action/双guard after。当前恢复审计是新blocker的第1轮，goal保持active；不自动重试或跨Phase制造effect。
+
+## Round 189 — 2026-07-30
+- 目标：继续Phase 1“真实Cloudflare hibernate/Worker restart且GitHub dispatch一次”；在不补发readiness、不读取operations token且不触碰production数据/Worker的前提下，定位Round 188 `request_failed`的客户端transport阶段，并把未来单次获批GET固化为可诊断、不可重试的仓库内caller。formal hibernate关门命令不变；本地caller或无HTTP network preflight都不能替代readiness 200及真实E2E。
+- 前置与权限：只读本地源码/环境配置存在性，及三个公网host的DNS、TCP 443、validated TLS布尔；network preflight不携带token且不发送HTTP。未读取Keychain、D1/R2/Queue/Workflow/Worker配置，未调用control-plane/GitHub/Cloudflare HTTP API，没有readiness GET、Task POST、Action、model、deployment、repair/restart、Secret rotation或rollback。当前只选择同一个hibernate DoD。
+- caller契约：新增`createGitHubBaseReadinessProbe`与`ops:github-base-readiness`。CLI默认在配置/network前exit 2；显式opt-in后只接受HTTPS origin、exact repository/base和operations token，每实例在fetch前永久消费attempt并固定一个GET、10秒timeout、redirect拒绝。caller只接受`no-store + application/json`下的exact 200 success或四类503 shape；1 MiB、pagination、content-length、credential/known token扫描和binding均fail-closed，unexpected status不读取body。transport只从最多四层error `name/code/cause`映射timeout/DNS/TCP/TLS/generic fixed code，永不输出message/raw cause。第二次run在fetch前拒绝。
+- RED/GREEN：函数不存在时`pnpm exec vitest run test/github-base-readiness-probe.test.ts`按预期exit 1 / 0 tests。首次实现后28项中24项通过，四个early-header rejection因测试Response clone的tee另一分支未消费，`await body.cancel()`各自卡到5秒timeout；这暴露真实不可信响应取消可能阻塞caller的问题。改为触发reader/body cancel但不等待其promise后，全部28项在546ms内通过；再补CLI缺token/配置零网络、localhost/IP/internal origin拒绝、实际1 MiB超限和恶意error getter，总计36项。
+- 零HTTP外部诊断：当前工作站Node 26没有`HTTP_PROXY/HTTPS_PROXY/NO_PROXY/NODE_USE_ENV_PROXY`。相同受审preflight对production Worker hostname返回`provider_tcp_failed + dns=true/tcp=false/tls=false`，耗时10.49秒；对`api.github.com`与`api.cloudflare.com`分别在1.07/1.33秒返回`provider_network_preflight_passed + dns/tcp/tls=true`。安全DNS计数为Worker host 1个IPv4+1个IPv6，probe已尝试最多四个public address；没有输出IP、发送HTTP或读取Secret。因此证据支持host-path TCP blocker，而不是全局DNS、全局TCP/TLS或缺代理配置；它解释status 0但不证明Worker readiness业务链路。
+- 验证：
+  - `pnpm exec vitest run test/github-base-readiness-probe.test.ts` → exit 0，1 file / 36 tests。
+  - `pnpm run typecheck`、`pnpm run lint` → exit 0。
+  - `pnpm run ops:github-base-readiness`（未opt-in）→ exit 2，固定`opt-in missing`且零网络。
+  - Worker/GitHub/Cloudflare三个`DELIVERY_LOOP_PROVIDER_NETWORK_PREFLIGHT=1 ... pnpm run e2e:provider-network` → exits `1/0/0`及上述固定安全布尔；没有执行readiness。
+  - `pnpm run verify` → exit 0；117 Node files / 617 tests、57 workerd files / 322 tests、13 workflows / 13 jobs runner policy、507文件Secret scan和docs links全绿；workerd主动terminate清理诊断不是skip。
+- 勾选：新增“readiness一次性caller与零HTTP transport诊断”子证据；真实hibernate、唯一Action、analysis和heartbeat父项保持未勾。
+- 决策沉淀：同步`docs/Proto.md`、`docs/Security.md`与`docs/WorkflowHibernateE2E.md`；transport诊断先于消耗单次readiness authority，且diagnostic pass/fail都不自授权。按owner约定不更新llmdoc。
+- 遗留：当前阻塞已定位但外部路径尚未恢复。下一次readiness前必须先在拟执行环境取得Worker host DNS/TCP/TLS全true；随后仍需owner对“一次exact GET”的新窄authority。只有200才可另行申请第二次同identity Task POST与唯一Action/双guard after。Round 188～189是该transport/readiness blocker的连续第2轮，goal保持active且不盲重试。
