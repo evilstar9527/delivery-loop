@@ -78,6 +78,10 @@ WORKFLOW_HIBERNATE_WINDOW_CLOUDFLARE_API_URL=<可选；默认https://api.cloudfl
 
 `ops:workflow-hibernate-window`成功只输出Task/Run/Attempt、before/after deployment/version、Action base SHA和固定effect计数；执行/外部不一致exit 1，未opt-in、配置或文件缺失exit 2，其他失败只输出固定code。它会真实创建Task并可能执行一次production after，因此只能在owner对exact authorization明确批准后运行；CLI exit 0仍必须继续正常callback与本文件§3 formal verifier，不能单独关门hibernate DoD。
 
+当现有production Worker尚未包含GitHub base readiness路由时，可以在独立的窄授权下使用`createWorkflowReadinessBeforeDeploymentSession`发布一次readiness before。该session不是Task operator：调用方必须绑定exact source SHA、bundle bytes/digest、当前100% deployment/version和固定message；session在写入前检查clean source并执行两次隔离dry build，只把相同bundle保留在内存，然后至多调用一次`--no-bundle --strict`，并要求发布后出现时间单调、不同ID且100% traffic的新deployment。source绝对路径会影响Wrangler bundle时，必须以产生受审candidate的原始路径构建；从另一个worktree得到不同bytes/digest只能在deploy前失败，不能临时替换authorized candidate。
+
+发布成功不代表GitHub App链路ready。调用方随后仍只能按owner批准的次数单独发送exact operations-only readiness GET；该GET返回非200、timeout或本地transport失败时不得自动重试、重发Task、repair/restart Workflow、旋转Secret、rollback或再发布Worker。session summary只允许source/bundle、before/after deployment/version/时间、100% traffic和`deploymentAttempts=1`等安全标量，Wrangler raw输出和credential全部丢弃。
+
 首次operator一旦成功创建exact Task，就不得用相同或新idempotency key重跑Task POST。若它随后在Workflow instance、Action和after均为0时因可解释的外部配置故障超时，恢复必须使用新的30分钟authority并显式加入`resumeExistingTask=true`；`effects.taskCreates=1`仍表示整个演练窗口累计只有这一个Task，而恢复调用成功summary必须是`taskCreateRequests=0`。恢复入口重新核对canonical authority、冻结Task文件、clean source双build、当前before及五凭证，要求deterministic Task已存在；Task缺失、普通authority误入resume、before/source漂移或已有callback均在deploy前失败。若修复外部故障产生了新的Worker deployment，该deployment必须成为fresh authority绑定的新before，不能继续复用旧authority。resume只允许继续等待同一Run/Attempt并执行原有双guard与唯一after，不授权第二Task、第二Action、rollback或repo write。
 
 GitHub App Manifest conversion当前返回PKCS#1 `RSA PRIVATE KEY`，而WebCrypto/Jose导入需要PKCS#8。运行时以固定RSA algorithm identifier和有界DER length在内存中包装PKCS#1；原生PKCS#8直通。转换前后都不记录PEM、DER或digest，非法/重复/尾随PEM在GitHub网络请求前拒绝。真实演练的部署前检查必须至少让一个installation-token签发路径实际加载Secret，不能再用`secret list`名称或`/healthz`冒充私钥可用。
