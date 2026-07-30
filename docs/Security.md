@@ -121,6 +121,7 @@
 ### 3.5 人工 Task intake
 
 - `POST /v1/tasks` 默认关闭匿名访问；Phase 1 使用控制面 Secret binding 中的 Bearer 服务凭证，后续可替换为组织 OIDC/mTLS，不接受 body 内自报身份代替认证。
+- intake前的`GET /v1/operations/github-base/readiness`使用独立`OPERATIONS_TOKEN`且只接受exact repository/baseBranch query；Task token、Runner token、GitHub token均无权调用。探针复用当前Worker真实GitHub App resolver，只执行App JWT→repository-scoped contents-read installation token→exact ref GET，不读取或写入D1/R2，不创建Task/Run/outbox/Workflow/Action。失败只公开`configuration_unavailable|credential_unavailable|reference_unavailable|reference_invalid`四个固定阶段，App JWT、private key、installation token、upstream body和raw error均不得回显或记录。readiness成功不是Task POST、dispatch或部署authority，失败也不授权重试已消费的Task请求或任何repair/restart/rollback。
 - `Idempotency-Key` 不作为授权凭证，D1 只保存其 digest；认证 header、key 原文和非法 Task 正文均不得进入错误响应或日志。
 - Task 完成 schema 校验后、计算 identity 或写 D1/R2 前，扫描 Worker 当前配置 Secret 与 credential 形状；命中时固定拒绝，不在 finding/响应中返回匹配值，也不产生 Task/Run/outbox/R2 对象。
 - 原始规范化 TaskEnvelope 只写受控 R2；Workflow-create outbox 和 API 响应只含 Task/Run 引用，不含需求正文或凭证。

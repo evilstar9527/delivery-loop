@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { GitHubBaseApiClient } from '../src/reconciliation/github-base-observation-reconciler.js';
+import {
+  GitHubBaseApiClient,
+  GitHubBaseResolutionError,
+} from '../src/reconciliation/github-base-observation-reconciler.js';
 
 const REPOSITORY = 'example/delivery-target';
 const BEFORE_SHA = 'a'.repeat(40);
@@ -127,5 +130,58 @@ describe('GitHub base observation API client', () => {
     await expect(result).rejects.toThrow('GitHub base reference response is invalid');
     await expect(result).rejects.not.toThrow(tokenCanary);
     await expect(result).rejects.not.toThrow(bodyCanary);
+  });
+
+  it('classifies credential, reference availability, and reference shape failures safely', async () => {
+    const credentialCanary = 'CANARY_GITHUB_CREDENTIAL_FAILURE';
+    const credentialFailure = new GitHubBaseApiClient({
+      getBaseObservationToken: async () => {
+        throw new Error(credentialCanary);
+      },
+    });
+    const credentialResult = credentialFailure.resolveBaseSha(REPOSITORY, 'main');
+    await expect(credentialResult).rejects.toMatchObject({
+      name: 'GitHubBaseResolutionError',
+      code: 'credential_unavailable',
+    });
+    await expect(credentialResult).rejects.not.toThrow(credentialCanary);
+
+    const networkCanary = 'CANARY_GITHUB_REFERENCE_NETWORK_FAILURE';
+    const referenceUnavailable = new GitHubBaseApiClient({
+      getBaseObservationToken: async () => 'base-read-token',
+    }, {
+      fetch: async () => {
+        throw new Error(networkCanary);
+      },
+    });
+    const unavailableResult = referenceUnavailable.resolveBaseSha(REPOSITORY, 'main');
+    await expect(unavailableResult).rejects.toMatchObject({
+      name: 'GitHubBaseResolutionError',
+      code: 'reference_unavailable',
+    });
+    await expect(unavailableResult).rejects.not.toThrow(networkCanary);
+
+    const responseCanary = 'CANARY_GITHUB_REFERENCE_RESPONSE';
+    const nonSuccess = new GitHubBaseApiClient({
+      getBaseObservationToken: async () => 'base-read-token',
+    }, {
+      fetch: async () => new Response(responseCanary, { status: 403 }),
+    });
+    const nonSuccessResult = nonSuccess.resolveBaseSha(REPOSITORY, 'main');
+    await expect(nonSuccessResult).rejects.toMatchObject({
+      name: 'GitHubBaseResolutionError',
+      code: 'reference_unavailable',
+    });
+    await expect(nonSuccessResult).rejects.not.toThrow(responseCanary);
+
+    const malformed = new GitHubBaseApiClient({
+      getBaseObservationToken: async () => 'base-read-token',
+    }, {
+      fetch: async () => new Response(`{"canary":"${responseCanary}"}`, { status: 200 }),
+    });
+    const malformedResult = malformed.resolveBaseSha(REPOSITORY, 'main');
+    await expect(malformedResult).rejects.toBeInstanceOf(GitHubBaseResolutionError);
+    await expect(malformedResult).rejects.toMatchObject({ code: 'reference_invalid' });
+    await expect(malformedResult).rejects.not.toThrow(responseCanary);
   });
 });

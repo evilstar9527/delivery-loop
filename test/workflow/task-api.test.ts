@@ -4,21 +4,33 @@ import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { TaskEnvelope } from '../../src/domain/task.js';
 import { taskApi } from '../../src/http/task-api.js';
+import { GitHubBaseResolutionError } from '../../src/reconciliation/github-base-observation-reconciler.js';
 import { SecretScanner } from '../../src/security/redaction.js';
 
 const BASE_URL = 'https://delivery-loop.test';
 const TEST_TOKEN = 'test-task-intake-token';
+const OPERATIONS_TOKEN = 'test-operations-token';
 const BASE_SHA = 'b'.repeat(40);
 const baseResolutionCalls: Array<{ repository: string; baseBranch: string }> = [];
 let baseResolutionFails = false;
+let baseResolutionFactoryFailure: 'none' | 'null' | 'throw' = 'none';
+let baseResolutionError: Error | null = null;
+let baseResolutionResult = BASE_SHA;
 const APP = taskApi({
-  baseShaResolverFromEnv: () => ({
-    async resolveBaseSha(repository, baseBranch) {
-      baseResolutionCalls.push({ repository, baseBranch });
-      if (baseResolutionFails) throw new Error('untrusted upstream detail');
-      return BASE_SHA;
-    },
-  }),
+  baseShaResolverFromEnv: () => {
+    if (baseResolutionFactoryFailure === 'null') return null;
+    if (baseResolutionFactoryFailure === 'throw') {
+      throw new Error('CANARY_GITHUB_CONFIGURATION_DETAIL');
+    }
+    return {
+      async resolveBaseSha(repository, baseBranch) {
+        baseResolutionCalls.push({ repository, baseBranch });
+        if (baseResolutionError !== null) throw baseResolutionError;
+        if (baseResolutionFails) throw new Error('untrusted upstream detail');
+        return baseResolutionResult;
+      },
+    };
+  },
 });
 
 function taskEnvelope(taskKey = 'api-task'): TaskEnvelope {
@@ -79,6 +91,19 @@ async function postTask(args: {
   }, env);
 }
 
+async function getGitHubBaseReadiness(
+  query: string,
+  token: string | null = OPERATIONS_TOKEN,
+): Promise<Response> {
+  const headers = new Headers();
+  if (token !== null) headers.set('authorization', `Bearer ${token}`);
+  return await APP.request(
+    `${BASE_URL}/v1/operations/github-base/readiness${query}`,
+    { method: 'GET', headers },
+    env,
+  );
+}
+
 async function count(table: 'tasks' | 'runs' | 'outbox' | 'idempotency_keys'): Promise<number> {
   const row = await env.DB_CONTROL.prepare(`SELECT COUNT(*) AS count FROM ${table}`).first<{
     count: number;
@@ -90,6 +115,9 @@ async function count(table: 'tasks' | 'runs' | 'outbox' | 'idempotency_keys'): P
 beforeEach(async () => {
   baseResolutionCalls.length = 0;
   baseResolutionFails = false;
+  baseResolutionFactoryFailure = 'none';
+  baseResolutionError = null;
+  baseResolutionResult = BASE_SHA;
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM idempotency_keys'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
@@ -100,6 +128,130 @@ beforeEach(async () => {
   if (objects.objects.length > 0) {
     await env.TASK_OBJECTS.delete(objects.objects.map((object) => object.key));
   }
+});
+
+describe('GET /v1/operations/github-base/readiness', () => {
+  const EXACT_QUERY = '?repository=example%2Fdelivery-target&baseBranch=main';
+
+  async function expectZeroBusinessWrites(): Promise<void> {
+    expect(await count('tasks')).toBe(0);
+    expect(await count('runs')).toBe(0);
+    expect(await count('outbox')).toBe(0);
+    expect(await count('idempotency_keys')).toBe(0);
+    expect((await env.TASK_OBJECTS.list()).objects).toHaveLength(0);
+  }
+
+  it('requires the operations identity and rejects the Task intake identity', async () => {
+    const missing = await getGitHubBaseReadiness(EXACT_QUERY, null);
+    const wrongPurpose = await getGitHubBaseReadiness(EXACT_QUERY, TEST_TOKEN);
+
+    expect(missing.status).toBe(401);
+    expect(wrongPurpose.status).toBe(401);
+    expect(baseResolutionCalls).toHaveLength(0);
+    await expectZeroBusinessWrites();
+  });
+
+  it('rejects missing, duplicate, extra, and unsafe query fields before resolution', async () => {
+    const invalidQueries = [
+      '',
+      '?repository=example%2Fdelivery-target',
+      '?baseBranch=main',
+      `${EXACT_QUERY}&repository=example%2Fother`,
+      `${EXACT_QUERY}&extra=true`,
+      '?repository=example%2Fdelivery-target&baseBranch=..%2Fmain',
+      '?repository=example%2Fdelivery-target%2Fextra&baseBranch=main',
+      '?repository=..%2Fdelivery-target&baseBranch=main',
+    ];
+    for (const query of invalidQueries) {
+      const response = await getGitHubBaseReadiness(query);
+      expect(response.status, query).toBe(400);
+      expect(await response.json(), query).toMatchObject({
+        code: 'invalid_argument',
+        retryable: false,
+      });
+    }
+    expect(baseResolutionCalls).toHaveLength(0);
+    await expectZeroBusinessWrites();
+  });
+
+  it('reports configuration failures with a fixed safe reason and no business writes', async () => {
+    for (const failure of ['null', 'throw'] as const) {
+      baseResolutionFactoryFailure = failure;
+      const response = await getGitHubBaseReadiness(EXACT_QUERY);
+      expect(response.status).toBe(503);
+      const text = await response.text();
+      expect(text).not.toContain('CANARY_GITHUB_CONFIGURATION_DETAIL');
+      expect(JSON.parse(text)).toMatchObject({
+        schemaVersion: '1',
+        ready: false,
+        reason: 'configuration_unavailable',
+        code: 'unavailable',
+        retryable: true,
+      });
+    }
+    expect(baseResolutionCalls).toHaveLength(0);
+    await expectZeroBusinessWrites();
+  });
+
+  it.each([
+    'credential_unavailable',
+    'reference_unavailable',
+    'reference_invalid',
+  ] as const)('returns only the safe %s classification', async (reason) => {
+    const canary = `CANARY_GITHUB_READINESS_${reason}`;
+    baseResolutionError = new GitHubBaseResolutionError(reason, canary);
+
+    const response = await getGitHubBaseReadiness(EXACT_QUERY);
+    expect(response.status).toBe(503);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const text = await response.text();
+    expect(text).not.toContain(canary);
+    expect(JSON.parse(text)).toMatchObject({
+      schemaVersion: '1',
+      ready: false,
+      reason,
+      code: 'unavailable',
+      retryable: true,
+    });
+    expect(baseResolutionCalls).toEqual([{
+      repository: 'example/delivery-target',
+      baseBranch: 'main',
+    }]);
+    await expectZeroBusinessWrites();
+  });
+
+  it('classifies a non-commit resolver result as an invalid reference', async () => {
+    baseResolutionResult = 'not-a-commit';
+
+    const response = await getGitHubBaseReadiness(EXACT_QUERY);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      schemaVersion: '1',
+      ready: false,
+      reason: 'reference_invalid',
+      code: 'unavailable',
+    });
+    await expectZeroBusinessWrites();
+  });
+
+  it('returns the exact trusted SHA without creating Task, Run, outbox, or R2 state', async () => {
+    const response = await getGitHubBaseReadiness(EXACT_QUERY);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toEqual({
+      schemaVersion: '1',
+      ready: true,
+      repository: 'example/delivery-target',
+      baseBranch: 'main',
+      baseSha: BASE_SHA,
+    });
+    expect(baseResolutionCalls).toEqual([{
+      repository: 'example/delivery-target',
+      baseBranch: 'main',
+    }]);
+    await expectZeroBusinessWrites();
+  });
 });
 
 describe('POST /v1/tasks', () => {
