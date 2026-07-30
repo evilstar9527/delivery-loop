@@ -3539,3 +3539,17 @@
 - 勾选：无；真实hibernate、唯一Action、analysis、heartbeat与platform limits父项均保持未勾，不把PR、CI、审计或blocker冒充完成。
 - 决策沉淀：只更新`DOD.md/PROGRESS.md`；没有新API、架构或安全决策，按owner约定不更新llmdoc。
 - Blocker与最小人工输入：与Round 185相同，需owner明确回复：`授权发布 main b78edd74ec726a8a13acea613bef8a98eaf1542b / bundle dc811769003b46cbbb6cf3959267e1767c1aa06818962a1f8114749b5dbeb82b（2,820,209 bytes）为新的 readiness before；发布后仅执行一次 exact GitHub base readiness；不执行 Task POST、Action、after、D1 repair、Workflow restart/recreate、Secret rotation或rollback。` 在此之前不执行任何production写或readiness调用；这是相同blocker的第二个连续目标轮次，尚不把长期goal标记blocked。
+
+## Round 187 — 2026-07-30
+- 目标：继续Phase 1“真实Cloudflare hibernate/Worker restart且GitHub dispatch一次”；对Round 185～186相同production authority缺口执行第三个连续目标轮次审计，按`LOOP.md`和长期目标blocked规则停止盲重试。本轮验收先固定为GitHub结构化PR/run事实、rebase merge树一致性、当前goal状态、既有Security/runbook边界、`git diff --check`与`pnpm run verify:docs`；不运行Cloudflare/D1/R2/Task/Workflow/Action/model/deployment/readiness。
+- 前置与权限：只读GitHub PR/Actions/main、长期goal状态和仓库文件；未读取或写入生产数据库、Worker、Workflow、Secret值或仓库外Task/authorization。当前轮次由长期goal自动继续，没有新的用户消息或owner authority；自动续跑、代码merge常设授权和此前已消费的exact authority都不能解释为production deployment批准。
+- Round 186受保护交付事实：commit `05e217e70c74f76d8d8076c2404a5bbebcc4f412`经ready PR [#47](https://github.com/evilstar9527/delivery-loop/pull/47)交付；required CI [30526798941](https://github.com/evilstar9527/delivery-loop/actions/runs/30526798941) / job [90819503456](https://github.com/evilstar9527/delivery-loop/actions/runs/30526798941/job/90819503456)在exact head上`completed/success`，PR为`MERGEABLE/CLEAN`且review/requested changes/普通/行内评论均0。按owner常设约定rebase merge后生成`main=619ba549f3e35bbff2658c7360f347e119d91b75`；合并后main CI [30527131976](https://github.com/evilstar9527/delivery-loop/actions/runs/30527131976) / job [90820574197](https://github.com/evilstar9527/delivery-loop/actions/runs/30527131976/job/90820574197)亦`completed/success`，用时3m50s。`git diff --exit-code 05e217e... 619ba549...`为0，证明rebase merge只改变commit identity；既有setup Action Node 20→24 annotation仍是Phase 0已记录MINOR。
+- 三轮相同blocker：Round 185已冻结clean executable source `b78edd74...`、2,820,209 bytes / `dc811769...`并提出最小窄authority；Round 186证明Phase 1同一DoD没有不依赖该production写的本地或零写替代闭环；Round 187再次确认PR/review/main CI都已清、当前goal仍active但没有新owner authority。第一项安全动作仍只能是一次exact Worker发布，继续做dry-run、账本PR、默认exit 2、跨Phasemock或旧authority重放都不会让真实hibernate更接近成立，并会违反证据或授权纪律。因此满足同一阻塞条件连续三个目标轮次的阈值，本轮账本通过受保护main后必须把长期goal状态更新为blocked，而不是继续生成第四份无effect账本。
+- 验证：
+  - `gh pr view 47` + reviews/issues comments/review comments + `gh run view 30526798941`与`30527131976` → exit 0；上述head/base/merge/main SHA、两条CI success与零feedback一致。
+  - `git diff --exit-code HEAD origin/main`（在PR #47 rebase前head上）→ exit 0；两个commit tree一致；随后从`origin/main`创建本轮线性分支。
+  - `get_goal` → status=`active`；Round 185～187是相同production authority blocker的三个连续goal轮次，达到blocked阈值但仅在本轮账本受保护交付后更新状态。
+  - `git diff --check`、`pnpm run verify:docs` → exit 0；账本diff无空白错误且文档链接校验通过。
+- 勾选：无；真实hibernate、唯一Action、analysis、heartbeat与platform limits父项继续未勾，blocked只表示停止无权限盲重试，不表示DoD完成。
+- 决策沉淀：只更新`DOD.md/PROGRESS.md`；没有新API、架构或安全决策，按owner约定不更新llmdoc。
+- Blocker与恢复输入：本轮受保护交付和main CI成功后将长期goal置为blocked。恢复时owner明确回复：`授权发布 main b78edd74ec726a8a13acea613bef8a98eaf1542b / bundle dc811769003b46cbbb6cf3959267e1767c1aa06818962a1f8114749b5dbeb82b（2,820,209 bytes）为新的 readiness before；发布后仅执行一次 exact GitHub base readiness；不执行 Task POST、Action、after、D1 repair、Workflow restart/recreate、Secret rotation或rollback。` 恢复运行视为新的blocked审计；没有该输入前不执行任何production写或readiness调用。
