@@ -20,6 +20,7 @@ const githubOidcPrivateJwk = {
 export default defineConfig({
   test: {
     include: ['test/workflow/**/*.test.ts'],
+    exclude: ['.claude/worktree/**', 'node_modules/**'],
     setupFiles: ['./test/workflow/apply-migrations.ts'],
     testTimeout: 15_000,
     // D1 concurrency cases already create 20 in-file requests. Serialize files:
