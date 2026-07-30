@@ -402,6 +402,15 @@ private key、installation token、上游body或raw异常。探针没有D1/R2/Ta
 `200 ready`只证明调用时的read链路，不授予Task POST、GitHub dispatch或production deploy权限，也不能替代
 对应外部DoD证据。
 
+仓库内一次性caller `ops:github-base-readiness`默认在读取配置或网络前exit 2；显式opt-in后只接受HTTPS
+control-plane origin、exact repository/baseBranch和用途隔离operations token。每个probe实例把attempt flag置位后才
+调用一次上述GET，第二次调用在fetch前拒绝；请求固定10秒timeout、拒绝redirect，响应限1 MiB、拒绝分页并在
+JSON parse前扫描token和credential形状。caller只接受exact `200 ready`或上述四类exact `503 unavailable` shape，
+并要求`Cache-Control: no-store`；其他status/body/header一律固定拒绝且不读取非预期HTTP正文。fetch失败只检查
+错误对象的allowlisted `name/code/cause`，映射为`request_timed_out|dns_failed|tcp_failed|tls_failed|request_failed`，
+不输出raw message/cause。caller分类只解释本次客户端transport，不是Worker readiness事实，也不产生自动重试、
+Task、repair、Secret rotation、deployment或rollback authority。
+
 ### 4.2 查询与人工动作
 
 | 方法与路径 | 说明 |
