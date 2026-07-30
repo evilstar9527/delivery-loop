@@ -1335,3 +1335,13 @@ export {
   type WorkflowReadinessBeforeDeploymentSession,
   type WorkflowReadinessBeforeDeploymentSummary,
 } from './pilot/workflow-hibernate-live-adapters.js';
+export {
+  createGitHubBaseReadinessProbe,
+  GITHUB_BASE_READINESS_FAILURE_REASONS,
+  GitHubBaseReadinessProbeError,
+  type GitHubBaseReadinessFailureReason,
+  type GitHubBaseReadinessProbe,
+  type GitHubBaseReadinessProbeErrorCode,
+  type GitHubBaseReadinessProbeOptions,
+  type GitHubBaseReadinessProbeSummary,
+} from './pilot/github-base-readiness-probe.js';
