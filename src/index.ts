@@ -1327,7 +1327,11 @@ export {
   type WorkflowHibernateWindowAuthorizationV1,
 } from './pilot/workflow-hibernate-live-window.js';
 export {
+  createWorkflowReadinessBeforeDeploymentSession,
   createWorkflowHibernateLiveWindowDependencies,
   type WorkflowHibernateCommandExecutor,
   type WorkflowHibernateLiveAdapterOptions,
+  type WorkflowReadinessBeforeDeploymentRequest,
+  type WorkflowReadinessBeforeDeploymentSession,
+  type WorkflowReadinessBeforeDeploymentSummary,
 } from './pilot/workflow-hibernate-live-adapters.js';

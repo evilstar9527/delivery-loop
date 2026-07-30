@@ -8,6 +8,7 @@ import {
   type WorkflowHibernateWindowAuthorizationV1,
 } from '../src/pilot/workflow-hibernate-live-window.js';
 import {
+  createWorkflowReadinessBeforeDeploymentSession,
   createWorkflowHibernateLiveWindowDependencies,
   type WorkflowHibernateCommandExecutor,
   type WorkflowHibernateLiveAdapterOptions,
@@ -275,6 +276,78 @@ function expectCode(code: string): (error: unknown) => boolean {
 }
 
 describe('Workflow hibernate live adapters', () => {
+  it('publishes one exact readiness before from the verified frozen bundle', async () => {
+    const current = fixture({ deploymentVisibilityLag: true });
+    const session = createWorkflowReadinessBeforeDeploymentSession(current.adapterOptions);
+    const request = {
+      sourceSha: SOURCE_SHA,
+      bundleSha256: BUNDLE_SHA256,
+      bundleBytes: Buffer.byteLength(BUNDLE),
+      expectedCurrentDeploymentId: BEFORE_DEPLOYMENT_ID,
+      expectedCurrentVersionId: BEFORE_VERSION_ID,
+      message: `phase1-readiness-before main@${SOURCE_SHA}`,
+    };
+
+    await expect(session.verify(request)).resolves.toEqual({
+      headSha: SOURCE_SHA,
+      bundleSha256: BUNDLE_SHA256,
+      bundleBytes: Buffer.byteLength(BUNDLE),
+      matchingBundleBuilds: 2,
+      clean: true,
+    });
+    await expect(session.readCurrentDeployment()).resolves.toMatchObject({
+      deploymentId: BEFORE_DEPLOYMENT_ID,
+      versionId: BEFORE_VERSION_ID,
+      trafficPercentage: 100,
+    });
+    await expect(session.deploy()).resolves.toMatchObject({
+      verification: { headSha: SOURCE_SHA, bundleSha256: BUNDLE_SHA256 },
+      beforeDeployment: { deploymentId: BEFORE_DEPLOYMENT_ID, versionId: BEFORE_VERSION_ID },
+      afterDeployment: {
+        deploymentId: AFTER_DEPLOYMENT_ID,
+        versionId: AFTER_VERSION_ID,
+        trafficPercentage: 100,
+      },
+      deploymentAttempts: 1,
+    });
+
+    const wrangler = current.commandRequests.filter((candidate) =>
+      candidate.command === '/trusted/wrangler');
+    expect(wrangler).toHaveLength(3);
+    expect(wrangler[2]!.args).toEqual([
+      'deploy', expect.stringMatching(/\/delivery-loop-hibernate-upload-[^/]+\/worker\.js$/),
+      '--no-bundle', '--strict', '--message', request.message,
+      '--env-file',
+      expect.stringMatching(/\/delivery-loop-hibernate-upload-[^/]+\/empty\.env$/),
+      '--config', '/frozen/source/wrangler.jsonc',
+    ]);
+    expect(wrangler[2]!.env.CLOUDFLARE_API_TOKEN).toBe(TOKENS.cloudflareDeploy);
+    expect(current.fetchRequests.every((candidate) =>
+      candidate.url.pathname.endsWith('/workers/scripts/delivery-loop-control-plane/deployments') &&
+      candidate.authorization === `Bearer ${TOKENS.cloudflareRead}` &&
+      candidate.method === 'GET')).toBe(true);
+    await expect(session.deploy()).rejects.toSatisfy(expectCode('after_deploy_failed'));
+    expect(current.commandRequests.filter((candidate) =>
+      candidate.args.includes('--strict'))).toHaveLength(1);
+  });
+
+  it('rejects readiness-before deployment drift before the strict command', async () => {
+    const current = fixture();
+    const session = createWorkflowReadinessBeforeDeploymentSession(current.adapterOptions);
+    await session.verify({
+      sourceSha: SOURCE_SHA,
+      bundleSha256: BUNDLE_SHA256,
+      bundleBytes: Buffer.byteLength(BUNDLE),
+      expectedCurrentDeploymentId: AFTER_DEPLOYMENT_ID,
+      expectedCurrentVersionId: BEFORE_VERSION_ID,
+      message: `phase1-readiness-before main@${SOURCE_SHA}`,
+    });
+
+    await expect(session.deploy()).rejects.toSatisfy(expectCode('before_deployment_mismatch'));
+    expect(current.commandRequests.some((candidate) =>
+      candidate.args.includes('--strict'))).toBe(false);
+  });
+
   it('collects the exact live snapshot with purpose-separated credentials', async () => {
     const auth = authorization();
     const current = fixture();

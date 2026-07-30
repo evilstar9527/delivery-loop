@@ -15,7 +15,6 @@ import {
 } from './workflow-hibernate-live-window.js';
 import { normalizeCloudflareWorkflowStepName } from './cloudflare-workflow-step.js';
 import type {
-  WorkflowHibernateAfterRequest,
   WorkflowHibernateAfterResult,
   WorkflowHibernateWindowSnapshot,
 } from './workflow-hibernate-window-guard.js';
@@ -65,6 +64,39 @@ export interface WorkflowHibernateLiveAdapterOptions {
   command?: WorkflowHibernateCommandExecutor;
   sleep?: (milliseconds: number) => Promise<void>;
   now?: () => Date;
+}
+
+export interface WorkflowReadinessBeforeDeploymentRequest {
+  sourceSha: string;
+  bundleSha256: string;
+  bundleBytes: number;
+  expectedCurrentDeploymentId: string;
+  expectedCurrentVersionId: string;
+  message: string;
+}
+
+export interface WorkflowReadinessBeforeDeploymentSummary {
+  verification: FrozenWorkerSourceVerification;
+  beforeDeployment: LiveBeforeDeployment;
+  afterDeployment: LiveBeforeDeployment;
+  deploymentAttempts: 1;
+}
+
+export interface WorkflowReadinessBeforeDeploymentSession {
+  verify(request: WorkflowReadinessBeforeDeploymentRequest): Promise<FrozenWorkerSourceVerification>;
+  readCurrentDeployment(): Promise<LiveBeforeDeployment>;
+  deploy(): Promise<WorkflowReadinessBeforeDeploymentSummary>;
+}
+
+interface FrozenWorkerSourceRequest {
+  source: { sha: string };
+}
+
+interface FrozenWorkerDeployRequest {
+  sourceSha: string;
+  bundleSha256: string;
+  message: string;
+  strict: true;
 }
 
 type Source = 'control_plane' | 'github' | 'cloudflare';
@@ -168,7 +200,7 @@ class FrozenSourceAndWranglerAdapter {
   ) {}
 
   async verify(
-    authorization: WorkflowHibernateWindowAuthorizationV1,
+    authorization: FrozenWorkerSourceRequest,
   ): Promise<FrozenWorkerSourceVerification> {
     const status = await this.gitStatus();
     if (status.headSha !== authorization.source.sha || !status.clean) {
@@ -201,7 +233,7 @@ class FrozenSourceAndWranglerAdapter {
     };
   }
 
-  async deploy(request: WorkflowHibernateAfterRequest): Promise<void> {
+  async deploy(request: FrozenWorkerDeployRequest): Promise<void> {
     if (
       this.frozen === null || this.frozenBundle === null || this.deployAttempted ||
       request.sourceSha !== this.frozen.headSha ||
@@ -343,10 +375,7 @@ class LiveHttpAdapter {
     ] });
   }
 
-  async before(
-    authorization: WorkflowHibernateWindowAuthorizationV1,
-  ): Promise<LiveBeforeDeployment> {
-    void authorization;
+  async before(): Promise<LiveBeforeDeployment> {
     const deployments = await this.deployments();
     const current = this.latestDeployment(deployments);
     if (current === null) fail('before_deployment_mismatch');
@@ -736,6 +765,79 @@ class LiveHttpAdapter {
   }
 }
 
+export function createWorkflowReadinessBeforeDeploymentSession(
+  options: WorkflowHibernateLiveAdapterOptions,
+): WorkflowReadinessBeforeDeploymentSession {
+  const command = options.command ?? defaultCommand;
+  const source = new FrozenSourceAndWranglerAdapter(options, command);
+  const http = new LiveHttpAdapter(options);
+  const sleep = options.sleep ?? (async (milliseconds: number) => {
+    await new Promise((resolve) => setTimeout(resolve, milliseconds));
+  });
+  let request: WorkflowReadinessBeforeDeploymentRequest | null = null;
+  let verification: FrozenWorkerSourceVerification | null = null;
+  let deploymentStarted = false;
+
+  return {
+    verify: async (input) => {
+      if (
+        request !== null || !SHA_PATTERN.test(input.sourceSha) ||
+        !/^[a-f0-9]{64}$/.test(input.bundleSha256) ||
+        !Number.isSafeInteger(input.bundleBytes) || input.bundleBytes < 1 ||
+        input.bundleBytes > 10 * 1_024 * 1_024 ||
+        !UUID_PATTERN.test(input.expectedCurrentDeploymentId) ||
+        !UUID_PATTERN.test(input.expectedCurrentVersionId) ||
+        input.message !== `phase1-readiness-before main@${input.sourceSha}`
+      ) fail('configuration_invalid');
+      const result = await source.verify({ source: { sha: input.sourceSha } });
+      if (
+        result.bundleSha256 !== input.bundleSha256 ||
+        result.bundleBytes !== input.bundleBytes
+      ) fail('source_verification_failed');
+      request = { ...input };
+      verification = result;
+      return result;
+    },
+    readCurrentDeployment: async () => await http.before(),
+    deploy: async () => {
+      if (request === null || verification === null || deploymentStarted) {
+        fail('after_deploy_failed');
+      }
+      deploymentStarted = true;
+      const beforeDeployment = await http.before();
+      if (
+        beforeDeployment.deploymentId !== request.expectedCurrentDeploymentId ||
+        beforeDeployment.versionId !== request.expectedCurrentVersionId ||
+        beforeDeployment.trafficPercentage !== 100
+      ) fail('before_deployment_mismatch');
+      await source.deploy({
+        sourceSha: request.sourceSha,
+        bundleSha256: request.bundleSha256,
+        message: request.message,
+        strict: true,
+      });
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const afterDeployment = await http.before();
+        if (afterDeployment.deploymentId !== beforeDeployment.deploymentId) {
+          if (
+            afterDeployment.versionId === beforeDeployment.versionId ||
+            afterDeployment.trafficPercentage !== 100 ||
+            Date.parse(afterDeployment.createdAt) <= Date.parse(beforeDeployment.createdAt)
+          ) fail('after_deploy_failed');
+          return {
+            verification,
+            beforeDeployment,
+            afterDeployment,
+            deploymentAttempts: 1,
+          };
+        }
+        await sleep(500);
+      }
+      fail('after_deploy_failed');
+    },
+  };
+}
+
 export function createWorkflowHibernateLiveWindowDependencies(
   options: WorkflowHibernateLiveAdapterOptions,
 ): WorkflowHibernateLiveWindowDependencies {
@@ -751,7 +853,7 @@ export function createWorkflowHibernateLiveWindowDependencies(
       authorization = input;
       return await source.verify(input);
     },
-    readBeforeDeployment: async (input) => await http.before(input),
+    readBeforeDeployment: async () => await http.before(),
     taskExists: async (input) => await http.taskExists(input),
     createTask: async (task, input) => await http.createTask(task, input),
     readSnapshot: async (input) => await http.snapshot(input, await source.snapshotSource()),
