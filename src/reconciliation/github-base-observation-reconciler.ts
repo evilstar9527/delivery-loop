@@ -27,6 +27,22 @@ const REPLAN_STATES = new Set([
   'blocked',
 ]);
 
+export type GitHubBaseResolutionErrorCode =
+  | 'credential_unavailable'
+  | 'reference_unavailable'
+  | 'reference_invalid';
+
+/** Safe stage classification for the read-only repository base lookup. */
+export class GitHubBaseResolutionError extends Error {
+  constructor(
+    readonly code: GitHubBaseResolutionErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'GitHubBaseResolutionError';
+  }
+}
+
 export interface GitHubBaseObservationTokenProvider {
   getBaseObservationToken(repository: string): Promise<string>;
 }
@@ -257,9 +273,20 @@ export class GitHubBaseApiClient implements
     if (!REPOSITORY_PATTERN.test(repository) || !safeBranch(baseBranch)) {
       throw new Error('GitHub base reference request is invalid');
     }
-    const token = await this.tokenProvider.getBaseObservationToken(repository);
+    let token: string;
+    try {
+      token = await this.tokenProvider.getBaseObservationToken(repository);
+    } catch {
+      throw new GitHubBaseResolutionError(
+        'credential_unavailable',
+        'GitHub base observation token is unavailable',
+      );
+    }
     if (token.length < 1 || token.length > 2_000 || /[\0\r\n]/.test(token)) {
-      throw new Error('GitHub base observation token is unavailable');
+      throw new GitHubBaseResolutionError(
+        'credential_unavailable',
+        'GitHub base observation token is unavailable',
+      );
     }
     const headers = {
       accept: 'application/vnd.github+json',
@@ -274,12 +301,47 @@ export class GitHubBaseApiClient implements
         { method: 'GET', headers },
       );
     } catch {
-      throw new Error('GitHub base reference query failed');
+      throw new GitHubBaseResolutionError(
+        'reference_unavailable',
+        'GitHub base reference query failed',
+      );
     }
-    const referenceBody = object(await responseJson(
-      referenceResponse,
-      'GitHub base reference query',
-    ));
+    if (referenceResponse.status !== 200) {
+      try {
+        await referenceResponse.body?.cancel();
+      } catch {
+        // The upstream body is intentionally discarded and never becomes diagnostic output.
+      }
+      throw new GitHubBaseResolutionError(
+        'reference_unavailable',
+        'GitHub base reference query failed',
+      );
+    }
+    let referenceText: string;
+    try {
+      referenceText = await referenceResponse.text();
+    } catch {
+      throw new GitHubBaseResolutionError(
+        'reference_unavailable',
+        'GitHub base reference query response is invalid',
+      );
+    }
+    if (new TextEncoder().encode(referenceText).length > MAX_RESPONSE_BYTES) {
+      throw new GitHubBaseResolutionError(
+        'reference_invalid',
+        'GitHub base reference query response is invalid',
+      );
+    }
+    let referenceJson: unknown;
+    try {
+      referenceJson = JSON.parse(referenceText) as unknown;
+    } catch {
+      throw new GitHubBaseResolutionError(
+        'reference_invalid',
+        'GitHub base reference query response is invalid',
+      );
+    }
+    const referenceBody = object(referenceJson);
     const referenceObject = object(referenceBody?.object);
     const afterSha = referenceObject?.sha;
     if (
@@ -287,7 +349,12 @@ export class GitHubBaseApiClient implements
       referenceObject?.type !== 'commit' ||
       typeof afterSha !== 'string' ||
       !SHA_PATTERN.test(afterSha)
-    ) throw new Error('GitHub base reference response is invalid');
+    ) {
+      throw new GitHubBaseResolutionError(
+        'reference_invalid',
+        'GitHub base reference response is invalid',
+      );
+    }
     const referenceDigest = await canonicalSha256({
       ref: referenceBody.ref,
       objectType: referenceObject.type,

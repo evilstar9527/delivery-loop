@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { canonicalSha256 } from '../domain/digest.js';
 import { VERIFY_ANALYSIS_REPLAY_STEP } from '../domain/workflow-replay.js';
@@ -8,7 +8,11 @@ import {
   taskRevisionIds,
 } from '../domain/task.js';
 import type { Bindings } from '../env.js';
-import type { GitHubBaseShaResolver } from '../reconciliation/github-base-observation-reconciler.js';
+import {
+  GitHubBaseResolutionError,
+  type GitHubBaseResolutionErrorCode,
+  type GitHubBaseShaResolver,
+} from '../reconciliation/github-base-observation-reconciler.js';
 import { githubBaseShaResolverFromEnv } from '../reconciliation/github-base-observation-runtime.js';
 import { SecretScanner } from '../security/redaction.js';
 import { configuredSecrets } from '../security/runtime-secrets.js';
@@ -51,13 +55,16 @@ import {
   WorkflowReplayError,
   WorkflowReplayStore,
 } from '../storage/workflow-replay-store.js';
-import { errorResponse } from './errors.js';
+import { errorResponse, requestCorrelationId } from './errors.js';
+import { operationsAuthenticated } from './operations-auth.js';
 
 const TASK_API_SCOPE = 'POST /v1/tasks';
 const MAX_REQUEST_BODY_BYTES = 256 * 1024;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 const RESOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const BASE_SHA_PATTERN = /^[a-f0-9]{40}$/;
+const GITHUB_REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const GITHUB_BASE_BRANCH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,239}$/;
 const CancelRunBodySchema = z
   .object({ expectedRunVersion: z.number().int().nonnegative() })
   .strict();
@@ -121,6 +128,38 @@ function isAuthenticated(configuredToken: string | undefined, authorization: str
   );
 }
 
+type TaskApiContext = Context<{ Bindings: Bindings }>;
+type GitHubBaseReadinessFailureReason =
+  | 'configuration_unavailable'
+  | GitHubBaseResolutionErrorCode;
+
+function safeGitHubBaseBranch(value: string): boolean {
+  return GITHUB_BASE_BRANCH_PATTERN.test(value) &&
+    !value.includes('..') &&
+    !value.includes('//');
+}
+
+function safeGitHubRepository(value: string): boolean {
+  if (!GITHUB_REPOSITORY_PATTERN.test(value)) return false;
+  const [owner, repository] = value.split('/');
+  return owner !== '.' && owner !== '..' && repository !== '.' && repository !== '..';
+}
+
+function githubBaseReadinessUnavailable(
+  c: TaskApiContext,
+  reason: GitHubBaseReadinessFailureReason,
+): Response {
+  return c.json({
+    schemaVersion: '1',
+    ready: false,
+    reason,
+    code: 'unavailable',
+    message: 'GitHub base readiness check failed',
+    retryable: true,
+    correlationId: requestCorrelationId(c),
+  }, 503);
+}
+
 export interface TaskApiOptions {
   baseShaResolverFromEnv?: (env: Bindings) => GitHubBaseShaResolver | null;
 }
@@ -128,6 +167,61 @@ export interface TaskApiOptions {
 export function taskApi(options: TaskApiOptions = {}): Hono<{ Bindings: Bindings }> {
   const app = new Hono<{ Bindings: Bindings }>();
   const baseShaResolver = options.baseShaResolverFromEnv ?? githubBaseShaResolverFromEnv;
+
+  app.get('/v1/operations/github-base/readiness', async (c) => {
+    c.header('cache-control', 'no-store');
+    if (!operationsAuthenticated(c.env.OPERATIONS_TOKEN, c.req.header('authorization'))) {
+      return errorResponse(c, 401, 'unauthenticated', 'authentication required', false);
+    }
+    const params = new URL(c.req.url).searchParams;
+    if (
+      [...params.keys()].some((key) => key !== 'repository' && key !== 'baseBranch') ||
+      params.getAll('repository').length !== 1 ||
+      params.getAll('baseBranch').length !== 1
+    ) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid GitHub base readiness query', false);
+    }
+    const repository = params.get('repository') ?? '';
+    const baseBranch = params.get('baseBranch') ?? '';
+    if (
+      !safeGitHubRepository(repository) ||
+      !safeGitHubBaseBranch(baseBranch)
+    ) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid GitHub base readiness query', false);
+    }
+
+    let resolver: GitHubBaseShaResolver | null;
+    try {
+      resolver = baseShaResolver(c.env);
+    } catch {
+      return githubBaseReadinessUnavailable(c, 'configuration_unavailable');
+    }
+    if (resolver === null) {
+      return githubBaseReadinessUnavailable(c, 'configuration_unavailable');
+    }
+
+    let baseSha: string;
+    try {
+      baseSha = await resolver.resolveBaseSha(repository, baseBranch);
+    } catch (error) {
+      return githubBaseReadinessUnavailable(
+        c,
+        error instanceof GitHubBaseResolutionError
+          ? error.code
+          : 'reference_unavailable',
+      );
+    }
+    if (!BASE_SHA_PATTERN.test(baseSha)) {
+      return githubBaseReadinessUnavailable(c, 'reference_invalid');
+    }
+    return c.json({
+      schemaVersion: '1',
+      ready: true,
+      repository,
+      baseBranch,
+      baseSha,
+    });
+  });
 
   app.get('/v1/tasks/:taskId', async (c) => {
     if (!isAuthenticated(c.env.TASK_INTAKE_TOKEN, c.req.header('authorization'))) {

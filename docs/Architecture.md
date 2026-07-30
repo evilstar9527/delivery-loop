@@ -69,6 +69,7 @@ flowchart TB
 
 - 接收飞书 challenge/event、Meegle webhook、GitHub App webhook、监控告警和人工 API。
 - manual Task intake不接受caller自报base SHA。完成认证、strict Task schema、Secret扫描和既有idempotency replay读取后，只有新请求才通过单仓库`contents:read` GitHub App token读取exact目标branch commit；成功SHA与Task/Run/workflow-create在同一intake边界固定。GitHub配置/allowlist/ref/响应不可用时在D1/R2前返回503；同key同request重放直接复用已冻结Run，不因GitHub短暂故障或branch后续前进改变base。
+- operations-only GitHub base readiness探针复用manual intake的当前Worker resolver，在零D1/R2/Task/Workflow effect下预先穿透App私钥加载、installation token交换和exact branch ref读取。它只公开configuration/credential/reference unavailable或reference invalid固定阶段；成功SHA是时点事实而非Task snapshot，正式intake仍必须自行重读并在事务边界冻结，探针也不产生Task或production authority。
 - 只先有界读取验签所需的exact raw bytes；在解密后的业务解析或任何持久化前完成平台验签、时间窗、tenant/app绑定和事件ID/nonce去重。
 - 飞书加密入口直接复用Watt的signature/AES纯逻辑，但增加5分钟request timestamp、verification token、`FEISHU_APP_ID + FEISHU_DELIVERY_TENANT_KEY`双绑定。challenge验证后短路且零写入；event只落metadata receipt/nonce，raw/decrypted正文不会进入D1。
 - 真实飞书入口验收保持三方事实分离：飞书后台`SUCCESS`必须人工核对，外部observability report只投影五类安全HTTP digest/status/latency，operations-only GET按exact tenant/event重读immutable receipt/ingress与Task/Run/effect计数。challenge继续零D1写入；manifest、Worker自报或单一HTTP状态都不能独自证明飞书已接受回调，详见[飞书 challenge、事件验签与拒绝零写入真实验收](FeishuWebhookE2E.md)。

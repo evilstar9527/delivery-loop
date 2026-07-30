@@ -390,6 +390,18 @@ base SHA字段，不能用Task正文或请求参数覆盖该事实。
 Task schema 校验后、计算 identity 或写 D1/R2 前，控制面必须扫描当前 Worker 已配置 Secret 与常见
 credential 形状；命中返回固定 `policy_denied`，响应与 finding 不包含原始值，也不得留下部分业务记录。
 
+`GET /v1/operations/github-base/readiness?repository=<owner/repo>&baseBranch=<branch>`是人工
+intake前的只读诊断，不是Task入口。它只接受用途隔离的`OPERATIONS_TOKEN`，query必须恰好各出现一次
+`repository/baseBranch`且拒绝额外字段、重复字段、非法仓库名、`..`或双斜线branch；全部响应
+`Cache-Control: no-store`。实现必须调用当前Worker实际使用的GitHub App resolver，因而在同一条调用链验证
+private key可加载、repository-scoped `contents:read` installation token可签发、exact branch ref可读取并解析。
+成功固定返回`{schemaVersion:'1',ready:true,repository,baseBranch,baseSha}`，其中SHA是40位小写hex；失败为
+`503 unavailable`并只增加`ready:false + reason`，reason只能是`configuration_unavailable`、
+`credential_unavailable`、`reference_unavailable`或`reference_invalid`。响应、错误和日志不得包含App JWT、
+private key、installation token、上游body或raw异常。探针没有D1/R2/Task/Run/outbox/Workflow/Action写入路径；
+`200 ready`只证明调用时的read链路，不授予Task POST、GitHub dispatch或production deploy权限，也不能替代
+对应外部DoD证据。
+
 ### 4.2 查询与人工动作
 
 | 方法与路径 | 说明 |
@@ -401,6 +413,7 @@ credential 形状；命中返回固定 `policy_denied`，响应与 finding 不�
 | `GET /v1/triage/meegle?limit=...` | operations身份列出Meegle `triaging`候选的source metadata、固定gap与lineage count；不返回工作项正文、R2 ref或principal |
 | `GET /v1/triage/monitor?limit=...` | operations身份列出monitor `triaging` candidate的adapter/tenant/repository/rule/severity、窗口、occurrence与lineage count；不返回title/description/resource、fingerprint/profile/snapshot digest或R2 ref |
 | `GET /v1/operations/monitor-alert/evidence?tenantKey=...&eventId=...` | operations身份按exact monitor event读取安全receipt/lineage/candidate、受控mapping、零authority计数和服务端R2 snapshot验证布尔；不返回正文/resource/digest/ref |
+| `GET /v1/operations/github-base/readiness?repository=...&baseBranch=...` | operations身份通过当前Worker GitHub App凭证只读解析exact branch SHA；仅返回安全阶段枚举且零业务写入 |
 | `POST /v1/dead-letters/:deadLetterId/replay` | operations身份以exact outbox attempt count受控重放原effect intent |
 | `POST /v1/runs/:runId/items/:itemId/verify` | 服务端核对逐doneWhen Evidence并原子关闭required Item；Agent token不可调用 |
 | `POST /v1/runs/:runId/pull-request-draft` | 从当前Task/Plan/head/verified Evidence生成不可变Draft PR正文快照；只生成发布输入，不代表GitHub PR已创建 |
