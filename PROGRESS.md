@@ -3622,6 +3622,7 @@
   - `pnpm exec vitest run test/github-base-readiness-workflow.test.ts test/github-base-readiness-probe.test.ts test/github-workflow-runner-policy.test.ts` → exit 0，3 files/44 tests；覆盖manual-only、owner/main/attempt-1、Environment/Secret隔离、rerun/权限/target禁止项及caller第二次调用/缺配置零网络。
   - `pnpm run ops:github-base-readiness`（无opt-in）→ exit 2，固定`opt-in missing`且零网络。
   - `pnpm run verify` → exit 0；118 Node files / 618 tests、57 workerd files / 322 tests、14 workflows / 15 jobs runner policy、508文件Secret scan与docs links全绿；workerd主动terminate清理诊断不是skip。
+  - Git交付首次普通push在80秒后以`HTTP2 framing layer`失败为exit 128且远端ref不存在。既有Git Data API fallback对两笔commit逐一校验blob、tree、parent、author/time、无末尾换行的raw message SHA；首次ref create在object传播窗口返回422且effect为0，随后的API read已能按exact SHA读取两个对象，同一head重试只创建一次线性ref。local/remote head、tree与工作区最终一致，没有force或内容替换。
 - 勾选：新增“GitHub-hosted readiness受审执行面与保护Environment bootstrap”子证据；真实readiness、hibernate、唯一analysis Action与heartbeat父项全部保持未勾。
 - 决策沉淀：更新`docs/Security.md`和`docs/WorkflowHibernateE2E.md`，明确不存在的Environment不能冒充人审、preflight与Secret job分层、同名Secret scope、attempt-1与exact authority边界；更新`DOD.md/PROGRESS.md`。按owner约定不更新llmdoc。
 - 遗留与最小人工输入：代码与Environment经受保护main交付后，owner需另行明确授权：仅把现有operations用途值以`GITHUB_BASE_READINESS_OPERATIONS_TOKEN`写入`phase1-readiness` Environment（repository级仍禁止同名Secret），从受保护main只dispatch一次`GitHub base readiness`；preflight全true后把Environment approval绑定同一run ID/head SHA，释放唯一GET。不授权Task POST、analysis Action、after、repair/restart/recreate、rotation或rollback。当前是恢复后的相同外部authority blocker第1轮，goal保持active。
