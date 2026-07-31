@@ -396,16 +396,20 @@ intake前的只读诊断，不是Task入口。它只接受用途隔离的`OPERAT
 `Cache-Control: no-store`。实现必须调用当前Worker实际使用的GitHub App resolver，因而在同一条调用链验证
 private key可加载、repository-scoped `contents:read` installation token可签发、exact branch ref可读取并解析。
 成功固定返回`{schemaVersion:'1',ready:true,repository,baseBranch,baseSha}`，其中SHA是40位小写hex；失败为
-`503 unavailable`并只增加`ready:false + reason`，reason只能是`configuration_unavailable`、
-`credential_unavailable`、`reference_unavailable`或`reference_invalid`。响应、错误和日志不得包含App JWT、
-private key、installation token、上游body或raw异常。探针没有D1/R2/Task/Run/outbox/Workflow/Action写入路径；
+`503 unavailable`并只增加`ready:false + reason`。reason只能是`configuration_unavailable`、兼容兜底
+`credential_unavailable`、六个GitHub App固定凭证阶段`credential_signing_unavailable|credential_auth_rejected|
+credential_installation_not_found|credential_policy_rejected|credential_upstream_unavailable|
+credential_response_invalid`，或`reference_unavailable|reference_invalid`。真实App provider把PEM解析/import/JWT签名、
+installation-token的401/403、404、422、transport/5xx以及unexpected status/非法201响应分别映射到上述六类；
+只有非受信provider异常继续折叠到兼容兜底，不能读取任意error.code透传。响应、错误和日志不得包含App JWT、
+private key、installation token、上游body、HTTP正文或raw异常。探针没有D1/R2/Task/Run/outbox/Workflow/Action写入路径；
 `200 ready`只证明调用时的read链路，不授予Task POST、GitHub dispatch或production deploy权限，也不能替代
 对应外部DoD证据。
 
 仓库内一次性caller `ops:github-base-readiness`默认在读取配置或网络前exit 2；显式opt-in后只接受HTTPS
 control-plane origin、exact repository/baseBranch和用途隔离operations token。每个probe实例把attempt flag置位后才
 调用一次上述GET，第二次调用在fetch前拒绝；请求固定10秒timeout、拒绝redirect，响应限1 MiB、拒绝分页并在
-JSON parse前扫描token和credential形状。caller只接受exact `200 ready`或上述四类exact `503 unavailable` shape，
+JSON parse前扫描token和credential形状。caller只接受exact `200 ready`或上述固定reason的exact `503 unavailable` shape，
 并要求`Cache-Control: no-store`；其他status/body/header一律固定拒绝且不读取非预期HTTP正文。fetch失败只检查
 错误对象的allowlisted `name/code/cause`，映射为`request_timed_out|dns_failed|tcp_failed|tls_failed|request_failed`，
 不输出raw message/cause。caller分类只解释本次客户端transport，不是Worker readiness事实，也不产生自动重试、

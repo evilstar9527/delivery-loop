@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import { GITHUB_APP_CREDENTIAL_ERROR_CODES } from '../auth/github-app-installation-token.js';
 import { SecretScanner } from '../security/redaction.js';
 
 const MAX_RESPONSE_BYTES = 1 * 1_024 * 1_024;
@@ -13,6 +14,7 @@ const UUID_PATTERN =
 export const GITHUB_BASE_READINESS_FAILURE_REASONS = [
   'configuration_unavailable',
   'credential_unavailable',
+  ...GITHUB_APP_CREDENTIAL_ERROR_CODES,
   'reference_unavailable',
   'reference_invalid',
 ] as const;

@@ -2,6 +2,7 @@
 
 import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { GitHubAppCredentialError } from '../../src/auth/github-app-installation-token.js';
 import type { TaskEnvelope } from '../../src/domain/task.js';
 import { taskApi } from '../../src/http/task-api.js';
 import { GitHubBaseResolutionError } from '../../src/reconciliation/github-base-observation-reconciler.js';
@@ -13,7 +14,7 @@ const OPERATIONS_TOKEN = 'test-operations-token';
 const BASE_SHA = 'b'.repeat(40);
 const baseResolutionCalls: Array<{ repository: string; baseBranch: string }> = [];
 let baseResolutionFails = false;
-let baseResolutionFactoryFailure: 'none' | 'null' | 'throw' = 'none';
+let baseResolutionFactoryFailure: 'none' | 'null' | 'throw' | 'credential' = 'none';
 let baseResolutionError: Error | null = null;
 let baseResolutionResult = BASE_SHA;
 const APP = taskApi({
@@ -21,6 +22,9 @@ const APP = taskApi({
     if (baseResolutionFactoryFailure === 'null') return null;
     if (baseResolutionFactoryFailure === 'throw') {
       throw new Error('CANARY_GITHUB_CONFIGURATION_DETAIL');
+    }
+    if (baseResolutionFactoryFailure === 'credential') {
+      throw new GitHubAppCredentialError('credential_signing_unavailable');
     }
     return {
       async resolveBaseSha(repository, baseBranch) {
@@ -193,8 +197,29 @@ describe('GET /v1/operations/github-base/readiness', () => {
     await expectZeroBusinessWrites();
   });
 
+  it('preserves a fixed signing-stage failure raised while building the real resolver', async () => {
+    baseResolutionFactoryFailure = 'credential';
+    const response = await getGitHubBaseReadiness(EXACT_QUERY);
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      schemaVersion: '1',
+      ready: false,
+      reason: 'credential_signing_unavailable',
+      code: 'unavailable',
+    });
+    expect(baseResolutionCalls).toHaveLength(0);
+    await expectZeroBusinessWrites();
+  });
+
   it.each([
     'credential_unavailable',
+    'credential_signing_unavailable',
+    'credential_auth_rejected',
+    'credential_installation_not_found',
+    'credential_policy_rejected',
+    'credential_upstream_unavailable',
+    'credential_response_invalid',
     'reference_unavailable',
     'reference_invalid',
   ] as const)('returns only the safe %s classification', async (reason) => {

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  GitHubAppCredentialError,
+  type GitHubAppCredentialErrorCode,
+} from '../src/auth/github-app-installation-token.js';
+import {
   GitHubBaseApiClient,
   GitHubBaseResolutionError,
 } from '../src/reconciliation/github-base-observation-reconciler.js';
@@ -183,5 +187,26 @@ describe('GitHub base observation API client', () => {
     await expect(malformedResult).rejects.toBeInstanceOf(GitHubBaseResolutionError);
     await expect(malformedResult).rejects.toMatchObject({ code: 'reference_invalid' });
     await expect(malformedResult).rejects.not.toThrow(responseCanary);
+  });
+
+  it.each([
+    'credential_signing_unavailable',
+    'credential_auth_rejected',
+    'credential_installation_not_found',
+    'credential_policy_rejected',
+    'credential_upstream_unavailable',
+    'credential_response_invalid',
+  ] as const)('preserves the fixed safe credential stage: %s', async (code) => {
+    const client = new GitHubBaseApiClient({
+      getBaseObservationToken: async () => {
+        throw new GitHubAppCredentialError(code satisfies GitHubAppCredentialErrorCode);
+      },
+    });
+
+    const result = client.resolveBaseSha(REPOSITORY, 'main');
+    await expect(result).rejects.toMatchObject({
+      name: 'GitHubBaseResolutionError',
+      code,
+    });
   });
 });

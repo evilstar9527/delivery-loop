@@ -1,5 +1,9 @@
 import { canonicalSha256 } from '../domain/digest.js';
 import {
+  GitHubAppCredentialError,
+  type GitHubAppCredentialErrorCode,
+} from '../auth/github-app-installation-token.js';
+import {
   GitHubBaseObservationFactSchema,
   PlanRevisionError,
   PlanRevisionStore,
@@ -29,6 +33,7 @@ const REPLAN_STATES = new Set([
 
 export type GitHubBaseResolutionErrorCode =
   | 'credential_unavailable'
+  | GitHubAppCredentialErrorCode
   | 'reference_unavailable'
   | 'reference_invalid';
 
@@ -276,9 +281,11 @@ export class GitHubBaseApiClient implements
     let token: string;
     try {
       token = await this.tokenProvider.getBaseObservationToken(repository);
-    } catch {
+    } catch (error) {
       throw new GitHubBaseResolutionError(
-        'credential_unavailable',
+        error instanceof GitHubAppCredentialError
+          ? error.code
+          : 'credential_unavailable',
         'GitHub base observation token is unavailable',
       );
     }
