@@ -108,7 +108,7 @@ describe('GitHub-hosted base readiness workflow', () => {
         GITHUB_BASE_READINESS_CONTROL_PLANE_URL:
           'https://delivery-loop-control-plane.eve55265.workers.dev',
         GITHUB_BASE_READINESS_OPERATIONS_TOKEN:
-          '${{ secrets.GITHUB_BASE_READINESS_OPERATIONS_TOKEN }}',
+          '${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}',
         GITHUB_BASE_READINESS_REPOSITORY: 'evilstar9527/delivery-loop',
         GITHUB_BASE_READINESS_BASE_BRANCH: 'main',
       },
@@ -133,6 +133,7 @@ describe('GitHub-hosted base readiness workflow', () => {
       'rollback',
       'continue-on-error',
       'environment":"production',
+      'secrets.GITHUB_',
     ]) expect(serialized).not.toContain(forbidden);
   });
 });
