@@ -20,6 +20,30 @@ const RSA_ALGORITHM_IDENTIFIER = Uint8Array.from([
   0x05, 0x00,
 ]);
 
+export const GITHUB_APP_CREDENTIAL_ERROR_CODES = [
+  'credential_signing_unavailable',
+  'credential_auth_rejected',
+  'credential_installation_not_found',
+  'credential_policy_rejected',
+  'credential_upstream_unavailable',
+  'credential_response_invalid',
+] as const;
+
+export type GitHubAppCredentialErrorCode =
+  typeof GITHUB_APP_CREDENTIAL_ERROR_CODES[number];
+
+/** Fixed diagnostic stage with no private key, JWT, response body, or raw error detail. */
+export class GitHubAppCredentialError extends Error {
+  constructor(readonly code: GitHubAppCredentialErrorCode) {
+    super(`GitHub App credential failed: ${code}`);
+    this.name = 'GitHubAppCredentialError';
+  }
+}
+
+function credentialFailure(code: GitHubAppCredentialErrorCode): never {
+  throw new GitHubAppCredentialError(code);
+}
+
 interface CachedToken {
   token: string;
   expiresAt: number;
@@ -27,7 +51,7 @@ interface CachedToken {
 
 function derLength(length: number): Uint8Array {
   if (!Number.isSafeInteger(length) || length < 0) {
-    throw new Error('GitHub App private key is invalid');
+    credentialFailure('credential_signing_unavailable');
   }
   if (length < 0x80) return Uint8Array.of(length);
   const bytes: number[] = [];
@@ -53,21 +77,21 @@ function decodePemBody(pem: string, begin: string, end: string): Uint8Array {
   const start = pem.indexOf(begin);
   const finish = pem.indexOf(end);
   if (start !== 0 || finish <= begin.length || pem.indexOf(begin, 1) !== -1) {
-    throw new Error('GitHub App private key is invalid');
+    credentialFailure('credential_signing_unavailable');
   }
   const suffix = pem.slice(finish + end.length).trim();
   const body = pem.slice(begin.length, finish).replaceAll(/\s/g, '');
   if (suffix !== '' || body === '' || !/^[A-Za-z0-9+/]+={0,2}$/.test(body)) {
-    throw new Error('GitHub App private key is invalid');
+    credentialFailure('credential_signing_unavailable');
   }
   let binary: string;
   try {
     binary = atob(body);
   } catch {
-    throw new Error('GitHub App private key is invalid');
+    credentialFailure('credential_signing_unavailable');
   }
   if (binary.length < 64 || binary.length > 16_384) {
-    throw new Error('GitHub App private key is invalid');
+    credentialFailure('credential_signing_unavailable');
   }
   return Uint8Array.from(binary, (value) => value.charCodeAt(0));
 }
@@ -79,21 +103,21 @@ function encodePem(bytes: Uint8Array): string {
   }
   const base64 = btoa(binary);
   const lines = base64.match(/.{1,64}/g);
-  if (lines === null) throw new Error('GitHub App private key is invalid');
+  if (lines === null) credentialFailure('credential_signing_unavailable');
   return `${PKCS8_BEGIN}\n${lines.join('\n')}\n${PKCS8_END}`;
 }
 
 function normalizePrivateKeyPem(input: string): string {
   const pem = input.trim();
   if (pem.length < 100 || pem.length > 20_000) {
-    throw new Error('GitHub App private key is invalid');
+    credentialFailure('credential_signing_unavailable');
   }
   if (pem.startsWith(PKCS8_BEGIN)) {
     decodePemBody(pem, PKCS8_BEGIN, PKCS8_END);
     return pem;
   }
   if (!pem.startsWith(PKCS1_BEGIN)) {
-    throw new Error('GitHub App private key is invalid');
+    credentialFailure('credential_signing_unavailable');
   }
   const pkcs1 = decodePemBody(pem, PKCS1_BEGIN, PKCS1_END);
   const version = Uint8Array.of(0x02, 0x01, 0x00);
@@ -494,19 +518,19 @@ export class GitHubAppInstallationTokenProvider implements
     permissions: Record<string, 'read' | 'write'>,
   ): Promise<CachedToken> {
     this.assertAllowedRepository(repository);
-    let signingKey: CryptoKey;
+    let jwt: string;
     try {
-      signingKey = await importPKCS8(this.privateKeyPem, 'RS256');
+      const signingKey = await importPKCS8(this.privateKeyPem, 'RS256');
+      const nowSeconds = Math.floor(this.now().getTime() / 1_000);
+      jwt = await new SignJWT({})
+        .setProtectedHeader({ alg: 'RS256' })
+        .setIssuer(this.appId)
+        .setIssuedAt(nowSeconds - 60)
+        .setExpirationTime(nowSeconds + 540)
+        .sign(signingKey);
     } catch {
-      throw new Error('GitHub App private key could not be loaded');
+      credentialFailure('credential_signing_unavailable');
     }
-    const nowSeconds = Math.floor(this.now().getTime() / 1_000);
-    const jwt = await new SignJWT({})
-      .setProtectedHeader({ alg: 'RS256' })
-      .setIssuer(this.appId)
-      .setIssuedAt(nowSeconds - 60)
-      .setExpirationTime(nowSeconds + 540)
-      .sign(signingKey);
     let response: Response;
     try {
       response = await this.fetchImplementation(
@@ -526,20 +550,36 @@ export class GitHubAppInstallationTokenProvider implements
         },
       );
     } catch {
-      throw new Error('GitHub installation token request failed');
+      credentialFailure('credential_upstream_unavailable');
     }
     if (response.status !== 201) {
-      await response.body?.cancel();
-      throw new Error('GitHub installation token request failed');
+      try {
+        void response.body?.cancel().catch(() => undefined);
+      } catch {
+        // The upstream body and cancellation error are both intentionally discarded.
+      }
+      if (response.status === 401 || response.status === 403) {
+        credentialFailure('credential_auth_rejected');
+      }
+      if (response.status === 404) {
+        credentialFailure('credential_installation_not_found');
+      }
+      if (response.status === 422) {
+        credentialFailure('credential_policy_rejected');
+      }
+      if (response.status >= 500 && response.status <= 599) {
+        credentialFailure('credential_upstream_unavailable');
+      }
+      credentialFailure('credential_response_invalid');
     }
     let body: unknown;
     try {
       body = await response.json();
     } catch {
-      throw new Error('GitHub installation token response is invalid');
+      credentialFailure('credential_response_invalid');
     }
     if (typeof body !== 'object' || body === null) {
-      throw new Error('GitHub installation token response is invalid');
+      credentialFailure('credential_response_invalid');
     }
     const token = (body as Record<string, unknown>).token;
     const expiresAtRaw = (body as Record<string, unknown>).expires_at;
@@ -552,7 +592,7 @@ export class GitHubAppInstallationTokenProvider implements
       !Number.isFinite(expiresAt) ||
       expiresAt <= this.now().getTime() + TOKEN_REFRESH_SKEW_MS
     ) {
-      throw new Error('GitHub installation token response is invalid');
+      credentialFailure('credential_response_invalid');
     }
     return { token, expiresAt };
   }

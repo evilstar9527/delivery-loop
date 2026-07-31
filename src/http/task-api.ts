@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
+import { GitHubAppCredentialError } from '../auth/github-app-installation-token.js';
 import { canonicalSha256 } from '../domain/digest.js';
 import { VERIFY_ANALYSIS_REPLAY_STEP } from '../domain/workflow-replay.js';
 import {
@@ -193,8 +194,13 @@ export function taskApi(options: TaskApiOptions = {}): Hono<{ Bindings: Bindings
     let resolver: GitHubBaseShaResolver | null;
     try {
       resolver = baseShaResolver(c.env);
-    } catch {
-      return githubBaseReadinessUnavailable(c, 'configuration_unavailable');
+    } catch (error) {
+      return githubBaseReadinessUnavailable(
+        c,
+        error instanceof GitHubAppCredentialError
+          ? error.code
+          : 'configuration_unavailable',
+      );
     }
     if (resolver === null) {
       return githubBaseReadinessUnavailable(c, 'configuration_unavailable');

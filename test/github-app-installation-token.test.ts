@@ -1,7 +1,15 @@
 import { exportPKCS8, generateKeyPair, jwtVerify } from 'jose';
 import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { GitHubAppInstallationTokenProvider } from '../src/auth/github-app-installation-token.js';
+import {
+  GitHubAppCredentialError,
+  GitHubAppInstallationTokenProvider,
+  type GitHubAppCredentialErrorCode,
+} from '../src/auth/github-app-installation-token.js';
+
+function expectCredentialCode(code: GitHubAppCredentialErrorCode): (error: unknown) => boolean {
+  return (error) => error instanceof GitHubAppCredentialError && error.code === code;
+}
 
 describe('GitHub App installation token provider', () => {
   it('accepts the PKCS#1 PEM returned by the GitHub App manifest conversion', async () => {
@@ -52,7 +60,17 @@ describe('GitHub App installation token provider', () => {
         installationId: '123456',
         privateKeyPem,
         allowedRepositories: ['example/delivery-target'],
-      })).toThrow('GitHub App private key is invalid');
+      })).toThrow(GitHubAppCredentialError);
+      try {
+        new GitHubAppInstallationTokenProvider({
+          appId: '7890',
+          installationId: '123456',
+          privateKeyPem,
+          allowedRepositories: ['example/delivery-target'],
+        });
+      } catch (error) {
+        expect(error).toSatisfy(expectCredentialCode('credential_signing_unavailable'));
+      }
     }
   });
 
@@ -76,7 +94,7 @@ describe('GitHub App installation token provider', () => {
     });
 
     await expect(provider.getInstallationToken('example/delivery-target'))
-      .rejects.toThrow('GitHub App private key could not be loaded');
+      .rejects.toSatisfy(expectCredentialCode('credential_signing_unavailable'));
     expect(requested).toBe(false);
   });
 
@@ -148,10 +166,46 @@ describe('GitHub App installation token provider', () => {
       fetch: async () => new Response(responseCanary, { status: 403 }),
     });
     const promise = provider.getInstallationToken('example/delivery-target');
-    await expect(promise).rejects.toThrow('GitHub installation token request failed');
+    await expect(promise).rejects.toSatisfy(expectCredentialCode('credential_auth_rejected'));
     await expect(promise).rejects.not.toThrow(responseCanary);
     await expect(promise).rejects.not.toThrow(privateKeyPem);
   });
+
+  it.each([
+    ['network', null, 'credential_upstream_unavailable'],
+    ['unauthenticated', 401, 'credential_auth_rejected'],
+    ['forbidden', 403, 'credential_auth_rejected'],
+    ['installation missing', 404, 'credential_installation_not_found'],
+    ['policy rejected', 422, 'credential_policy_rejected'],
+    ['server unavailable', 503, 'credential_upstream_unavailable'],
+    ['unexpected status', 418, 'credential_response_invalid'],
+    ['invalid success response', 201, 'credential_response_invalid'],
+  ] as const)(
+    'classifies %s with a fixed safe stage',
+    async (_label, status, expectedCode) => {
+      const keys = await generateKeyPair('RS256', { extractable: true });
+      const privateKeyPem = await exportPKCS8(keys.privateKey);
+      const responseCanary = 'CANARY_GITHUB_CREDENTIAL_STAGE_BODY';
+      const provider = new GitHubAppInstallationTokenProvider({
+        appId: '7890',
+        installationId: '123456',
+        privateKeyPem,
+        allowedRepositories: ['example/delivery-target'],
+        fetch: async () => {
+          if (status === null) throw new Error(responseCanary);
+          if (status === 201) {
+            return Response.json({ canary: responseCanary }, { status });
+          }
+          return new Response(responseCanary, { status });
+        },
+      });
+
+      const result = provider.getBaseObservationToken('example/delivery-target');
+      await expect(result).rejects.toSatisfy(expectCredentialCode(expectedCode));
+      await expect(result).rejects.not.toThrow(responseCanary);
+      await expect(result).rejects.not.toThrow(privateKeyPem);
+    },
+  );
 
   it('issues an uncached repo-scoped write credential and revokes it through GitHub', async () => {
     const keys = await generateKeyPair('RS256', { extractable: true });

@@ -85,6 +85,12 @@ describe('GitHub base readiness probe', () => {
   it.each([
     'configuration_unavailable',
     'credential_unavailable',
+    'credential_signing_unavailable',
+    'credential_auth_rejected',
+    'credential_installation_not_found',
+    'credential_policy_rejected',
+    'credential_upstream_unavailable',
+    'credential_response_invalid',
     'reference_unavailable',
     'reference_invalid',
   ] as const)('accepts the fixed zero-effect 503 reason: %s', async (reason) => {
