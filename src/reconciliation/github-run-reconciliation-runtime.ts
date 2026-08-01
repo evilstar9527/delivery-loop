@@ -1,6 +1,8 @@
 import { GitHubAppInstallationTokenProvider } from '../auth/github-app-installation-token.js';
 import type { Bindings } from '../env.js';
+import { secureStructuredLogSink } from '../observability/structured-log.js';
 import { GitHubActionsApiClient } from '../outbox/github-dispatcher.js';
+import { configuredSecrets } from '../security/runtime-secrets.js';
 import {
   GitHubRunReconciler,
   type GitHubBatchReconciliationResult,
@@ -50,6 +52,11 @@ export function githubActionsRuntimeFromEnv(env: Bindings): GitHubActionsRuntime
     installationId: env.GITHUB_APP_INSTALLATION_ID!,
     privateKeyPem: env.GITHUB_APP_PRIVATE_KEY!,
     allowedRepositories: repositories,
+    transportDiagnostic: secureStructuredLogSink({
+      component: 'github_app_credential',
+      level: 'warn',
+      secrets: configuredSecrets(env),
+    }),
     ...(env.GITHUB_API_BASE_URL === undefined
       ? {}
       : { apiBaseUrl: env.GITHUB_API_BASE_URL }),

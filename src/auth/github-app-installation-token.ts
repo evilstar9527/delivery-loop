@@ -7,8 +7,13 @@ import type { GitHubProductionDeploymentObservationTokenProvider } from '../reco
 import type { GitHubTestDeploymentObservationTokenProvider } from '../reconciliation/github-test-deployment-status-reconciler.js';
 import type { GitHubDeliveryPolicyTokenProvider } from '../reconciliation/test-rollback-reconciler.js';
 import type { GitHubWriteCredentialProvider } from '../storage/repo-write-credential-store.js';
+import {
+  classifySafeTransportFailure,
+  type SafeTransportFailureKind,
+} from '../security/transport-error.js';
 
 const TOKEN_REFRESH_SKEW_MS = 60_000;
+const INSTALLATION_TOKEN_REQUEST_TIMEOUT_MS = 10_000;
 const PEM_EDGE = '-----';
 const PKCS1_BEGIN = `${PEM_EDGE}BEGIN RSA PRIVATE KEY${PEM_EDGE}`;
 const PKCS1_END = `${PEM_EDGE}END RSA PRIVATE KEY${PEM_EDGE}`;
@@ -135,6 +140,15 @@ export interface GitHubAppInstallationTokenProviderOptions {
   apiBaseUrl?: string;
   fetch?: typeof globalThis.fetch;
   now?: () => Date;
+  transportDiagnostic?: (record: GitHubAppCredentialTransportDiagnostic) => void;
+}
+
+export interface GitHubAppCredentialTransportDiagnostic {
+  schemaVersion: '1';
+  event: 'github_app_installation_token_transport_failed';
+  operation: 'installation_token_exchange';
+  failureKind: SafeTransportFailureKind;
+  requestAttempts: 1;
 }
 
 function numericId(value: string, label: string): string {
@@ -185,6 +199,8 @@ export class GitHubAppInstallationTokenProvider implements
   private readonly apiBaseUrl: string;
   private readonly fetchImplementation: typeof globalThis.fetch;
   private readonly now: () => Date;
+  private readonly transportDiagnostic:
+    ((record: GitHubAppCredentialTransportDiagnostic) => void) | undefined;
   private readonly cache = new Map<string, CachedToken>();
   private readonly pending = new Map<string, Promise<string>>();
   private readonly pullRequestCache = new Map<string, CachedToken>();
@@ -222,6 +238,7 @@ export class GitHubAppInstallationTokenProvider implements
     this.apiBaseUrl = apiOrigin(options.apiBaseUrl ?? 'https://api.github.com');
     this.fetchImplementation = options.fetch ?? globalThis.fetch;
     this.now = options.now ?? (() => new Date());
+    this.transportDiagnostic = options.transportDiagnostic;
   }
 
   async getInstallationToken(repository: string): Promise<string> {
@@ -548,9 +565,22 @@ export class GitHubAppInstallationTokenProvider implements
             repositories: [repositoryName(repository)],
             permissions,
           }),
+          redirect: 'error',
+          signal: AbortSignal.timeout(INSTALLATION_TOKEN_REQUEST_TIMEOUT_MS),
         },
       );
-    } catch {
+    } catch (error) {
+      try {
+        this.transportDiagnostic?.({
+          schemaVersion: '1',
+          event: 'github_app_installation_token_transport_failed',
+          operation: 'installation_token_exchange',
+          failureKind: classifySafeTransportFailure(error),
+          requestAttempts: 1,
+        });
+      } catch {
+        // Diagnostic delivery cannot replace or expose the fixed credential stage.
+      }
       credentialFailure('credential_transport_unavailable');
     }
     if (response.status !== 201) {
