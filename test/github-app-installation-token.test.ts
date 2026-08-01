@@ -172,7 +172,7 @@ describe('GitHub App installation token provider', () => {
   });
 
   it.each([
-    ['network', null, 'credential_upstream_unavailable'],
+    ['network', null, 'credential_transport_unavailable'],
     ['unauthenticated', 401, 'credential_auth_rejected'],
     ['forbidden', 403, 'credential_auth_rejected'],
     ['installation missing', 404, 'credential_installation_not_found'],
