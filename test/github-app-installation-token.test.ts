@@ -1,11 +1,13 @@
 import { exportPKCS8, generateKeyPair, jwtVerify } from 'jose';
 import { generateKeyPairSync } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   GitHubAppCredentialError,
   GitHubAppInstallationTokenProvider,
   type GitHubAppCredentialErrorCode,
 } from '../src/auth/github-app-installation-token.js';
+import type { Bindings } from '../src/env.js';
+import { githubActionsRuntimeFromEnv } from '../src/reconciliation/github-run-reconciliation-runtime.js';
 
 function expectCredentialCode(code: GitHubAppCredentialErrorCode): (error: unknown) => boolean {
   return (error) => error instanceof GitHubAppCredentialError && error.code === code;
@@ -206,6 +208,129 @@ describe('GitHub App installation token provider', () => {
       await expect(result).rejects.not.toThrow(privateKeyPem);
     },
   );
+
+  it.each([
+    ['request_timed_out', Object.assign(new Error('CANARY_TIMEOUT_DETAIL'), {
+      name: 'TimeoutError',
+    })],
+    ['dns_failed', new TypeError('CANARY_DNS_DETAIL', { cause: { code: 'ENOTFOUND' } })],
+    ['tcp_failed', new TypeError('CANARY_TCP_DETAIL', { cause: { code: 'ECONNRESET' } })],
+    ['tls_failed', new TypeError('CANARY_TLS_DETAIL', { cause: { code: 'CERT_HAS_EXPIRED' } })],
+    ['request_failed', Object.defineProperty({}, 'name', {
+      get: () => { throw new Error('CANARY_HOSTILE_GETTER'); },
+    })],
+  ] as const)(
+    'emits one fixed %s installation-token transport diagnostic without retry or raw detail',
+    async (failureKind, failure) => {
+      const keys = await generateKeyPair('RS256', { extractable: true });
+      const privateKeyPem = await exportPKCS8(keys.privateKey);
+      const diagnostics: unknown[] = [];
+      let requestInit: RequestInit | undefined;
+      const fetchImplementation = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        requestInit = init;
+        throw failure;
+      });
+      const provider = new GitHubAppInstallationTokenProvider({
+        appId: '7890',
+        installationId: '123456',
+        privateKeyPem,
+        allowedRepositories: ['example/delivery-target'],
+        fetch: fetchImplementation,
+        transportDiagnostic: (record: unknown) => diagnostics.push(record),
+      });
+
+      const result = provider.getBaseObservationToken('example/delivery-target');
+      await expect(result).rejects.toSatisfy(
+        expectCredentialCode('credential_transport_unavailable'),
+      );
+      expect(fetchImplementation).toHaveBeenCalledOnce();
+      expect(requestInit?.redirect).toBe('error');
+      expect(requestInit?.signal).toBeInstanceOf(AbortSignal);
+      expect(diagnostics).toEqual([{
+        schemaVersion: '1',
+        event: 'github_app_installation_token_transport_failed',
+        operation: 'installation_token_exchange',
+        failureKind,
+        requestAttempts: 1,
+      }]);
+      const safeProjection = JSON.stringify(diagnostics);
+      expect(safeProjection).not.toContain('CANARY_');
+      expect(safeProjection).not.toContain(privateKeyPem);
+      expect(safeProjection).not.toContain('ENOTFOUND');
+      expect(safeProjection).not.toContain('ECONNRESET');
+      expect(safeProjection).not.toContain('CERT_HAS_EXPIRED');
+    },
+  );
+
+  it('keeps the fixed credential stage when the diagnostic sink rejects the record', async () => {
+    const keys = await generateKeyPair('RS256', { extractable: true });
+    const privateKeyPem = await exportPKCS8(keys.privateKey);
+    const fetchImplementation = vi.fn(async () => {
+      throw new TypeError('CANARY_TRANSPORT_DETAIL', { cause: { code: 'EAI_AGAIN' } });
+    });
+    const provider = new GitHubAppInstallationTokenProvider({
+      appId: '7890',
+      installationId: '123456',
+      privateKeyPem,
+      allowedRepositories: ['example/delivery-target'],
+      fetch: fetchImplementation,
+      transportDiagnostic: () => { throw new Error('CANARY_DIAGNOSTIC_SINK_DETAIL'); },
+    });
+
+    const result = provider.getBaseObservationToken('example/delivery-target');
+    await expect(result).rejects.toSatisfy(
+      expectCredentialCode('credential_transport_unavailable'),
+    );
+    await expect(result).rejects.not.toThrow('CANARY_');
+    expect(fetchImplementation).toHaveBeenCalledOnce();
+  });
+
+  it('wires the fixed diagnostic through the production secure structured log sink', async () => {
+    const keys = await generateKeyPair('RS256', { extractable: true });
+    const privateKeyPem = await exportPKCS8(keys.privateKey);
+    const transportCanary = 'CANARY_PRODUCTION_TRANSPORT_DETAIL';
+    const fetchImplementation = vi.fn(async () => {
+      throw new TypeError(`${transportCanary} ${privateKeyPem}`, {
+        cause: { code: 'EAI_AGAIN' },
+      });
+    });
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.stubGlobal('fetch', fetchImplementation);
+    try {
+      const runtime = githubActionsRuntimeFromEnv({
+        GITHUB_APP_ID: '7890',
+        GITHUB_APP_INSTALLATION_ID: '123456',
+        GITHUB_APP_PRIVATE_KEY: privateKeyPem,
+        GITHUB_ALLOWED_REPOSITORIES: '["example/delivery-target"]',
+      } as Bindings);
+      expect(runtime).not.toBeNull();
+
+      const result = runtime!.provider.getBaseObservationToken('example/delivery-target');
+      await expect(result).rejects.toSatisfy(
+        expectCredentialCode('credential_transport_unavailable'),
+      );
+      expect(fetchImplementation).toHaveBeenCalledOnce();
+      expect(warning).toHaveBeenCalledOnce();
+      const record = warning.mock.calls[0]?.[0];
+      expect(record).toEqual({
+        schemaVersion: '1',
+        level: 'warn',
+        component: 'github_app_credential',
+        event: 'github_app_installation_token_transport_failed',
+        operation: 'installation_token_exchange',
+        failureKind: 'dns_failed',
+        requestAttempts: 1,
+        observedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      });
+      const safeProjection = JSON.stringify(record);
+      expect(safeProjection).not.toContain(transportCanary);
+      expect(safeProjection).not.toContain(privateKeyPem);
+      expect(safeProjection).not.toContain('EAI_AGAIN');
+    } finally {
+      vi.unstubAllGlobals();
+      warning.mockRestore();
+    }
+  });
 
   it('issues an uncached repo-scoped write credential and revokes it through GitHub', async () => {
     const keys = await generateKeyPair('RS256', { extractable: true });

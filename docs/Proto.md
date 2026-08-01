@@ -406,6 +406,14 @@ private key、installation token、上游body、HTTP正文或raw异常。探针�
 `200 ready`只证明调用时的read链路，不授予Task POST、GitHub dispatch或production deploy权限，也不能替代
 对应外部DoD证据。
 
+真实App provider的installation-token POST固定10秒timeout并拒绝redirect，每次credential request至多发送一次，
+transport失败后不得自动重试这个可能已到达GitHub的非幂等POST。fetch在HTTP响应前拒绝时，对外reason仍只有
+`credential_transport_unavailable`；同一catch只读取最多四层allowlisted `name/code/cause`元数据，复用caller的
+`request_timed_out|dns_failed|tcp_failed|tls_failed|request_failed`分类并经唯一安全结构化sink输出一条
+`github_app_installation_token_transport_failed`。该记录只含固定operation/failureKind/requestAttempts，不含repository、
+URL、App/installation ID、JWT/key/token、raw message/cause/body。诊断sink失败必须被折叠，不能改变固定credential stage、
+触发第二次请求或影响业务状态。
+
 仓库内一次性caller `ops:github-base-readiness`默认在读取配置或网络前exit 2；显式opt-in后只接受HTTPS
 control-plane origin、exact repository/baseBranch和用途隔离operations token。每个probe实例把attempt flag置位后才
 调用一次上述GET，第二次调用在fetch前拒绝；请求固定10秒timeout、拒绝redirect，响应限1 MiB、拒绝分页并在
