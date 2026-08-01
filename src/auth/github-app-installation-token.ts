@@ -25,6 +25,7 @@ export const GITHUB_APP_CREDENTIAL_ERROR_CODES = [
   'credential_auth_rejected',
   'credential_installation_not_found',
   'credential_policy_rejected',
+  'credential_transport_unavailable',
   'credential_upstream_unavailable',
   'credential_response_invalid',
 ] as const;
@@ -550,7 +551,7 @@ export class GitHubAppInstallationTokenProvider implements
         },
       );
     } catch {
-      credentialFailure('credential_upstream_unavailable');
+      credentialFailure('credential_transport_unavailable');
     }
     if (response.status !== 201) {
       try {
