@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1",
+  "collectionId": "example-only-not-live",
+  "recordedAt": "2026-08-02T01:00:00.000Z",
+  "repository": "example-owner/delivery-loop",
+  "github": {
+    "actor": "example-owner",
+    "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "runId": "100000001",
+    "runAttempt": 1,
+    "readinessJobId": "200000002",
+    "readinessStartedAt": "2026-08-02T00:39:40.000Z",
+    "readinessCompletedAt": "2026-08-02T00:39:54.000Z"
+  },
+  "cloudflare": {
+    "accountIdDigest": "sha256:875df6874db9c1bea5bd2276eabc9a212adad519ac7dab63740642dfd1129c21",
+    "scriptName": "example-control-plane",
+    "environment": "production",
+    "deploymentId": "11111111-1111-4111-8111-111111111111",
+    "versionId": "22222222-2222-4222-8222-222222222222",
+    "window": {
+      "from": "2026-08-02T00:39:40.000Z",
+      "to": "2026-08-02T00:39:54.000Z"
+    }
+  }
+}

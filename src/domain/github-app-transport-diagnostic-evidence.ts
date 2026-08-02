@@ -45,6 +45,66 @@ export const GitHubAppTransportDiagnosticPublicSummaryV1Schema = z.object({
   cacheControl: z.literal('no-store'),
 }).strict();
 
+export const GitHubAppTransportDiagnosticCollectionRequestV1Schema = z.object({
+  schemaVersion: z.literal('1'),
+  collectionId: z.string().regex(ID_PATTERN),
+  recordedAt: TIMESTAMP_SCHEMA,
+  repository: z.string().regex(REPOSITORY_PATTERN),
+  github: z.object({
+    actor: z.string().regex(GITHUB_LOGIN_PATTERN),
+    headSha: z.string().regex(SHA_PATTERN),
+    runId: z.string().regex(GITHUB_ID_PATTERN),
+    runAttempt: z.literal(1),
+    readinessJobId: z.string().regex(GITHUB_ID_PATTERN),
+    readinessStartedAt: TIMESTAMP_SCHEMA,
+    readinessCompletedAt: TIMESTAMP_SCHEMA,
+  }).strict(),
+  cloudflare: z.object({
+    accountIdDigest: z.string().regex(DIGEST_PATTERN),
+    scriptName: z.string().min(1).max(255).regex(/^[a-z0-9][a-z0-9-]*$/),
+    environment: z.literal('production'),
+    deploymentId: z.string().regex(UUID_PATTERN),
+    versionId: z.string().regex(UUID_PATTERN),
+    window: z.object({ from: TIMESTAMP_SCHEMA, to: TIMESTAMP_SCHEMA }).strict(),
+  }).strict(),
+}).strict().superRefine((request, context) => {
+  const [owner] = request.repository.split('/');
+  const startedAt = Date.parse(request.github.readinessStartedAt);
+  const completedAt = Date.parse(request.github.readinessCompletedAt);
+  const recordedAt = Date.parse(request.recordedAt);
+  if (request.github.actor !== owner) {
+    context.addIssue({ code: 'custom', message: 'readiness actor must be repository owner' });
+  }
+  if (
+    completedAt <= startedAt || completedAt - startedAt > 10 * 60_000 ||
+    request.cloudflare.window.from !== request.github.readinessStartedAt ||
+    request.cloudflare.window.to !== request.github.readinessCompletedAt
+  ) context.addIssue({ code: 'custom', message: 'collection window is not the exact job window' });
+  if (recordedAt < completedAt) {
+    context.addIssue({ code: 'custom', message: 'collection request timeline is inconsistent' });
+  }
+});
+
+export const GitHubAppTransportDiagnosticObservationV1Schema = z.object({
+  schemaVersion: z.literal('1'),
+  collectionId: z.string().regex(ID_PATTERN),
+  repository: z.string().regex(REPOSITORY_PATTERN),
+  githubRunId: z.string().regex(GITHUB_ID_PATTERN),
+  githubHeadSha: z.string().regex(SHA_PATTERN),
+  githubRunAttempt: z.literal(1),
+  readinessJobId: z.string().regex(GITHUB_ID_PATTERN),
+  deploymentId: z.string().regex(UUID_PATTERN),
+  versionId: z.string().regex(UUID_PATTERN),
+  observedAt: TIMESTAMP_SCHEMA,
+  workerTraceId: z.string().regex(WORKER_TRACE_PATTERN),
+  failureKind: FailureKindSchema,
+  logRecordDigest: z.string().regex(DIGEST_PATTERN),
+  requestAttempts: z.literal(1),
+  cloudflareLogQueries: z.literal(1),
+  plaintextLeaks: z.literal(0),
+  formalVerification: z.literal('still_required'),
+}).strict();
+
 export const GitHubAppTransportDiagnosticEvidenceManifestV1Schema = z.object({
   schemaVersion: z.literal('1'),
   evidenceId: z.string().regex(ID_PATTERN),
@@ -120,6 +180,12 @@ export const GitHubAppTransportDiagnosticEvidenceManifestV1Schema = z.object({
 
 export type GitHubAppTransportDiagnosticLogRecordV1 = z.infer<
   typeof GitHubAppTransportDiagnosticLogRecordV1Schema
+>;
+export type GitHubAppTransportDiagnosticCollectionRequestV1 = z.infer<
+  typeof GitHubAppTransportDiagnosticCollectionRequestV1Schema
+>;
+export type GitHubAppTransportDiagnosticObservationV1 = z.infer<
+  typeof GitHubAppTransportDiagnosticObservationV1Schema
 >;
 export type GitHubAppTransportDiagnosticEvidenceManifestV1 = z.infer<
   typeof GitHubAppTransportDiagnosticEvidenceManifestV1Schema
