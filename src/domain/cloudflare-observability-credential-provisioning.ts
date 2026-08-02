@@ -7,6 +7,9 @@ const TOKEN_NAME_PATTERN =
   /^delivery-loop-workers-observability-read-[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const SCRIPT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,254}$/;
 const TIMESTAMP_SCHEMA = z.iso.datetime({ offset: true });
+const CLOUDFLARE_TOKEN_TIMESTAMP_SCHEMA = z.string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/)
+  .pipe(TIMESTAMP_SCHEMA);
 const MIN_TOKEN_TTL_AFTER_AUTHORITY_MS = 7 * 24 * 60 * 60_000;
 const MAX_TOKEN_TTL_FROM_AUTHORIZATION_MS = (7 * 24 * 60 + 30) * 60_000;
 
@@ -35,7 +38,7 @@ export const CloudflareObservabilityCredentialProvisioningAuthorizationV1Schema 
   tokenName: z.string().regex(TOKEN_NAME_PATTERN),
   permissionGroupName: z.literal(CLOUDFLARE_OBSERVABILITY_PERMISSION_GROUP_NAME),
   keychainService: z.literal(CLOUDFLARE_OBSERVABILITY_KEYCHAIN_SERVICE),
-  tokenExpiresAt: TIMESTAMP_SCHEMA,
+  tokenExpiresAt: CLOUDFLARE_TOKEN_TIMESTAMP_SCHEMA,
   telemetryProbe: z.object({
     scriptName: z.string().regex(SCRIPT_NAME_PATTERN),
     window: z.object({

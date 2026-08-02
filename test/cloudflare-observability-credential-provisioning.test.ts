@@ -24,7 +24,7 @@ const PERMISSION_GROUP_ID = '22222222-2222-4222-8222-222222222222';
 const TOKEN_ID = '33333333-3333-4333-8333-333333333333';
 const AUTHORIZED_AT = '2026-08-02T02:00:00.000Z';
 const AUTHORITY_EXPIRES_AT = '2026-08-02T02:20:00.000Z';
-const TOKEN_EXPIRES_AT = '2026-08-09T02:20:00.000Z';
+const TOKEN_EXPIRES_AT = '2026-08-09T02:20:00Z';
 const NOW = new Date('2026-08-02T02:05:00.000Z');
 const TOKEN_NAME = 'delivery-loop-workers-observability-read-round215';
 const KEYCHAIN_SERVICE =
@@ -217,6 +217,20 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
       .resolves.toBe(valid.authorityDigest);
   });
 
+  it('requires the provider-bound expiry to use UTC RFC3339 whole seconds', async () => {
+    const valid = await authorization();
+    for (const tokenExpiresAt of [
+      '2026-08-09T02:20:00.123Z',
+      '2026-08-09T10:20:00+08:00',
+    ]) {
+      const changed = { ...valid, tokenExpiresAt };
+      changed.authorityDigest =
+        await cloudflareObservabilityCredentialProvisioningAuthorityDigest(changed);
+      expect(CloudflareObservabilityCredentialProvisioningAuthorizationV1Schema.safeParse(changed)
+        .success).toBe(false);
+    }
+  });
+
   it('creates the exact account-scoped token, stores it once, verifies it and probes telemetry', async () => {
     const value = await authorization();
     const requests: ObservedRequest[] = [];
@@ -298,13 +312,13 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
     const valid = await authorization();
     const tooShort = {
       ...valid,
-      tokenExpiresAt: '2026-08-09T02:19:59.999Z',
+      tokenExpiresAt: '2026-08-09T02:19:59Z',
     };
     tooShort.authorityDigest =
       await cloudflareObservabilityCredentialProvisioningAuthorityDigest(tooShort);
     const tooLong = {
       ...valid,
-      tokenExpiresAt: '2026-08-09T02:30:00.001Z',
+      tokenExpiresAt: '2026-08-09T02:30:01Z',
     };
     tooLong.authorityDigest =
       await cloudflareObservabilityCredentialProvisioningAuthorityDigest(tooLong);
