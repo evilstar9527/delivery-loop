@@ -3955,3 +3955,31 @@
 - 外部事实与最小裁决：只读Cloudflare docs commit `29828aafc2310030cbe70f333a024a7eccbfe468`的`Create tokens via API`，官方明确TTL字段使用UTC`2018-07-01T05:20:00Z`格式。Round 241/244已经省略`not_before`但`expires_on`仍分别带`.910Z/.199Z`，且两次都4xx后由独立inventory证明`absent`；通用provider code 400不能提供更细语义。故下一次只修正这个可验证wire差异，不读取raw message、不继续猜permission/name/TTL时长。
 - RED与实现：先加入小数秒与等价`+08:00`offset拒绝测试，旧schema的新断言按预期失败；managed sandbox同时阻止既有CLI spawn测试，属于执行环境限制而非产品回归。实现新增Cloudflare provider timestamp schema，只允许UTC整秒`YYYY-MM-DDTHH:mm:ssZ`作为新authority的`tokenExpiresAt`并逐字发送；authority窗口仍可保留高精度，reconciliation继续按instant比较历史source。provisioning example digest重算为`sha256:928e9927450e08f307ad1a3bc21523f0a4f56961ea3ec9155a1f19d3e83aa892`。本轮尚未执行新的Cloudflare create、Keychain或production effect；必须在受保护交付后再使用fresh target live验证。
 - 验证与遗留：沙箱外定向provisioning+reconciliation为2 files/25 tests，`pnpm run typecheck`、变更文件ESLint与`git diff --check`均exit 0；最终`pnpm run verify`亦exit 0：122 Node files/686 tests、57 workerd files/330 tests、14 workflows/15 jobs runner policy、525文件Secret scan与docs links全绿。workerd仅有既有主动terminate teardown诊断，不改变57/57、330/330与最终exit 0。只勾“UTC整秒expiry本地契约”；受保护交付、整秒live create、credential、Round 207 collection/formal verification、readiness 200、唯一analysis dispatch、heartbeat与hibernate父项继续未勾。按owner约定不更新llmdoc。
+
+## Round 247 — 2026-08-03
+- 目标与边界：在Round 246整秒expiry修正进入受保护`main`后，按既有collection authority尝试一次Round 207 immutable窗口的transport diagnostic；不重发readiness，不创建Task/Action，不部署Worker/after，不做D1 repair、Workflow restart/recreate、credential/Secret/installation修改、rotation或rollback。
+- 结果与安全停止：运行面没有配置HTTP代理，collector在第一个Cloudflare observability request阶段返回固定`cloudflare_api_unavailable`并立即停止；没有继续retry，也没有生成formal verifier manifest。没有读取或输出任何token、account ID、bootstrap值、raw响应或raw错误，production effect为0。
+
+## Round 248 — 2026-08-03
+- 独立凭据前置：在collection失败后不复用已消费authority；只进行一次性bootstrap provisioning的受控交接，bootstrap明文仅在浏览器/进程受控内存中使用，不写仓库、日志、命令参数、artifact或对话。目标credential仍要求用途隔离、最小权限、Keychain固定槽位和后续独立verification。
+- 边界：本轮没有把bootstrap创建或进程结束视为observability credential已验证；未执行collection、formal verification、readiness、Task/Action、deploy/after、repair/restart/recreate、rotation或rollback。
+
+## Round 249 — 2026-08-03
+- 只读复核：围绕Round 250 provisioning结果建立独立reconciliation输入，绑定exact target、source authority digest与生命周期；只允许一次完整token inventory GET，其他mutation、Keychain读写、verify、telemetry、delete和retry均固定为0。
+- 裁决规则：inventory结果为`present`时只记录安全状态和digest，不读取明文、不自动继续collection；只有单独的新collection+verification authority才能进入Round 207窗口。
+
+## Round 250 — 2026-08-03
+- live provisioning事实：短期bootstrap token由Cloudflare UI创建，明文只在受控内存中使用。目标名为`delivery-loop-workers-observability-read-r250-20260802223250`；独立reconciliation唯一执行1次inventory GET，安全结果为`status=present`、`tokenStatus=active`、`plaintextLeaks=0`，`tokenInventoryReads=1`，其他mutation、Keychain read/write、verify、telemetry、delete、retry均为0。
+- 安全存储：token ID仅以digest `sha256:8896f2c92894184a14620f6f972870887578680e72907515addfcecb7054a68d`留存。固定Keychain metadata槽存在（service/account名称只记安全标识），未读取或输出Keychain明文。
+
+## Round 251 — 2026-08-03
+- provisioning状态裁决：由于Round 250 provisioning产品进程在对话中断时失去stdout，无法重建完整的`verified` summary；因此只采信独立reconciliation的`present/active`与Keychain槽存在事实，不把它升级为credential verification成功。
+- 零effect：没有补发create、没有re-list/delete/revoke/rotation，也没有执行collection/formal verification、readiness、Task/Action、deploy/after、repair、restart/recreate或rollback。
+
+## Round 252 — 2026-08-03
+- collection前置复核：目标credential仍按用途隔离，Round 207的GitHub run/head/readiness job/window及before deployment/version绑定不变；本轮仅冻结安全摘要和请求上界，不读取raw telemetry、不扩大authority、不重试已失败调用。
+- 结论：继续等待一次新的、明确绑定该immutable窗口的collection+verification authority；`present/active` credential状态不能替代formal verifier的GitHub、deployment、events和traces四方交叉证据。
+
+## Round 253 — 2026-08-03
+- 第二次独立collection：为排除本机出口条件，在不改变token/Secret/installation/production边界的前提下配置本机代理后再次执行一次collector；代理本身可用，Node无认证请求可经代理访问Cloudflare API，但collector仍在Cloudflare observability request阶段返回固定`cloudflare_api_unavailable`，按fail-closed立即停止。
+- 结果与blocker：没有retry，没有执行formal verifier，也没有readiness、Task/Action、deploy/after、D1 repair、Workflow restart/recreate、credential/Secret/installation修改、rotation或rollback。当前真实`failureKind`仍未知；现有证据只能证明collection transport/API不可用，不能推断具体权限或上游错误。
