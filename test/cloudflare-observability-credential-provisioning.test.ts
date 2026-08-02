@@ -82,7 +82,7 @@ interface FakeCloudflareOptions {
   inventory?: readonly unknown[];
   inventoryInfo?: Record<string, number>;
   permissionGroups?: readonly unknown[];
-  permissionInfo?: Record<string, number>;
+  permissionInfo?: Record<string, number> | null;
   createdToken?: string;
   createExtra?: Record<string, unknown>;
   verifyStatus?: string;
@@ -132,13 +132,13 @@ function fakeCloudflare(
         name: 'Workers Observability Read',
         scopes: ['com.cloudflare.api.account'],
       }];
-      return envelope(groups, options.permissionInfo ?? {
-        page: 1,
-        per_page: 20,
-        count: groups.length,
-        total_count: groups.length,
-        total_pages: 1,
-      });
+      return envelope(groups, options.permissionInfo === null ? undefined :
+        options.permissionInfo ?? {
+          page: 1,
+          per_page: 20,
+          count: groups.length,
+          total_count: 273,
+        });
     }
     if (url.pathname === tokenBase && method === 'POST') {
       if (options.failAt === 'create') return new Response('', { status: 403 });
@@ -262,6 +262,22 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
     });
   });
 
+  it('accepts the permission-group collection shapes allowed by current Cloudflare OpenAPI', async () => {
+    const value = await authorization();
+    for (const permissionInfo of [
+      null,
+      {},
+      { count: 1, page: 1, per_page: 20, total_count: 273 },
+    ] as const) {
+      const requests: ObservedRequest[] = [];
+      await expect(provisionCloudflareObservabilityCredential(
+        value,
+        provisionerOptions(fakeCloudflare({ permissionInfo }, requests)),
+      )).resolves.toMatchObject({ status: 'verified' });
+      expect(requests).toHaveLength(5);
+    }
+  });
+
   it('rejects authority, account, TTL and purpose-token drift before network', async () => {
     const valid = await authorization();
     const ttlDrift = {
@@ -303,8 +319,12 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
         { id: '44444444-4444-4444-8444-444444444444',
           name: 'Workers Observability Read', scopes: ['com.cloudflare.api.account'] },
       ] }, 'permission_group_mismatch', 2],
-      [{ permissionInfo: { page: 1, per_page: 20, count: 1, total_count: 21,
-        total_pages: 2 } }, 'permission_groups_invalid', 2],
+      [{ permissionInfo: { page: 2, per_page: 20, count: 1, total_count: 273 } },
+        'permission_groups_invalid', 2],
+      [{ permissionInfo: { page: 1, per_page: 20, count: 2, total_count: 273 } },
+        'permission_groups_invalid', 2],
+      [{ permissionInfo: { page: 1, per_page: 20, count: 1, total_count: 0 } },
+        'permission_groups_invalid', 2],
     ] as const) {
       const requests: ObservedRequest[] = [];
       await expect(provisionCloudflareObservabilityCredential(
