@@ -1386,3 +1386,17 @@ export {
   type CloudflareObservabilityCredentialProvisioningErrorCode,
   type CloudflareObservabilityCredentialProvisioningStage,
 } from './pilot/cloudflare-observability-credential-provisioner.js';
+export {
+  CloudflareObservabilityCredentialReconciliationAuthorizationV1Schema,
+  CloudflareObservabilityCredentialReconciliationEffectsV1Schema,
+  CloudflareObservabilityCredentialReconciliationSummaryV1Schema,
+  cloudflareObservabilityCredentialReconciliationAuthorityDigest,
+  type CloudflareObservabilityCredentialReconciliationAuthorizationV1,
+  type CloudflareObservabilityCredentialReconciliationSummaryV1,
+} from './domain/cloudflare-observability-credential-reconciliation.js';
+export {
+  CloudflareObservabilityCredentialReconciliationError,
+  reconcileCloudflareObservabilityCredential,
+  type CloudflareObservabilityCredentialReconcilerOptions,
+  type CloudflareObservabilityCredentialReconciliationErrorCode,
+} from './pilot/cloudflare-observability-credential-reconciler.js';

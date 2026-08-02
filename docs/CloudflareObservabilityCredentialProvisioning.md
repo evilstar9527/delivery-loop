@@ -106,6 +106,9 @@ CLI 默认未 opt-in、配置缺失或 authority 不可读时 exit 2，并在文
 `created_unverified stage=token_create|keychain|token_verify|telemetry_probe`，不自动执行第二次 create、token
 delete、Keychain overwrite、rotation 或 rollback。此时 token 可能已在 Cloudflare 或 Keychain 存在，后续
 inventory/revoke/修复都需要新的独立 authority，不能复用原 session。
+其中只读确认exact target存在性的恢复入口固定为
+[post-create reconciliation](CloudflareObservabilityCredentialReconciliation.md)；它没有create/delete/Keychain/
+verify/telemetry路径，也不能从`present|absent`自行推导下一步mutation。
 
 exit 0 只输出 authorization ID、account digest、token name、固定 permission/service、expiry、effect count、
 `status=verified` 和 `plaintextLeaks=0`。它证明新 token 当时能完成 exact dry probe，但不证明历史 diagnostic、
