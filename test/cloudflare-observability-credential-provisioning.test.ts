@@ -24,7 +24,7 @@ const PERMISSION_GROUP_ID = '22222222-2222-4222-8222-222222222222';
 const TOKEN_ID = '33333333-3333-4333-8333-333333333333';
 const AUTHORIZED_AT = '2026-08-02T02:00:00.000Z';
 const AUTHORITY_EXPIRES_AT = '2026-08-02T02:20:00.000Z';
-const TOKEN_EXPIRES_AT = '2026-08-02T03:30:00.000Z';
+const TOKEN_EXPIRES_AT = '2026-08-03T02:30:00.000Z';
 const NOW = new Date('2026-08-02T02:05:00.000Z');
 const TOKEN_NAME = 'delivery-loop-workers-observability-read-round215';
 const KEYCHAIN_SERVICE =
@@ -289,18 +289,35 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
     }
   });
 
-  it('rejects authority, account, TTL and purpose-token drift before network', async () => {
+  it('requires a backend-compatible 24-hour floor without exceeding a 25-hour TTL', async () => {
     const valid = await authorization();
-    const ttlDrift = {
+    const tooShort = {
       ...valid,
-      tokenExpiresAt: '2026-08-02T04:00:00.001Z',
+      tokenExpiresAt: '2026-08-03T02:19:59.999Z',
     };
-    ttlDrift.authorityDigest =
-      await cloudflareObservabilityCredentialProvisioningAuthorityDigest(ttlDrift);
+    tooShort.authorityDigest =
+      await cloudflareObservabilityCredentialProvisioningAuthorityDigest(tooShort);
+    const tooLong = {
+      ...valid,
+      tokenExpiresAt: '2026-08-03T03:00:00.001Z',
+    };
+    tooLong.authorityDigest =
+      await cloudflareObservabilityCredentialProvisioningAuthorityDigest(tooLong);
+    for (const input of [tooShort, tooLong]) {
+      const requests: ObservedRequest[] = [];
+      await expect(provisionCloudflareObservabilityCredential(
+        input,
+        provisionerOptions(fakeCloudflare({}, requests)),
+      )).rejects.toSatisfy(code('authorization_invalid'));
+      expect(requests).toHaveLength(0);
+    }
+  });
+
+  it('rejects authority, account and purpose-token drift before network', async () => {
+    const valid = await authorization();
     for (const [input, options] of [
       [{ ...valid, authorityDigest: `sha256:${'f'.repeat(64)}` }, {}],
       [valid, { cloudflareAccountId: '2'.repeat(32) }],
-      [ttlDrift, {}],
       [valid, { canary: BOOTSTRAP_TOKEN }],
     ] as const) {
       const requests: ObservedRequest[] = [];
