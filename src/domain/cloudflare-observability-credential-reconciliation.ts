@@ -27,23 +27,26 @@ export const CloudflareObservabilityCredentialReconciliationAuthorizationV1Schem
   expiresAt: TIMESTAMP_SCHEMA,
   sourceProvisioningAuthorizationId: z.string().regex(ID_PATTERN),
   sourceProvisioningAuthorityDigest: z.string().regex(DIGEST_PATTERN),
+  sourceProvisioningAuthorizedAt: TIMESTAMP_SCHEMA,
   accountIdDigest: z.string().regex(DIGEST_PATTERN),
   tokenName: z.string().regex(TOKEN_NAME_PATTERN),
-  tokenNotBefore: TIMESTAMP_SCHEMA,
+  tokenNotBefore: TIMESTAMP_SCHEMA.nullable(),
   tokenExpiresAt: TIMESTAMP_SCHEMA,
   effects: CloudflareObservabilityCredentialReconciliationEffectsV1Schema,
   authorityDigest: z.string().regex(DIGEST_PATTERN),
 }).strict().superRefine((authorization, context) => {
   const authorizedAt = Date.parse(authorization.authorizedAt);
   const expiresAt = Date.parse(authorization.expiresAt);
-  const tokenNotBefore = Date.parse(authorization.tokenNotBefore);
+  const sourceProvisioningAuthorizedAt = Date.parse(
+    authorization.sourceProvisioningAuthorizedAt,
+  );
   const tokenExpiresAt = Date.parse(authorization.tokenExpiresAt);
   if (expiresAt <= authorizedAt || expiresAt - authorizedAt > 30 * 60_000) {
     context.addIssue({ code: 'custom', message: 'authority window must be at most 30 minutes' });
   }
   if (
-    tokenExpiresAt <= tokenNotBefore ||
-    tokenExpiresAt - tokenNotBefore > MAX_SOURCE_TOKEN_TTL_MS
+    tokenExpiresAt <= sourceProvisioningAuthorizedAt ||
+    tokenExpiresAt - sourceProvisioningAuthorizedAt > MAX_SOURCE_TOKEN_TTL_MS
   ) {
     context.addIssue({
       code: 'custom',
@@ -57,9 +60,10 @@ const RECONCILIATION_SUMMARY_BASE = z.object({
   authorizationId: z.string().regex(ID_PATTERN),
   sourceProvisioningAuthorizationId: z.string().regex(ID_PATTERN),
   sourceProvisioningAuthorityDigest: z.string().regex(DIGEST_PATTERN),
+  sourceProvisioningAuthorizedAt: TIMESTAMP_SCHEMA,
   accountIdDigest: z.string().regex(DIGEST_PATTERN),
   tokenName: z.string().regex(TOKEN_NAME_PATTERN),
-  tokenNotBefore: TIMESTAMP_SCHEMA,
+  tokenNotBefore: TIMESTAMP_SCHEMA.nullable(),
   tokenExpiresAt: TIMESTAMP_SCHEMA,
   effects: CloudflareObservabilityCredentialReconciliationEffectsV1Schema,
   plaintextLeaks: z.literal(0),

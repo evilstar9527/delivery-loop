@@ -322,7 +322,6 @@ function createBody(
       permission_groups: [{ id: permissionGroupId }],
       resources: { [`com.cloudflare.api.account.${accountId}`]: '*' },
     }],
-    not_before: authorization.authorizedAt,
     expires_on: authorization.tokenExpiresAt,
   };
 }

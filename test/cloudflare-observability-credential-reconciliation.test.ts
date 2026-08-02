@@ -35,7 +35,7 @@ const TOKEN_ID = '33333333-3333-4333-8333-333333333333';
 const TOKEN_NAME = 'delivery-loop-workers-observability-read-round221-20260802130249';
 const AUTHORIZED_AT = '2026-08-02T13:35:00.000Z';
 const AUTHORITY_EXPIRES_AT = '2026-08-02T13:55:00.000Z';
-const TOKEN_NOT_BEFORE = '2026-08-02T13:02:49.300Z';
+const SOURCE_PROVISIONING_AUTHORIZED_AT = '2026-08-02T13:02:49.300Z';
 const TOKEN_EXPIRES_AT = '2026-08-02T15:02:19.300Z';
 const NOW = new Date('2026-08-02T13:40:00.000Z');
 
@@ -50,9 +50,10 @@ async function authorization(
     sourceProvisioningAuthorizationId:
       'cloudflare-observability-credential-round221-20260802130249',
     sourceProvisioningAuthorityDigest: `sha256:${'2'.repeat(64)}`,
+    sourceProvisioningAuthorizedAt: SOURCE_PROVISIONING_AUTHORIZED_AT,
     accountIdDigest: await canonicalSha256(ACCOUNT_ID),
     tokenName: TOKEN_NAME,
-    tokenNotBefore: TOKEN_NOT_BEFORE,
+    tokenNotBefore: null,
     tokenExpiresAt: TOKEN_EXPIRES_AT,
     effects: {
       tokenInventoryReads: 1 as const,
@@ -123,7 +124,6 @@ function targetEntry(changes: Record<string, unknown> = {}): Record<string, unkn
     id: TOKEN_ID,
     name: TOKEN_NAME,
     status: 'active',
-    not_before: TOKEN_NOT_BEFORE,
     expires_on: TOKEN_EXPIRES_AT,
     ...changes,
   };
@@ -163,6 +163,7 @@ describe('Cloudflare Workers Observability post-create reconciliation', () => {
 
   it('accepts legacy sources and the seven-day lifecycle with a seven-day 30-minute ceiling', async () => {
     await expect(authorization({
+      tokenNotBefore: SOURCE_PROVISIONING_AUTHORIZED_AT,
       tokenExpiresAt: '2026-08-03T13:40:00.000Z',
     })).resolves.toMatchObject({ tokenExpiresAt: '2026-08-03T13:40:00.000Z' });
     await expect(authorization({
@@ -216,9 +217,10 @@ describe('Cloudflare Workers Observability post-create reconciliation', () => {
         authorizationId: authority.authorizationId,
         sourceProvisioningAuthorizationId: authority.sourceProvisioningAuthorizationId,
         sourceProvisioningAuthorityDigest: authority.sourceProvisioningAuthorityDigest,
+        sourceProvisioningAuthorizedAt: SOURCE_PROVISIONING_AUTHORIZED_AT,
         accountIdDigest: authority.accountIdDigest,
         tokenName: TOKEN_NAME,
-        tokenNotBefore: TOKEN_NOT_BEFORE,
+        tokenNotBefore: null,
         tokenExpiresAt: TOKEN_EXPIRES_AT,
         status: 'present',
         tokenIdDigest: await canonicalSha256(TOKEN_ID),
@@ -250,7 +252,6 @@ describe('Cloudflare Workers Observability post-create reconciliation', () => {
       authority,
       options(fakeCloudflare({
         entries: [targetEntry({
-          not_before: '2026-08-02T13:02:49.300+00:00',
           expires_on: '2026-08-02T15:02:19.300+00:00',
         })],
       })),
@@ -266,6 +267,8 @@ describe('Cloudflare Workers Observability post-create reconciliation', () => {
       [{ entries: [targetEntry(), targetEntry({ id: '44444444-4444-4444-8444-444444444444' })] },
         'target_ambiguous'],
       [{ entries: [targetEntry({ expires_on: '2026-08-02T15:03:19.300Z' })] },
+        'target_mismatch'],
+      [{ entries: [targetEntry({ not_before: SOURCE_PROVISIONING_AUTHORIZED_AT })] },
         'target_mismatch'],
       [{ entries: [targetEntry({ status: 'mystery' })] }, 'target_mismatch'],
     ] as const) {

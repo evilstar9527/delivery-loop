@@ -45,12 +45,12 @@ search parameters 时的总数，不能错误要求它等于 filtered result，�
 com.cloudflare.api.account.<exact-account-id>: "*"
 ```
 
-Cloudflare OpenAPI把`expires_on`声明为普通RFC 3339时间，但没有公开服务端最短TTL。真实create在其他字段与
-官方SDK/Terraform request shape一致时，先后以约2小时和24～25小时TTL固定返回4xx，独立reconciliation均为
-`absent`；把target名称从64字符缩到50字符后仍得到相同结果，排除了名称上限。Cloudflare Dashboard的
-Account Token表单只提供按天的到期选项，最短可见预设为7天。为与已验证的产品入口收敛，同时把权限窗口限制
-在最小可用范围，本工具要求target token在authority完整窗口结束后恰好留下至少7天，并从`authorizedAt`起
-把总TTL限制在7天30分钟内。7天live create尚须受保护交付后单独验证；本地契约不能冒充成功外部事实。
+Cloudflare OpenAPI把`expires_on`声明为普通RFC 3339时间，但没有公开服务端最短TTL。真实create先后使用约2小时、
+24～25小时及7天TTL，且把target名称从64字符缩到50字符后都固定返回4xx；每次独立reconciliation均为
+`absent`。这排除了名称长度，也反证了“只要把TTL扩到Dashboard最短可见7天预设即可”的归因。当前官方create
+文档明确把`not_before`列为optional；Terraform常规acceptance直接省略它，TTL fixture则使用2018年的固定过去
+时刻。项目失败请求唯一共同的非必要差异，是把`not_before`设为刚刚生效的毫秒级authority时间。因此create
+body删除该可选字段，token在成功创建后立即有效；7天～7天30分钟expiry约束继续限制未来有效期。
 
 ## Authority 与固定 effect
 
@@ -64,6 +64,7 @@ credential。owner 仍须在仓库外批准 exact digest。schema 同时固定�
 
 - authority 生效窗口最多 30 分钟，进程必须在半开区间 `[authorizedAt, expiresAt)` 内开始；
 - target token 在完整 authority 窗口结束后至少再存活7天，且从`authorizedAt`起总TTL不超过7天30分钟；
+- create body省略可选`not_before`与`condition`，不把短期owner authority时间误作provider token起始时间；
 - token name 必须使用 `delivery-loop-workers-observability-read-*` 专用前缀；
 - telemetry probe 绑定一个已经结束、最长 60 秒的 exact Worker service/window；
 - Keychain service 固定为
@@ -98,7 +99,7 @@ pnpm run ops:cloudflare-observability-credential-provision
    并用 exact service/account metadata 查询证明固定 Keychain 槽位尚不存在；不读取任何既有 Keychain 值；
 2. 一次 inventory GET；分页、响应不完整或同名 token 均停止；
 3. 一次 permission-group GET；只接受唯一 exact name + account scope；
-4. 一次 create POST；request body 不接受调用方追加 policy/resource/condition；
+4. 一次 create POST；request body 不接受调用方追加 policy/resource/condition，也不发送可选`not_before`；
 5. create response 最大 1 MiB/10 秒、拒绝 redirect/pagination。新 secret 必须是 40～80 字节的 `cfat_`
    scannable value，且只允许在 `result.value` 出现一次；其他字段继续扫描 bootstrap token、canary、新 token、
    credential shape 和敏感字段名；
