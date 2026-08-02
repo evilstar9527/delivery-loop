@@ -54,6 +54,7 @@ export class CloudflareObservabilityCredentialProvisioningError extends Error {
     readonly code: CloudflareObservabilityCredentialProvisioningErrorCode,
     stage?: CloudflareObservabilityCredentialProvisioningStage,
     readonly failureKind?: CloudflareObservabilityCredentialProvisioningFailureKind,
+    readonly cloudflareErrorCode?: number,
   ) {
     super(`Cloudflare observability credential provisioning failed: ${code}`);
     this.name = 'CloudflareObservabilityCredentialProvisioningError';
@@ -64,6 +65,7 @@ export class CloudflareObservabilityCredentialProvisioningError extends Error {
 class CloudflareTokenCreateAttemptError extends Error {
   constructor(
     readonly failureKind: CloudflareObservabilityCredentialProvisioningFailureKind,
+    readonly cloudflareErrorCode?: number,
   ) {
     super(failureKind);
     this.name = 'CloudflareTokenCreateAttemptError';
@@ -355,6 +357,41 @@ function createdSecret(
   return { id: result.id, value: result.value };
 }
 
+async function safeCloudflareCreateErrorCode(
+  response: Response,
+  secrets: readonly string[],
+): Promise<number | undefined> {
+  if (
+    !responseSizeValid(response) ||
+    /\brel\s*=\s*["']?next["']?/i.test(response.headers.get('link') ?? '')
+  ) {
+    await response.body?.cancel();
+    return undefined;
+  }
+  let raw: string | null;
+  try { raw = await boundedText(response); }
+  catch { return undefined; }
+  if (
+    raw === null ||
+    new SecretScanner({ secrets }).scanText(raw, '$.create-error').length > 0
+  ) return undefined;
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw) as unknown; }
+  catch { return undefined; }
+  const envelope = record(parsed);
+  if (envelope?.success !== false || !Array.isArray(envelope.errors)) return undefined;
+  const codes = envelope.errors.map((entry) => record(entry)?.code);
+  if (
+    codes.length === 0 ||
+    codes.some((code) =>
+      typeof code !== 'number' || !Number.isSafeInteger(code) ||
+      code < 0 || code > 999_999_999
+    )
+  ) return undefined;
+  const uniqueCodes = [...new Set(codes as number[])];
+  return uniqueCodes.length === 1 ? uniqueCodes[0] : undefined;
+}
+
 async function createToken(
   fetcher: typeof fetch,
   origin: string,
@@ -380,20 +417,23 @@ async function createToken(
     throw new CloudflareTokenCreateAttemptError('transport_unavailable');
   }
   if (!response.ok) {
-    await response.body?.cancel();
+    const cloudflareErrorCode = await safeCloudflareCreateErrorCode(
+      response,
+      [bootstrapToken, canary, accountId],
+    );
     if (response.status === 401 || response.status === 403) {
-      throw new CloudflareTokenCreateAttemptError('auth_rejected');
+      throw new CloudflareTokenCreateAttemptError('auth_rejected', cloudflareErrorCode);
     }
     if (response.status === 429) {
-      throw new CloudflareTokenCreateAttemptError('rate_limited');
+      throw new CloudflareTokenCreateAttemptError('rate_limited', cloudflareErrorCode);
     }
     if (response.status >= 400 && response.status < 500) {
-      throw new CloudflareTokenCreateAttemptError('request_rejected');
+      throw new CloudflareTokenCreateAttemptError('request_rejected', cloudflareErrorCode);
     }
     if (response.status >= 500) {
-      throw new CloudflareTokenCreateAttemptError('upstream_unavailable');
+      throw new CloudflareTokenCreateAttemptError('upstream_unavailable', cloudflareErrorCode);
     }
-    throw new CloudflareTokenCreateAttemptError('response_invalid');
+    throw new CloudflareTokenCreateAttemptError('response_invalid', cloudflareErrorCode);
   }
   if (
     !responseSizeValid(response) ||
@@ -553,6 +593,9 @@ export async function provisionCloudflareObservabilityCredential(
       error instanceof CloudflareTokenCreateAttemptError
         ? error.failureKind
         : 'response_invalid',
+      error instanceof CloudflareTokenCreateAttemptError
+        ? error.cloudflareErrorCode
+        : undefined,
     );
   }
   try { await options.storeSecret(created.value); }

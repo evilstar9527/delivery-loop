@@ -142,9 +142,12 @@ async function main(): Promise<void> {
       const failureKind = error.failureKind === undefined
         ? ''
         : ` failureKind=${error.failureKind}`;
+      const cloudflareErrorCode = error.cloudflareErrorCode === undefined
+        ? ''
+        : ` cloudflareErrorCode=${error.cloudflareErrorCode}`;
       console.error(
         `cloudflare-observability-credential-provisioning: FAIL ${error.code}` +
-          `${stage}${failureKind}`,
+          `${stage}${failureKind}${cloudflareErrorCode}`,
       );
     } else {
       console.error('cloudflare-observability-credential-provisioning: FAIL provisioning_failed');
