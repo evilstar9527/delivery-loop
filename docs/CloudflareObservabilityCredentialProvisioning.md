@@ -45,12 +45,17 @@ search parameters 时的总数，不能错误要求它等于 filtered result，�
 com.cloudflare.api.account.<exact-account-id>: "*"
 ```
 
-Cloudflare OpenAPI把`expires_on`声明为普通RFC 3339时间，但没有公开服务端最短TTL。真实create先后使用约2小时、
+Cloudflare OpenAPI把`expires_on`声明为普通RFC 3339时间，但官方
+[Create tokens via API](https://developers.cloudflare.com/fundamentals/api/how-to/create-via-api/)进一步把TTL
+wire format明确为UTC整秒`YYYY-MM-DDTHH:mm:ssZ`。真实create先后使用约2小时、
 24～25小时及7天TTL，且把target名称从64字符缩到50字符后都固定返回4xx；每次独立reconciliation均为
 `absent`。这排除了名称长度，也反证了“只要把TTL扩到Dashboard最短可见7天预设即可”的归因。当前官方create
 文档明确把`not_before`列为optional；Terraform常规acceptance直接省略它，TTL fixture则使用2018年的固定过去
 时刻。项目失败请求唯一共同的非必要差异，是把`not_before`设为刚刚生效的毫秒级authority时间。因此create
-body删除该可选字段，token在成功创建后立即有效；7天～7天30分钟expiry约束继续限制未来有效期。
+body删除该可选字段，token在成功创建后立即有效。Round 241删除它后仍4xx，Round 244安全provider code为通用
+`400`；两轮请求的`expires_on`仍带毫秒，和官方wire format不符。新authority因此只接受UTC整秒expiry并逐字
+发送；7天～7天30分钟expiry约束继续限制未来有效期。reconciliation仍按instant比较，兼容已消费的历史小数秒
+source。
 
 ## Authority 与固定 effect
 
@@ -63,7 +68,8 @@ body删除该可选字段，token在成功创建后立即有效；7天～7天30�
 credential。owner 仍须在仓库外批准 exact digest。schema 同时固定：
 
 - authority 生效窗口最多 30 分钟，进程必须在半开区间 `[authorizedAt, expiresAt)` 内开始；
-- target token 在完整 authority 窗口结束后至少再存活7天，且从`authorizedAt`起总TTL不超过7天30分钟；
+- target token expiry必须是UTC整秒`YYYY-MM-DDTHH:mm:ssZ`，在完整authority窗口结束后至少再存活7天，且从
+  `authorizedAt`起总TTL不超过7天30分钟；
 - create body省略可选`not_before`与`condition`，不把短期owner authority时间误作provider token起始时间；
 - token name 必须使用 `delivery-loop-workers-observability-read-*` 专用前缀；
 - telemetry probe 绑定一个已经结束、最长 60 秒的 exact Worker service/window；
