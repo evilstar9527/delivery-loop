@@ -51,6 +51,7 @@
     "e2e:runner-heartbeat": "tsx scripts/verify-runner-heartbeat-evidence.ts",
     "e2e:platform-limits": "tsx scripts/verify-platform-limits-evidence.ts",
     "e2e:correlation-platform": "tsx scripts/verify-correlation-platform-evidence.ts",
+    "e2e:github-app-transport-diagnostic": "tsx scripts/verify-github-app-transport-diagnostic-evidence.ts",
     "e2e:feishu-webhook": "tsx scripts/verify-feishu-webhook-evidence.ts",
     "e2e:feishu-ingress": "tsx scripts/verify-feishu-ingress-evidence.ts",
     "e2e:meegle-work-item": "tsx scripts/verify-meegle-work-item-evidence.ts",

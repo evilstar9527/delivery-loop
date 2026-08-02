@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "1",
+  "evidenceId": "example-only-not-live",
+  "recordedAt": "2026-08-02T01:00:00.000Z",
+  "repository": "example-owner/delivery-loop",
+  "github": {
+    "actor": "example-owner",
+    "headSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "runId": "100000001",
+    "runAttempt": 1,
+    "preflightJobId": "200000001",
+    "readinessJobId": "200000002",
+    "readinessStartedAt": "2026-08-02T00:39:33.000Z",
+    "readinessCompletedAt": "2026-08-02T00:39:55.000Z",
+    "publicSummary": {
+      "requestAttempts": 1,
+      "status": 503,
+      "ready": false,
+      "reason": "credential_transport_unavailable",
+      "cacheControl": "no-store"
+    },
+    "publicSummaryDigest": "sha256:86faff7ec07079e02d7a14a925b3fa6800e9c9828a5c80a1c6bc4c0405378dd3"
+  },
+  "cloudflare": {
+    "accountIdDigest": "sha256:875df6874db9c1bea5bd2276eabc9a212adad519ac7dab63740642dfd1129c21",
+    "scriptName": "example-control-plane",
+    "environment": "production",
+    "deploymentId": "11111111-1111-4111-8111-111111111111",
+    "versionId": "22222222-2222-4222-8222-222222222222",
+    "deploymentCreatedAt": "2026-08-02T00:35:29.095Z",
+    "window": {
+      "from": "2026-08-02T00:39:33.000Z",
+      "to": "2026-08-02T00:39:55.000Z"
+    }
+  },
+  "diagnostic": {
+    "observedAt": "2026-08-02T00:39:50.000Z",
+    "workerTraceId": "cccccccccccccccccccccccccccccccc",
+    "failureKind": "tcp_failed",
+    "logRecordDigest": "sha256:9cbe9ea0126b5d9936622c0bd304021976810050e20dac5680380e1b7bb9ba6d"
+  },
+  "safety": {
+    "canaryDigest": "sha256:a9a9be7a2460dfef21e61e73522088ff401c4b7319b9dc6b6c729bf094957fd2"
+  },
+  "review": {
+    "reviewer": "example-reviewer",
+    "reviewedAt": "2026-08-02T01:05:00.000Z",
+    "githubRunEvidenceUrl": "https://github.com/example-owner/delivery-loop/actions/runs/100000001",
+    "workerDeploymentEvidenceUrl": "https://dash.cloudflare.com/example/deployment",
+    "workersLogsEvidenceUrl": "https://dash.cloudflare.com/example/logs",
+    "workersTracesEvidenceUrl": "https://dash.cloudflare.com/example/traces",
+    "secretScanReviewed": true
+  }
+}

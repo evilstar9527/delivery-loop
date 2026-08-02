@@ -542,6 +542,15 @@ Correlation不建立第二张汇总表：D1的split read-only views仍是Task/Ru
 
 外部验收是四方join而不是manifest自证：D1 projection回答内部lineage，GitHub REST回答Action/PR/Deployment当前对象，Workers Logs回答安全record确实持久化，Workers Traces回答该查询调用确实进入同一service/trace。`wrangler.jsonc`显式启用persisted logs/traces与100%试点采样、关闭invocation logs；官方telemetry API只以`dry=true`读取。完整边界见[Correlation 平台日志与 trace 真实外部证据验收](CorrelationPlatformE2E.md)。
 
+### GitHub App transport 诊断事实边界
+
+installation-token transport诊断不新建D1表或恢复状态。生产provider仍只向统一secure structured sink发出
+`event/operation/failureKind/requestAttempts=1`白名单记录，readiness HTTP只暴露较粗的
+`credential_transport_unavailable`。仓库外manifest把既有GitHub run/job、当时Worker deployment和
+Cloudflare trace作为不可信索引；只读verifier重新查询四方并要求同一job window、唯一log和同trace，
+不会把诊断结果投影为Task/Run/Attempt或自动触发修复。完整边界见
+[GitHub App installation-token transport 诊断外部证据验收](GitHubAppTransportDiagnosticE2E.md)。
+
 ### E2E-1 组合证据边界
 
 E2E-1不新增汇总表或第二套状态机。Meegle mapping ledger回答来源工作项如何变成唯一Task/Run，Task/Plan/Case 8与GitHub回答analysis和Plan，飞书card-action ledger回答human decision，Cloudflare live instance回答同ID Workflow是否存在；四方通过主manifest digest和同一Task/Run/Plan lineage组合，任何单方都不能替代其余authority。
