@@ -1216,6 +1216,20 @@ export {
   type CorrelationPlatformEvidenceVerifierOptions,
 } from './pilot/correlation-platform-evidence-verifier.js';
 export {
+  GitHubAppTransportDiagnosticEvidenceManifestV1Schema,
+  GitHubAppTransportDiagnosticLogRecordV1Schema,
+  GitHubAppTransportDiagnosticPublicSummaryV1Schema,
+  type GitHubAppTransportDiagnosticEvidenceManifestV1,
+  type GitHubAppTransportDiagnosticLogRecordV1,
+} from './domain/github-app-transport-diagnostic-evidence.js';
+export {
+  GitHubAppTransportDiagnosticEvidenceVerificationError,
+  verifyGitHubAppTransportDiagnosticEvidence,
+  type GitHubAppTransportDiagnosticEvidenceVerificationErrorCode,
+  type GitHubAppTransportDiagnosticEvidenceVerificationSummary,
+  type GitHubAppTransportDiagnosticEvidenceVerifierOptions,
+} from './pilot/github-app-transport-diagnostic-evidence-verifier.js';
+export {
   RequirementE2EEvidenceManifestV1Schema,
   type RequirementE2EEvidenceManifestV1,
 } from './domain/requirement-e2e-evidence.js';

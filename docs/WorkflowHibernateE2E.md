@@ -98,6 +98,13 @@ GITHUB_BASE_READINESS_BASE_BRANCH=<exact branch>
 
 installation-token POST还必须固定10秒timeout、拒绝redirect且只尝试一次；transport失败后的自动POST重试可能重复创建短期token，因此禁止。provider只把allowlisted `name/code/cause`分类为`request_timed_out|dns_failed|tcp_failed|tls_failed|request_failed`，经安全结构化sink输出一条固定`github_app_installation_token_transport_failed`记录；readiness HTTP仍只返回`credential_transport_unavailable`。日志没有repository、URL、App/installation ID、JWT/key/token、raw错误或body；日志sink失败也不得改变stage或产生第二次GitHub请求。未来读取该记录仍需owner批准有界observability read，代码契约、mock日志或现有无trace scope token不能替代production事实。
 
+获得该独立authority后只能运行只读`pnpm run e2e:github-app-transport-diagnostic`，按
+[GitHub App transport诊断外部证据验收](GitHubAppTransportDiagnosticE2E.md)绑定exact readiness run/job
+window、当时最后生效且100%的Worker deployment、唯一strict log和覆盖它的无错误trace。工具要求GitHub
+Actions read、Cloudflare deployment read、Cloudflare observability query三枚互异token，telemetry固定
+`dry=true`且window逐字等于job起止时间；成功只输出安全ID、failureKind和固定计数，不返回raw
+log/trace/error/account ID。live verifier exit 0仍只诊断历史失败，不授权修复或重发readiness。
+
 本机到Worker host的TCP/TLS路径持续失败时，不得注册self-hosted Runner或把operations token放进临时脚本。受审替代面是manual-only [GitHub base readiness workflow](../.github/workflows/github-base-readiness.yml)：`preflight` job先在GitHub-hosted Runner上以固定public Worker origin运行同一零HTTP DNS/TCP/TLS检查，且没有Environment/Secret；只有它成功，`readiness` job才进入专用`phase1-readiness` Environment。该job固定owner actor、main ref、exact dispatch SHA、`run_attempt == 1`、`contents: read`和一次性caller，repository/base/origin都不能由input或variable覆盖；GitHub rerun、其他actor/ref或attempt 2均在job开始前skip。
 
 首次dispatch前必须从GitHub API/settings外部证明：`phase1-readiness`已预创建；required reviewer恰为owner；deployment branch policy为`protected_branches=true/custom_branch_policies=false`；Environment Secret inventory恰含`DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN`，而repository Secret inventory不含同名项。GitHub拒绝创建以`GITHUB_`开头的Actions Secret；workflow只在job进程内把该非保留Secret映射为CLI要求的`GITHUB_BASE_READINESS_OPERATIONS_TOKEN`。不要先运行workflow来“顺便创建”Environment，因为GitHub会创建无reviewer的环境。token只能在获得新的一次窄authority后经GitHub UI或stdin写入Environment，不进argv/日志/仓库；Environment配置与Secret名称不能证明值正确。随后dispatch只允许从受保护main发起；preflight成功后，owner还要把批准绑定到exact run ID/head SHA再点Environment approval。该批准最多释放当前run attempt的一次GET；无200时禁止rerun job或重新dispatch，新的run必须重新取得独立authority。workflow或Environment bootstrap本身不等于readiness 200、Task authority或hibernate证据。
