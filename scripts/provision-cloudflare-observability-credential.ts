@@ -1,7 +1,5 @@
 import { spawn } from 'node:child_process';
-import { constants } from 'node:fs';
-import { open, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import {
   CLOUDFLARE_OBSERVABILITY_KEYCHAIN_SERVICE,
   CloudflareObservabilityCredentialProvisioningAuthorizationV1Schema,
@@ -11,61 +9,16 @@ import {
   CloudflareObservabilityCredentialProvisioningError,
   provisionCloudflareObservabilityCredential,
 } from '../src/pilot/cloudflare-observability-credential-provisioner.js';
-import { SecretScanner } from '../src/security/redaction.js';
+import {
+  StrictAuthorityReadError,
+  readStrictExternalAuthority,
+} from './read-strict-external-authority.js';
 
-const MAX_AUTHORITY_BYTES = 64 * 1_024;
 const KEYCHAIN_TIMEOUT_MS = 30_000;
 const KEYCHAIN_ACCOUNT = 'delivery-loop-transport-diagnostic';
 
-class AuthorityReadError extends Error {
-  constructor(readonly kind: 'unavailable' | 'invalid') { super(kind); }
-}
-
 function env(name: string): string {
   return process.env[name]?.trim() ?? '';
-}
-
-async function readAuthority(
-  path: string,
-): Promise<CloudflareObservabilityCredentialProvisioningAuthorizationV1> {
-  if (!isAbsolute(path)) throw new AuthorityReadError('invalid');
-  const resolved = resolve(path);
-  let repository: string;
-  try { repository = await realpath(resolve('.')); }
-  catch { throw new AuthorityReadError('unavailable'); }
-  let handle;
-  try { handle = await open(resolved, constants.O_RDONLY | constants.O_NOFOLLOW); }
-  catch { throw new AuthorityReadError('unavailable'); }
-  try {
-    let file: string;
-    try { file = await realpath(resolved); }
-    catch { throw new AuthorityReadError('unavailable'); }
-    const fromRepository = relative(repository, file);
-    if (
-      fromRepository === '' ||
-      (!fromRepository.startsWith('..') && !isAbsolute(fromRepository))
-    ) throw new AuthorityReadError('invalid');
-    const metadata = await handle.stat();
-    if (
-      !metadata.isFile() || (metadata.mode & 0o077) !== 0 ||
-      metadata.size < 1 || metadata.size > MAX_AUTHORITY_BYTES
-    ) throw new AuthorityReadError('invalid');
-    const source = await handle.readFile('utf8');
-    if (
-      Buffer.byteLength(source, 'utf8') > MAX_AUTHORITY_BYTES ||
-      new SecretScanner().scanText(source, '$.authority').length > 0
-    ) {
-      throw new AuthorityReadError('invalid');
-    }
-    let raw: unknown;
-    try { raw = JSON.parse(source) as unknown; }
-    catch { throw new AuthorityReadError('invalid'); }
-    const parsed = CloudflareObservabilityCredentialProvisioningAuthorizationV1Schema.safeParse(raw);
-    if (!parsed.success) throw new AuthorityReadError('invalid');
-    return parsed.data;
-  } finally {
-    await handle.close();
-  }
 }
 
 async function storeMacosKeychainSecret(secret: string): Promise<void> {
@@ -160,9 +113,14 @@ async function main(): Promise<void> {
     return;
   }
   let authority: CloudflareObservabilityCredentialProvisioningAuthorizationV1;
-  try { authority = await readAuthority(required.authorityFile); }
+  try {
+    authority = await readStrictExternalAuthority(
+      required.authorityFile,
+      CloudflareObservabilityCredentialProvisioningAuthorizationV1Schema,
+    );
+  }
   catch (error) {
-    const kind = error instanceof AuthorityReadError ? error.kind : 'invalid';
+    const kind = error instanceof StrictAuthorityReadError ? error.kind : 'invalid';
     console.error(`cloudflare-observability-credential-provisioning: authority is ${kind}`);
     process.exitCode = kind === 'unavailable' ? 2 : 1;
     return;
