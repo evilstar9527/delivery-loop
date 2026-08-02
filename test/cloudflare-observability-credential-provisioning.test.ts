@@ -24,7 +24,7 @@ const PERMISSION_GROUP_ID = '22222222-2222-4222-8222-222222222222';
 const TOKEN_ID = '33333333-3333-4333-8333-333333333333';
 const AUTHORIZED_AT = '2026-08-02T02:00:00.000Z';
 const AUTHORITY_EXPIRES_AT = '2026-08-02T02:20:00.000Z';
-const TOKEN_EXPIRES_AT = '2026-08-03T02:30:00.000Z';
+const TOKEN_EXPIRES_AT = '2026-08-09T02:20:00.000Z';
 const NOW = new Date('2026-08-02T02:05:00.000Z');
 const TOKEN_NAME = 'delivery-loop-workers-observability-read-round215';
 const KEYCHAIN_SERVICE =
@@ -289,17 +289,17 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
     }
   });
 
-  it('requires a backend-compatible 24-hour floor without exceeding a 25-hour TTL', async () => {
+  it('requires seven full days after authority expiry without exceeding seven days 30 minutes', async () => {
     const valid = await authorization();
     const tooShort = {
       ...valid,
-      tokenExpiresAt: '2026-08-03T02:19:59.999Z',
+      tokenExpiresAt: '2026-08-09T02:19:59.999Z',
     };
     tooShort.authorityDigest =
       await cloudflareObservabilityCredentialProvisioningAuthorityDigest(tooShort);
     const tooLong = {
       ...valid,
-      tokenExpiresAt: '2026-08-03T03:00:00.001Z',
+      tokenExpiresAt: '2026-08-09T02:30:00.001Z',
     };
     tooLong.authorityDigest =
       await cloudflareObservabilityCredentialProvisioningAuthorityDigest(tooLong);

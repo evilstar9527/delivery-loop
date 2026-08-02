@@ -48,6 +48,9 @@ exact token name 只允许 0 或 1 个匹配：
 - exact account ID digest、target token name、`not_before` 与 `expires_on`；
 - inventory GET 1；permission-group/keychain/verify/telemetry/create/delete/retry 全部 0。
 
+为能裁决升级前的短期source和当前Dashboard支持的7天source，reconciliation不设置最短source TTL，但拒绝
+`tokenExpiresAt - tokenNotBefore`超过7天30分钟；它只核对source已经绑定的lifecycle，不自行延长凭证。
+
 bootstrap token、account ID 与 credential-shaped canary 只进入当前进程环境，不进入 authority、argv、
 stdout/stderr、artifact、PR 或 `PROGRESS.md`。
 

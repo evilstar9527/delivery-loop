@@ -6,6 +6,7 @@ const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const TOKEN_NAME_PATTERN =
   /^delivery-loop-workers-observability-read-[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const TIMESTAMP_SCHEMA = z.iso.datetime({ offset: true });
+const MAX_SOURCE_TOKEN_TTL_MS = (7 * 24 * 60 + 30) * 60_000;
 
 export const CloudflareObservabilityCredentialReconciliationEffectsV1Schema = z.object({
   tokenInventoryReads: z.literal(1),
@@ -42,9 +43,12 @@ export const CloudflareObservabilityCredentialReconciliationAuthorizationV1Schem
   }
   if (
     tokenExpiresAt <= tokenNotBefore ||
-    tokenExpiresAt - tokenNotBefore > 25 * 60 * 60_000
+    tokenExpiresAt - tokenNotBefore > MAX_SOURCE_TOKEN_TTL_MS
   ) {
-    context.addIssue({ code: 'custom', message: 'source token TTL must be at most 25 hours' });
+    context.addIssue({
+      code: 'custom',
+      message: 'source token TTL must be at most seven days 30 minutes',
+    });
   }
 });
 

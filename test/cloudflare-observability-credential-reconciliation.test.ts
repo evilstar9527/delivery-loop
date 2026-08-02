@@ -161,12 +161,15 @@ describe('Cloudflare Workers Observability post-create reconciliation', () => {
       .resolves.toBe(valid.authorityDigest);
   });
 
-  it('accepts the new backend-compatible lifecycle while retaining a 25-hour ceiling', async () => {
+  it('accepts legacy sources and the seven-day lifecycle with a seven-day 30-minute ceiling', async () => {
     await expect(authorization({
       tokenExpiresAt: '2026-08-03T13:40:00.000Z',
     })).resolves.toMatchObject({ tokenExpiresAt: '2026-08-03T13:40:00.000Z' });
     await expect(authorization({
-      tokenExpiresAt: '2026-08-03T14:02:49.301Z',
+      tokenExpiresAt: '2026-08-09T13:32:49.300Z',
+    })).resolves.toMatchObject({ tokenExpiresAt: '2026-08-09T13:32:49.300Z' });
+    await expect(authorization({
+      tokenExpiresAt: '2026-08-09T13:32:49.301Z',
     })).rejects.toBeDefined();
   });
 
