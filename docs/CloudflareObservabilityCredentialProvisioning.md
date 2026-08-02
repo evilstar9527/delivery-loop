@@ -46,10 +46,11 @@ com.cloudflare.api.account.<exact-account-id>: "*"
 ```
 
 Cloudflare OpenAPI把`expires_on`声明为普通RFC 3339时间，但没有公开服务端最短TTL。真实create在其他字段与
-官方SDK/Terraform request shape一致时，以小时级TTL固定返回4xx且reconciliation为`absent`；Cloudflare
-Dashboard的Account Token表单也只提供按天的到期选项，官方Terraform account-token acceptance使用至少次日
-到期。为与真实服务端契约收敛，同时把权限窗口限制在最小可用范围，本工具要求target token在authority完整
-窗口结束后至少再存活24小时，且从`authorizedAt`起总TTL不超过25小时。这不是把Dashboard的7天预设照搬进来。
+官方SDK/Terraform request shape一致时，先后以约2小时和24～25小时TTL固定返回4xx，独立reconciliation均为
+`absent`；把target名称从64字符缩到50字符后仍得到相同结果，排除了名称上限。Cloudflare Dashboard的
+Account Token表单只提供按天的到期选项，最短可见预设为7天。为与已验证的产品入口收敛，同时把权限窗口限制
+在最小可用范围，本工具要求target token在authority完整窗口结束后恰好留下至少7天，并从`authorizedAt`起
+把总TTL限制在7天30分钟内。7天live create尚须受保护交付后单独验证；本地契约不能冒充成功外部事实。
 
 ## Authority 与固定 effect
 
@@ -62,7 +63,7 @@ Dashboard的Account Token表单也只提供按天的到期选项，官方Terrafo
 credential。owner 仍须在仓库外批准 exact digest。schema 同时固定：
 
 - authority 生效窗口最多 30 分钟，进程必须在半开区间 `[authorizedAt, expiresAt)` 内开始；
-- target token 在完整 authority 窗口结束后至少再存活24小时，且从`authorizedAt`起总TTL不超过25小时；
+- target token 在完整 authority 窗口结束后至少再存活7天，且从`authorizedAt`起总TTL不超过7天30分钟；
 - token name 必须使用 `delivery-loop-workers-observability-read-*` 专用前缀；
 - telemetry probe 绑定一个已经结束、最长 60 秒的 exact Worker service/window；
 - Keychain service 固定为
