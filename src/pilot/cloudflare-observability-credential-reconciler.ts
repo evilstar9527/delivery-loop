@@ -193,6 +193,7 @@ function summaryBase(
     authorizationId: authorization.authorizationId,
     sourceProvisioningAuthorizationId: authorization.sourceProvisioningAuthorizationId,
     sourceProvisioningAuthorityDigest: authorization.sourceProvisioningAuthorityDigest,
+    sourceProvisioningAuthorizedAt: authorization.sourceProvisioningAuthorizedAt,
     accountIdDigest: authorization.accountIdDigest,
     tokenName: authorization.tokenName,
     tokenNotBefore: authorization.tokenNotBefore,
@@ -236,10 +237,13 @@ export async function reconcileCloudflareObservabilityCredential(
       status: 'absent',
     });
   }
+  const notBeforeMatches = authorization.tokenNotBefore === null
+    ? match.notBefore === undefined
+    : match.notBefore !== undefined &&
+      Date.parse(match.notBefore) === Date.parse(authorization.tokenNotBefore);
   if (
     !['active', 'disabled', 'expired'].includes(match.status) ||
-    match.notBefore === undefined || match.expiresAt === undefined ||
-    Date.parse(match.notBefore) !== Date.parse(authorization.tokenNotBefore) ||
+    !notBeforeMatches || match.expiresAt === undefined ||
     Date.parse(match.expiresAt) !== Date.parse(authorization.tokenExpiresAt)
   ) fail('target_mismatch');
   return CloudflareObservabilityCredentialReconciliationSummaryV1Schema.parse({

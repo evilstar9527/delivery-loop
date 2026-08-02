@@ -250,10 +250,10 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
           permission_groups: [{ id: PERMISSION_GROUP_ID }],
           resources: { [`com.cloudflare.api.account.${ACCOUNT_ID}`]: '*' },
         }],
-        not_before: AUTHORIZED_AT,
         expires_on: TOKEN_EXPIRES_AT,
       },
     });
+    expect(requests[2]?.body).not.toHaveProperty('not_before');
     expect(requests[4]?.body).toEqual({
       view: 'events',
       dry: true,

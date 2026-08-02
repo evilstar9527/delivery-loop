@@ -30,8 +30,9 @@ shape，raw response、account ID、token ID 和错误正文不得输出或落�
 exact token name 只允许 0 或 1 个匹配：
 
 - 0 个输出 `status=absent`；
-- 1 个还必须匹配 source create body 的 `not_before` 与 `expires_on`，时间按 instant 比较，允许 Cloudflare
-  使用等价 RFC 3339 表达；状态只接受 `active|disabled|expired`，token ID 只输出 SHA-256 digest；
+- 1 个还必须匹配 source create body 的 lifecycle：新source把`tokenNotBefore`绑定为`null`并要求inventory中
+  `not_before`缺省，历史source仍把时间按instant比较；`expires_on`始终按instant比较，允许Cloudflare使用等价
+  RFC 3339表达。状态只接受`active|disabled|expired`，token ID只输出SHA-256 digest；
 - 多个同名、lifecycle 漂移、未知状态或非法 ID 都 fail-closed，不能选择其中一枚或继续 mutation。
 
 ## Authority 与固定 effect
@@ -44,12 +45,13 @@ exact token name 只允许 0 或 1 个匹配：
 `authorityDigest` 是删除自身字段后的 canonical SHA-256，只用于发现文件漂移，不是签名或自授权。schema
 把最长 30 分钟的执行窗口绑定到：
 
-- source provisioning authorization ID 与 canonical authority digest；
-- exact account ID digest、target token name、`not_before` 与 `expires_on`；
+- source provisioning authorization ID、canonical authority digest与source `authorizedAt`；
+- exact account ID digest、target token name、nullable `not_before` expectation与`expires_on`；
 - inventory GET 1；permission-group/keychain/verify/telemetry/create/delete/retry 全部 0。
 
-为能裁决升级前的短期source和当前Dashboard支持的7天source，reconciliation不设置最短source TTL，但拒绝
-`tokenExpiresAt - tokenNotBefore`超过7天30分钟；它只核对source已经绑定的lifecycle，不自行延长凭证。
+为能裁决升级前的短期source和当前7天source，reconciliation不设置最短source TTL，但拒绝
+`tokenExpiresAt - sourceProvisioningAuthorizedAt`超过7天30分钟；它只核对source已经绑定的lifecycle，不自行
+延长凭证。nullable `tokenNotBefore`只表达source request是省略还是显式发送该字段，不替代TTL基准。
 
 bootstrap token、account ID 与 credential-shaped canary 只进入当前进程环境，不进入 authority、argv、
 stdout/stderr、artifact、PR 或 `PROGRESS.md`。
