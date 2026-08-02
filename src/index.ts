@@ -1384,6 +1384,7 @@ export {
   provisionCloudflareObservabilityCredential,
   type CloudflareObservabilityCredentialProvisionerOptions,
   type CloudflareObservabilityCredentialProvisioningErrorCode,
+  type CloudflareObservabilityCredentialProvisioningFailureKind,
   type CloudflareObservabilityCredentialProvisioningStage,
 } from './pilot/cloudflare-observability-credential-provisioner.js';
 export {

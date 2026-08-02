@@ -39,16 +39,34 @@ export type CloudflareObservabilityCredentialProvisioningStage =
   | 'token_verify'
   | 'telemetry_probe';
 
+export type CloudflareObservabilityCredentialProvisioningFailureKind =
+  | 'transport_unavailable'
+  | 'auth_rejected'
+  | 'request_rejected'
+  | 'rate_limited'
+  | 'upstream_unavailable'
+  | 'response_invalid';
+
 export class CloudflareObservabilityCredentialProvisioningError extends Error {
   readonly stage: CloudflareObservabilityCredentialProvisioningStage | undefined;
 
   constructor(
     readonly code: CloudflareObservabilityCredentialProvisioningErrorCode,
     stage?: CloudflareObservabilityCredentialProvisioningStage,
+    readonly failureKind?: CloudflareObservabilityCredentialProvisioningFailureKind,
   ) {
     super(`Cloudflare observability credential provisioning failed: ${code}`);
     this.name = 'CloudflareObservabilityCredentialProvisioningError';
     this.stage = stage;
+  }
+}
+
+class CloudflareTokenCreateAttemptError extends Error {
+  constructor(
+    readonly failureKind: CloudflareObservabilityCredentialProvisioningFailureKind,
+  ) {
+    super(failureKind);
+    this.name = 'CloudflareTokenCreateAttemptError';
   }
 }
 
@@ -347,19 +365,60 @@ async function createToken(
   authorization: CloudflareObservabilityCredentialProvisioningAuthorizationV1,
   permissionGroupId: string,
 ): Promise<{ id: string; value: string }> {
-  const response = await externalResponse(
-    fetcher,
-    `${origin}/client/v4/accounts/${encodeURIComponent(accountId)}/tokens`,
-    {
-      method: 'POST',
-      headers: tokenHeaders(bootstrapToken, true),
-      body: JSON.stringify(createBody(authorization, accountId, permissionGroupId)),
-    },
-    'token_create_unavailable',
-    'token_create_response_invalid',
-    [bootstrapToken, canary],
-  );
-  return createdSecret(response, authorization, bootstrapToken, canary);
+  let response: Response;
+  try {
+    response = await fetcher(
+      `${origin}/client/v4/accounts/${encodeURIComponent(accountId)}/tokens`,
+      {
+        method: 'POST',
+        headers: tokenHeaders(bootstrapToken, true),
+        body: JSON.stringify(createBody(authorization, accountId, permissionGroupId)),
+        redirect: 'error',
+        signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+      },
+    );
+  } catch {
+    throw new CloudflareTokenCreateAttemptError('transport_unavailable');
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    if (response.status === 401 || response.status === 403) {
+      throw new CloudflareTokenCreateAttemptError('auth_rejected');
+    }
+    if (response.status === 429) {
+      throw new CloudflareTokenCreateAttemptError('rate_limited');
+    }
+    if (response.status >= 400 && response.status < 500) {
+      throw new CloudflareTokenCreateAttemptError('request_rejected');
+    }
+    if (response.status >= 500) {
+      throw new CloudflareTokenCreateAttemptError('upstream_unavailable');
+    }
+    throw new CloudflareTokenCreateAttemptError('response_invalid');
+  }
+  if (
+    !responseSizeValid(response) ||
+    /\brel\s*=\s*["']?next["']?/i.test(response.headers.get('link') ?? '')
+  ) {
+    await response.body?.cancel();
+    throw new CloudflareTokenCreateAttemptError('response_invalid');
+  }
+  let raw: string | null;
+  try { raw = await boundedText(response); }
+  catch { throw new CloudflareTokenCreateAttemptError('response_invalid'); }
+  if (raw === null) throw new CloudflareTokenCreateAttemptError('response_invalid');
+  if (
+    new SecretScanner({ secrets: [bootstrapToken, canary] })
+      .scanText(raw, '$.response').length > 0
+  ) throw new CloudflareTokenCreateAttemptError('response_invalid');
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw) as unknown; }
+  catch { throw new CloudflareTokenCreateAttemptError('response_invalid'); }
+  try {
+    return createdSecret({ raw, parsed }, authorization, bootstrapToken, canary);
+  } catch {
+    throw new CloudflareTokenCreateAttemptError('response_invalid');
+  }
 }
 
 async function verifyCreatedToken(
@@ -488,10 +547,13 @@ export async function provisionCloudflareObservabilityCredential(
       authorization,
       permissionGroupId,
     );
-  } catch {
+  } catch (error) {
     throw new CloudflareObservabilityCredentialProvisioningError(
       'created_unverified',
       'token_create',
+      error instanceof CloudflareTokenCreateAttemptError
+        ? error.failureKind
+        : 'response_invalid',
     );
   }
   try { await options.storeSecret(created.value); }
