@@ -210,6 +210,26 @@ function inventoryValid(result: unknown, resultInfo: unknown): result is unknown
   });
 }
 
+function permissionGroupResultInfoValid(result: readonly unknown[], raw: unknown): boolean {
+  if (raw === undefined) return true;
+  const info = record(raw);
+  if (info === null) return false;
+  const optionalInteger = (key: string, minimum: number): number | undefined | null => {
+    const value = info[key];
+    if (value === undefined) return undefined;
+    return Number.isSafeInteger(value) && Number(value) >= minimum ? Number(value) : null;
+  };
+  const count = optionalInteger('count', 0);
+  const page = optionalInteger('page', 1);
+  const perPage = optionalInteger('per_page', 1);
+  const totalCount = optionalInteger('total_count', 0);
+  if (count === null || page === null || perPage === null || totalCount === null) return false;
+  return (count === undefined || count === result.length) &&
+    (page === undefined || page === 1) &&
+    (perPage === undefined || perPage >= result.length) &&
+    (totalCount === undefined || totalCount >= result.length);
+}
+
 async function readTokenInventory(
   fetcher: typeof fetch,
   origin: string,
@@ -254,11 +274,9 @@ async function readPermissionGroup(
   assertNoResponseSecrets(response, [bootstrapToken, canary]);
   const envelope = record(response.parsed);
   const result = envelopeResult(response.parsed, 'permission_groups_invalid');
-  const resultInfo = record(envelope?.result_info);
   if (
-    !Array.isArray(result) || resultInfo === null || resultInfo.page !== 1 ||
-    resultInfo.count !== result.length || resultInfo.total_count !== result.length ||
-    resultInfo.total_pages !== 1
+    !Array.isArray(result) ||
+    !permissionGroupResultInfoValid(result, envelope?.result_info)
   ) fail('permission_groups_invalid');
   const matches = result.filter((entry) =>
     record(entry)?.name === CLOUDFLARE_OBSERVABILITY_PERMISSION_GROUP_NAME

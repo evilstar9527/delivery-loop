@@ -35,8 +35,11 @@ Secret/installation 修改、repair、restart/recreate、rotation、token delete
 
 permission group ID 不是稳定配置，严禁硬编码。工具按 exact name `Workers Observability Read` 与 exact
 scope `com.cloudflare.api.account` 请求 discovery，并要求 live response 中唯一匹配；0 个、多个、scope
-漂移或非法 ID 都在 create 前停止。create body 只允许一条 allow policy、一个 permission group 和一个
-resource：
+漂移或非法 ID 都在 create 前停止。该 endpoint 的当前 OpenAPI 不声明分页 query，collection
+`result_info` 可缺省；若存在，只能把 `count` 与当前 filtered result 对齐。`total_count` 的官方语义是未应用
+search parameters 时的总数，不能错误要求它等于 filtered result，也不能依赖 schema 中不存在的
+`total_pages`。响应 `Link rel=next`、非第一页、count 不一致或容量小于结果数仍 fail-closed。create body
+只允许一条 allow policy、一个 permission group 和一个 resource：
 
 ```text
 com.cloudflare.api.account.<exact-account-id>: "*"
