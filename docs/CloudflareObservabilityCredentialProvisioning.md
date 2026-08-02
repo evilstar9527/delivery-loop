@@ -119,6 +119,13 @@ inventory/revoke/修复都需要新的独立 authority，不能复用原 session
 HTTP 401/403、其他4xx、429、5xx与收到响应前失败分别映射到固定类别；成功响应的pagination/size/JSON/
 secret shape漂移统一`response_invalid`。该分类只用于定位，不能把4xx或transport解释为确定未创建，仍必须先
 执行独立post-create reconciliation，也不能据此自动retry。
+
+非2xx create response不再无条件丢弃全部诊断：工具先应用同一1 MiB/10秒/无redirect边界，并在JSON parse前
+扫描bootstrap token、account ID、canary与全部已知credential shape。只有Cloudflare标准错误envelope中唯一的
+非负安全整数code可以作为`cloudflareErrorCode=<integer>`附加到固定错误；message、raw status/body/header、
+request字段和多码/非法码全部丢弃。body超限、分页、解析失败或命中任一Secret时也退化为没有provider code的
+既有failureKind。数字code只缩小下一轮人工裁决范围，不改变`created_unverified`、独立reconciliation和零retry
+要求。
 其中只读确认exact target存在性的恢复入口固定为
 [post-create reconciliation](CloudflareObservabilityCredentialReconciliation.md)；它没有create/delete/Keychain/
 verify/telemetry路径，也不能从`present|absent`自行推导下一步mutation。

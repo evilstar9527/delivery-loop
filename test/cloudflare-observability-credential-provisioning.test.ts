@@ -87,6 +87,7 @@ interface FakeCloudflareOptions {
   createExtra?: Record<string, unknown>;
   verifyStatus?: string;
   createStatus?: number;
+  createErrorBody?: unknown;
   throwAtCreate?: boolean;
   failAt?: 'inventory' | 'permission_groups' | 'create' | 'verify' | 'telemetry';
 }
@@ -145,7 +146,9 @@ function fakeCloudflare(
     if (url.pathname === tokenBase && method === 'POST') {
       if (options.throwAtCreate === true) throw new Error('unsafe create transport detail');
       if (options.createStatus !== undefined) {
-        return new Response('unsafe create response detail', { status: options.createStatus });
+        return options.createErrorBody === undefined
+          ? new Response('unsafe create response detail', { status: options.createStatus })
+          : Response.json(options.createErrorBody, { status: options.createStatus });
       }
       if (options.failAt === 'create') return new Response('', { status: 403 });
       return envelope({
@@ -192,10 +195,12 @@ function code(
   expected: string,
   stage?: string,
   failureKind?: string,
+  cloudflareErrorCode?: number,
 ): (error: unknown) => boolean {
   return (error) => error instanceof CloudflareObservabilityCredentialProvisioningError &&
     error.code === expected && (stage === undefined || error.stage === stage) &&
-    (failureKind === undefined || error.failureKind === failureKind);
+    (failureKind === undefined || error.failureKind === failureKind) &&
+    (cloudflareErrorCode === undefined || error.cloudflareErrorCode === cloudflareErrorCode);
 }
 
 describe('Cloudflare Workers Observability credential provisioning', () => {
@@ -395,6 +400,83 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
         value,
         provisionerOptions(fakeCloudflare(fakeOptions, requests)),
       )).rejects.toSatisfy(code('created_unverified', 'token_create', failureKind));
+      expect(requests).toHaveLength(3);
+      expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
+    }
+  });
+
+  it('extracts only a unique integer Cloudflare error code from a bounded safe create body', async () => {
+    const value = await authorization();
+    const requests: ObservedRequest[] = [];
+    await expect(provisionCloudflareObservabilityCredential(
+      value,
+      provisionerOptions(fakeCloudflare({
+        createStatus: 422,
+        createErrorBody: {
+          success: false,
+          errors: [{ code: 1004, message: 'invalid expires_on' }],
+          messages: [],
+          result: null,
+        },
+      }, requests)),
+    )).rejects.toSatisfy(code(
+      'created_unverified',
+      'token_create',
+      'request_rejected',
+      1004,
+    ));
+    expect(requests).toHaveLength(3);
+    expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
+  });
+
+  it('drops the provider code when the create error body is unsafe or ambiguous', async () => {
+    const value = await authorization();
+    for (const createErrorBody of [
+      {
+        success: false,
+        errors: [{ code: 1004, message: CANARY }],
+        messages: [],
+        result: null,
+      },
+      {
+        success: false,
+        errors: [{ code: 1004, message: ACCOUNT_ID }],
+        messages: [],
+        result: null,
+      },
+      {
+        success: false,
+        errors: [{ code: 1004 }, { code: 1005 }],
+        messages: [],
+        result: null,
+      },
+      {
+        success: false,
+        errors: [{ code: '1004' }],
+        messages: [],
+        result: null,
+      },
+    ]) {
+      const requests: ObservedRequest[] = [];
+      let observed: unknown;
+      try {
+        await provisionCloudflareObservabilityCredential(
+          value,
+          provisionerOptions(fakeCloudflare({ createStatus: 422, createErrorBody }, requests)),
+        );
+      } catch (error) {
+        observed = error;
+      }
+      expect(observed).toBeInstanceOf(CloudflareObservabilityCredentialProvisioningError);
+      expect(observed).toMatchObject({
+        code: 'created_unverified',
+        stage: 'token_create',
+        failureKind: 'request_rejected',
+      });
+      expect((observed as CloudflareObservabilityCredentialProvisioningError)
+        .cloudflareErrorCode).toBeUndefined();
+      expect(String(observed)).not.toContain(CANARY);
+      expect(String(observed)).not.toContain(ACCOUNT_ID);
       expect(requests).toHaveLength(3);
       expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
     }
