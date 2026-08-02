@@ -35,14 +35,54 @@ verifier 按固定顺序交叉核对四类事实：
 GitHub run/job、deployment、log和trace任一单源都不能替代其余来源；manifest中的failureKind、digest、
 review URL或reviewer字段也不能覆盖live response。
 
+## 无 trace ID 的一次性发现
+
+formal verifier需要manifest先给出trace ID，但临时脚本或复制raw Logs响应会破坏有界、Secret-safe和可重跑
+纪律。仓库因此提供一个窄的events discovery入口。仓库外collection request参考
+[`github-app-transport-diagnostic-collection-v1.example.json`](../schemas/github-app-transport-diagnostic-collection-v1.example.json)，
+只绑定repository、run/head/job、exact window及deployment/version；它是不可信expected索引，不是owner
+authority，也不能授权任何API请求。
+
+```text
+DELIVERY_LOOP_GITHUB_APP_TRANSPORT_DIAGNOSTIC_COLLECTION=1
+GITHUB_APP_TRANSPORT_DIAGNOSTIC_COLLECTION_REQUEST_FILE=/absolute/path/outside-repository/collection.json
+GITHUB_APP_TRANSPORT_DIAGNOSTIC_GITHUB_READ_TOKEN=<single-repository-read-token>
+GITHUB_APP_TRANSPORT_DIAGNOSTIC_CLOUDFLARE_DEPLOYMENT_READ_TOKEN=<deployment-read-token>
+GITHUB_APP_TRANSPORT_DIAGNOSTIC_CLOUDFLARE_OBSERVABILITY_TOKEN=<telemetry-query-token>
+GITHUB_APP_TRANSPORT_DIAGNOSTIC_CLOUDFLARE_ACCOUNT_ID=<account-id>
+GITHUB_APP_TRANSPORT_DIAGNOSTIC_CANARY_SECRET=<synthetic-credential-shaped-canary>
+GITHUB_APP_TRANSPORT_DIAGNOSTIC_CLOUDFLARE_API_URL=<可选；默认https://api.cloudflare.com>
+```
+
+运行：
+
+```bash
+pnpm run e2e:github-app-transport-diagnostic-collect
+```
+
+collector最多发送一次Cloudflare `events` query，不带trace ID filter，但仍固定service、event、component、
+operation和`requestAttempts=1`，`limit=2`且要求exact window、`dry=true`、唯一未截断strict log。三枚token
+必须原文互异并全部进入response Secret scan；只有observability token进入该请求的Authorization header，
+另外两枚不发送。默认未opt-in、配置不齐或request不可读为exit 2且零网络；403、timeout或任何失败都不
+重试。
+
+exit 0只输出可安全转入formal manifest的collection/run/head/attempt/job/deployment/version、`observedAt`、trace ID、
+allowlist failureKind和canonical log digest，以及`cloudflareLogQueries=1`、`plaintextLeaks=0`、
+`formalVerification=still_required`。它不写manifest、不生成reviewer/reviewedAt或Dashboard review，也不查询
+trace/deployment/GitHub；输出、request文件和exit 0均不能替代真人review或formal verifier。
+
+若一个owner authority同时覆盖discovery和formal verification，请求上界必须明确包含collector的一次events，
+以及formal verifier自己的GitHub run/jobs/log、Cloudflare deployment、一次events和一次traces查询；不能把
+两阶段合称“一次events”。任一阶段失败都停止，不自动重跑collector或verifier。
+
 ## manifest 采集
 
 - 在仓库外创建manifest，形状参考
   [`github-app-transport-diagnostic-evidence-v1.example.json`](../schemas/github-app-transport-diagnostic-evidence-v1.example.json)。
   示例全部是synthetic值，`example-only-not-live`不是production证据。
 - 固定失败readiness job的exact开始/结束时间；Cloudflare telemetry窗口必须逐字相同且不超过10分钟。
-- 经已批准的Cloudflare Logs人工查询取得窗口内唯一诊断的32位worker trace ID、`observedAt`、strict
-  source和failureKind；对完整strict source计算canonical SHA-256。不得把raw log、trace、错误、URL
+- 经已批准的上述collector（推荐）或Cloudflare Logs人工查询取得窗口内唯一诊断的32位worker trace ID、
+  `observedAt`、strict source和failureKind；对完整strict source计算canonical SHA-256。不得把raw log、trace、错误、URL
   query、JWT/key/token、GitHub App/installation ID或response body复制到manifest或账本。
 - `accountId`原文只在当前进程环境中使用，manifest只保存canonical digest。创建仓库外
   credential-shaped synthetic canary，同样只把digest写入manifest。

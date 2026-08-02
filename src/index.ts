@@ -1216,12 +1216,22 @@ export {
   type CorrelationPlatformEvidenceVerifierOptions,
 } from './pilot/correlation-platform-evidence-verifier.js';
 export {
+  GitHubAppTransportDiagnosticCollectionRequestV1Schema,
   GitHubAppTransportDiagnosticEvidenceManifestV1Schema,
   GitHubAppTransportDiagnosticLogRecordV1Schema,
+  GitHubAppTransportDiagnosticObservationV1Schema,
   GitHubAppTransportDiagnosticPublicSummaryV1Schema,
+  type GitHubAppTransportDiagnosticCollectionRequestV1,
   type GitHubAppTransportDiagnosticEvidenceManifestV1,
   type GitHubAppTransportDiagnosticLogRecordV1,
+  type GitHubAppTransportDiagnosticObservationV1,
 } from './domain/github-app-transport-diagnostic-evidence.js';
+export {
+  GitHubAppTransportDiagnosticCollectionError,
+  collectGitHubAppTransportDiagnosticObservation,
+  type GitHubAppTransportDiagnosticCollectionErrorCode,
+  type GitHubAppTransportDiagnosticCollectorOptions,
+} from './pilot/github-app-transport-diagnostic-collector.js';
 export {
   GitHubAppTransportDiagnosticEvidenceVerificationError,
   verifyGitHubAppTransportDiagnosticEvidence,
