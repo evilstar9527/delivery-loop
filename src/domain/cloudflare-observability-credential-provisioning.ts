@@ -7,6 +7,8 @@ const TOKEN_NAME_PATTERN =
   /^delivery-loop-workers-observability-read-[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const SCRIPT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,254}$/;
 const TIMESTAMP_SCHEMA = z.iso.datetime({ offset: true });
+const MIN_TOKEN_TTL_AFTER_AUTHORITY_MS = 24 * 60 * 60_000;
+const MAX_TOKEN_TTL_FROM_AUTHORIZATION_MS = 25 * 60 * 60_000;
 
 export const CLOUDFLARE_OBSERVABILITY_PERMISSION_GROUP_NAME =
   'Workers Observability Read' as const;
@@ -53,10 +55,13 @@ export const CloudflareObservabilityCredentialProvisioningAuthorizationV1Schema 
     context.addIssue({ code: 'custom', message: 'authority window must be at most 30 minutes' });
   }
   if (
-    tokenExpiresAt <= expiresAt ||
-    tokenExpiresAt - authorizedAt > 2 * 60 * 60_000
+    tokenExpiresAt - expiresAt < MIN_TOKEN_TTL_AFTER_AUTHORITY_MS ||
+    tokenExpiresAt - authorizedAt > MAX_TOKEN_TTL_FROM_AUTHORIZATION_MS
   ) {
-    context.addIssue({ code: 'custom', message: 'target token TTL must be at most two hours' });
+    context.addIssue({
+      code: 'custom',
+      message: 'target token TTL must leave 24 hours after authority expiry and stay within 25 hours',
+    });
   }
   if (
     probeTo <= probeFrom || probeTo - probeFrom > 60_000 || probeTo > authorizedAt

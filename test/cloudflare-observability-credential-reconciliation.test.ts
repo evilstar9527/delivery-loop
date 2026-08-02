@@ -161,6 +161,15 @@ describe('Cloudflare Workers Observability post-create reconciliation', () => {
       .resolves.toBe(valid.authorityDigest);
   });
 
+  it('accepts the new backend-compatible lifecycle while retaining a 25-hour ceiling', async () => {
+    await expect(authorization({
+      tokenExpiresAt: '2026-08-03T13:40:00.000Z',
+    })).resolves.toMatchObject({ tokenExpiresAt: '2026-08-03T13:40:00.000Z' });
+    await expect(authorization({
+      tokenExpiresAt: '2026-08-03T14:02:49.301Z',
+    })).rejects.toBeDefined();
+  });
+
   it('shares the strict repo-external 0600 non-symlink authority reader', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'delivery-loop-reconciliation-authority-'));
     try {

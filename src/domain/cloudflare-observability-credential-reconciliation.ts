@@ -42,9 +42,9 @@ export const CloudflareObservabilityCredentialReconciliationAuthorizationV1Schem
   }
   if (
     tokenExpiresAt <= tokenNotBefore ||
-    tokenExpiresAt - tokenNotBefore > 2 * 60 * 60_000
+    tokenExpiresAt - tokenNotBefore > 25 * 60 * 60_000
   ) {
-    context.addIssue({ code: 'custom', message: 'source token TTL must be at most two hours' });
+    context.addIssue({ code: 'custom', message: 'source token TTL must be at most 25 hours' });
   }
 });
 
