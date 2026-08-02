@@ -105,6 +105,13 @@ Actions read、Cloudflare deployment read、Cloudflare observability query三枚
 `dry=true`且window逐字等于job起止时间；成功只输出安全ID、failureKind和固定计数，不返回raw
 log/trace/error/account ID。live verifier exit 0仍只诊断历史失败，不授权修复或重发readiness。
 
+若第三枚Workers Observability query read token不存在，必须按authority在读取其他token值及任何live query前
+停止；deployment-read token已能列deployment不代表拥有telemetry scope，禁止重标或复用。创建第三枚token
+是独立Cloudflare credential写，只能在新owner authority下使用
+[最小权限credential provisioning](CloudflareObservabilityCredentialProvisioning.md)。该操作的exit 0只证明新
+token能verify并完成一次dry telemetry probe；随后对本节immutable run/window执行collector+formal verifier仍
+需另一份一次性observability collection authority，不能复用provisioning authority。
+
 本机到Worker host的TCP/TLS路径持续失败时，不得注册self-hosted Runner或把operations token放进临时脚本。受审替代面是manual-only [GitHub base readiness workflow](../.github/workflows/github-base-readiness.yml)：`preflight` job先在GitHub-hosted Runner上以固定public Worker origin运行同一零HTTP DNS/TCP/TLS检查，且没有Environment/Secret；只有它成功，`readiness` job才进入专用`phase1-readiness` Environment。该job固定owner actor、main ref、exact dispatch SHA、`run_attempt == 1`、`contents: read`和一次性caller，repository/base/origin都不能由input或variable覆盖；GitHub rerun、其他actor/ref或attempt 2均在job开始前skip。
 
 首次dispatch前必须从GitHub API/settings外部证明：`phase1-readiness`已预创建；required reviewer恰为owner；deployment branch policy为`protected_branches=true/custom_branch_policies=false`；Environment Secret inventory恰含`DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN`，而repository Secret inventory不含同名项。GitHub拒绝创建以`GITHUB_`开头的Actions Secret；workflow只在job进程内把该非保留Secret映射为CLI要求的`GITHUB_BASE_READINESS_OPERATIONS_TOKEN`。不要先运行workflow来“顺便创建”Environment，因为GitHub会创建无reviewer的环境。token只能在获得新的一次窄authority后经GitHub UI或stdin写入Environment，不进argv/日志/仓库；Environment配置与Secret名称不能证明值正确。随后dispatch只允许从受保护main发起；preflight成功后，owner还要把批准绑定到exact run ID/head SHA再点Environment approval。该批准最多释放当前run attempt的一次GET；无200时禁止rerun job或重新dispatch，新的run必须重新取得独立authority。workflow或Environment bootstrap本身不等于readiness 200、Task authority或hibernate证据。
