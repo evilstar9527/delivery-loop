@@ -53,6 +53,7 @@
     "e2e:correlation-platform": "tsx scripts/verify-correlation-platform-evidence.ts",
     "e2e:github-app-transport-diagnostic-collect": "tsx scripts/collect-github-app-transport-diagnostic.ts",
     "e2e:github-app-transport-diagnostic": "tsx scripts/verify-github-app-transport-diagnostic-evidence.ts",
+    "ops:cloudflare-observability-credential-provision": "tsx scripts/provision-cloudflare-observability-credential.ts",
     "e2e:feishu-webhook": "tsx scripts/verify-feishu-webhook-evidence.ts",
     "e2e:feishu-ingress": "tsx scripts/verify-feishu-ingress-evidence.ts",
     "e2e:meegle-work-item": "tsx scripts/verify-meegle-work-item-evidence.ts",

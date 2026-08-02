@@ -1369,3 +1369,20 @@ export {
   type GitHubBaseReadinessProbeOptions,
   type GitHubBaseReadinessProbeSummary,
 } from './pilot/github-base-readiness-probe.js';
+export {
+  CLOUDFLARE_OBSERVABILITY_KEYCHAIN_SERVICE,
+  CLOUDFLARE_OBSERVABILITY_PERMISSION_GROUP_NAME,
+  CloudflareObservabilityCredentialProvisioningAuthorizationV1Schema,
+  CloudflareObservabilityCredentialProvisioningEffectsV1Schema,
+  CloudflareObservabilityCredentialProvisioningSummaryV1Schema,
+  cloudflareObservabilityCredentialProvisioningAuthorityDigest,
+  type CloudflareObservabilityCredentialProvisioningAuthorizationV1,
+  type CloudflareObservabilityCredentialProvisioningSummaryV1,
+} from './domain/cloudflare-observability-credential-provisioning.js';
+export {
+  CloudflareObservabilityCredentialProvisioningError,
+  provisionCloudflareObservabilityCredential,
+  type CloudflareObservabilityCredentialProvisionerOptions,
+  type CloudflareObservabilityCredentialProvisioningErrorCode,
+  type CloudflareObservabilityCredentialProvisioningStage,
+} from './pilot/cloudflare-observability-credential-provisioner.js';
