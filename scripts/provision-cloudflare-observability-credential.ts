@@ -139,8 +139,12 @@ async function main(): Promise<void> {
   } catch (error) {
     if (error instanceof CloudflareObservabilityCredentialProvisioningError) {
       const stage = error.stage === undefined ? '' : ` stage=${error.stage}`;
+      const failureKind = error.failureKind === undefined
+        ? ''
+        : ` failureKind=${error.failureKind}`;
       console.error(
-        `cloudflare-observability-credential-provisioning: FAIL ${error.code}${stage}`,
+        `cloudflare-observability-credential-provisioning: FAIL ${error.code}` +
+          `${stage}${failureKind}`,
       );
     } else {
       console.error('cloudflare-observability-credential-provisioning: FAIL provisioning_failed');

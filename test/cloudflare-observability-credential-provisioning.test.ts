@@ -86,6 +86,8 @@ interface FakeCloudflareOptions {
   createdToken?: string;
   createExtra?: Record<string, unknown>;
   verifyStatus?: string;
+  createStatus?: number;
+  throwAtCreate?: boolean;
   failAt?: 'inventory' | 'permission_groups' | 'create' | 'verify' | 'telemetry';
 }
 
@@ -141,6 +143,10 @@ function fakeCloudflare(
         });
     }
     if (url.pathname === tokenBase && method === 'POST') {
+      if (options.throwAtCreate === true) throw new Error('unsafe create transport detail');
+      if (options.createStatus !== undefined) {
+        return new Response('unsafe create response detail', { status: options.createStatus });
+      }
       if (options.failAt === 'create') return new Response('', { status: 403 });
       return envelope({
         id: TOKEN_ID,
@@ -182,9 +188,14 @@ function provisionerOptions(
   };
 }
 
-function code(expected: string, stage?: string): (error: unknown) => boolean {
+function code(
+  expected: string,
+  stage?: string,
+  failureKind?: string,
+): (error: unknown) => boolean {
   return (error) => error instanceof CloudflareObservabilityCredentialProvisioningError &&
-    error.code === expected && (stage === undefined || error.stage === stage);
+    error.code === expected && (stage === undefined || error.stage === stage) &&
+    (failureKind === undefined || error.failureKind === failureKind);
 }
 
 describe('Cloudflare Workers Observability credential provisioning', () => {
@@ -347,9 +358,28 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
       await expect(provisionCloudflareObservabilityCredential(
         value,
         provisionerOptions(fakeCloudflare(options, requests), stored),
-      )).rejects.toSatisfy(code('created_unverified', 'token_create'));
+      )).rejects.toSatisfy(code('created_unverified', 'token_create', 'response_invalid'));
       expect(requests).toHaveLength(3);
       expect(stored).toHaveLength(0);
+    }
+  });
+
+  it('classifies create responses safely without retrying the POST', async () => {
+    const value = await authorization();
+    for (const [fakeOptions, failureKind] of [
+      [{ throwAtCreate: true }, 'transport_unavailable'],
+      [{ createStatus: 403 }, 'auth_rejected'],
+      [{ createStatus: 422 }, 'request_rejected'],
+      [{ createStatus: 429 }, 'rate_limited'],
+      [{ createStatus: 500 }, 'upstream_unavailable'],
+    ] as const) {
+      const requests: ObservedRequest[] = [];
+      await expect(provisionCloudflareObservabilityCredential(
+        value,
+        provisionerOptions(fakeCloudflare(fakeOptions, requests)),
+      )).rejects.toSatisfy(code('created_unverified', 'token_create', failureKind));
+      expect(requests).toHaveLength(3);
+      expect(requests.filter((request) => request.method === 'POST')).toHaveLength(1);
     }
   });
 
@@ -395,7 +425,11 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
       await expect(provisionCloudflareObservabilityCredential(
         value,
         provisionerOptions(fakeCloudflare({ failAt }, requests)),
-      )).rejects.toSatisfy(code(expected, stage));
+      )).rejects.toSatisfy(code(
+        expected,
+        stage,
+        failAt === 'create' ? 'auth_rejected' : undefined,
+      ));
       expect(requests).toHaveLength(requestCount);
     }
   });

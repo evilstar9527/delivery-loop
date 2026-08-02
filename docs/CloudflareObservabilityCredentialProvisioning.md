@@ -106,6 +106,11 @@ CLI 默认未 opt-in、配置缺失或 authority 不可读时 exit 2，并在文
 `created_unverified stage=token_create|keychain|token_verify|telemetry_probe`，不自动执行第二次 create、token
 delete、Keychain overwrite、rotation 或 rollback。此时 token 可能已在 Cloudflare 或 Keychain 存在，后续
 inventory/revoke/修复都需要新的独立 authority，不能复用原 session。
+`stage=token_create`只允许附加一个不含raw status/body/error的固定`failureKind`：
+`transport_unavailable|auth_rejected|request_rejected|rate_limited|upstream_unavailable|response_invalid`。
+HTTP 401/403、其他4xx、429、5xx与收到响应前失败分别映射到固定类别；成功响应的pagination/size/JSON/
+secret shape漂移统一`response_invalid`。该分类只用于定位，不能把4xx或transport解释为确定未创建，仍必须先
+执行独立post-create reconciliation，也不能据此自动retry。
 其中只读确认exact target存在性的恢复入口固定为
 [post-create reconciliation](CloudflareObservabilityCredentialReconciliation.md)；它没有create/delete/Keychain/
 verify/telemetry路径，也不能从`present|absent`自行推导下一步mutation。
