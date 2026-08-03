@@ -169,7 +169,6 @@ describe('existing Cloudflare Workers Observability credential verification', ()
         view: 'events',
         dry: true,
         timeframe: value.telemetryProbe.window,
-        limit: 1,
         parameters: {
           datasets: ['cloudflare-workers'],
           filters: [{
@@ -180,6 +179,7 @@ describe('existing Cloudflare Workers Observability credential verification', ()
           }],
           groupBys: [],
           calculations: [],
+          limit: 1,
         },
       },
     });

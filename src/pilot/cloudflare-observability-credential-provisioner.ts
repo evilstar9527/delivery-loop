@@ -594,7 +594,6 @@ function telemetryProbeBody(
     view: 'events',
     dry: true,
     timeframe: probe.window,
-    limit: 1,
     parameters: {
       datasets: ['cloudflare-workers'],
       filters: [{
@@ -605,6 +604,7 @@ function telemetryProbeBody(
       }],
       groupBys: [],
       calculations: [],
+      limit: 1,
     },
   };
 }
