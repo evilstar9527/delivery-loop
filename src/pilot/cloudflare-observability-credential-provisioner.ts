@@ -203,6 +203,79 @@ function assertNoResponseSecrets(
   if (scanner.scan(response.parsed, '$.response').length > 0) fail('secret_leak_detected');
 }
 
+export type CloudflareObservabilityReadFailureKind =
+  | 'transport_unavailable'
+  | 'auth_rejected'
+  | 'rate_limited'
+  | 'upstream_unavailable'
+  | 'response_invalid'
+  | 'secret_leak_detected';
+
+export class CloudflareObservabilityReadError extends Error {
+  constructor(readonly failureKind: CloudflareObservabilityReadFailureKind) {
+    super(`Cloudflare observability read failed: ${failureKind}`);
+    this.name = 'CloudflareObservabilityReadError';
+  }
+}
+
+function readFailure(failureKind: CloudflareObservabilityReadFailureKind): never {
+  throw new CloudflareObservabilityReadError(failureKind);
+}
+
+async function boundedCloudflareReadResponse(
+  fetcher: typeof fetch,
+  url: string,
+  init: RequestInit,
+  secrets: readonly string[],
+): Promise<ExternalResponse> {
+  let response: Response;
+  try {
+    response = await fetcher(url, {
+      ...init,
+      redirect: 'error',
+      signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+    });
+  } catch { readFailure('transport_unavailable'); }
+  if (!response.ok) {
+    await response.body?.cancel();
+    if (response.status === 401 || response.status === 403) readFailure('auth_rejected');
+    if (response.status === 429) readFailure('rate_limited');
+    if (response.status >= 500) readFailure('upstream_unavailable');
+    readFailure('response_invalid');
+  }
+  if (
+    !responseSizeValid(response) ||
+    /\brel\s*=\s*["']?next["']?/i.test(response.headers.get('link') ?? '')
+  ) {
+    await response.body?.cancel();
+    readFailure('response_invalid');
+  }
+  let raw: string | null;
+  try { raw = await boundedText(response); }
+  catch { readFailure('response_invalid'); }
+  if (raw === null) readFailure('response_invalid');
+  if (new SecretScanner({ secrets }).scanText(raw, '$.response').length > 0) {
+    readFailure('secret_leak_detected');
+  }
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw) as unknown; }
+  catch { readFailure('response_invalid'); }
+  if (new SecretScanner({ secrets }).scan(parsed, '$.response').length > 0) {
+    readFailure('secret_leak_detected');
+  }
+  return { raw, parsed };
+}
+
+function boundedCloudflareEnvelopeResult(parsed: unknown): unknown {
+  const envelope = record(parsed);
+  if (
+    envelope === null || envelope.success !== true || !Array.isArray(envelope.errors) ||
+    envelope.errors.length !== 0 || !Array.isArray(envelope.messages) ||
+    !Object.hasOwn(envelope, 'result')
+  ) readFailure('response_invalid');
+  return envelope.result;
+}
+
 function tokenHeaders(token: string, includeJson = false): Record<string, string> {
   return {
     accept: 'application/json',
@@ -475,21 +548,19 @@ export async function verifyCloudflareAccountToken(options: {
   if (
     !ACCOUNT_ID_PATTERN.test(options.accountId) ||
     !TOKEN_PATTERN.test(options.token)
-  ) fail('configuration_invalid');
-  const response = await externalResponse(
+  ) readFailure('response_invalid');
+  const secrets = [options.token, ...options.secrets];
+  const response = await boundedCloudflareReadResponse(
     options.fetcher,
     `${options.origin}/client/v4/accounts/${encodeURIComponent(options.accountId)}/tokens/verify`,
     { method: 'GET', headers: tokenHeaders(options.token) },
-    'configuration_invalid',
-    'configuration_invalid',
-    [options.token, ...options.secrets],
+    secrets,
   );
-  assertNoResponseSecrets(response, [options.token, ...options.secrets]);
-  const result = record(envelopeResult(response.parsed, 'configuration_invalid'));
+  const result = record(boundedCloudflareEnvelopeResult(response.parsed));
   if (
     result === null || typeof result.id !== 'string' ||
     !EXTERNAL_ID_PATTERN.test(result.id) || result.status !== 'active'
-  ) fail('configuration_invalid');
+  ) readFailure('response_invalid');
   return { id: result.id, status: 'active' };
 }
 
@@ -549,8 +620,9 @@ export async function probeCloudflareObservabilityTelemetry(options: {
   if (
     !ACCOUNT_ID_PATTERN.test(options.accountId) ||
     !TOKEN_PATTERN.test(options.token)
-  ) fail('configuration_invalid');
-  const response = await externalResponse(
+  ) readFailure('response_invalid');
+  const secrets = [options.token, ...options.secrets];
+  const response = await boundedCloudflareReadResponse(
     options.fetcher,
     `${options.origin}/client/v4/accounts/${encodeURIComponent(options.accountId)}` +
       '/workers/observability/telemetry/query',
@@ -559,15 +631,12 @@ export async function probeCloudflareObservabilityTelemetry(options: {
       headers: tokenHeaders(options.token, true),
       body: JSON.stringify(telemetryProbeBody(options.probe)),
     },
-    'configuration_invalid',
-    'configuration_invalid',
-    [options.token, ...options.secrets],
+    secrets,
   );
-  assertNoResponseSecrets(response, [options.token, ...options.secrets]);
-  const result = record(envelopeResult(response.parsed, 'configuration_invalid'));
+  const result = record(boundedCloudflareEnvelopeResult(response.parsed));
   const run = record(result?.run);
   if (result === null || run?.accountId !== options.accountId || run.dry !== true) {
-    fail('configuration_invalid');
+    readFailure('response_invalid');
   }
 }
 

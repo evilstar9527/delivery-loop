@@ -129,8 +129,12 @@ async function main(): Promise<void> {
   } catch (error) {
     if (error instanceof CloudflareObservabilityCredentialVerificationError) {
       const stage = error.stage === undefined ? '' : ` stage=${error.stage}`;
+      const failureKind = error.failureKind === undefined
+        ? ''
+        : ` failureKind=${error.failureKind}`;
       console.error(
-        `cloudflare-observability-credential-verification: FAIL ${error.code}${stage}`,
+        `cloudflare-observability-credential-verification: FAIL ${error.code}` +
+          `${stage}${failureKind}`,
       );
     } else {
       console.error('cloudflare-observability-credential-verification: FAIL verification_failed');
