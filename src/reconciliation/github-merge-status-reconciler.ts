@@ -3,6 +3,7 @@ import {
   type GitHubPullRequestMergeFact,
 } from '../domain/github-merge-status.js';
 import { canonicalSha256 } from '../domain/digest.js';
+import { GITHUB_API_USER_AGENT } from '../github-api.js';
 import type { GitHubMergeObservationTokenProvider } from './github-merge-gate-reconciler.js';
 import {
   GitHubMergeStatusStore,
@@ -130,6 +131,7 @@ export class GitHubMergeStatusApiClient implements GitHubMergeStatusExternalFact
           headers: {
             accept: 'application/vnd.github+json',
             authorization: `Bearer ${token}`,
+            'user-agent': GITHUB_API_USER_AGENT,
             'x-github-api-version': '2022-11-28',
           },
         },

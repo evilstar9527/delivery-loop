@@ -253,7 +253,11 @@ beforeEach(async () => {
 
 describe('trusted GitHub base SHA resolution', () => {
   it('resolves the exact target branch through a repository-scoped read token', async () => {
-    const requests: Array<{ url: string; authorization: string | null }> = [];
+    const requests: Array<{
+      url: string;
+      authorization: string | null;
+      userAgent: string | null;
+    }> = [];
     const client = new GitHubBaseApiClient({
       async getBaseObservationToken(repository) {
         expect(repository).toBe(REPOSITORY);
@@ -266,6 +270,7 @@ describe('trusted GitHub base SHA resolution', () => {
         requests.push({
           url: String(input),
           authorization: headers.get('authorization'),
+          userAgent: headers.get('user-agent'),
         });
         return new Response(JSON.stringify({
           ref: 'refs/heads/release/phase-1',
@@ -278,6 +283,7 @@ describe('trusted GitHub base SHA resolution', () => {
     expect(requests).toEqual([{
       url: 'https://github-api.example.test/repos/example/delivery-target/git/ref/heads/release/phase-1',
       authorization: 'Bearer test-github-base-read-token',
+      userAgent: 'delivery-loop-control-plane',
     }]);
   });
 

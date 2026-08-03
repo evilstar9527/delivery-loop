@@ -3,6 +3,7 @@ import {
   GitHubAppCredentialError,
   type GitHubAppCredentialErrorCode,
 } from '../auth/github-app-installation-token.js';
+import { GITHUB_API_USER_AGENT } from '../github-api.js';
 import {
   GitHubBaseObservationFactSchema,
   PlanRevisionError,
@@ -298,6 +299,7 @@ export class GitHubBaseApiClient implements
     const headers = {
       accept: 'application/vnd.github+json',
       authorization: `Bearer ${token}`,
+      'user-agent': GITHUB_API_USER_AGENT,
       'x-github-api-version': '2022-11-28',
     };
     const encodedBranch = baseBranch.split('/').map(encodeURIComponent).join('/');
