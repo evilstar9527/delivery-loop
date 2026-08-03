@@ -176,7 +176,7 @@ describe('GitHub App installation token provider', () => {
       fetch: async () => new Response(responseCanary, { status: 403 }),
     });
     const promise = provider.getInstallationToken('example/delivery-target');
-    await expect(promise).rejects.toSatisfy(expectCredentialCode('credential_auth_rejected'));
+    await expect(promise).rejects.toSatisfy(expectCredentialCode('credential_forbidden'));
     await expect(promise).rejects.not.toThrow(responseCanary);
     await expect(promise).rejects.not.toThrow(privateKeyPem);
   });
@@ -292,8 +292,8 @@ describe('GitHub App installation token provider', () => {
 
   it.each([
     ['network', null, 'credential_transport_unavailable'],
-    ['unauthenticated', 401, 'credential_auth_rejected'],
-    ['forbidden', 403, 'credential_auth_rejected'],
+    ['unauthenticated', 401, 'credential_unauthenticated'],
+    ['forbidden', 403, 'credential_forbidden'],
     ['installation missing', 404, 'credential_installation_not_found'],
     ['policy rejected', 422, 'credential_policy_rejected'],
     ['redirect rejected', 302, 'credential_response_invalid'],

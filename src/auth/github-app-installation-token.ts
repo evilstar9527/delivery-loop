@@ -28,6 +28,8 @@ const RSA_ALGORITHM_IDENTIFIER = Uint8Array.from([
 export const GITHUB_APP_CREDENTIAL_ERROR_CODES = [
   'credential_signing_unavailable',
   'credential_auth_rejected',
+  'credential_unauthenticated',
+  'credential_forbidden',
   'credential_installation_not_found',
   'credential_policy_rejected',
   'credential_request_invalid',
@@ -608,9 +610,8 @@ export class GitHubAppInstallationTokenProvider implements
       } catch {
         // The upstream body and cancellation error are both intentionally discarded.
       }
-      if (response.status === 401 || response.status === 403) {
-        credentialFailure('credential_auth_rejected');
-      }
+      if (response.status === 401) credentialFailure('credential_unauthenticated');
+      if (response.status === 403) credentialFailure('credential_forbidden');
       if (response.status === 404) {
         credentialFailure('credential_installation_not_found');
       }

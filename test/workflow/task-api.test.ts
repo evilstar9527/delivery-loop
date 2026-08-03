@@ -216,6 +216,8 @@ describe('GET /v1/operations/github-base/readiness', () => {
     'credential_unavailable',
     'credential_signing_unavailable',
     'credential_auth_rejected',
+    'credential_unauthenticated',
+    'credential_forbidden',
     'credential_installation_not_found',
     'credential_policy_rejected',
     'credential_transport_unavailable',
