@@ -397,16 +397,16 @@ intake前的只读诊断，不是Task入口。它只接受用途隔离的`OPERAT
 private key可加载、repository-scoped `contents:read` installation token可签发、exact branch ref可读取并解析。
 成功固定返回`{schemaVersion:'1',ready:true,repository,baseBranch,baseSha}`，其中SHA是40位小写hex；失败为
 `503 unavailable`并只增加`ready:false + reason`。reason只能是`configuration_unavailable`、兼容兜底
-`credential_unavailable`、七个GitHub App固定凭证阶段`credential_signing_unavailable|credential_auth_rejected|
-credential_installation_not_found|credential_policy_rejected|credential_transport_unavailable|credential_upstream_unavailable|
+`credential_unavailable`、八个GitHub App固定凭证阶段`credential_signing_unavailable|credential_auth_rejected|
+credential_installation_not_found|credential_policy_rejected|credential_request_invalid|credential_transport_unavailable|credential_upstream_unavailable|
 credential_response_invalid`，或`reference_unavailable|reference_invalid`。真实App provider把PEM解析/import/JWT签名、
-installation-token的401/403、404、422、收到HTTP响应前的transport失败、5xx以及unexpected status/非法201响应分别映射到上述七类；
+installation-token的401/403、404、422、显式Request构造拒绝、收到HTTP响应前的transport失败、5xx以及unexpected status/非法201响应分别映射到上述八类；
 只有非受信provider异常继续折叠到兼容兜底，不能读取任意error.code透传。响应、错误和日志不得包含App JWT、
 private key、installation token、上游body、HTTP正文或raw异常。探针没有D1/R2/Task/Run/outbox/Workflow/Action写入路径；
 `200 ready`只证明调用时的read链路，不授予Task POST、GitHub dispatch或production deploy权限，也不能替代
 对应外部DoD证据。
 
-真实App provider的installation-token POST固定10秒timeout并使用`redirect=manual`取得但不跟随3xx；所有非201（包括3xx）不读取body并fail-closed，每次credential request至多发送一次，
+真实App provider的installation-token POST固定10秒timeout并使用`redirect=manual`取得但不跟随3xx；所有非201（包括3xx）不读取body并fail-closed。发送前用同一URL/options显式构造`Request`：构造拒绝只返回`credential_request_invalid`且网络attempt为0；构造成功后每次credential request至多发送一次，
 transport失败后不得自动重试这个可能已到达GitHub的非幂等POST。fetch在HTTP响应前拒绝时，对外reason仍只有
 `credential_transport_unavailable`；同一catch只读取最多四层allowlisted `name/code/cause`元数据，复用caller的
 `request_timed_out|dns_failed|tcp_failed|tls_failed|request_failed`分类并经唯一安全结构化sink输出一条

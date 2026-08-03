@@ -173,6 +173,40 @@ describe('GitHub App installation token provider', () => {
     await expect(promise).rejects.not.toThrow(privateKeyPem);
   });
 
+  it('separates request construction failure from transport execution', async () => {
+    const keys = await generateKeyPair('RS256', { extractable: true });
+    const privateKeyPem = await exportPKCS8(keys.privateKey);
+    const fetchImplementation = vi.fn(async () => Response.json({
+      token: 'CANARY_REQUEST_CONSTRUCTION_TOKEN',
+      expires_at: '2099-01-01T00:00:00.000Z',
+    }, { status: 201 }));
+    const diagnostics: unknown[] = [];
+    const originalRequest = globalThis.Request;
+    vi.stubGlobal('Request', class extends originalRequest {
+      constructor(input: RequestInfo | URL, init?: RequestInit) {
+        super(input, init);
+        throw new TypeError('CANARY_REQUEST_CONSTRUCTION_DETAIL');
+      }
+    });
+    try {
+      const provider = new GitHubAppInstallationTokenProvider({
+        appId: '7890',
+        installationId: '123456',
+        privateKeyPem,
+        allowedRepositories: ['example/delivery-target'],
+        fetch: fetchImplementation,
+        transportDiagnostic: (record: unknown) => diagnostics.push(record),
+      });
+
+      await expect(provider.getBaseObservationToken('example/delivery-target'))
+        .rejects.toSatisfy(expectCredentialCode('credential_request_invalid'));
+      expect(fetchImplementation).not.toHaveBeenCalled();
+      expect(diagnostics).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     ['network', null, 'credential_transport_unavailable'],
     ['unauthenticated', 401, 'credential_auth_rejected'],
