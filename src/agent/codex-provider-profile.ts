@@ -2,6 +2,7 @@ import { normalizeProviderBaseUrl } from './provider-base-url.js';
 
 export const CODEX_RELAY_PROVIDER_ID = 'delivery_loop_relay';
 export const CODEX_RELAY_REASONING_EFFORT = 'high';
+export type CodexRelayReasoningEffort = 'low' | 'medium' | 'high';
 
 /**
  * Build the single trusted Codex relay profile used by session, analysis, and
@@ -10,6 +11,7 @@ export const CODEX_RELAY_REASONING_EFFORT = 'high';
  */
 export function codexProviderProfileArguments(
   providerBaseUrl: string | undefined,
+  reasoningEffort: CodexRelayReasoningEffort = CODEX_RELAY_REASONING_EFFORT,
 ): string[] {
   const normalizedBaseUrl = normalizeProviderBaseUrl(providerBaseUrl);
   if (normalizedBaseUrl === undefined) return [];
@@ -32,6 +34,6 @@ export function codexProviderProfileArguments(
     '-c',
     `model_providers.${CODEX_RELAY_PROVIDER_ID}.supports_websockets=false`,
     '-c',
-    `model_reasoning_effort=${JSON.stringify(CODEX_RELAY_REASONING_EFFORT)}`,
+    `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`,
   ];
 }
