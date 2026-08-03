@@ -30,7 +30,8 @@ verifier 按固定顺序交叉核对四类事实：
 4. Cloudflare官方telemetry query分别执行一次`events`和一次`traces`查询；二者固定`dry=true`、
    独立`queryId`，并把job窗口仅在内存中转为Unix毫秒`timeframe.from/to`；row `limit=2`位于顶层，
    filters/groupBys/calculations才位于`parameters`。event按service/trace/event/component/operation/requestAttempts精确过滤，必须
-   恰好返回一条未截断strict diagnostic；trace必须是同一service/trace，覆盖日志时间、至少一个span且
+   恰好返回一条strict diagnostic，并以Cloudflare定义的`$workers.truncated=false`证明未截断；
+   `$metadata.truncated`不是provider response字段，不能用作成功判据。trace必须是同一service/trace，覆盖日志时间、至少一个span且
    没有error。
 
 GitHub run/job、deployment、log和trace任一单源都不能替代其余来源；manifest中的failureKind、digest、

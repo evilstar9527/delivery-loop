@@ -86,6 +86,7 @@ function filterValue(body: Record<string, unknown>, key: string): unknown {
 interface FakeOptions {
   duplicateDiagnostic?: boolean;
   leak?: string;
+  missingWorkers?: boolean;
   wrongService?: boolean;
   truncated?: boolean;
 }
@@ -131,8 +132,13 @@ function collectorFetch(
         service: options.wrongService === true ? 'another-worker' : SCRIPT_NAME,
         traceId: WORKER_TRACE_ID,
         type: 'cf-worker-log',
-        truncated: options.truncated === true,
       },
+      ...(options.missingWorkers === true ? {} : { $workers: {
+        scriptName: SCRIPT_NAME,
+        eventType: 'fetch',
+        requestId: 'request-round212',
+        truncated: options.truncated === true,
+      } }),
       dataset: 'cloudflare-workers',
       source: DIAGNOSTIC_RECORD,
       timestamp: Date.parse(OBSERVED_AT),
@@ -206,10 +212,11 @@ describe('GitHub App transport diagnostic collector', () => {
     expect(requests).toHaveLength(1);
   });
 
-  it('rejects duplicate, truncated or wrong-service diagnostic observations', async () => {
+  it('rejects duplicate, missing workers, truncated or wrong-service observations', async () => {
     const value = await collectionRequest();
     for (const options of [
       { duplicateDiagnostic: true },
+      { missingWorkers: true },
       { truncated: true },
       { wrongService: true },
     ]) {

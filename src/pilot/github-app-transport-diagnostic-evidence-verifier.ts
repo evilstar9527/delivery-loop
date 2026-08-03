@@ -419,13 +419,14 @@ async function validateLog(
   const events = group === null ? [] : records(group, 'events');
   const event = events.length === 1 ? events[0]! : null;
   const metadata = event === null ? null : record(event.$metadata);
+  const workers = event === null ? null : record(event.$workers);
   const parsed = GitHubAppTransportDiagnosticLogRecordV1Schema.safeParse(event?.source);
   if (
     root === null || !telemetryRunValid(root, accountId) || group === null ||
-    group.count !== 1 || event === null || metadata === null ||
+    group.count !== 1 || event === null || metadata === null || workers === null ||
     metadata.account !== accountId || metadata.service !== manifest.cloudflare.scriptName ||
     metadata.traceId !== manifest.diagnostic.workerTraceId ||
-    metadata.type !== 'cf-worker-log' || metadata.truncated !== false ||
+    metadata.type !== 'cf-worker-log' || workers.truncated !== false ||
     event.dataset !== 'cloudflare-workers' ||
     event.timestamp !== Date.parse(manifest.diagnostic.observedAt) || !parsed.success ||
     parsed.data.failureKind !== manifest.diagnostic.failureKind ||

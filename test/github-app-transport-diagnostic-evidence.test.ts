@@ -121,6 +121,7 @@ function filterValue(body: Record<string, unknown>, key: string): unknown {
 interface FakeOptions {
   publicSummary?: typeof PUBLIC_SUMMARY;
   duplicateDiagnostic?: boolean;
+  missingWorkers?: boolean;
   missingTrace?: boolean;
   deploymentDuringWindow?: boolean;
   deploymentAtWindowStart?: boolean;
@@ -226,8 +227,12 @@ function fakeFetch(
           $metadata: {
             id: 'event-transport-diagnostic', account: ACCOUNT_ID,
             service: SCRIPT_NAME, traceId: WORKER_TRACE_ID,
-            type: 'cf-worker-log', truncated: false,
+            type: 'cf-worker-log',
           },
+          ...(options.missingWorkers === true ? {} : { $workers: {
+            scriptName: SCRIPT_NAME, eventType: 'fetch', requestId: 'request-round208',
+            truncated: false,
+          } }),
           dataset: 'cloudflare-workers', source: DIAGNOSTIC_RECORD,
           timestamp: Date.parse(OBSERVED_AT),
         };
@@ -337,6 +342,7 @@ describe('GitHub App transport diagnostic evidence', () => {
     const value = await manifest();
     for (const [options, code] of [
       [{ duplicateDiagnostic: true }, 'cloudflare_log_mismatch'],
+      [{ missingWorkers: true }, 'cloudflare_log_mismatch'],
       [{ missingTrace: true }, 'cloudflare_trace_mismatch'],
       [{ deploymentDuringWindow: true }, 'cloudflare_deployment_mismatch'],
       [{ deploymentAtWindowStart: true }, 'cloudflare_deployment_mismatch'],
