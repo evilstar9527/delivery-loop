@@ -1,5 +1,5 @@
 import { canonicalSha256 } from '../domain/digest.js';
-import { GITHUB_API_USER_AGENT } from '../github-api.js';
+import { GITHUB_API_USER_AGENT, githubApiFetch } from '../github-api.js';
 import { SecretScanner } from '../security/redaction.js';
 import {
   FencedOutboxProcessor,
@@ -298,7 +298,7 @@ export class GitHubPullRequestApiClient implements GitHubPullRequestEffects {
     options: GitHubPullRequestApiClientOptions = {},
   ) {
     this.apiBaseUrl = apiOrigin(options.apiBaseUrl ?? 'https://api.github.com');
-    this.fetcher = options.fetch ?? fetch;
+    this.fetcher = githubApiFetch(options.fetch);
   }
 
   async ensureDraftPullRequest(request: GitHubPullRequestRequest): Promise<GitHubPullRequestResult> {

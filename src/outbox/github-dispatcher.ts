@@ -13,7 +13,7 @@ import type {
   GitHubWorkflowRunFact,
   GitHubWorkflowRunStatus,
 } from '../storage/github-run-observation-store.js';
-import { GITHUB_API_USER_AGENT } from '../github-api.js';
+import { GITHUB_API_USER_AGENT, githubApiFetch } from '../github-api.js';
 
 export const DELIVERY_AGENT_WORKFLOW_FILE = '.github/workflows/delivery-agent.yml';
 export const TEST_ACCEPTANCE_WORKFLOW_FILE =
@@ -134,7 +134,7 @@ export class GitHubActionsApiClient implements GitHubDispatchEffects {
     options: GitHubActionsApiClientOptions = {},
   ) {
     this.apiBaseUrl = httpsOrigin(options.apiBaseUrl ?? 'https://api.github.com', 'GitHub API URL');
-    this.fetcher = options.fetch ?? fetch;
+    this.fetcher = githubApiFetch(options.fetch);
     this.reconciliationAttempts = options.reconciliationAttempts ?? 3;
     if (
       !Number.isSafeInteger(this.reconciliationAttempts) ||

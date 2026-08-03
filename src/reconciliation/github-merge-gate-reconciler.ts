@@ -1,5 +1,5 @@
 import { canonicalSha256 } from '../domain/digest.js';
-import { GITHUB_API_USER_AGENT } from '../github-api.js';
+import { GITHUB_API_USER_AGENT, githubApiFetch } from '../github-api.js';
 import {
   GitHubMergeGateFactSchema,
   type GitHubMergeGateFact,
@@ -207,7 +207,7 @@ export class GitHubMergeGateApiClient implements GitHubMergeGateExternalFactClie
     options: GitHubMergeGateApiClientOptions = {},
   ) {
     this.apiBaseUrl = apiOrigin(options.apiBaseUrl ?? 'https://api.github.com');
-    this.fetcher = options.fetch ?? globalThis.fetch;
+    this.fetcher = githubApiFetch(options.fetch);
   }
 
   async observeMergeGate(request: GitHubMergeGateObservationRequest): Promise<GitHubMergeGateFact> {

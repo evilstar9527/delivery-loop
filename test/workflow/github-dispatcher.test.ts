@@ -1,7 +1,7 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 
 import { env } from 'cloudflare:test';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   GitHubActionsApiClient,
   GitHubDispatchOutboxProcessor,
@@ -132,6 +132,41 @@ beforeEach(async () => {
 });
 
 describe('GitHub App workflow dispatcher contract', () => {
+  it('invokes the default runtime fetch through globalThis instead of the client receiver', async () => {
+    const usedGlobalReceiver: boolean[] = [];
+    const fetchImplementation = vi.fn(function (this: unknown) {
+      usedGlobalReceiver.push(this === globalThis);
+      return Promise.resolve(new Response(JSON.stringify({
+        workflow_runs: [{
+          id: 777,
+          event: 'workflow_dispatch',
+          display_title: `delivery-loop/${ATTEMPT_ID}`,
+          path: '.github/workflows/delivery-agent.yml',
+          head_branch: 'main',
+        }],
+      }), { status: 200 }));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fetchImplementation);
+    try {
+      const client = new GitHubActionsApiClient({
+        async getInstallationToken() {
+          return 'test-installation-token';
+        },
+      }, { apiBaseUrl: 'https://api.github.test' });
+
+      await expect(client.ensureDispatch({
+        repository: REPOSITORY,
+        workflowFile: '.github/workflows/delivery-agent.yml',
+        ref: 'refs/heads/main',
+        inputs: { attempt_id: ATTEMPT_ID },
+      })).resolves.toEqual({ disposition: 'existing', githubRunId: '777' });
+      expect(fetchImplementation).toHaveBeenCalledOnce();
+      expect(usedGlobalReceiver).toEqual([true]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('lets one of 20 consumers dispatch a fixed workflow with a reference-only payload', async () => {
     const effects = new FakeGitHubDispatchEffects();
     const dispatcher = processor(effects);

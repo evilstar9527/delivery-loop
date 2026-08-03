@@ -1,7 +1,7 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 
 import { env } from 'cloudflare:test';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { canonicalSha256 } from '../../src/domain/digest.js';
 import { taskRevisionDigest, type TaskEnvelope } from '../../src/domain/task.js';
 import {
@@ -252,6 +252,31 @@ beforeEach(async () => {
 });
 
 describe('trusted GitHub base SHA resolution', () => {
+  it('invokes the default runtime fetch through globalThis instead of the client receiver', async () => {
+    const usedGlobalReceiver: boolean[] = [];
+    const fetchImplementation = vi.fn(function (this: unknown) {
+      usedGlobalReceiver.push(this === globalThis);
+      return Promise.resolve(new Response(JSON.stringify({
+        ref: 'refs/heads/main',
+        object: { type: 'commit', sha: AFTER_SHA },
+      }), { status: 200 }));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fetchImplementation);
+    try {
+      const client = new GitHubBaseApiClient({
+        async getBaseObservationToken() {
+          return 'test-github-base-read-token';
+        },
+      }, { apiBaseUrl: 'https://github-api.example.test' });
+
+      await expect(client.resolveBaseSha(REPOSITORY, 'main')).resolves.toBe(AFTER_SHA);
+      expect(fetchImplementation).toHaveBeenCalledOnce();
+      expect(usedGlobalReceiver).toEqual([true]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('resolves the exact target branch through a repository-scoped read token', async () => {
     const requests: Array<{
       url: string;

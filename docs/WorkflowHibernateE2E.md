@@ -100,6 +100,8 @@ installation-token POST还必须固定10秒timeout、`redirect=manual`、不跟�
 
 GitHub REST明确要求有效`User-Agent`，缺失或非法值会得到403。production不能依赖Node/undici自动补头：installation-token签发/撤销、base ref/compare以及Actions query/dispatch都固定显式发送`User-Agent: delivery-loop-control-plane`；该值不得包含Task、repository、App/installation ID或任一credential。若旧Worker返回`credential_forbidden`且同一provider/key在Node成功，先核对这一runtime header差异；修复仍必须受保护交付、发布新before并消费一条fresh readiness，禁止rerun旧run。
 
+installation-token通过后若readiness推进为`reference_unavailable`，还必须核对base REST客户端的默认fetch receiver。和provider相同，捕获`globalThis.fetch`后再以client成员形式调用会把client实例作为foreign receiver；production GitHub控制面客户端统一保存一个闭包并在闭包内执行`globalThis.fetch(input, init)`。显式注入的测试fetch保持原值。该修复不授权重发历史readiness、Task POST或credential变更，仍须受保护交付和一条fresh readiness证明。
+
 获得该独立authority后只能运行只读`pnpm run e2e:github-app-transport-diagnostic`，按
 [GitHub App transport诊断外部证据验收](GitHubAppTransportDiagnosticE2E.md)绑定exact readiness run/job
 window、当时最后生效且100%的Worker deployment、唯一strict log和覆盖它的无错误trace。工具要求GitHub

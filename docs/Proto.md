@@ -403,7 +403,8 @@ credential_transport_unavailable|credential_upstream_unavailable|credential_resp
 `credential_auth_rejected`只保留给历史兼容；真实App provider把PEM解析/import/JWT签名、installation-token的401、403、404、422、
 显式Request构造拒绝、收到HTTP响应前的transport失败、5xx以及unexpected status/非法201响应分别映射到其余九类；
 所有production GitHub REST请求都显式发送固定`User-Agent: delivery-loop-control-plane`，覆盖installation-token签发/撤销、base ref/compare、
-Action查询与dispatch，不能依赖Node等运行时自动补头；缺失或非法User-Agent会被GitHub以403拒绝。
+Action查询与dispatch，不能依赖Node等运行时自动补头；缺失或非法User-Agent会被GitHub以403拒绝。控制面所有GitHub REST客户端的
+默认fetch还必须通过`globalThis.fetch(input, init)`包装执行，不能捕获全局函数后以client实例作为foreign receiver调用；显式注入的测试adapter保持原值。
 只有非受信provider异常继续折叠到兼容兜底，不能读取任意error.code透传。响应、错误和日志不得包含App JWT、
 private key、installation token、上游body、HTTP正文或raw异常。探针没有D1/R2/Task/Run/outbox/Workflow/Action写入路径；
 `200 ready`只证明调用时的read链路，不授予Task POST、GitHub dispatch或production deploy权限，也不能替代
