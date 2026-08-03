@@ -3,7 +3,7 @@ import {
   type GitHubPullRequestMergeFact,
 } from '../domain/github-merge-status.js';
 import { canonicalSha256 } from '../domain/digest.js';
-import { GITHUB_API_USER_AGENT } from '../github-api.js';
+import { GITHUB_API_USER_AGENT, githubApiFetch } from '../github-api.js';
 import type { GitHubMergeObservationTokenProvider } from './github-merge-gate-reconciler.js';
 import {
   GitHubMergeStatusStore,
@@ -111,7 +111,7 @@ export class GitHubMergeStatusApiClient implements GitHubMergeStatusExternalFact
     options: GitHubMergeStatusApiClientOptions = {},
   ) {
     this.apiBaseUrl = apiOrigin(options.apiBaseUrl ?? 'https://api.github.com');
-    this.fetcher = options.fetch ?? fetch;
+    this.fetcher = githubApiFetch(options.fetch);
   }
 
   async getMergeStatus(

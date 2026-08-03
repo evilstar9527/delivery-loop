@@ -8,7 +8,7 @@ import {
   QuotaControlError,
   QuotaControlStore,
 } from '../storage/quota-control-store.js';
-import { GITHUB_API_USER_AGENT } from '../github-api.js';
+import { GITHUB_API_USER_AGENT, githubApiFetch } from '../github-api.js';
 
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
@@ -93,7 +93,7 @@ export class GitHubTestDeploymentApiClient implements GitHubTestDeploymentEffect
     options: GitHubTestDeploymentApiClientOptions = {},
   ) {
     this.apiBaseUrl = httpsOrigin(options.apiBaseUrl ?? 'https://api.github.com');
-    this.fetcher = options.fetch ?? fetch;
+    this.fetcher = githubApiFetch(options.fetch);
   }
 
   async ensureTestDeployment(

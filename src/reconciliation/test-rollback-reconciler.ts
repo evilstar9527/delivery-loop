@@ -4,7 +4,7 @@ import {
   parseDeliveryPolicy,
   type ParsedDeliveryPolicy,
 } from '../domain/delivery-policy.js';
-import { GITHUB_API_USER_AGENT } from '../github-api.js';
+import { GITHUB_API_USER_AGENT, githubApiFetch } from '../github-api.js';
 import { testRollbackTargetFromPolicy } from '../domain/test-rollback.js';
 import {
   TestRollbackStore,
@@ -58,7 +58,7 @@ export class GitHubDeliveryPolicyApiClient implements TestRollbackPolicyClient {
     options: GitHubDeliveryPolicyApiClientOptions = {},
   ) {
     this.apiBaseUrl = apiOrigin(options.apiBaseUrl ?? 'https://api.github.com');
-    this.fetcher = options.fetch ?? globalThis.fetch;
+    this.fetcher = githubApiFetch(options.fetch);
   }
 
   async getDeliveryPolicy(

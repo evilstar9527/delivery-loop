@@ -3,7 +3,7 @@ import {
   GitHubAppCredentialError,
   type GitHubAppCredentialErrorCode,
 } from '../auth/github-app-installation-token.js';
-import { GITHUB_API_USER_AGENT } from '../github-api.js';
+import { GITHUB_API_USER_AGENT, githubApiFetch } from '../github-api.js';
 import {
   GitHubBaseObservationFactSchema,
   PlanRevisionError,
@@ -171,7 +171,7 @@ export class GitHubBaseApiClient implements
     options: GitHubBaseApiClientOptions = {},
   ) {
     this.apiBaseUrl = apiOrigin(options.apiBaseUrl ?? 'https://api.github.com');
-    this.fetcher = options.fetch ?? globalThis.fetch;
+    this.fetcher = githubApiFetch(options.fetch);
   }
 
   async resolveBaseSha(repository: string, baseBranch: string): Promise<string> {

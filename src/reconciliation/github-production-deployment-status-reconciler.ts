@@ -1,5 +1,5 @@
 import { canonicalSha256 } from '../domain/digest.js';
-import { GITHUB_API_USER_AGENT } from '../github-api.js';
+import { GITHUB_API_USER_AGENT, githubApiFetch } from '../github-api.js';
 import {
   GitHubProductionDeploymentStatusFactSchema,
   type GitHubProductionDeploymentStatusFact,
@@ -115,7 +115,7 @@ implements GitHubProductionDeploymentStatusExternalFactClient {
     options: GitHubProductionDeploymentStatusApiClientOptions = {},
   ) {
     this.apiBaseUrl = apiOrigin(options.apiBaseUrl ?? 'https://api.github.com');
-    this.fetcher = options.fetch ?? fetch;
+    this.fetcher = githubApiFetch(options.fetch);
   }
 
   async getProductionDeploymentStatus(
