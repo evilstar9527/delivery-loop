@@ -19,7 +19,11 @@ export type GitHubAppTransportDiagnosticCollectionErrorCode =
   | 'configuration_invalid'
   | 'cloudflare_api_unavailable'
   | 'cloudflare_response_invalid'
-  | 'cloudflare_log_mismatch'
+  | 'cloudflare_log_absent'
+  | 'cloudflare_log_ambiguous'
+  | 'cloudflare_log_envelope_mismatch'
+  | 'cloudflare_log_source_mismatch'
+  | 'cloudflare_log_time_mismatch'
   | 'secret_leak_detected';
 
 export class GitHubAppTransportDiagnosticCollectionError extends Error {
@@ -177,22 +181,30 @@ async function collectObservation(
     !Array.isArray(root.messages) || run.accountId !== accountId || run.dry !== true
   ) fail('cloudflare_response_invalid');
   const group = record(result.events);
-  const events = group === null ? [] : records(group, 'events');
-  const event = events.length === 1 ? events[0]! : null;
-  const metadata = event === null ? null : record(event.$metadata);
-  const workers = event === null ? null : record(event.$workers);
-  const parsed = GitHubAppTransportDiagnosticLogRecordV1Schema.safeParse(event?.source);
-  const observedAt = parsed.success ? Date.parse(parsed.data.observedAt) : Number.NaN;
+  if (group === null) fail('cloudflare_response_invalid');
+  const events = records(group, 'events');
+  if (group.count === 0 && events.length === 0) fail('cloudflare_log_absent');
   if (
-    group === null || group.count !== 1 || event === null || metadata === null ||
-    workers === null ||
-    metadata.account !== accountId || metadata.service !== request.cloudflare.scriptName ||
+    (typeof group.count === 'number' && group.count > 1) || events.length > 1
+  ) fail('cloudflare_log_ambiguous');
+  if (group.count !== 1 || events.length !== 1) fail('cloudflare_response_invalid');
+  const event = events[0]!;
+  const metadata = record(event.$metadata);
+  const workers = record(event.$workers);
+  if (
+    metadata === null || workers === null || metadata.account !== accountId ||
+    metadata.service !== request.cloudflare.scriptName ||
     metadata.type !== 'cf-worker-log' || workers.truncated !== false ||
-    event.dataset !== 'cloudflare-workers' || !parsed.success ||
+    event.dataset !== 'cloudflare-workers'
+  ) fail('cloudflare_log_envelope_mismatch');
+  const parsed = GitHubAppTransportDiagnosticLogRecordV1Schema.safeParse(event.source);
+  if (!parsed.success) fail('cloudflare_log_source_mismatch');
+  const observedAt = Date.parse(parsed.data.observedAt);
+  if (
     event.timestamp !== observedAt ||
     observedAt < Date.parse(request.github.readinessStartedAt) ||
     observedAt > Date.parse(request.github.readinessCompletedAt)
-  ) fail('cloudflare_log_mismatch');
+  ) fail('cloudflare_log_time_mismatch');
   const observation = GitHubAppTransportDiagnosticObservationV1Schema.safeParse({
     schemaVersion: '1',
     collectionId: request.collectionId,
@@ -212,7 +224,7 @@ async function collectObservation(
     plaintextLeaks: 0,
     formalVerification: 'still_required',
   });
-  if (!observation.success) fail('cloudflare_log_mismatch');
+  if (!observation.success) fail('cloudflare_log_envelope_mismatch');
   return observation.data;
 }
 
