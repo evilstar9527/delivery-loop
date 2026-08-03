@@ -406,7 +406,7 @@ private key、installation token、上游body、HTTP正文或raw异常。探针�
 `200 ready`只证明调用时的read链路，不授予Task POST、GitHub dispatch或production deploy权限，也不能替代
 对应外部DoD证据。
 
-真实App provider的installation-token POST固定10秒timeout并使用`redirect=manual`取得但不跟随3xx；所有非201（包括3xx）不读取body并fail-closed。发送前用同一URL/options显式构造`Request`：构造拒绝只返回`credential_request_invalid`且网络attempt为0；构造成功后必须把同一个已验证的`Request`对象直接交给fetch，不得再次传入URL/options解析`RequestInit`，且每次credential request至多发送一次，
+真实App provider的installation-token POST固定10秒timeout并使用`redirect=manual`取得但不跟随3xx；所有非201（包括3xx）不读取body并fail-closed。发送前用同一URL/options显式构造`Request`：构造拒绝只返回`credential_request_invalid`且网络attempt为0；构造成功后必须把同一个已验证的`Request`对象直接交给fetch，不得再次传入URL/options解析`RequestInit`；production默认fetch必须以`globalThis`为receiver调用，不能以provider实例作为foreign Web API receiver。每次credential request至多发送一次，
 transport失败后不得自动重试这个可能已到达GitHub的非幂等POST。fetch在HTTP响应前拒绝时，对外reason仍只有
 `credential_transport_unavailable`；同一catch只读取最多四层allowlisted `name/code/cause`元数据，复用caller的
 `request_timed_out|dns_failed|tcp_failed|tls_failed|request_failed`分类并经唯一安全结构化sink输出一条
