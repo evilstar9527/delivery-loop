@@ -274,9 +274,14 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
     });
     expect(requests[2]?.body).not.toHaveProperty('not_before');
     expect(requests[4]?.body).toEqual({
+      queryId: value.authorizationId,
       view: 'events',
       dry: true,
-      timeframe: value.telemetryProbe.window,
+      timeframe: {
+        from: Date.parse(value.telemetryProbe.window.from),
+        to: Date.parse(value.telemetryProbe.window.to),
+      },
+      limit: 1,
       parameters: {
         datasets: ['cloudflare-workers'],
         filters: [{
@@ -287,7 +292,6 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
         }],
         groupBys: [],
         calculations: [],
-        limit: 1,
       },
     });
   });

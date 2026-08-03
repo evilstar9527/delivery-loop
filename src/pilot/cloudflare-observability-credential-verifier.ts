@@ -132,7 +132,10 @@ export async function verifyExistingCloudflareObservabilityCredential(
       accountId: options.cloudflareAccountId,
       token: options.credential,
       secrets: [options.canary],
-      probe: authorization.telemetryProbe,
+      probe: {
+        queryId: authorization.authorizationId,
+        ...authorization.telemetryProbe,
+      },
     });
   } catch (error) {
     mapSharedFailure(error, 'telemetry_probe');
