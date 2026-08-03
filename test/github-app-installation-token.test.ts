@@ -179,6 +179,7 @@ describe('GitHub App installation token provider', () => {
     ['forbidden', 403, 'credential_auth_rejected'],
     ['installation missing', 404, 'credential_installation_not_found'],
     ['policy rejected', 422, 'credential_policy_rejected'],
+    ['redirect rejected', 302, 'credential_response_invalid'],
     ['server unavailable', 503, 'credential_upstream_unavailable'],
     ['unexpected status', 418, 'credential_response_invalid'],
     ['invalid success response', 201, 'credential_response_invalid'],
@@ -244,7 +245,7 @@ describe('GitHub App installation token provider', () => {
         expectCredentialCode('credential_transport_unavailable'),
       );
       expect(fetchImplementation).toHaveBeenCalledOnce();
-      expect(requestInit?.redirect).toBe('error');
+      expect(requestInit?.redirect).toBe('manual');
       expect(requestInit?.signal).toBeInstanceOf(AbortSignal);
       expect(diagnostics).toEqual([{
         schemaVersion: '1',
