@@ -206,6 +206,7 @@ function assertNoResponseSecrets(
 export type CloudflareObservabilityReadFailureKind =
   | 'transport_unavailable'
   | 'auth_rejected'
+  | 'request_rejected'
   | 'rate_limited'
   | 'upstream_unavailable'
   | 'response_invalid'
@@ -240,6 +241,7 @@ async function boundedCloudflareReadResponse(
     await response.body?.cancel();
     if (response.status === 401 || response.status === 403) readFailure('auth_rejected');
     if (response.status === 429) readFailure('rate_limited');
+    if (response.status >= 400 && response.status < 500) readFailure('request_rejected');
     if (response.status >= 500) readFailure('upstream_unavailable');
     readFailure('response_invalid');
   }
@@ -583,6 +585,7 @@ async function verifyCreatedToken(
 }
 
 export interface CloudflareObservabilityTelemetryProbe {
+  queryId: string;
   scriptName: string;
   window: { from: string; to: string };
 }
@@ -591,9 +594,14 @@ function telemetryProbeBody(
   probe: CloudflareObservabilityTelemetryProbe,
 ): Record<string, unknown> {
   return {
+    queryId: probe.queryId,
     view: 'events',
     dry: true,
-    timeframe: probe.window,
+    timeframe: {
+      from: Date.parse(probe.window.from),
+      to: Date.parse(probe.window.to),
+    },
+    limit: 1,
     parameters: {
       datasets: ['cloudflare-workers'],
       filters: [{
@@ -604,7 +612,6 @@ function telemetryProbeBody(
       }],
       groupBys: [],
       calculations: [],
-      limit: 1,
     },
   };
 }
@@ -655,7 +662,10 @@ async function probeTelemetry(
     accountId,
     token: createdToken,
     secrets: [bootstrapToken, canary],
-    probe: authorization.telemetryProbe,
+    probe: {
+      queryId: authorization.authorizationId,
+      ...authorization.telemetryProbe,
+    },
   });
 }
 

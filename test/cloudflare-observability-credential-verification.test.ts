@@ -166,9 +166,14 @@ describe('existing Cloudflare Workers Observability credential verification', ()
     expect(requests[1]).toMatchObject({
       method: 'POST',
       body: {
+        queryId: value.authorizationId,
         view: 'events',
         dry: true,
-        timeframe: value.telemetryProbe.window,
+        timeframe: {
+          from: Date.parse(value.telemetryProbe.window.from),
+          to: Date.parse(value.telemetryProbe.window.to),
+        },
+        limit: 1,
         parameters: {
           datasets: ['cloudflare-workers'],
           filters: [{
@@ -179,7 +184,6 @@ describe('existing Cloudflare Workers Observability credential verification', ()
           }],
           groupBys: [],
           calculations: [],
-          limit: 1,
         },
       },
     });
@@ -223,6 +227,8 @@ describe('existing Cloudflare Workers Observability credential verification', ()
         'token_verification_failed', 'token_verify', 'auth_rejected', 1],
       [{ probeResponse: new Response('', { status: 403 }) },
         'telemetry_probe_failed', 'telemetry_probe', 'auth_rejected', 2],
+      [{ probeResponse: new Response('', { status: 400 }) },
+        'telemetry_probe_failed', 'telemetry_probe', 'request_rejected', 2],
       [{ probeThrows: true },
         'telemetry_probe_failed', 'telemetry_probe', 'transport_unavailable', 2],
       [{ verifyResponse: envelope({ id: TOKEN_ID, status: 'active', leaked: CREDENTIAL }) },
