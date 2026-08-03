@@ -23,4 +23,27 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(testDeploymentRuntime).toContain('runtime.statusReconciler.reconcileBatch(25)');
     expect(feishuRuntime).toContain('runtime.messageReconciler.reconcileBatch(25)');
   });
+
+  it('starts the outbox relay without waiting for workflow status reconciliation', () => {
+    const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    const detectorEnd = worker.indexOf('}).scan(25);');
+    const concurrentStart = worker.indexOf('await Promise.all([', detectorEnd);
+    const concurrentEnd = worker.indexOf(']);', concurrentStart);
+    const relay = worker.indexOf('relay.relay(),', concurrentStart);
+    const workflowReconciliation = worker.indexOf(
+      'reconcileWorkflowInstancesFromEnv(env),',
+      concurrentStart,
+    );
+
+    expect(detectorEnd).toBeGreaterThan(-1);
+    expect(concurrentStart).toBeGreaterThan(detectorEnd);
+    expect(concurrentEnd).toBeGreaterThan(concurrentStart);
+    expect(relay).toBeGreaterThan(concurrentStart);
+    expect(relay).toBeLessThan(concurrentEnd);
+    expect(workflowReconciliation).toBeGreaterThan(concurrentStart);
+    expect(workflowReconciliation).toBeLessThan(concurrentEnd);
+    expect(worker.slice(detectorEnd, concurrentStart)).not.toContain(
+      'reconcileWorkflowInstancesFromEnv(env)',
+    );
+  });
 });
