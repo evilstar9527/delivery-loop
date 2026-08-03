@@ -85,8 +85,11 @@ function filterValue(body: Record<string, unknown>, key: string): unknown {
 
 interface FakeOptions {
   duplicateDiagnostic?: boolean;
+  invalidSource?: boolean;
   leak?: string;
   missingWorkers?: boolean;
+  noDiagnostic?: boolean;
+  outsideWindow?: boolean;
   wrongService?: boolean;
   truncated?: boolean;
 }
@@ -140,10 +143,14 @@ function collectorFetch(
         truncated: options.truncated === true,
       } }),
       dataset: 'cloudflare-workers',
-      source: DIAGNOSTIC_RECORD,
-      timestamp: Date.parse(OBSERVED_AT),
+      source: options.invalidSource === true ? { unexpected: true } : DIAGNOSTIC_RECORD,
+      timestamp: Date.parse(options.outsideWindow === true
+        ? '2026-08-02T00:40:00.000Z'
+        : OBSERVED_AT),
     };
-    const events = options.duplicateDiagnostic === true ? [event, { ...event }] : [event];
+    const events = options.noDiagnostic === true
+      ? []
+      : options.duplicateDiagnostic === true ? [event, { ...event }] : [event];
     return Response.json({
       success: true,
       errors: [],
@@ -212,18 +219,21 @@ describe('GitHub App transport diagnostic collector', () => {
     expect(requests).toHaveLength(1);
   });
 
-  it('rejects duplicate, missing workers, truncated or wrong-service observations', async () => {
+  it('returns only fixed safe mismatch categories for strict observation failures', async () => {
     const value = await collectionRequest();
-    for (const options of [
-      { duplicateDiagnostic: true },
-      { missingWorkers: true },
-      { truncated: true },
-      { wrongService: true },
-    ]) {
+    for (const [options, code] of [
+      [{ noDiagnostic: true }, 'cloudflare_log_absent'],
+      [{ duplicateDiagnostic: true }, 'cloudflare_log_ambiguous'],
+      [{ missingWorkers: true }, 'cloudflare_log_envelope_mismatch'],
+      [{ truncated: true }, 'cloudflare_log_envelope_mismatch'],
+      [{ wrongService: true }, 'cloudflare_log_envelope_mismatch'],
+      [{ invalidSource: true }, 'cloudflare_log_source_mismatch'],
+      [{ outsideWindow: true }, 'cloudflare_log_time_mismatch'],
+    ] as const) {
       await expect(collectGitHubAppTransportDiagnosticObservation(
         value,
         collectorOptions(collectorFetch(value, options)),
-      )).rejects.toSatisfy(expectCode('cloudflare_log_mismatch'));
+      )).rejects.toSatisfy(expectCode(code));
     }
   });
 

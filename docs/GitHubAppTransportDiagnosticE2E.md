@@ -69,6 +69,11 @@ operation和`requestAttempts=1`，`queryId`=受验collection ID，exact window�
 另外两枚不发送。默认未opt-in、配置不齐或request不可读为exit 2且零网络；403、timeout或任何失败都不
 重试。
 
+provider成功响应但strict log不成立时，collector只能输出五个安全类别之一：
+`cloudflare_log_absent|cloudflare_log_ambiguous|cloudflare_log_envelope_mismatch|cloudflare_log_source_mismatch|cloudflare_log_time_mismatch`。
+它们分别表示0条、多条、metadata/workers envelope、strict source或timestamp/window不匹配；不输出
+实际count、字段值、raw event或response。这些类别只用于裁决下一步，不授权retry或降低strict验收。
+
 exit 0只输出可安全转入formal manifest的collection/run/head/attempt/job/deployment/version、`observedAt`、trace ID、
 allowlist failureKind和canonical log digest，以及`cloudflareLogQueries=1`、`plaintextLeaks=0`、
 `formalVerification=still_required`。它不写manifest、不生成reviewer/reviewedAt或Dashboard review，也不查询
