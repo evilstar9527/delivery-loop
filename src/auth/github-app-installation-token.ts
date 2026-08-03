@@ -571,16 +571,19 @@ export class GitHubAppInstallationTokenProvider implements
       redirect: 'manual',
       signal: AbortSignal.timeout(INSTALLATION_TOKEN_REQUEST_TIMEOUT_MS),
     };
+    let request: Request;
     try {
       // Keep request construction separate from network execution so edge
       // runtime option rejection cannot be misreported as host transport.
-      void new Request(requestUrl, requestInit);
+      request = new Request(requestUrl, requestInit);
     } catch {
       credentialFailure('credential_request_invalid');
     }
     let response: Response;
     try {
-      response = await this.fetchImplementation(requestUrl, requestInit);
+      // Execute the exact object that passed edge validation. Re-supplying
+      // URL + RequestInit would force fetch to parse the same options again.
+      response = await this.fetchImplementation(request);
     } catch (error) {
       try {
         this.transportDiagnostic?.({

@@ -13,6 +13,14 @@ function expectCredentialCode(code: GitHubAppCredentialErrorCode): (error: unkno
   return (error) => error instanceof GitHubAppCredentialError && error.code === code;
 }
 
+function asRequest(input: RequestInfo | URL, init?: RequestInit): Request {
+  return input instanceof Request ? input : new Request(input, init);
+}
+
+async function requestJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
+  return asRequest(input, init).clone().json();
+}
+
 describe('GitHub App installation token provider', () => {
   it('accepts the PKCS#1 PEM returned by the GitHub App manifest conversion', async () => {
     const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2_048 });
@@ -24,9 +32,9 @@ describe('GitHub App installation token provider', () => {
       installationId: '123456',
       privateKeyPem,
       allowedRepositories: ['example/delivery-target'],
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
         requested = true;
-        expect(new Headers(init?.headers).get('authorization')).toMatch(/^Bearer /);
+        expect(asRequest(input, init).headers.get('authorization')).toMatch(/^Bearer /);
         return Response.json({
           token: 'CANARY_PKCS1_INSTALLATION_TOKEN',
           expires_at: '2026-07-25T13:00:00.000Z',
@@ -106,12 +114,12 @@ describe('GitHub App installation token provider', () => {
     let requestCount = 0;
     const fetchImplementation: typeof fetch = async (input, init) => {
       requestCount += 1;
-      expect(String(input)).toBe(
+      const request = asRequest(input, init);
+      expect(request.url).toBe(
         'https://api.github.test/app/installations/123456/access_tokens',
       );
-      expect(init?.method).toBe('POST');
-      const headers = new Headers(init?.headers);
-      const authorization = headers.get('authorization');
+      expect(request.method).toBe('POST');
+      const authorization = request.headers.get('authorization');
       expect(authorization).toMatch(/^Bearer /);
       const jwt = authorization?.slice('Bearer '.length);
       if (jwt === undefined) throw new Error('missing test JWT');
@@ -122,7 +130,7 @@ describe('GitHub App installation token provider', () => {
       });
       expect(verified.protectedHeader.alg).toBe('RS256');
       expect(verified.payload.exp! - verified.payload.iat!).toBeLessThanOrEqual(600);
-      expect(JSON.parse(String(init?.body))).toEqual({
+      await expect(request.clone().json()).resolves.toEqual({
         repositories: ['delivery-target'],
         permissions: { actions: 'write', contents: 'read' },
       });
@@ -207,6 +215,44 @@ describe('GitHub App installation token provider', () => {
     }
   });
 
+  it('executes the exact validated Request object without reparsing RequestInit in fetch', async () => {
+    const keys = await generateKeyPair('RS256', { extractable: true });
+    const privateKeyPem = await exportPKCS8(keys.privateKey);
+    const inputs: Array<{ input: RequestInfo | URL; init: RequestInit | undefined }> = [];
+    const provider = new GitHubAppInstallationTokenProvider({
+      appId: '7890',
+      installationId: '123456',
+      privateKeyPem,
+      allowedRepositories: ['example/delivery-target'],
+      apiBaseUrl: 'https://api.github.test',
+      fetch: async (input, init) => {
+        inputs.push({ input, init });
+        return Response.json({
+          token: 'CANARY_VALIDATED_REQUEST_TOKEN',
+          expires_at: '2026-07-25T13:00:00.000Z',
+        }, { status: 201 });
+      },
+      now: () => new Date('2026-07-25T12:00:00.000Z'),
+    });
+
+    await expect(provider.getBaseObservationToken('example/delivery-target'))
+      .resolves.toBe('CANARY_VALIDATED_REQUEST_TOKEN');
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]?.input).toBeInstanceOf(Request);
+    expect(inputs[0]?.init).toBeUndefined();
+    const request = inputs[0]?.input as Request;
+    expect(request.url).toBe(
+      'https://api.github.test/app/installations/123456/access_tokens',
+    );
+    expect(request.method).toBe('POST');
+    expect(request.redirect).toBe('manual');
+    expect(request.signal).toBeInstanceOf(AbortSignal);
+    await expect(request.clone().json()).resolves.toEqual({
+      repositories: ['delivery-target'],
+      permissions: { contents: 'read' },
+    });
+  });
+
   it.each([
     ['network', null, 'credential_transport_unavailable'],
     ['unauthenticated', 401, 'credential_auth_rejected'],
@@ -260,9 +306,9 @@ describe('GitHub App installation token provider', () => {
       const keys = await generateKeyPair('RS256', { extractable: true });
       const privateKeyPem = await exportPKCS8(keys.privateKey);
       const diagnostics: unknown[] = [];
-      let requestInit: RequestInit | undefined;
-      const fetchImplementation = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-        requestInit = init;
+      let request: Request | undefined;
+      const fetchImplementation = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        request = asRequest(input, init);
         throw failure;
       });
       const provider = new GitHubAppInstallationTokenProvider({
@@ -279,8 +325,8 @@ describe('GitHub App installation token provider', () => {
         expectCredentialCode('credential_transport_unavailable'),
       );
       expect(fetchImplementation).toHaveBeenCalledOnce();
-      expect(requestInit?.redirect).toBe('manual');
-      expect(requestInit?.signal).toBeInstanceOf(AbortSignal);
+      expect(request?.redirect).toBe('manual');
+      expect(request?.signal).toBeInstanceOf(AbortSignal);
       expect(diagnostics).toEqual([{
         schemaVersion: '1',
         event: 'github_app_installation_token_transport_failed',
@@ -370,7 +416,7 @@ describe('GitHub App installation token provider', () => {
   it('issues an uncached repo-scoped write credential and revokes it through GitHub', async () => {
     const keys = await generateKeyPair('RS256', { extractable: true });
     const privateKeyPem = await exportPKCS8(keys.privateKey);
-    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    const calls: Request[] = [];
     const provider = new GitHubAppInstallationTokenProvider({
       appId: '7890',
       installationId: '123456',
@@ -378,10 +424,11 @@ describe('GitHub App installation token provider', () => {
       allowedRepositories: ['example/delivery-target'],
       apiBaseUrl: 'https://api.github.test',
       fetch: async (input, init) => {
-        calls.push({ url: String(input), init });
+        const request = asRequest(input, init);
+        calls.push(request);
         if (calls.length === 1) {
-          expect(init?.method).toBe('POST');
-          expect(JSON.parse(String(init?.body))).toEqual({
+          expect(request.method).toBe('POST');
+          await expect(request.clone().json()).resolves.toEqual({
             repositories: ['delivery-target'],
             permissions: { contents: 'write', pull_requests: 'write' },
           });
@@ -390,12 +437,12 @@ describe('GitHub App installation token provider', () => {
             expires_at: '2026-07-25T13:00:00.000Z',
           }, { status: 201 });
         }
-        expect(String(input)).toBe('https://api.github.test/installation/token');
-        expect(init?.method).toBe('DELETE');
-        expect(new Headers(init?.headers).get('authorization')).toBe(
+        expect(request.url).toBe('https://api.github.test/installation/token');
+        expect(request.method).toBe('DELETE');
+        expect(request.headers.get('authorization')).toBe(
           'Bearer CANARY_WRITE_INSTALLATION_TOKEN',
         );
-        expect(init?.body).toBeUndefined();
+        expect(request.body).toBeNull();
         return new Response(null, { status: 204 });
       },
       now: () => new Date('2026-07-25T12:00:00.000Z'),
@@ -424,9 +471,9 @@ describe('GitHub App installation token provider', () => {
       privateKeyPem,
       allowedRepositories: ['example/delivery-target'],
       apiBaseUrl: 'https://api.github.test',
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
         requestCount += 1;
-        expect(JSON.parse(String(init?.body))).toEqual({
+        await expect(requestJson(input, init)).resolves.toEqual({
           repositories: ['delivery-target'],
           permissions: { pull_requests: 'write' },
         });
@@ -456,9 +503,9 @@ describe('GitHub App installation token provider', () => {
       installationId: '123456',
       privateKeyPem,
       allowedRepositories: ['example/delivery-target'],
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
         requestCount += 1;
-        expect(JSON.parse(String(init?.body))).toEqual({
+        await expect(requestJson(input, init)).resolves.toEqual({
           repositories: ['delivery-target'],
           permissions: { contents: 'read' },
         });
@@ -489,9 +536,9 @@ describe('GitHub App installation token provider', () => {
       privateKeyPem,
       allowedRepositories: ['example/delivery-target'],
       apiBaseUrl: 'https://api.github.test',
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
         requestCount += 1;
-        expect(JSON.parse(String(init?.body))).toEqual({
+        await expect(requestJson(input, init)).resolves.toEqual({
           repositories: ['delivery-target'],
           permissions: {
             checks: 'read',
@@ -526,9 +573,9 @@ describe('GitHub App installation token provider', () => {
       installationId: '123456',
       privateKeyPem,
       allowedRepositories: ['example/delivery-target'],
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
         requestCount += 1;
-        expect(JSON.parse(String(init?.body))).toEqual({
+        await expect(requestJson(input, init)).resolves.toEqual({
           repositories: ['delivery-target'],
           permissions: { deployments: 'write' },
         });
@@ -558,9 +605,9 @@ describe('GitHub App installation token provider', () => {
       installationId: '123456',
       privateKeyPem,
       allowedRepositories: ['example/delivery-target'],
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
         requestCount += 1;
-        expect(JSON.parse(String(init?.body))).toEqual({
+        await expect(requestJson(input, init)).resolves.toEqual({
           repositories: ['delivery-target'],
           permissions: { deployments: 'write' },
         });
@@ -593,8 +640,8 @@ describe('GitHub App installation token provider', () => {
       installationId: '123456',
       privateKeyPem,
       allowedRepositories: ['example/delivery-target'],
-      fetch: async (_input, init) => {
-        permissions.push(JSON.parse(String(init?.body)));
+      fetch: async (input, init) => {
+        permissions.push(await requestJson(input, init));
         return Response.json({
           token: `CANARY_PRODUCTION_TOKEN_${permissions.length}`,
           expires_at: '2026-07-25T13:00:00.000Z',
@@ -630,8 +677,8 @@ describe('GitHub App installation token provider', () => {
       installationId: '123456',
       privateKeyPem,
       allowedRepositories: ['example/delivery-target'],
-      fetch: async (_input, init) => {
-        permissions.push(JSON.parse(String(init?.body)));
+      fetch: async (input, init) => {
+        permissions.push(await requestJson(input, init));
         return Response.json({
           token: `CANARY_TEST_DEPLOYMENT_TOKEN_${permissions.length}`,
           expires_at: '2026-07-25T13:00:00.000Z',
@@ -667,9 +714,9 @@ describe('GitHub App installation token provider', () => {
       installationId: '123456',
       privateKeyPem,
       allowedRepositories: ['example/delivery-target'],
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
         requestCount += 1;
-        expect(JSON.parse(String(init?.body))).toEqual({
+        await expect(requestJson(input, init)).resolves.toEqual({
           repositories: ['delivery-target'],
           permissions: { actions: 'write', contents: 'read' },
         });
@@ -702,8 +749,8 @@ describe('GitHub App installation token provider', () => {
       installationId: '123456',
       privateKeyPem,
       allowedRepositories: ['example/delivery-target'],
-      fetch: async (_input, init) => {
-        permissions.push(JSON.parse(String(init?.body)));
+      fetch: async (input, init) => {
+        permissions.push(await requestJson(input, init));
         return Response.json({
           token: `CANARY_ROLLBACK_TOKEN_${permissions.length}`,
           expires_at: '2026-07-25T13:00:00.000Z',
