@@ -253,6 +253,43 @@ describe('GitHub App installation token provider', () => {
     });
   });
 
+  it('invokes the default runtime fetch through globalThis instead of the provider receiver', async () => {
+    const keys = await generateKeyPair('RS256', { extractable: true });
+    const privateKeyPem = await exportPKCS8(keys.privateKey);
+    const usedGlobalReceiver: boolean[] = [];
+    const fetchImplementation = vi.fn(function (
+      this: unknown,
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) {
+      usedGlobalReceiver.push(this === globalThis);
+      expect(input).toBeInstanceOf(Request);
+      expect(init).toBeUndefined();
+      return Promise.resolve(Response.json({
+        token: 'CANARY_GLOBAL_FETCH_RECEIVER_TOKEN',
+        expires_at: '2026-07-25T13:00:00.000Z',
+      }, { status: 201 }));
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fetchImplementation);
+    try {
+      const provider = new GitHubAppInstallationTokenProvider({
+        appId: '7890',
+        installationId: '123456',
+        privateKeyPem,
+        allowedRepositories: ['example/delivery-target'],
+        apiBaseUrl: 'https://api.github.test',
+        now: () => new Date('2026-07-25T12:00:00.000Z'),
+      });
+
+      await expect(provider.getBaseObservationToken('example/delivery-target'))
+        .resolves.toBe('CANARY_GLOBAL_FETCH_RECEIVER_TOKEN');
+      expect(fetchImplementation).toHaveBeenCalledOnce();
+      expect(usedGlobalReceiver).toEqual([true]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([
     ['network', null, 'credential_transport_unavailable'],
     ['unauthenticated', 401, 'credential_auth_rejected'],

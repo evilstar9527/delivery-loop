@@ -237,7 +237,11 @@ export class GitHubAppInstallationTokenProvider implements
     }
     for (const repository of this.allowedRepositories) repositoryName(repository);
     this.apiBaseUrl = apiOrigin(options.apiBaseUrl ?? 'https://api.github.com');
-    this.fetchImplementation = options.fetch ?? globalThis.fetch;
+    // Keep the native fetch receiver bound to the runtime global. Calling a
+    // captured Web API function as a provider method can be rejected by edge
+    // runtimes even when local workerd accepts the foreign receiver.
+    this.fetchImplementation = options.fetch ?? ((input, init) =>
+      globalThis.fetch(input, init));
     this.now = options.now ?? (() => new Date());
     this.transportDiagnostic = options.transportDiagnostic;
   }
