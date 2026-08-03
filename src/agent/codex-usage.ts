@@ -8,6 +8,9 @@ const TurnCompletedSchema = z.object({
   usage: z.object({
     input_tokens: TokenCountSchema,
     cached_input_tokens: TokenCountSchema,
+    // Codex 0.145.0 emits this bookkeeping scalar even though Delivery Loop
+    // does not price or persist it. Validate it before deliberately dropping it.
+    cache_write_input_tokens: TokenCountSchema.optional().default(0),
     output_tokens: TokenCountSchema,
     reasoning_output_tokens: TokenCountSchema,
   }).strict(),

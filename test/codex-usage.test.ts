@@ -14,6 +14,7 @@ describe('Codex JSONL usage accounting', () => {
       usage: {
         input_tokens: 24_763,
         cached_input_tokens: 24_448,
+        cache_write_input_tokens: 315,
         output_tokens: 122,
         reasoning_output_tokens: 17,
       },
@@ -33,6 +34,16 @@ describe('Codex JSONL usage accounting', () => {
     const invalid = [
       '{',
       JSON.stringify({ type: 'turn.completed', usage: { input_tokens: -1 } }),
+      JSON.stringify({
+        type: 'turn.completed',
+        usage: {
+          input_tokens: 1,
+          cached_input_tokens: 0,
+          cache_write_input_tokens: -1,
+          output_tokens: 1,
+          reasoning_output_tokens: 0,
+        },
+      }),
       JSON.stringify({
         type: 'turn.completed',
         usage: {

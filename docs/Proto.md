@@ -866,7 +866,7 @@ type ModelUsageRequest = {
 
 - reservation以profile的`maxInput + maxOutput`和未缓存input/output最坏价格同时检查tenant/repository/user的UTC日及run lifetime预算；任一scope/resource超额均在模型子进程前返回429。D1 profile是model ID、上界和整数micro-USD单价真源，cached价格不得高于预留用的uncached价格；profile identity/上界/价格不可UPDATE，改价必须新增profile ID，旧profile只允许运营disable，不能从Task、Agent输出或请求价格推导；
 - 预约TTL为2小时。相同reservation ID、Attempt/profile且仍为active reserved时是网络幂等重放；settled、expired、换Attempt/profile一律409，避免相同ID触发第二次真实模型调用。Cron只把过期reserved置expired；
-- Runner以官方`codex exec --json` JSONL中的单个`turn.completed.usage`填四个非负整数，cached不得大于input、reasoning不得大于output，total/cost不得超过reservation。控制面使用接收时间和D1 profile价格计算费用，原子写一次`model_usage`并settle reservation；相同usage ID与相同标量可重放，变异内容冲突；
+- Runner以官方`codex exec --json` JSONL中的单个`turn.completed.usage`填四个非负计费整数，cached不得大于input、reasoning不得大于output，total/cost不得超过reservation。锁定的Codex 0.145.0还发送`cache_write_input_tokens`；Runner验证其为非负整数后丢弃，不把它加入价格或D1 schema，其他未知usage字段仍拒绝。控制面使用接收时间和D1 profile价格计算费用，原子写一次`model_usage`并settle reservation；相同usage ID与相同标量可重放，变异内容冲突；
 - `model_usage`每行只含provider/model、run/attempt/tenant/repository/principal lineage、四个token数、整数micro-USD、source digest和时间。JSONL的thread/item/message/reasoning/command/tool/file-change/web-search/plan内容在Runner解析后立即丢弃，raw stdout不返回也不持久化；没有合法usage不得把模型调用记成零费用成功。
 
 Attempt failure event 约束：
