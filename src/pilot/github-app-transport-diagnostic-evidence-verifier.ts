@@ -1,9 +1,9 @@
 import { canonicalSha256 } from '../domain/digest.js';
 import {
-  GitHubAppTransportDiagnosticEvidenceManifestV1Schema,
+  GitHubAppTransportDiagnosticEvidenceManifestV2Schema,
   GitHubAppTransportDiagnosticLogRecordV1Schema,
   GitHubAppTransportDiagnosticPublicSummaryV1Schema,
-  type GitHubAppTransportDiagnosticEvidenceManifestV1,
+  type GitHubAppTransportDiagnosticEvidenceManifestV2,
 } from '../domain/github-app-transport-diagnostic-evidence.js';
 import { SecretScanner } from '../security/redaction.js';
 
@@ -24,7 +24,7 @@ export type GitHubAppTransportDiagnosticEvidenceVerificationErrorCode =
   | 'cloudflare_response_invalid'
   | 'cloudflare_deployment_mismatch'
   | 'cloudflare_log_mismatch'
-  | 'cloudflare_trace_mismatch'
+  | 'cloudflare_invocation_mismatch'
   | 'secret_leak_detected';
 
 export class GitHubAppTransportDiagnosticEvidenceVerificationError extends Error {
@@ -46,19 +46,19 @@ export interface GitHubAppTransportDiagnosticEvidenceVerifierOptions {
 }
 
 export interface GitHubAppTransportDiagnosticEvidenceVerificationSummary {
-  schemaVersion: '1';
+  schemaVersion: '2';
   evidenceId: string;
   repository: string;
   githubRunId: string;
   readinessJobId: string;
   deploymentId: string;
   versionId: string;
-  failureKind: GitHubAppTransportDiagnosticEvidenceManifestV1['diagnostic']['failureKind'];
+  failureKind: GitHubAppTransportDiagnosticEvidenceManifestV2['diagnostic']['failureKind'];
   requestAttempts: 1;
   githubLogQueries: 1;
   cloudflareDeploymentQueries: 1;
   cloudflareLogQueries: 1;
-  cloudflareTraces: 1;
+  cloudflareInvocationQueries: 1;
   plaintextLeaks: 0;
   humanReview: 'required_and_recorded';
 }
@@ -223,9 +223,9 @@ async function githubJobLog(
 
 async function validatePublicSummary(
   text: string,
-  manifest: GitHubAppTransportDiagnosticEvidenceManifestV1,
+  manifest: GitHubAppTransportDiagnosticEvidenceManifestV2,
 ): Promise<void> {
-  const candidates: Array<GitHubAppTransportDiagnosticEvidenceManifestV1['github']['publicSummary']>
+  const candidates: Array<GitHubAppTransportDiagnosticEvidenceManifestV2['github']['publicSummary']>
     = [];
   for (const line of text.split(/\r?\n/)) {
     const start = line.indexOf('{');
@@ -249,7 +249,7 @@ async function verifyGitHub(
   origin: string,
   token: string,
   scanner: SecretScanner,
-  manifest: GitHubAppTransportDiagnosticEvidenceManifestV1,
+  manifest: GitHubAppTransportDiagnosticEvidenceManifestV2,
 ): Promise<void> {
   const headers = {
     accept: 'application/vnd.github+json',
@@ -331,7 +331,7 @@ async function verifyDeployment(
   token: string,
   accountId: string,
   scanner: SecretScanner,
-  manifest: GitHubAppTransportDiagnosticEvidenceManifestV1,
+  manifest: GitHubAppTransportDiagnosticEvidenceManifestV2,
 ): Promise<void> {
   const raw = await externalJson(
     fetcher,
@@ -379,8 +379,8 @@ async function verifyDeployment(
 }
 
 function telemetryBody(
-  manifest: GitHubAppTransportDiagnosticEvidenceManifestV1,
-  view: 'events' | 'traces',
+  manifest: GitHubAppTransportDiagnosticEvidenceManifestV2,
+  view: 'events' | 'invocations',
   filters: Array<Record<string, unknown>>,
 ): Record<string, unknown> {
   return {
@@ -411,7 +411,7 @@ function telemetryRunValid(root: Record<string, unknown>, accountId: string): bo
 async function validateLog(
   raw: unknown,
   accountId: string,
-  manifest: GitHubAppTransportDiagnosticEvidenceManifestV1,
+  manifest: GitHubAppTransportDiagnosticEvidenceManifestV2,
 ): Promise<void> {
   const root = record(raw);
   const result = root === null ? null : record(root.result);
@@ -425,8 +425,10 @@ async function validateLog(
     root === null || !telemetryRunValid(root, accountId) || group === null ||
     group.count !== 1 || event === null || metadata === null || workers === null ||
     metadata.account !== accountId || metadata.service !== manifest.cloudflare.scriptName ||
-    metadata.traceId !== manifest.diagnostic.workerTraceId ||
-    metadata.type !== 'cf-worker-log' || workers.truncated !== false ||
+    metadata.requestId !== manifest.diagnostic.workerInvocationId ||
+    metadata.rayId !== manifest.diagnostic.workerInvocationId ||
+    metadata.type !== 'cf-worker' || workers.truncated !== false ||
+    workers.requestId !== manifest.diagnostic.workerInvocationId ||
     event.dataset !== 'cloudflare-workers' ||
     event.timestamp !== Date.parse(manifest.diagnostic.observedAt) || !parsed.success ||
     parsed.data.failureKind !== manifest.diagnostic.failureKind ||
@@ -436,29 +438,47 @@ async function validateLog(
   ) fail('cloudflare_log_mismatch');
 }
 
-function validateTrace(
+async function validateInvocation(
   raw: unknown,
   accountId: string,
-  manifest: GitHubAppTransportDiagnosticEvidenceManifestV1,
-): void {
+  manifest: GitHubAppTransportDiagnosticEvidenceManifestV2,
+): Promise<void> {
   const root = record(raw);
   const result = root === null ? null : record(root.result);
-  const traces = result === null ? [] : records(result, 'traces');
-  const trace = traces.length === 1 && traces[0]?.traceId === manifest.diagnostic.workerTraceId
-    ? traces[0]!
+  const invocations = result === null ? null : record(result.invocations);
+  const invocationEntries = invocations === null ? [] : Object.entries(invocations);
+  const rawInvocation = invocationEntries.length === 1 &&
+      invocationEntries[0]?.[0] === manifest.diagnostic.workerInvocationId &&
+      Array.isArray(invocationEntries[0][1])
+    ? invocationEntries[0][1]
     : null;
-  const observedAt = Date.parse(manifest.diagnostic.observedAt);
+  const invocation = rawInvocation?.map(record) ?? null;
+  const events = invocation?.filter(
+    (item): item is Record<string, unknown> => item !== null,
+  ) ?? [];
+  const matches = events.filter((event) => {
+    const metadata = record(event.$metadata);
+    const workers = record(event.$workers);
+    const parsed = GitHubAppTransportDiagnosticLogRecordV1Schema.safeParse(event.source);
+    return metadata !== null && workers !== null && parsed.success &&
+      metadata.account === accountId && metadata.service === manifest.cloudflare.scriptName &&
+      metadata.requestId === manifest.diagnostic.workerInvocationId &&
+      metadata.rayId === manifest.diagnostic.workerInvocationId &&
+      metadata.type === 'cf-worker' && workers.truncated === false &&
+      workers.requestId === manifest.diagnostic.workerInvocationId &&
+      event.dataset === 'cloudflare-workers' &&
+      event.timestamp === Date.parse(manifest.diagnostic.observedAt) &&
+      parsed.data.failureKind === manifest.diagnostic.failureKind &&
+      parsed.data.observedAt === new Date(manifest.diagnostic.observedAt).toISOString();
+  });
   if (
-    root === null || !telemetryRunValid(root, accountId) || trace === null ||
-    !Array.isArray(trace.service) || trace.service.length !== 1 ||
-    trace.service[0] !== manifest.cloudflare.scriptName ||
-    !Number.isSafeInteger(trace.spans) || Number(trace.spans) < 1 ||
-    !Number.isFinite(trace.traceStartMs) || !Number.isFinite(trace.traceEndMs) ||
-    !Number.isFinite(trace.traceDurationMs) || Number(trace.traceStartMs) > observedAt ||
-    Number(trace.traceEndMs) < observedAt ||
-    Number(trace.traceEndMs) - Number(trace.traceStartMs) !== Number(trace.traceDurationMs) ||
-    !Array.isArray(trace.errors) || trace.errors.length !== 0
-  ) fail('cloudflare_trace_mismatch');
+    root === null || !telemetryRunValid(root, accountId) || invocation === null ||
+    invocation.length < 1 || invocation.length > 100 || events.length !== invocation.length ||
+    matches.length !== 1 ||
+    await canonicalSha256(
+      GitHubAppTransportDiagnosticLogRecordV1Schema.parse(matches[0]!.source),
+    ) !== manifest.diagnostic.logRecordDigest
+  ) fail('cloudflare_invocation_mismatch');
 }
 
 async function verifyTelemetry(
@@ -467,7 +487,7 @@ async function verifyTelemetry(
   token: string,
   accountId: string,
   scanner: SecretScanner,
-  manifest: GitHubAppTransportDiagnosticEvidenceManifestV1,
+  manifest: GitHubAppTransportDiagnosticEvidenceManifestV2,
 ): Promise<void> {
   const url = `${origin}/client/v4/accounts/${encodeURIComponent(accountId)}` +
     '/workers/observability/telemetry/query';
@@ -479,8 +499,8 @@ async function verifyTelemetry(
   const eventFilters: Array<Record<string, unknown>> = [
     { key: '$metadata.service', operation: 'eq', type: 'string',
       value: manifest.cloudflare.scriptName },
-    { key: '$metadata.traceId', operation: 'eq', type: 'string',
-      value: manifest.diagnostic.workerTraceId },
+    { key: '$metadata.requestId', operation: 'eq', type: 'string',
+      value: manifest.diagnostic.workerInvocationId },
     { key: 'event', operation: 'eq', type: 'string',
       value: 'github_app_installation_token_transport_failed' },
     { key: 'component', operation: 'eq', type: 'string', value: 'github_app_credential' },
@@ -492,24 +512,31 @@ async function verifyTelemetry(
     method: 'POST', headers, body: JSON.stringify(telemetryBody(manifest, 'events', eventFilters)),
   }, 'cloudflare', scanner);
   await validateLog(logRaw, accountId, manifest);
-  const traceRaw = await externalJson(fetcher, url, {
+  const invocationRaw = await externalJson(fetcher, url, {
     method: 'POST',
     headers,
-    body: JSON.stringify(telemetryBody(manifest, 'traces', [
-      { key: '$metadata.traceId', operation: 'eq', type: 'string',
-        value: manifest.diagnostic.workerTraceId },
+    body: JSON.stringify(telemetryBody(manifest, 'invocations', [
+      { key: '$metadata.requestId', operation: 'eq', type: 'string',
+        value: manifest.diagnostic.workerInvocationId },
       { key: '$metadata.service', operation: 'eq', type: 'string',
         value: manifest.cloudflare.scriptName },
+      { key: 'event', operation: 'eq', type: 'string',
+        value: 'github_app_installation_token_transport_failed' },
+      { key: 'component', operation: 'eq', type: 'string',
+        value: 'github_app_credential' },
+      { key: 'operation', operation: 'eq', type: 'string',
+        value: 'installation_token_exchange' },
+      { key: 'requestAttempts', operation: 'eq', type: 'number', value: 1 },
     ])),
   }, 'cloudflare', scanner);
-  validateTrace(traceRaw, accountId, manifest);
+  await validateInvocation(invocationRaw, accountId, manifest);
 }
 
 export async function verifyGitHubAppTransportDiagnosticEvidence(
-  input: GitHubAppTransportDiagnosticEvidenceManifestV1,
+  input: GitHubAppTransportDiagnosticEvidenceManifestV2,
   options: GitHubAppTransportDiagnosticEvidenceVerifierOptions,
 ): Promise<GitHubAppTransportDiagnosticEvidenceVerificationSummary> {
-  const parsed = GitHubAppTransportDiagnosticEvidenceManifestV1Schema.safeParse(input);
+  const parsed = GitHubAppTransportDiagnosticEvidenceManifestV2Schema.safeParse(input);
   if (!parsed.success) fail('manifest_invalid');
   const manifest = parsed.data;
   const tokens = [
@@ -553,7 +580,7 @@ export async function verifyGitHubAppTransportDiagnosticEvidence(
   );
 
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     evidenceId: manifest.evidenceId,
     repository: manifest.repository,
     githubRunId: manifest.github.runId,
@@ -565,7 +592,7 @@ export async function verifyGitHubAppTransportDiagnosticEvidence(
     githubLogQueries: 1,
     cloudflareDeploymentQueries: 1,
     cloudflareLogQueries: 1,
-    cloudflareTraces: 1,
+    cloudflareInvocationQueries: 1,
     plaintextLeaks: 0,
     humanReview: 'required_and_recorded',
   };

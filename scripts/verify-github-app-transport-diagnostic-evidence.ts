@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
-  GitHubAppTransportDiagnosticEvidenceManifestV1Schema,
-  type GitHubAppTransportDiagnosticEvidenceManifestV1,
+  GitHubAppTransportDiagnosticEvidenceManifestV2Schema,
+  type GitHubAppTransportDiagnosticEvidenceManifestV2,
 } from '../src/domain/github-app-transport-diagnostic-evidence.js';
 import {
   GitHubAppTransportDiagnosticEvidenceVerificationError,
@@ -21,7 +21,7 @@ function env(name: string): string {
 
 async function readManifest(
   file: string,
-): Promise<GitHubAppTransportDiagnosticEvidenceManifestV1> {
+): Promise<GitHubAppTransportDiagnosticEvidenceManifestV2> {
   let source: string;
   try { source = await readFile(resolve(file), 'utf8'); }
   catch { throw new ManifestReadError('unavailable'); }
@@ -31,7 +31,7 @@ async function readManifest(
   let raw: unknown;
   try { raw = JSON.parse(source) as unknown; }
   catch { throw new ManifestReadError('invalid'); }
-  const parsed = GitHubAppTransportDiagnosticEvidenceManifestV1Schema.safeParse(raw);
+  const parsed = GitHubAppTransportDiagnosticEvidenceManifestV2Schema.safeParse(raw);
   if (!parsed.success) throw new ManifestReadError('invalid');
   return parsed.data;
 }
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  let manifest: GitHubAppTransportDiagnosticEvidenceManifestV1;
+  let manifest: GitHubAppTransportDiagnosticEvidenceManifestV2;
   try { manifest = await readManifest(required.evidenceFile); }
   catch (error) {
     const kind = error instanceof ManifestReadError ? error.kind : 'invalid';

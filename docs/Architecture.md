@@ -547,7 +547,8 @@ Correlation不建立第二张汇总表：D1的split read-only views仍是Task/Ru
 installation-token transport诊断不新建D1表或恢复状态。生产provider仍只向统一secure structured sink发出
 `event/operation/failureKind/requestAttempts=1`白名单记录，readiness HTTP只暴露较粗的
 `credential_transport_unavailable`。仓库外manifest把既有GitHub run/job、当时Worker deployment和
-Cloudflare trace作为不可信索引；只读verifier重新查询四方并要求同一job window、唯一log和同trace，
+Cloudflare Worker invocation作为不可信索引；只读verifier重新查询四方并要求同一job window、唯一log和
+同一request/ray/workers invocation identity，
 不会把诊断结果投影为Task/Run/Attempt或自动触发修复。完整边界见
 [GitHub App installation-token transport 诊断外部证据验收](GitHubAppTransportDiagnosticE2E.md)。
 

@@ -1465,18 +1465,20 @@ Feishu拒绝case `role_revoked/unauthorized_account`必须额外保存安全枚�
 
 ## §37. GitHub App transport 诊断外部证据契约
 
-`GitHubAppTransportDiagnosticEvidenceManifestV1`只索引一条已经结束的GitHub base readiness失败：固定
+`GitHubAppTransportDiagnosticEvidenceManifestV2`只索引一条已经结束的GitHub base readiness失败：固定
 repository owner actor、main head、workflow run/attempt 1、preflight/readiness job与exact job window；
 公开summary只能是`503 + ready=false + credential_transport_unavailable + requestAttempts=1 + no-store`。
 Cloudflare部分只保存account digest、script、当时100% deployment/version及同一window；diagnostic只保存
-strict structured-log digest、worker trace ID、observed time和五类allowlist failureKind。raw log/trace/error、
+strict structured-log digest、16位worker invocation ID、observed time和五类allowlist failureKind。raw log/error、
 App/installation ID、JWT/key/token、response、account ID或带query URL没有字段。
 
 `pnpm run e2e:github-app-transport-diagnostic`先核对exact固定workflow的run和两个jobs，再有界读取唯一
 readiness job log；随后证明manifest deployment是job开始前最后生效版本且窗口内零deployment，最后对
-Cloudflare telemetry各执行一次`dry=true` events/traces查询。event必须是exact
-service/trace/event/component/operation/requestAttempts的唯一未截断strict record，trace必须覆盖该日志时间、
-同service且无error。三枚GitHub/deployment/observability read token必须互异；64 KiB manifest、1 MiB响应、
+Cloudflare telemetry各执行一次`dry=true` events/invocations查询。event必须是exact
+service/requestId/event/component/operation/requestAttempts的唯一未截断strict record，并要求
+`$metadata.requestId == $metadata.rayId == $workers.requestId`且`$metadata.type=cf-worker`；invocation查询必须
+以同一request ID唯一找回该strict record。v1的32位`workerTraceId`与`cf-worker-log`冻结假设不再作为
+production成功判据。三枚GitHub/deployment/observability read token必须互异；64 KiB manifest、1 MiB响应、
 10秒timeout、parse前Secret scan和Watt-derived 0/1/2纪律保持不变。exit 0只证明该次失败的live
 failureKind，不证明readiness 200或产生任何修复/Task/Action/deploy authority；完整步骤见
 [GitHub App installation-token transport 诊断外部证据验收](GitHubAppTransportDiagnosticE2E.md)。

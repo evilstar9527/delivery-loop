@@ -25,7 +25,7 @@ const ACCOUNT_ID = '1'.repeat(32);
 const SCRIPT_NAME = 'delivery-loop-control-plane';
 const DEPLOYMENT_ID = '11111111-1111-4111-8111-111111111111';
 const VERSION_ID = '22222222-2222-4222-8222-222222222222';
-const WORKER_TRACE_ID = 'a'.repeat(32);
+const WORKER_REQUEST_ID = 'c'.repeat(16);
 const GITHUB_TOKEN = 'github_transport_diagnostic_read_token';
 const CLOUDFLARE_DEPLOYMENT_TOKEN = 'cloudflare_deployment_read_token';
 const CLOUDFLARE_OBSERVABILITY_TOKEN = 'cloudflare_observability_read_token';
@@ -90,6 +90,10 @@ interface FakeOptions {
   missingWorkers?: boolean;
   noDiagnostic?: boolean;
   outsideWindow?: boolean;
+  mismatchedWorkersRequestId?: boolean;
+  mismatchedRayId?: boolean;
+  missingMetadataRequestId?: boolean;
+  wrongMetadataType?: boolean;
   wrongService?: boolean;
   truncated?: boolean;
 }
@@ -133,13 +137,18 @@ function collectorFetch(
       $metadata: {
         account: ACCOUNT_ID,
         service: options.wrongService === true ? 'another-worker' : SCRIPT_NAME,
-        traceId: WORKER_TRACE_ID,
-        type: 'cf-worker-log',
+        ...(options.missingMetadataRequestId === true ? {} : {
+          requestId: WORKER_REQUEST_ID,
+        }),
+        rayId: options.mismatchedRayId === true ? 'e'.repeat(16) : WORKER_REQUEST_ID,
+        type: options.wrongMetadataType === true ? 'cf-worker-log' : 'cf-worker',
       },
       ...(options.missingWorkers === true ? {} : { $workers: {
         scriptName: SCRIPT_NAME,
         eventType: 'fetch',
-        requestId: 'request-round212',
+        requestId: options.mismatchedWorkersRequestId === true
+          ? 'd'.repeat(16)
+          : WORKER_REQUEST_ID,
         truncated: options.truncated === true,
       } }),
       dataset: 'cloudflare-workers',
@@ -198,7 +207,7 @@ describe('GitHub App transport diagnostic collector', () => {
       value,
       collectorOptions(collectorFetch(value, {}, requests)),
     )).resolves.toEqual({
-      schemaVersion: '1',
+      schemaVersion: '2',
       collectionId: value.collectionId,
       repository: REPOSITORY,
       githubRunId: RUN_ID,
@@ -208,7 +217,7 @@ describe('GitHub App transport diagnostic collector', () => {
       deploymentId: DEPLOYMENT_ID,
       versionId: VERSION_ID,
       observedAt: OBSERVED_AT,
-      workerTraceId: WORKER_TRACE_ID,
+      workerInvocationId: WORKER_REQUEST_ID,
       failureKind: 'tcp_failed',
       logRecordDigest: await canonicalSha256(DIAGNOSTIC_RECORD),
       requestAttempts: 1,
@@ -226,6 +235,10 @@ describe('GitHub App transport diagnostic collector', () => {
       [{ duplicateDiagnostic: true }, 'cloudflare_log_ambiguous'],
       [{ missingWorkers: true }, 'cloudflare_log_envelope_mismatch'],
       [{ truncated: true }, 'cloudflare_log_envelope_mismatch'],
+      [{ missingMetadataRequestId: true }, 'cloudflare_log_envelope_mismatch'],
+      [{ mismatchedRayId: true }, 'cloudflare_log_envelope_mismatch'],
+      [{ mismatchedWorkersRequestId: true }, 'cloudflare_log_envelope_mismatch'],
+      [{ wrongMetadataType: true }, 'cloudflare_log_envelope_mismatch'],
       [{ wrongService: true }, 'cloudflare_log_envelope_mismatch'],
       [{ invalidSource: true }, 'cloudflare_log_source_mismatch'],
       [{ outsideWindow: true }, 'cloudflare_log_time_mismatch'],

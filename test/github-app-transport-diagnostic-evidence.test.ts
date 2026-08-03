@@ -4,8 +4,8 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { canonicalSha256 } from '../src/domain/digest.js';
 import {
-  GitHubAppTransportDiagnosticEvidenceManifestV1Schema,
-  type GitHubAppTransportDiagnosticEvidenceManifestV1,
+  GitHubAppTransportDiagnosticEvidenceManifestV2Schema,
+  type GitHubAppTransportDiagnosticEvidenceManifestV2,
 } from '../src/domain/github-app-transport-diagnostic-evidence.js';
 import {
   GitHubAppTransportDiagnosticEvidenceVerificationError,
@@ -26,7 +26,7 @@ const ACCOUNT_ID = '1'.repeat(32);
 const SCRIPT_NAME = 'delivery-loop-control-plane';
 const DEPLOYMENT_ID = '11111111-1111-4111-8111-111111111111';
 const VERSION_ID = '22222222-2222-4222-8222-222222222222';
-const WORKER_TRACE_ID = 'a'.repeat(32);
+const WORKER_REQUEST_ID = 'c'.repeat(16);
 const GITHUB_TOKEN = 'github_transport_diagnostic_read_token';
 const CLOUDFLARE_DEPLOYMENT_TOKEN = 'cloudflare_deployment_read_token';
 const CLOUDFLARE_OBSERVABILITY_TOKEN = 'cloudflare_observability_read_token';
@@ -54,9 +54,9 @@ const DIAGNOSTIC_RECORD = {
   observedAt: OBSERVED_AT,
 };
 
-async function manifest(): Promise<GitHubAppTransportDiagnosticEvidenceManifestV1> {
-  return GitHubAppTransportDiagnosticEvidenceManifestV1Schema.parse({
-    schemaVersion: '1',
+async function manifest(): Promise<GitHubAppTransportDiagnosticEvidenceManifestV2> {
+  return GitHubAppTransportDiagnosticEvidenceManifestV2Schema.parse({
+    schemaVersion: '2',
     evidenceId: 'github-app-transport-diagnostic-round208',
     recordedAt: '2026-08-02T01:00:00.000Z',
     repository: REPOSITORY,
@@ -83,7 +83,7 @@ async function manifest(): Promise<GitHubAppTransportDiagnosticEvidenceManifestV
     },
     diagnostic: {
       observedAt: OBSERVED_AT,
-      workerTraceId: WORKER_TRACE_ID,
+      workerInvocationId: WORKER_REQUEST_ID,
       failureKind: 'tcp_failed',
       logRecordDigest: await canonicalSha256(DIAGNOSTIC_RECORD),
     },
@@ -94,7 +94,8 @@ async function manifest(): Promise<GitHubAppTransportDiagnosticEvidenceManifestV
       githubRunEvidenceUrl: `https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}`,
       workerDeploymentEvidenceUrl: 'https://dash.cloudflare.com/evidence/worker-deployment',
       workersLogsEvidenceUrl: 'https://dash.cloudflare.com/evidence/worker-logs',
-      workersTracesEvidenceUrl: 'https://dash.cloudflare.com/evidence/worker-traces',
+      workersInvocationsEvidenceUrl:
+        'https://dash.cloudflare.com/evidence/worker-invocations',
       secretScanReviewed: true,
     },
   });
@@ -122,7 +123,10 @@ interface FakeOptions {
   publicSummary?: typeof PUBLIC_SUMMARY;
   duplicateDiagnostic?: boolean;
   missingWorkers?: boolean;
-  missingTrace?: boolean;
+  missingInvocation?: boolean;
+  malformedInvocation?: boolean;
+  mismatchedInvocationId?: boolean;
+  mismatchedRayId?: boolean;
   deploymentDuringWindow?: boolean;
   deploymentAtWindowStart?: boolean;
   wrongWorkflowPath?: boolean;
@@ -130,7 +134,7 @@ interface FakeOptions {
 }
 
 function fakeFetch(
-  value: GitHubAppTransportDiagnosticEvidenceManifestV1,
+  value: GitHubAppTransportDiagnosticEvidenceManifestV2,
   options: FakeOptions = {},
   requests: Array<{ url: string; init?: RequestInit }> = [],
 ): typeof fetch {
@@ -217,47 +221,51 @@ function fakeFetch(
       if (options.leak !== undefined) return json({ leaked: options.leak });
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       const run = { accountId: ACCOUNT_ID, dry: true };
+      const invocationId = options.mismatchedInvocationId === true
+        ? 'd'.repeat(16)
+        : WORKER_REQUEST_ID;
+      const event = {
+        $metadata: {
+          id: 'event-transport-diagnostic', account: ACCOUNT_ID,
+          service: SCRIPT_NAME, requestId: invocationId,
+          rayId: options.mismatchedRayId === true ? 'e'.repeat(16) : invocationId,
+          type: 'cf-worker',
+        },
+        ...(options.missingWorkers === true ? {} : { $workers: {
+          scriptName: SCRIPT_NAME, eventType: 'fetch', requestId: invocationId,
+          truncated: false,
+        } }),
+        dataset: 'cloudflare-workers', source: DIAGNOSTIC_RECORD,
+        timestamp: Date.parse(OBSERVED_AT),
+      };
       if (body.view === 'events') {
         expect(filterValue(body, '$metadata.service')).toBe(SCRIPT_NAME);
-        expect(filterValue(body, '$metadata.traceId')).toBe(WORKER_TRACE_ID);
+        expect(filterValue(body, '$metadata.requestId')).toBe(WORKER_REQUEST_ID);
+        expect(filterValue(body, '$metadata.traceId')).toBeUndefined();
         expect(filterValue(body, 'event')).toBe(
           'github_app_installation_token_transport_failed',
         );
-        const event = {
-          $metadata: {
-            id: 'event-transport-diagnostic', account: ACCOUNT_ID,
-            service: SCRIPT_NAME, traceId: WORKER_TRACE_ID,
-            type: 'cf-worker-log',
-          },
-          ...(options.missingWorkers === true ? {} : { $workers: {
-            scriptName: SCRIPT_NAME, eventType: 'fetch', requestId: 'request-round208',
-            truncated: false,
-          } }),
-          dataset: 'cloudflare-workers', source: DIAGNOSTIC_RECORD,
-          timestamp: Date.parse(OBSERVED_AT),
-        };
         const events = options.duplicateDiagnostic === true ? [event, { ...event }] : [event];
         return json({
           success: true, errors: [], messages: [],
           result: { run, events: { count: events.length, events } },
         });
       }
-      expect(body.view).toBe('traces');
-      const traces = options.missingTrace === true ? [] : [{
-        rootSpanName: 'fetch', rootTransactionName: 'GET /v1/operations/github-base/readiness',
-        service: [SCRIPT_NAME], spans: 1, traceDurationMs: 200,
-        traceStartMs: Date.parse(OBSERVED_AT) - 100,
-        traceEndMs: Date.parse(OBSERVED_AT) + 100,
-        traceId: WORKER_TRACE_ID, errors: [],
-      }];
-      return json({ success: true, errors: [], messages: [], result: { run, traces } });
+      expect(body.view).toBe('invocations');
+      expect(filterValue(body, '$metadata.requestId')).toBe(WORKER_REQUEST_ID);
+      const invocations = options.missingInvocation === true
+        ? {}
+        : { [WORKER_REQUEST_ID]: options.malformedInvocation === true
+          ? [event, null]
+          : [event] };
+      return json({ success: true, errors: [], messages: [], result: { run, invocations } });
     }
     return json({ message: 'unexpected origin' }, 500);
   };
 }
 
 function verifierOptions(
-  value: GitHubAppTransportDiagnosticEvidenceManifestV1,
+  value: GitHubAppTransportDiagnosticEvidenceManifestV2,
   fetcher: typeof fetch,
 ): GitHubAppTransportDiagnosticEvidenceVerifierOptions {
   return {
@@ -280,14 +288,14 @@ function expectCode(code: string): (error: unknown) => boolean {
 describe('GitHub App transport diagnostic evidence', () => {
   it('accepts the synthetic schema example without treating it as live evidence', () => {
     const example = JSON.parse(readFileSync(
-      resolve('schemas/github-app-transport-diagnostic-evidence-v1.example.json'),
+      resolve('schemas/github-app-transport-diagnostic-evidence-v2.example.json'),
       'utf8',
     )) as unknown;
-    const parsed = GitHubAppTransportDiagnosticEvidenceManifestV1Schema.parse(example);
+    const parsed = GitHubAppTransportDiagnosticEvidenceManifestV2Schema.parse(example);
     expect(parsed.evidenceId).toBe('example-only-not-live');
   });
 
-  it('binds one failed readiness job to one exact deployment, diagnostic log and trace', async () => {
+  it('binds one failed readiness job to one exact deployment, log and invocation', async () => {
     const value = await manifest();
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const summary = await verifyGitHubAppTransportDiagnosticEvidence(
@@ -296,7 +304,7 @@ describe('GitHub App transport diagnostic evidence', () => {
     );
 
     expect(summary).toEqual({
-      schemaVersion: '1',
+      schemaVersion: '2',
       evidenceId: value.evidenceId,
       repository: REPOSITORY,
       githubRunId: RUN_ID,
@@ -308,7 +316,7 @@ describe('GitHub App transport diagnostic evidence', () => {
       githubLogQueries: 1,
       cloudflareDeploymentQueries: 1,
       cloudflareLogQueries: 1,
-      cloudflareTraces: 1,
+      cloudflareInvocationQueries: 1,
       plaintextLeaks: 0,
       humanReview: 'required_and_recorded',
     });
@@ -337,13 +345,16 @@ describe('GitHub App transport diagnostic evidence', () => {
     )).rejects.toSatisfy(expectCode('github_log_mismatch'));
   });
 
-  it('rejects duplicate diagnostics, missing traces, wrong workflow and deployment drift',
+  it('rejects duplicate diagnostics, missing invocations, wrong workflow and deployment drift',
     async () => {
     const value = await manifest();
     for (const [options, code] of [
       [{ duplicateDiagnostic: true }, 'cloudflare_log_mismatch'],
       [{ missingWorkers: true }, 'cloudflare_log_mismatch'],
-      [{ missingTrace: true }, 'cloudflare_trace_mismatch'],
+      [{ missingInvocation: true }, 'cloudflare_invocation_mismatch'],
+      [{ malformedInvocation: true }, 'cloudflare_invocation_mismatch'],
+      [{ mismatchedInvocationId: true }, 'cloudflare_log_mismatch'],
+      [{ mismatchedRayId: true }, 'cloudflare_log_mismatch'],
       [{ deploymentDuringWindow: true }, 'cloudflare_deployment_mismatch'],
       [{ deploymentAtWindowStart: true }, 'cloudflare_deployment_mismatch'],
       [{ wrongWorkflowPath: true }, 'github_fact_mismatch'],

@@ -1218,13 +1218,17 @@ export {
 export {
   GitHubAppTransportDiagnosticCollectionRequestV1Schema,
   GitHubAppTransportDiagnosticEvidenceManifestV1Schema,
+  GitHubAppTransportDiagnosticEvidenceManifestV2Schema,
   GitHubAppTransportDiagnosticLogRecordV1Schema,
   GitHubAppTransportDiagnosticObservationV1Schema,
+  GitHubAppTransportDiagnosticObservationV2Schema,
   GitHubAppTransportDiagnosticPublicSummaryV1Schema,
   type GitHubAppTransportDiagnosticCollectionRequestV1,
   type GitHubAppTransportDiagnosticEvidenceManifestV1,
+  type GitHubAppTransportDiagnosticEvidenceManifestV2,
   type GitHubAppTransportDiagnosticLogRecordV1,
   type GitHubAppTransportDiagnosticObservationV1,
+  type GitHubAppTransportDiagnosticObservationV2,
 } from './domain/github-app-transport-diagnostic-evidence.js';
 export {
   GitHubAppTransportDiagnosticCollectionError,

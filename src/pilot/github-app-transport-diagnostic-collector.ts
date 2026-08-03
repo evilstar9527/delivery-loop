@@ -2,9 +2,9 @@ import { canonicalSha256 } from '../domain/digest.js';
 import {
   GitHubAppTransportDiagnosticCollectionRequestV1Schema,
   GitHubAppTransportDiagnosticLogRecordV1Schema,
-  GitHubAppTransportDiagnosticObservationV1Schema,
+  GitHubAppTransportDiagnosticObservationV2Schema,
   type GitHubAppTransportDiagnosticCollectionRequestV1,
-  type GitHubAppTransportDiagnosticObservationV1,
+  type GitHubAppTransportDiagnosticObservationV2,
 } from '../domain/github-app-transport-diagnostic-evidence.js';
 import { SecretScanner } from '../security/redaction.js';
 
@@ -171,7 +171,7 @@ async function collectObservation(
   raw: unknown,
   accountId: string,
   request: GitHubAppTransportDiagnosticCollectionRequestV1,
-): Promise<GitHubAppTransportDiagnosticObservationV1> {
+): Promise<GitHubAppTransportDiagnosticObservationV2> {
   const root = record(raw);
   const result = root === null ? null : record(root.result);
   const run = result === null ? null : record(result.run);
@@ -194,7 +194,9 @@ async function collectObservation(
   if (
     metadata === null || workers === null || metadata.account !== accountId ||
     metadata.service !== request.cloudflare.scriptName ||
-    metadata.type !== 'cf-worker-log' || workers.truncated !== false ||
+    metadata.type !== 'cf-worker' || workers.truncated !== false ||
+    typeof metadata.requestId !== 'string' || metadata.rayId !== metadata.requestId ||
+    workers.requestId !== metadata.requestId ||
     event.dataset !== 'cloudflare-workers'
   ) fail('cloudflare_log_envelope_mismatch');
   const parsed = GitHubAppTransportDiagnosticLogRecordV1Schema.safeParse(event.source);
@@ -205,8 +207,8 @@ async function collectObservation(
     observedAt < Date.parse(request.github.readinessStartedAt) ||
     observedAt > Date.parse(request.github.readinessCompletedAt)
   ) fail('cloudflare_log_time_mismatch');
-  const observation = GitHubAppTransportDiagnosticObservationV1Schema.safeParse({
-    schemaVersion: '1',
+  const observation = GitHubAppTransportDiagnosticObservationV2Schema.safeParse({
+    schemaVersion: '2',
     collectionId: request.collectionId,
     repository: request.repository,
     githubRunId: request.github.runId,
@@ -216,7 +218,7 @@ async function collectObservation(
     deploymentId: request.cloudflare.deploymentId,
     versionId: request.cloudflare.versionId,
     observedAt: parsed.data.observedAt,
-    workerTraceId: metadata.traceId,
+    workerInvocationId: metadata.requestId,
     failureKind: parsed.data.failureKind,
     logRecordDigest: await canonicalSha256(parsed.data),
     requestAttempts: 1,
@@ -231,7 +233,7 @@ async function collectObservation(
 export async function collectGitHubAppTransportDiagnosticObservation(
   input: GitHubAppTransportDiagnosticCollectionRequestV1,
   options: GitHubAppTransportDiagnosticCollectorOptions,
-): Promise<GitHubAppTransportDiagnosticObservationV1> {
+): Promise<GitHubAppTransportDiagnosticObservationV2> {
   const parsed = GitHubAppTransportDiagnosticCollectionRequestV1Schema.safeParse(input);
   if (!parsed.success) fail('request_invalid');
   const request = parsed.data;
