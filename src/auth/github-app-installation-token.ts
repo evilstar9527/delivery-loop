@@ -565,7 +565,11 @@ export class GitHubAppInstallationTokenProvider implements
             repositories: [repositoryName(repository)],
             permissions,
           }),
-          redirect: 'error',
+          // workerd intentionally does not implement RequestRedirect="error".
+          // Manual mode preserves the fail-closed policy: fetch returns the
+          // redirect response without following it, and the status handling
+          // below rejects every non-201 response without reading its body.
+          redirect: 'manual',
           signal: AbortSignal.timeout(INSTALLATION_TOKEN_REQUEST_TIMEOUT_MS),
         },
       );
