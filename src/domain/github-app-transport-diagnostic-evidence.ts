@@ -10,6 +10,7 @@ const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const UUID_PATTERN =
   /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const WORKER_TRACE_PATTERN = /^[a-f0-9]{32}$/;
+const WORKER_INVOCATION_PATTERN = /^[a-f0-9]{16}$/;
 const TIMESTAMP_SCHEMA = z.iso.datetime({ offset: true });
 const FailureKindSchema = z.enum(SAFE_TRANSPORT_FAILURE_KINDS);
 
@@ -105,6 +106,26 @@ export const GitHubAppTransportDiagnosticObservationV1Schema = z.object({
   formalVerification: z.literal('still_required'),
 }).strict();
 
+export const GitHubAppTransportDiagnosticObservationV2Schema = z.object({
+  schemaVersion: z.literal('2'),
+  collectionId: z.string().regex(ID_PATTERN),
+  repository: z.string().regex(REPOSITORY_PATTERN),
+  githubRunId: z.string().regex(GITHUB_ID_PATTERN),
+  githubHeadSha: z.string().regex(SHA_PATTERN),
+  githubRunAttempt: z.literal(1),
+  readinessJobId: z.string().regex(GITHUB_ID_PATTERN),
+  deploymentId: z.string().regex(UUID_PATTERN),
+  versionId: z.string().regex(UUID_PATTERN),
+  observedAt: TIMESTAMP_SCHEMA,
+  workerInvocationId: z.string().regex(WORKER_INVOCATION_PATTERN),
+  failureKind: FailureKindSchema,
+  logRecordDigest: z.string().regex(DIGEST_PATTERN),
+  requestAttempts: z.literal(1),
+  cloudflareLogQueries: z.literal(1),
+  plaintextLeaks: z.literal(0),
+  formalVerification: z.literal('still_required'),
+}).strict();
+
 export const GitHubAppTransportDiagnosticEvidenceManifestV1Schema = z.object({
   schemaVersion: z.literal('1'),
   evidenceId: z.string().regex(ID_PATTERN),
@@ -178,6 +199,79 @@ export const GitHubAppTransportDiagnosticEvidenceManifestV1Schema = z.object({
   ) context.addIssue({ code: 'custom', message: 'GitHub review URL is inconsistent' });
 });
 
+export const GitHubAppTransportDiagnosticEvidenceManifestV2Schema = z.object({
+  schemaVersion: z.literal('2'),
+  evidenceId: z.string().regex(ID_PATTERN),
+  recordedAt: TIMESTAMP_SCHEMA,
+  repository: z.string().regex(REPOSITORY_PATTERN),
+  github: z.object({
+    actor: z.string().regex(GITHUB_LOGIN_PATTERN),
+    headSha: z.string().regex(SHA_PATTERN),
+    runId: z.string().regex(GITHUB_ID_PATTERN),
+    runAttempt: z.literal(1),
+    preflightJobId: z.string().regex(GITHUB_ID_PATTERN),
+    readinessJobId: z.string().regex(GITHUB_ID_PATTERN),
+    readinessStartedAt: TIMESTAMP_SCHEMA,
+    readinessCompletedAt: TIMESTAMP_SCHEMA,
+    publicSummary: GitHubAppTransportDiagnosticPublicSummaryV1Schema,
+    publicSummaryDigest: z.string().regex(DIGEST_PATTERN),
+  }).strict(),
+  cloudflare: z.object({
+    accountIdDigest: z.string().regex(DIGEST_PATTERN),
+    scriptName: z.string().min(1).max(255).regex(/^[a-z0-9][a-z0-9-]*$/),
+    environment: z.literal('production'),
+    deploymentId: z.string().regex(UUID_PATTERN),
+    versionId: z.string().regex(UUID_PATTERN),
+    deploymentCreatedAt: TIMESTAMP_SCHEMA,
+    window: z.object({ from: TIMESTAMP_SCHEMA, to: TIMESTAMP_SCHEMA }).strict(),
+  }).strict(),
+  diagnostic: z.object({
+    observedAt: TIMESTAMP_SCHEMA,
+    workerInvocationId: z.string().regex(WORKER_INVOCATION_PATTERN),
+    failureKind: FailureKindSchema,
+    logRecordDigest: z.string().regex(DIGEST_PATTERN),
+  }).strict(),
+  safety: z.object({ canaryDigest: z.string().regex(DIGEST_PATTERN) }).strict(),
+  review: z.object({
+    reviewer: z.string().regex(ID_PATTERN),
+    reviewedAt: TIMESTAMP_SCHEMA,
+    githubRunEvidenceUrl: SafeUrlSchema,
+    workerDeploymentEvidenceUrl: SafeUrlSchema,
+    workersLogsEvidenceUrl: SafeUrlSchema,
+    workersInvocationsEvidenceUrl: SafeUrlSchema,
+    secretScanReviewed: z.literal(true),
+  }).strict(),
+}).strict().superRefine((manifest, context) => {
+  const [owner] = manifest.repository.split('/');
+  const startedAt = Date.parse(manifest.github.readinessStartedAt);
+  const completedAt = Date.parse(manifest.github.readinessCompletedAt);
+  const observedAt = Date.parse(manifest.diagnostic.observedAt);
+  const deploymentCreatedAt = Date.parse(manifest.cloudflare.deploymentCreatedAt);
+  const recordedAt = Date.parse(manifest.recordedAt);
+  const reviewedAt = Date.parse(manifest.review.reviewedAt);
+  if (manifest.github.actor !== owner) {
+    context.addIssue({ code: 'custom', message: 'readiness actor must be repository owner' });
+  }
+  if (
+    completedAt <= startedAt || completedAt - startedAt > 10 * 60_000 ||
+    manifest.cloudflare.window.from !== manifest.github.readinessStartedAt ||
+    manifest.cloudflare.window.to !== manifest.github.readinessCompletedAt
+  ) context.addIssue({ code: 'custom', message: 'telemetry window is not the exact job window' });
+  if (deploymentCreatedAt >= startedAt) {
+    context.addIssue({ code: 'custom', message: 'deployment must predate readiness' });
+  }
+  if (observedAt < startedAt || observedAt > completedAt) {
+    context.addIssue({ code: 'custom', message: 'diagnostic is outside readiness window' });
+  }
+  if (recordedAt < completedAt || reviewedAt < recordedAt) {
+    context.addIssue({ code: 'custom', message: 'evidence timeline is inconsistent' });
+  }
+  if (
+    manifest.review.githubRunEvidenceUrl !==
+      `https://github.com/${manifest.repository}/actions/runs/${manifest.github.runId}`
+  ) context.addIssue({ code: 'custom', message: 'GitHub review URL is inconsistent' });
+});
+
 export type GitHubAppTransportDiagnosticLogRecordV1 = z.infer<
   typeof GitHubAppTransportDiagnosticLogRecordV1Schema
 >;
@@ -187,6 +281,12 @@ export type GitHubAppTransportDiagnosticCollectionRequestV1 = z.infer<
 export type GitHubAppTransportDiagnosticObservationV1 = z.infer<
   typeof GitHubAppTransportDiagnosticObservationV1Schema
 >;
+export type GitHubAppTransportDiagnosticObservationV2 = z.infer<
+  typeof GitHubAppTransportDiagnosticObservationV2Schema
+>;
 export type GitHubAppTransportDiagnosticEvidenceManifestV1 = z.infer<
   typeof GitHubAppTransportDiagnosticEvidenceManifestV1Schema
+>;
+export type GitHubAppTransportDiagnosticEvidenceManifestV2 = z.infer<
+  typeof GitHubAppTransportDiagnosticEvidenceManifestV2Schema
 >;
