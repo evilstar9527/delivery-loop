@@ -1,4 +1,5 @@
 import { canonicalSha256 } from '../domain/digest.js';
+import { GITHUB_API_USER_AGENT } from '../github-api.js';
 import { SecretScanner } from '../security/redaction.js';
 import {
   FencedOutboxProcessor,
@@ -410,6 +411,7 @@ export class GitHubPullRequestApiClient implements GitHubPullRequestEffects {
       accept: 'application/vnd.github+json',
       authorization: `Bearer ${token}`,
       ...(content ? { 'content-type': 'application/json' } : {}),
+      'user-agent': GITHUB_API_USER_AGENT,
       'x-github-api-version': '2022-11-28',
     };
   }

@@ -98,6 +98,8 @@ GITHUB_BASE_READINESS_BASE_BRANCH=<exact branch>
 
 installation-token POST还必须固定10秒timeout、`redirect=manual`、不跟随3xx且只尝试一次；Cloudflare `workerd`会拒绝不受支持的`redirect=error`，因此不能用该值实现跳转保护。provider先显式构造同形态`Request`；构造拒绝为`credential_request_invalid`且不发送网络，构造成功后把同一个已验证的`Request`对象直接交给fetch，不再次传URL/options解析`RequestInit`。production默认fetch通过`globalThis.fetch(...)`执行，不能让provider对象成为捕获Web API函数的receiver。manual返回的所有非201（包括3xx）都不读取body并fail-closed。transport失败后的自动POST重试可能重复创建短期token，因此禁止。provider只把allowlisted `name/code/cause`分类为`request_timed_out|dns_failed|tcp_failed|tls_failed|request_failed`，经安全结构化sink输出一条固定`github_app_installation_token_transport_failed`记录；readiness HTTP仍只返回`credential_transport_unavailable`。日志没有repository、URL、App/installation ID、JWT/key/token、raw错误或body；日志sink失败也不得改变stage或产生第二次GitHub请求。未来读取该记录仍需owner批准有界observability read，代码契约、mock日志或现有无trace scope token不能替代production事实。
 
+GitHub REST明确要求有效`User-Agent`，缺失或非法值会得到403。production不能依赖Node/undici自动补头：installation-token签发/撤销、base ref/compare以及Actions query/dispatch都固定显式发送`User-Agent: delivery-loop-control-plane`；该值不得包含Task、repository、App/installation ID或任一credential。若旧Worker返回`credential_forbidden`且同一provider/key在Node成功，先核对这一runtime header差异；修复仍必须受保护交付、发布新before并消费一条fresh readiness，禁止rerun旧run。
+
 获得该独立authority后只能运行只读`pnpm run e2e:github-app-transport-diagnostic`，按
 [GitHub App transport诊断外部证据验收](GitHubAppTransportDiagnosticE2E.md)绑定exact readiness run/job
 window、当时最后生效且100%的Worker deployment、唯一strict log和覆盖它的无错误trace。工具要求GitHub

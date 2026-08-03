@@ -11,6 +11,7 @@ import {
   classifySafeTransportFailure,
   type SafeTransportFailureKind,
 } from '../security/transport-error.js';
+import { GITHUB_API_USER_AGENT } from '../github-api.js';
 
 const TOKEN_REFRESH_SKEW_MS = 60_000;
 const INSTALLATION_TOKEN_REQUEST_TIMEOUT_MS = 10_000;
@@ -520,6 +521,7 @@ export class GitHubAppInstallationTokenProvider implements
         headers: {
           accept: 'application/vnd.github+json',
           authorization: `Bearer ${token}`,
+          'user-agent': GITHUB_API_USER_AGENT,
           'x-github-api-version': '2022-11-28',
         },
       });
@@ -564,6 +566,7 @@ export class GitHubAppInstallationTokenProvider implements
         accept: 'application/vnd.github+json',
         authorization: `Bearer ${jwt}`,
         'content-type': 'application/json',
+        'user-agent': GITHUB_API_USER_AGENT,
         'x-github-api-version': '2022-11-28',
       },
       body: JSON.stringify({

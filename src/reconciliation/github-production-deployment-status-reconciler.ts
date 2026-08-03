@@ -1,4 +1,5 @@
 import { canonicalSha256 } from '../domain/digest.js';
+import { GITHUB_API_USER_AGENT } from '../github-api.js';
 import {
   GitHubProductionDeploymentStatusFactSchema,
   type GitHubProductionDeploymentStatusFact,
@@ -132,6 +133,7 @@ implements GitHubProductionDeploymentStatusExternalFactClient {
     const headers = {
       accept: 'application/vnd.github+json',
       authorization: `Bearer ${token}`,
+      'user-agent': GITHUB_API_USER_AGENT,
       'x-github-api-version': '2022-11-28',
     };
     const deploymentPath =

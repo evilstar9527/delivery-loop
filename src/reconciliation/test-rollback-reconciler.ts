@@ -4,6 +4,7 @@ import {
   parseDeliveryPolicy,
   type ParsedDeliveryPolicy,
 } from '../domain/delivery-policy.js';
+import { GITHUB_API_USER_AGENT } from '../github-api.js';
 import { testRollbackTargetFromPolicy } from '../domain/test-rollback.js';
 import {
   TestRollbackStore,
@@ -81,6 +82,7 @@ export class GitHubDeliveryPolicyApiClient implements TestRollbackPolicyClient {
           headers: {
             accept: 'application/vnd.github.raw+json',
             authorization: `Bearer ${token}`,
+            'user-agent': GITHUB_API_USER_AGENT,
             'x-github-api-version': '2022-11-28',
           },
           redirect: 'error',
@@ -226,4 +228,3 @@ export class TestRollbackReconciler {
     return results;
   }
 }
-

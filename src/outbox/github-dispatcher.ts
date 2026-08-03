@@ -13,6 +13,7 @@ import type {
   GitHubWorkflowRunFact,
   GitHubWorkflowRunStatus,
 } from '../storage/github-run-observation-store.js';
+import { GITHUB_API_USER_AGENT } from '../github-api.js';
 
 export const DELIVERY_AGENT_WORKFLOW_FILE = '.github/workflows/delivery-agent.yml';
 export const TEST_ACCEPTANCE_WORKFLOW_FILE =
@@ -178,6 +179,7 @@ export class GitHubActionsApiClient implements GitHubDispatchEffects {
       accept: 'application/vnd.github+json',
       authorization: `Bearer ${installationToken}`,
       'content-type': 'application/json',
+      'user-agent': GITHUB_API_USER_AGENT,
       'x-github-api-version': '2022-11-28',
     };
 
@@ -289,6 +291,7 @@ export class GitHubActionsApiClient implements GitHubDispatchEffects {
           headers: {
             accept: 'application/vnd.github+json',
             authorization: `Bearer ${installationToken}`,
+            'user-agent': GITHUB_API_USER_AGENT,
             'x-github-api-version': '2022-11-28',
           },
         },

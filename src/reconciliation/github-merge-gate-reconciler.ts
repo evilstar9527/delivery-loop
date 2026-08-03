@@ -1,4 +1,5 @@
 import { canonicalSha256 } from '../domain/digest.js';
+import { GITHUB_API_USER_AGENT } from '../github-api.js';
 import {
   GitHubMergeGateFactSchema,
   type GitHubMergeGateFact,
@@ -222,6 +223,7 @@ export class GitHubMergeGateApiClient implements GitHubMergeGateExternalFactClie
     const headers = {
       accept: 'application/vnd.github+json',
       authorization: `Bearer ${token}`,
+      'user-agent': GITHUB_API_USER_AGENT,
       'x-github-api-version': '2022-11-28',
     };
     const repositoryUrl = `${this.apiBaseUrl}/repos/${request.repository}`;
@@ -350,6 +352,7 @@ export class GitHubMergeGateApiClient implements GitHubMergeGateExternalFactClie
     const headers = {
       accept: 'application/vnd.github+json',
       authorization: `Bearer ${token}`,
+      'user-agent': GITHUB_API_USER_AGENT,
       'x-github-api-version': '2022-11-28',
     };
     const repositoryUrl = `${this.apiBaseUrl}/repos/${request.repository}`;

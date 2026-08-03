@@ -119,6 +119,7 @@ describe('GitHub App installation token provider', () => {
         'https://api.github.test/app/installations/123456/access_tokens',
       );
       expect(request.method).toBe('POST');
+      expect(request.headers.get('user-agent')).toBe('delivery-loop-control-plane');
       const authorization = request.headers.get('authorization');
       expect(authorization).toMatch(/^Bearer /);
       const jwt = authorization?.slice('Bearer '.length);
@@ -476,6 +477,7 @@ describe('GitHub App installation token provider', () => {
         }
         expect(request.url).toBe('https://api.github.test/installation/token');
         expect(request.method).toBe('DELETE');
+        expect(request.headers.get('user-agent')).toBe('delivery-loop-control-plane');
         expect(request.headers.get('authorization')).toBe(
           'Bearer CANARY_WRITE_INSTALLATION_TOKEN',
         );

@@ -325,6 +325,9 @@ describe('GitHub App workflow dispatcher contract', () => {
     expect(new Headers(calls[1]?.init?.headers).get('authorization')).toBe(
       'Bearer test-installation-token-never-in-payload',
     );
+    expect(new Headers(calls[1]?.init?.headers).get('user-agent')).toBe(
+      'delivery-loop-control-plane',
+    );
   });
 
   it('returns an existing external run without issuing a duplicate dispatch', async () => {
