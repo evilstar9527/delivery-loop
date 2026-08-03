@@ -59,6 +59,10 @@ strict envelope/parser 与单请求无 retry 边界。verify 必须返回可接�
 authority 的 `tokenIdDigest`；identity 漂移时 telemetry 请求为 0。probe 必须回显 exact account 和
 `dry=true`，raw log/event 不输出、不落盘。
 
+probe body与项目既有transport collector及Cloudflare官方query示例保持同一shape：`view/dry/timeframe`位于
+顶层，`datasets/filters/groupBys/calculations/limit=1`全部位于`parameters`。顶层`limit`会被provider按非法
+request处理，不能把随后得到的`response_invalid`归因于token权限。
+
 verify 或 probe 失败只允许附加一个安全 `failureKind`：收到HTTP响应前失败为`transport_unavailable`，
 401/403为`auth_rejected`，429为`rate_limited`，5xx为`upstream_unavailable`，其他status、size、pagination、
 JSON/envelope/result漂移为`response_invalid`。parse前或结构化响应扫描命中credential时使用

@@ -277,7 +277,6 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
       view: 'events',
       dry: true,
       timeframe: value.telemetryProbe.window,
-      limit: 1,
       parameters: {
         datasets: ['cloudflare-workers'],
         filters: [{
@@ -288,6 +287,7 @@ describe('Cloudflare Workers Observability credential provisioning', () => {
         }],
         groupBys: [],
         calculations: [],
+        limit: 1,
       },
     });
   });

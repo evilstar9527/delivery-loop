@@ -113,7 +113,8 @@ pnpm run ops:cloudflare-observability-credential-provision
    stdout/stderr 和文件都不携带 secret，并以 `SecItemAdd` 拒绝覆盖已有 item；
 7. 以新 token 执行一次 verify GET，要求 exact created token ID 为 `active`；
 8. 以新 token 执行一次 `dry=true + view=events + limit=1 + exact service/window` telemetry probe；空结果
-   可以证明 query 权限，raw event/log 不输出、不落盘。
+   可以证明 query 权限。Cloudflare contract要求`limit`位于`parameters`内，不能放在request顶层；raw
+   event/log 不输出、不落盘。
 
 CLI 默认未 opt-in、配置缺失或 authority 不可读时 exit 2，并在文件、Keychain、网络前停止；pre-create
 事实拒绝 exit 1。create POST 一旦尝试，后续任何不确定结果都只返回固定
