@@ -384,15 +384,19 @@ function telemetryBody(
   filters: Array<Record<string, unknown>>,
 ): Record<string, unknown> {
   return {
+    queryId: `${manifest.evidenceId}-${view}`,
     view,
     dry: true,
-    timeframe: manifest.cloudflare.window,
+    timeframe: {
+      from: Date.parse(manifest.cloudflare.window.from),
+      to: Date.parse(manifest.cloudflare.window.to),
+    },
+    limit: 2,
     parameters: {
       datasets: ['cloudflare-workers'],
       filters,
       groupBys: [],
       calculations: [],
-      limit: 2,
     },
   };
 }

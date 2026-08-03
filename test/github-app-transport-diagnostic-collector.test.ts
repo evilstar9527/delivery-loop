@@ -108,9 +108,14 @@ function collectorFetch(
     expect(init?.method).toBe('POST');
     if (options.leak !== undefined) return Response.json({ leaked: options.leak });
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    expect(body.queryId).toBe(value.collectionId);
     expect(body.view).toBe('events');
     expect(body.dry).toBe(true);
-    expect(body.timeframe).toEqual(value.cloudflare.window);
+    expect(body.timeframe).toEqual({
+      from: Date.parse(value.cloudflare.window.from),
+      to: Date.parse(value.cloudflare.window.to),
+    });
+    expect(body.limit).toBe(2);
     expect(filterValue(body, '$metadata.service')).toBe(SCRIPT_NAME);
     expect(filterValue(body, '$metadata.traceId')).toBeUndefined();
     expect(filterValue(body, 'event')).toBe(
@@ -119,7 +124,7 @@ function collectorFetch(
     expect(filterValue(body, 'component')).toBe('github_app_credential');
     expect(filterValue(body, 'operation')).toBe('installation_token_exchange');
     expect(filterValue(body, 'requestAttempts')).toBe(1);
-    expect(record(body.parameters)?.limit).toBe(2);
+    expect(record(body.parameters)?.limit).toBeUndefined();
     const event = {
       $metadata: {
         account: ACCOUNT_ID,

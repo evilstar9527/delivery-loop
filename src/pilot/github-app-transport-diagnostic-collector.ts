@@ -136,9 +136,14 @@ function telemetryBody(
   request: GitHubAppTransportDiagnosticCollectionRequestV1,
 ): Record<string, unknown> {
   return {
+    queryId: request.collectionId,
     view: 'events',
     dry: true,
-    timeframe: request.cloudflare.window,
+    timeframe: {
+      from: Date.parse(request.cloudflare.window.from),
+      to: Date.parse(request.cloudflare.window.to),
+    },
+    limit: 2,
     parameters: {
       datasets: ['cloudflare-workers'],
       filters: [
@@ -154,7 +159,6 @@ function telemetryBody(
       ],
       groupBys: [],
       calculations: [],
-      limit: 2,
     },
   };
 }
