@@ -33,6 +33,44 @@ export default defineConfig({
       remoteBindings: false,
       wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
+        outboundService: async (request: Request) => {
+          const url = new URL(request.url);
+          if (url.origin !== 'https://github-fetch-through.test') {
+            return new Response(null, { status: 502 });
+          }
+          if (url.pathname === '/redirect') {
+            return new Response(null, {
+              status: 302,
+              headers: { location: 'https://github-fetch-through.test/followed' },
+            });
+          }
+          if (url.pathname === '/followed') {
+            return new Response(null, { status: 418 });
+          }
+          const body = await request.text();
+          const authorization = request.headers.get('authorization');
+          const signedJwt = authorization?.startsWith('Bearer ') === true &&
+            authorization.slice('Bearer '.length).split('.').length === 3;
+          const valid =
+            url.pathname === '/app/installations/149587996/access_tokens' &&
+            request.method === 'POST' &&
+            request.headers.get('accept') === 'application/vnd.github+json' &&
+            (authorization === 'Bearer test-signed-jwt' || signedJwt) &&
+            request.headers.get('content-type') === 'application/json' &&
+            request.headers.get('x-github-api-version') === '2022-11-28' &&
+            body === JSON.stringify({
+              repositories: ['delivery-loop'],
+              permissions: { actions: 'write', contents: 'read' },
+            });
+          return Response.json(valid
+            ? signedJwt
+              ? {
+                  token: ['test', 'installation', 'credential'].join('-'),
+                  expires_at: '2099-01-01T00:00:00.000Z',
+                }
+              : { accepted: true }
+            : { accepted: false }, { status: valid ? 201 : 400 });
+        },
         bindings: {
           TEST_MIGRATIONS: migrations,
           TASK_INTAKE_TOKEN: 'test-task-intake-token',
