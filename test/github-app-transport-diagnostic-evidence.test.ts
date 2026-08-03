@@ -313,8 +313,13 @@ describe('GitHub App transport diagnostic evidence', () => {
     for (const request of telemetry) {
       const body = JSON.parse(String(request.init?.body)) as Record<string, unknown>;
       expect(body.dry).toBe(true);
-      expect(body.timeframe).toEqual({ from: STARTED_AT, to: COMPLETED_AT });
-      expect((body.parameters as Record<string, unknown>).limit).toBe(2);
+      expect(body.queryId).toBe(`${value.evidenceId}-${String(body.view)}`);
+      expect(body.timeframe).toEqual({
+        from: Date.parse(STARTED_AT),
+        to: Date.parse(COMPLETED_AT),
+      });
+      expect(body.limit).toBe(2);
+      expect((body.parameters as Record<string, unknown>).limit).toBeUndefined();
     }
   });
 

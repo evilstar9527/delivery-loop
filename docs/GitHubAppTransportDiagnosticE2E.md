@@ -28,7 +28,8 @@ verifier 按固定顺序交叉核对四类事实：
 3. Cloudflare deployment inventory必须证明manifest中的100% version是job开始前最后生效的deployment，
    且闭区间`[readinessStartedAt, readinessCompletedAt]`内没有新deployment。
 4. Cloudflare官方telemetry query分别执行一次`events`和一次`traces`查询；二者固定`dry=true`、
-   timeframe恰等于job窗口。event按service/trace/event/component/operation/requestAttempts精确过滤，必须
+   独立`queryId`，并把job窗口仅在内存中转为Unix毫秒`timeframe.from/to`；row `limit=2`位于顶层，
+   filters/groupBys/calculations才位于`parameters`。event按service/trace/event/component/operation/requestAttempts精确过滤，必须
    恰好返回一条未截断strict diagnostic；trace必须是同一service/trace，覆盖日志时间、至少一个span且
    没有error。
 
@@ -61,7 +62,8 @@ pnpm run e2e:github-app-transport-diagnostic-collect
 ```
 
 collector最多发送一次Cloudflare `events` query，不带trace ID filter，但仍固定service、event、component、
-operation和`requestAttempts=1`，`limit=2`且要求exact window、`dry=true`、唯一未截断strict log。三枚token
+operation和`requestAttempts=1`，`queryId`=受验collection ID，exact window仅在内存中转为Unix毫秒，
+顶层`limit=2`，并要求`dry=true`、唯一未截断strict log。三枚token
 必须原文互异并全部进入response Secret scan；只有observability token进入该请求的Authorization header，
 另外两枚不发送。默认未opt-in、配置不齐或request不可读为exit 2且零网络；403、timeout或任何失败都不
 重试。
