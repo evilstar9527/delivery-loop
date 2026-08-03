@@ -50,6 +50,17 @@ describe('Codex provider preflight workflow', () => {
     expect(probe?.run).toBe(
       'pnpm run e2e:codex-adapter > "$RUNNER_TEMP/codex-provider-preflight.json"',
     );
+    const analysis = job?.steps.find((step) => step.name === 'Verify exact analysis schema');
+    expect(analysis?.env).toEqual({
+      DELIVERY_LOOP_CODEX_ANALYSIS_E2E: '1',
+      DELIVERY_LOOP_CODEX_ADAPTER_MODEL: 'gpt-5.6-sol',
+      DELIVERY_LOOP_CODEX_ANALYSIS_REASONING_EFFORT: 'medium',
+      CODEX_API_KEY: '${{ secrets.OPENAI_API_KEY }}',
+      OPENAI_BASE_URL: '${{ secrets.OPENAI_BASE_URL }}',
+    });
+    expect(analysis?.run).toBe(
+      'pnpm run e2e:codex-analysis > "$RUNNER_TEMP/codex-analysis-preflight.json"',
+    );
     expect(JSON.stringify(workflow)).not.toContain('workflow_call');
     expect(JSON.stringify(workflow)).not.toContain('id-token');
     expect(JSON.stringify(workflow)).not.toContain('pull_request');

@@ -38,6 +38,7 @@
     "e2e:production-deployment": "tsx scripts/verify-production-deployment-evidence.ts",
     "e2e:secret-safety": "tsx scripts/verify-secret-safety-evidence.ts",
     "e2e:agent-adapter": "tsx scripts/verify-real-codex-adapter.ts",
+    "e2e:codex-analysis": "tsx scripts/verify-real-codex-analysis.ts",
     "e2e:provider-network": "tsx scripts/verify-provider-network.ts",
     "verify:agent-adapter-evidence": "tsx scripts/verify-agent-adapter-evidence.ts",
     "e2e:repair-loop": "tsx scripts/verify-repair-loop-evidence.ts",

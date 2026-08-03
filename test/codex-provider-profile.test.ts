@@ -37,6 +37,13 @@ describe('Codex relay provider profile', () => {
     expect(codexProviderProfileArguments(undefined)).toEqual([]);
   });
 
+  it('allows a bounded preflight to lower reasoning without changing the production default', () => {
+    expect(codexProviderProfileArguments('https://relay.example.com/v1', 'medium'))
+      .toEqual(expect.arrayContaining(['model_reasoning_effort="medium"']));
+    expect(codexProviderProfileArguments('https://relay.example.com/v1'))
+      .toEqual(expect.arrayContaining(['model_reasoning_effort="high"']));
+  });
+
   it('binds the deployed control plane to a new immutable Sol/high quota profile', () => {
     const wrangler = JSON.parse(readFileSync(
       new URL('../wrangler.jsonc', import.meta.url),

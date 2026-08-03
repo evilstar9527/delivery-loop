@@ -125,6 +125,9 @@ export const DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA = {
   },
 } as const;
 
+// `uniqueItems` is outside the relay's portable structured-output subset.
+// AnalysisPlanContentV1Schema remains the trusted boundary for uniqueness,
+// non-blank checks, and cross-field plan validation.
 const analysisPlanContentV1JsonSchema = {
   type: 'object',
   additionalProperties: false,
@@ -169,7 +172,7 @@ const analysisPlanContentV1JsonSchema = {
           title: { type: 'string', minLength: 1, maxLength: 200 },
           objective: { type: 'string', minLength: 1, maxLength: 2_000 },
           acceptanceCriteriaIndexes: {
-            type: 'array', maxItems: 100, uniqueItems: true,
+            type: 'array', maxItems: 100,
             items: { type: 'integer', minimum: 0 },
           },
           doneWhen: {
@@ -179,14 +182,14 @@ const analysisPlanContentV1JsonSchema = {
           verification: {
             type: 'object',
             additionalProperties: false,
-            required: ['evidenceKinds'],
+            required: ['commandRefs', 'evidenceKinds', 'externalFacts'],
             properties: {
               commandRefs: {
-                type: 'array', maxItems: 50, uniqueItems: true,
+                type: 'array', maxItems: 50,
                 items: { type: 'string', minLength: 1, maxLength: 200 },
               },
               evidenceKinds: {
-                type: 'array', minItems: 1, uniqueItems: true,
+                type: 'array', minItems: 1,
                 items: {
                   enum: [
                     'diagnostic', 'plan', 'test', 'lint', 'build', 'commit',
@@ -195,13 +198,13 @@ const analysisPlanContentV1JsonSchema = {
                 },
               },
               externalFacts: {
-                type: 'array', uniqueItems: true,
+                type: 'array',
                 items: { enum: ['github_pr', 'github_check', 'deployment'] },
               },
             },
           },
           effects: {
-            type: 'array', uniqueItems: true,
+            type: 'array',
             items: {
               enum: [
                 'repo_read', 'logs_read', 'database_diagnostic', 'repo_write',
@@ -210,7 +213,7 @@ const analysisPlanContentV1JsonSchema = {
             },
           },
           dependsOn: {
-            type: 'array', maxItems: 200, uniqueItems: true,
+            type: 'array', maxItems: 200,
             items: { type: 'string', minLength: 1, maxLength: 64 },
           },
           required: { type: 'boolean' },

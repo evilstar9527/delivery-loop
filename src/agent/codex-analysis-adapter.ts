@@ -26,7 +26,10 @@ import {
 import type { CodexModelUsage } from '../domain/quota.js';
 import { SecretScanner } from '../security/redaction.js';
 import { CodexUsageAccumulator } from './codex-usage.js';
-import { codexProviderProfileArguments } from './codex-provider-profile.js';
+import {
+  codexProviderProfileArguments,
+  type CodexRelayReasoningEffort,
+} from './codex-provider-profile.js';
 import { normalizeProviderBaseUrl } from './provider-base-url.js';
 import type { z } from 'zod';
 
@@ -83,6 +86,7 @@ export interface CodexAnalysisAdapterOptions {
   command?: string;
   execute?: CommandExecutor;
   providerBaseUrl?: string;
+  reasoningEffort?: CodexRelayReasoningEffort;
 }
 
 function isInside(parent: string, child: string): boolean {
@@ -106,6 +110,9 @@ function analysisPrompt(contextFilePath: string): string {
     'Diagnose the requirement or bug and return only JSON matching the supplied output schema.',
     'Return plan content only. The trusted Runner supplies plan/run/task/base/attempt identity, version, status, and digest.',
     'Every item needs concrete doneWhen conditions and Evidence requirements; commandRefs must reference trusted policy names, never arbitrary shell from task text.',
+    'Return at least one required plan item; every item must have at least one doneWhen condition and one evidenceKinds entry.',
+    'Use only exact effects and commandRefs listed in planPolicy; an empty commandRefs array is valid, and never propose a change item when repo_write is not allowed.',
+    'Every task acceptance criterion must be covered by its zero-based index on at least one required item.',
   ].join('\n');
 }
 
@@ -163,12 +170,14 @@ export class CodexAnalysisAdapter {
   private readonly command: string;
   private readonly execute: CommandExecutor;
   private readonly providerBaseUrl: string | undefined;
+  private readonly reasoningEffort: CodexRelayReasoningEffort | undefined;
 
   constructor(options: CodexAnalysisAdapterOptions) {
     this.outputSchemaPath = resolve(options.outputSchemaPath);
     this.command = options.command ?? 'codex';
     this.execute = options.execute ?? executeCommand;
     this.providerBaseUrl = normalizeProviderBaseUrl(options.providerBaseUrl);
+    this.reasoningEffort = options.reasoningEffort;
   }
 
   async start(input: CodexAnalysisStartInput): Promise<ExecutionPlanV1> {
@@ -383,7 +392,7 @@ export class CodexAnalysisAdapter {
           'shell_environment_policy.ignore_default_excludes=false',
           '-c',
           'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
-          ...codexProviderProfileArguments(this.providerBaseUrl),
+          ...codexProviderProfileArguments(this.providerBaseUrl, this.reasoningEffort),
           '--output-schema',
           outputSchemaPath,
           '--output-last-message',
