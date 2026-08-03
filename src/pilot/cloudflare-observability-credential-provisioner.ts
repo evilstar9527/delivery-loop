@@ -460,6 +460,39 @@ async function createToken(
   }
 }
 
+export interface CloudflareAccountTokenVerification {
+  id: string;
+  status: 'active';
+}
+
+export async function verifyCloudflareAccountToken(options: {
+  fetcher: typeof fetch;
+  origin: string;
+  accountId: string;
+  token: string;
+  secrets: readonly string[];
+}): Promise<CloudflareAccountTokenVerification> {
+  if (
+    !ACCOUNT_ID_PATTERN.test(options.accountId) ||
+    !TOKEN_PATTERN.test(options.token)
+  ) fail('configuration_invalid');
+  const response = await externalResponse(
+    options.fetcher,
+    `${options.origin}/client/v4/accounts/${encodeURIComponent(options.accountId)}/tokens/verify`,
+    { method: 'GET', headers: tokenHeaders(options.token) },
+    'configuration_invalid',
+    'configuration_invalid',
+    [options.token, ...options.secrets],
+  );
+  assertNoResponseSecrets(response, [options.token, ...options.secrets]);
+  const result = record(envelopeResult(response.parsed, 'configuration_invalid'));
+  if (
+    result === null || typeof result.id !== 'string' ||
+    !EXTERNAL_ID_PATTERN.test(result.id) || result.status !== 'active'
+  ) fail('configuration_invalid');
+  return { id: result.id, status: 'active' };
+}
+
 async function verifyCreatedToken(
   fetcher: typeof fetch,
   origin: string,
@@ -468,28 +501,28 @@ async function verifyCreatedToken(
   canary: string,
   created: { id: string; value: string },
 ): Promise<void> {
-  const response = await externalResponse(
+  const result = await verifyCloudflareAccountToken({
     fetcher,
-    `${origin}/client/v4/accounts/${encodeURIComponent(accountId)}/tokens/verify`,
-    { method: 'GET', headers: tokenHeaders(created.value) },
-    'configuration_invalid',
-    'configuration_invalid',
-    [bootstrapToken, canary, created.value],
-  );
-  assertNoResponseSecrets(response, [bootstrapToken, canary, created.value]);
-  const result = record(envelopeResult(response.parsed, 'configuration_invalid'));
-  if (result === null || result.id !== created.id || result.status !== 'active') {
-    fail('configuration_invalid');
-  }
+    origin,
+    accountId,
+    token: created.value,
+    secrets: [bootstrapToken, canary],
+  });
+  if (result.id !== created.id) fail('configuration_invalid');
+}
+
+export interface CloudflareObservabilityTelemetryProbe {
+  scriptName: string;
+  window: { from: string; to: string };
 }
 
 function telemetryProbeBody(
-  authorization: CloudflareObservabilityCredentialProvisioningAuthorizationV1,
+  probe: CloudflareObservabilityTelemetryProbe,
 ): Record<string, unknown> {
   return {
     view: 'events',
     dry: true,
-    timeframe: authorization.telemetryProbe.window,
+    timeframe: probe.window,
     limit: 1,
     parameters: {
       datasets: ['cloudflare-workers'],
@@ -497,12 +530,45 @@ function telemetryProbeBody(
         key: '$metadata.service',
         operation: 'eq',
         type: 'string',
-        value: authorization.telemetryProbe.scriptName,
+        value: probe.scriptName,
       }],
       groupBys: [],
       calculations: [],
     },
   };
+}
+
+export async function probeCloudflareObservabilityTelemetry(options: {
+  fetcher: typeof fetch;
+  origin: string;
+  accountId: string;
+  token: string;
+  secrets: readonly string[];
+  probe: CloudflareObservabilityTelemetryProbe;
+}): Promise<void> {
+  if (
+    !ACCOUNT_ID_PATTERN.test(options.accountId) ||
+    !TOKEN_PATTERN.test(options.token)
+  ) fail('configuration_invalid');
+  const response = await externalResponse(
+    options.fetcher,
+    `${options.origin}/client/v4/accounts/${encodeURIComponent(options.accountId)}` +
+      '/workers/observability/telemetry/query',
+    {
+      method: 'POST',
+      headers: tokenHeaders(options.token, true),
+      body: JSON.stringify(telemetryProbeBody(options.probe)),
+    },
+    'configuration_invalid',
+    'configuration_invalid',
+    [options.token, ...options.secrets],
+  );
+  assertNoResponseSecrets(response, [options.token, ...options.secrets]);
+  const result = record(envelopeResult(response.parsed, 'configuration_invalid'));
+  const run = record(result?.run);
+  if (result === null || run?.accountId !== options.accountId || run.dry !== true) {
+    fail('configuration_invalid');
+  }
 }
 
 async function probeTelemetry(
@@ -514,25 +580,14 @@ async function probeTelemetry(
   createdToken: string,
   authorization: CloudflareObservabilityCredentialProvisioningAuthorizationV1,
 ): Promise<void> {
-  const response = await externalResponse(
+  await probeCloudflareObservabilityTelemetry({
     fetcher,
-    `${origin}/client/v4/accounts/${encodeURIComponent(accountId)}` +
-      '/workers/observability/telemetry/query',
-    {
-      method: 'POST',
-      headers: tokenHeaders(createdToken, true),
-      body: JSON.stringify(telemetryProbeBody(authorization)),
-    },
-    'configuration_invalid',
-    'configuration_invalid',
-    [bootstrapToken, canary, createdToken],
-  );
-  assertNoResponseSecrets(response, [bootstrapToken, canary, createdToken]);
-  const result = record(envelopeResult(response.parsed, 'configuration_invalid'));
-  const run = record(result?.run);
-  if (result === null || run?.accountId !== accountId || run.dry !== true) {
-    fail('configuration_invalid');
-  }
+    origin,
+    accountId,
+    token: createdToken,
+    secrets: [bootstrapToken, canary],
+    probe: authorization.telemetryProbe,
+  });
 }
 
 export async function provisionCloudflareObservabilityCredential(

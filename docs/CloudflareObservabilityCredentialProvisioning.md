@@ -140,3 +140,8 @@ exit 0 只输出 authorization ID、account digest、token name、固定 permiss
 `status=verified` 和 `plaintextLeaks=0`。它证明新 token 当时能完成 exact dry probe，但不证明历史 diagnostic、
 readiness 200 或 hibernate 成功；后续 live collection+verification 仍需新的、绑定 immutable run/window 的
 一次性 authority。
+
+若 create 后 stdout 丢失但独立 reconciliation 已证明 exact target `present/active` 且固定 Keychain 槽存在，
+不能重放 create 或把 metadata 升级为 verified。应使用独立的
+[已有 credential 再验证](CloudflareObservabilityCredentialVerification.md) authority，只读一次 Keychain，并执行
+一次 token verify 与一次 dry telemetry probe；该入口的 create/write/delete/retry 均为 0。
