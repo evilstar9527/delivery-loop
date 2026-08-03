@@ -180,12 +180,14 @@ async function collectObservation(
   const events = group === null ? [] : records(group, 'events');
   const event = events.length === 1 ? events[0]! : null;
   const metadata = event === null ? null : record(event.$metadata);
+  const workers = event === null ? null : record(event.$workers);
   const parsed = GitHubAppTransportDiagnosticLogRecordV1Schema.safeParse(event?.source);
   const observedAt = parsed.success ? Date.parse(parsed.data.observedAt) : Number.NaN;
   if (
     group === null || group.count !== 1 || event === null || metadata === null ||
+    workers === null ||
     metadata.account !== accountId || metadata.service !== request.cloudflare.scriptName ||
-    metadata.type !== 'cf-worker-log' || metadata.truncated !== false ||
+    metadata.type !== 'cf-worker-log' || workers.truncated !== false ||
     event.dataset !== 'cloudflare-workers' || !parsed.success ||
     event.timestamp !== observedAt ||
     observedAt < Date.parse(request.github.readinessStartedAt) ||
