@@ -206,9 +206,9 @@ export default {
           secrets: configuredSecrets(env),
         }),
       }).scan(25);
-      await reconcileWorkflowInstancesFromEnv(env);
       await Promise.all([
         relay.relay(),
+        reconcileWorkflowInstancesFromEnv(env),
         new FeishuIngressRelay(env.DB_CONTROL, env.FEISHU_INGRESS_QUEUE).relay(),
         reconcileGitHubRunsFromEnv(env),
         reconcileGitHubBasesFromEnv(env),
