@@ -30,6 +30,7 @@ export const GITHUB_APP_CREDENTIAL_ERROR_CODES = [
   'credential_auth_rejected',
   'credential_installation_not_found',
   'credential_policy_rejected',
+  'credential_request_invalid',
   'credential_transport_unavailable',
   'credential_upstream_unavailable',
   'credential_response_invalid',
@@ -549,30 +550,37 @@ export class GitHubAppInstallationTokenProvider implements
     } catch {
       credentialFailure('credential_signing_unavailable');
     }
+    const requestUrl =
+      `${this.apiBaseUrl}/app/installations/${this.installationId}/access_tokens`;
+    const requestInit: RequestInit = {
+      method: 'POST',
+      headers: {
+        accept: 'application/vnd.github+json',
+        authorization: `Bearer ${jwt}`,
+        'content-type': 'application/json',
+        'x-github-api-version': '2022-11-28',
+      },
+      body: JSON.stringify({
+        repositories: [repositoryName(repository)],
+        permissions,
+      }),
+      // workerd intentionally does not implement RequestRedirect="error".
+      // Manual mode preserves the fail-closed policy: fetch returns the
+      // redirect response without following it, and the status handling
+      // below rejects every non-201 response without reading its body.
+      redirect: 'manual',
+      signal: AbortSignal.timeout(INSTALLATION_TOKEN_REQUEST_TIMEOUT_MS),
+    };
+    try {
+      // Keep request construction separate from network execution so edge
+      // runtime option rejection cannot be misreported as host transport.
+      void new Request(requestUrl, requestInit);
+    } catch {
+      credentialFailure('credential_request_invalid');
+    }
     let response: Response;
     try {
-      response = await this.fetchImplementation(
-        `${this.apiBaseUrl}/app/installations/${this.installationId}/access_tokens`,
-        {
-          method: 'POST',
-          headers: {
-            accept: 'application/vnd.github+json',
-            authorization: `Bearer ${jwt}`,
-            'content-type': 'application/json',
-            'x-github-api-version': '2022-11-28',
-          },
-          body: JSON.stringify({
-            repositories: [repositoryName(repository)],
-            permissions,
-          }),
-          // workerd intentionally does not implement RequestRedirect="error".
-          // Manual mode preserves the fail-closed policy: fetch returns the
-          // redirect response without following it, and the status handling
-          // below rejects every non-201 response without reading its body.
-          redirect: 'manual',
-          signal: AbortSignal.timeout(INSTALLATION_TOKEN_REQUEST_TIMEOUT_MS),
-        },
-      );
+      response = await this.fetchImplementation(requestUrl, requestInit);
     } catch (error) {
       try {
         this.transportDiagnostic?.({
