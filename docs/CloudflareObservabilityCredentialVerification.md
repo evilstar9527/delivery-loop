@@ -59,6 +59,12 @@ strict envelope/parser 与单请求无 retry 边界。verify 必须返回可接�
 authority 的 `tokenIdDigest`；identity 漂移时 telemetry 请求为 0。probe 必须回显 exact account 和
 `dry=true`，raw log/event 不输出、不落盘。
 
+verify 或 probe 失败只允许附加一个安全 `failureKind`：收到HTTP响应前失败为`transport_unavailable`，
+401/403为`auth_rejected`，429为`rate_limited`，5xx为`upstream_unavailable`，其他status、size、pagination、
+JSON/envelope/result漂移为`response_invalid`。parse前或结构化响应扫描命中credential时使用
+`secret_leak_detected`错误码，不回显raw body/message/status。分类不授权retry；同一authority消费后必须停止，
+下一次请求需要新的authority。
+
 exit 0 只输出安全 summary：authorization ID、account/token ID digest、token name、固定 Keychain metadata、
 effect count、`status=verified` 与 `plaintextLeaks=0`。这允许 owner 后续另行签发绑定 immutable Round 207
 窗口的 collection + formal verification authority；它本身不执行 collection，也不证明历史 failureKind、

@@ -8,9 +8,10 @@ import {
 } from '../domain/cloudflare-observability-credential-verification.js';
 import { SecretScanner } from '../security/redaction.js';
 import {
-  CloudflareObservabilityCredentialProvisioningError,
+  CloudflareObservabilityReadError,
   probeCloudflareObservabilityTelemetry,
   verifyCloudflareAccountToken,
+  type CloudflareObservabilityReadFailureKind,
 } from './cloudflare-observability-credential-provisioner.js';
 
 const ACCOUNT_ID_PATTERN = /^[a-f0-9]{32}$/;
@@ -34,6 +35,7 @@ export class CloudflareObservabilityCredentialVerificationError extends Error {
   constructor(
     readonly code: CloudflareObservabilityCredentialVerificationErrorCode,
     readonly stage?: CloudflareObservabilityCredentialVerificationStage,
+    readonly failureKind?: CloudflareObservabilityReadFailureKind,
   ) {
     super(`Cloudflare observability credential verification failed: ${code}`);
     this.name = 'CloudflareObservabilityCredentialVerificationError';
@@ -72,10 +74,16 @@ function mapSharedFailure(
   stage: CloudflareObservabilityCredentialVerificationStage,
 ): never {
   if (
-    error instanceof CloudflareObservabilityCredentialProvisioningError &&
-    error.code === 'secret_leak_detected'
+    error instanceof CloudflareObservabilityReadError &&
+    error.failureKind === 'secret_leak_detected'
   ) fail('secret_leak_detected', stage);
-  fail(stage === 'token_verify' ? 'token_verification_failed' : 'telemetry_probe_failed', stage);
+  throw new CloudflareObservabilityCredentialVerificationError(
+    stage === 'token_verify' ? 'token_verification_failed' : 'telemetry_probe_failed',
+    stage,
+    error instanceof CloudflareObservabilityReadError
+      ? error.failureKind
+      : 'response_invalid',
+  );
 }
 
 export async function verifyExistingCloudflareObservabilityCredential(

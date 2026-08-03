@@ -76,7 +76,12 @@ interface ObservedRequest {
 
 function fakeCloudflare(
   requests: ObservedRequest[],
-  options: { tokenId?: string; verifyResponse?: Response; probeResponse?: Response } = {},
+  options: {
+    tokenId?: string;
+    verifyResponse?: Response;
+    probeResponse?: Response;
+    probeThrows?: boolean;
+  } = {},
 ): typeof fetch {
   return async (input, init) => {
     const url = new URL(String(input));
@@ -92,6 +97,7 @@ function fakeCloudflare(
       return options.verifyResponse ?? envelope({ id: options.tokenId ?? TOKEN_ID, status: 'active' });
     }
     if (url.pathname.endsWith('/workers/observability/telemetry/query')) {
+      if (options.probeThrows === true) throw new Error('unsafe transport detail');
       return options.probeResponse ?? envelope({
         run: { accountId: ACCOUNT_ID, dry: true },
         events: { count: 0, events: [] },
@@ -112,9 +118,14 @@ function verifierOptions(fetcher: typeof fetch) {
   };
 }
 
-function code(expected: string, stage?: string): (error: unknown) => boolean {
+function code(
+  expected: string,
+  stage?: string,
+  failureKind?: string,
+): (error: unknown) => boolean {
   return (error) => error instanceof CloudflareObservabilityCredentialVerificationError &&
-    error.code === expected && (stage === undefined || error.stage === stage);
+    error.code === expected && (stage === undefined || error.stage === stage) &&
+    (failureKind === undefined || error.failureKind === failureKind);
 }
 
 describe('existing Cloudflare Workers Observability credential verification', () => {
@@ -207,19 +218,21 @@ describe('existing Cloudflare Workers Observability credential verification', ()
 
   it('rejects unavailable or secret-bearing responses with one request per stage', async () => {
     const value = await authorization();
-    for (const [options, expected, stage, count] of [
+    for (const [options, expected, stage, failureKind, count] of [
       [{ verifyResponse: new Response('', { status: 403 }) },
-        'token_verification_failed', 'token_verify', 1],
+        'token_verification_failed', 'token_verify', 'auth_rejected', 1],
       [{ probeResponse: new Response('', { status: 403 }) },
-        'telemetry_probe_failed', 'telemetry_probe', 2],
+        'telemetry_probe_failed', 'telemetry_probe', 'auth_rejected', 2],
+      [{ probeThrows: true },
+        'telemetry_probe_failed', 'telemetry_probe', 'transport_unavailable', 2],
       [{ verifyResponse: envelope({ id: TOKEN_ID, status: 'active', leaked: CREDENTIAL }) },
-        'secret_leak_detected', 'token_verify', 1],
+        'secret_leak_detected', 'token_verify', undefined, 1],
     ] as const) {
       const requests: ObservedRequest[] = [];
       await expect(verifyExistingCloudflareObservabilityCredential(
         value,
         verifierOptions(fakeCloudflare(requests, options)),
-      )).rejects.toSatisfy(code(expected, stage));
+      )).rejects.toSatisfy(code(expected, stage, failureKind));
       expect(requests).toHaveLength(count);
     }
   });
