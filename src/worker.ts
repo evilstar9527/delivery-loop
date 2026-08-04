@@ -199,8 +199,16 @@ export default {
         await revokeRepoWriteCredentialsFromEnv(env);
         return;
       }
-      // Detect/re-arm first so queued outbox relay and deployment reconciliation
-      // can perform the state-specific recovery in this same scheduled cycle.
+      // Free-plan scheduled invocations have a 10 ms CPU ceiling. Put the two
+      // durable delivery-loop critical paths first so background inventory
+      // reconciliation cannot starve already-persisted external effects.
+      await relay.relay();
+      await new ExecutionProgressReconciler(
+        env.DB_CONTROL,
+        env.TASK_OBJECTS,
+      ).reconcileBatch(5);
+      // Detect/re-arm after existing outbox and execution progress have had a
+      // chance to advance. Re-armed effects remain safe for the next minute.
       await new RunStuckDetector(env.DB_CONTROL, {
         sink: secureStructuredLogSink({
           component: 'run_stuck',
@@ -214,14 +222,7 @@ export default {
         env.DB_CONTROL,
         new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
       ).drain(25);
-      // Approval, initial execution scheduling, Evidence closure, and Draft PR
-      // publication form one bounded durable progression before this cycle's relay.
-      await new ExecutionProgressReconciler(
-        env.DB_CONTROL,
-        env.TASK_OBJECTS,
-      ).reconcileBatch(25);
       await Promise.all([
-        relay.relay(),
         reconcileWorkflowInstancesFromEnv(env),
         new FeishuIngressRelay(env.DB_CONTROL, env.FEISHU_INGRESS_QUEUE).relay(),
         reconcileGitHubRunsFromEnv(env),

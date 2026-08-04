@@ -24,29 +24,32 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(feishuRuntime).toContain('runtime.messageReconciler.reconcileBatch(25)');
   });
 
-  it('starts the outbox relay without waiting for workflow status reconciliation', () => {
+  it('prioritizes durable outbox and execution progress before background recovery', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    const relay = worker.indexOf('await relay.relay();');
+    const executionProgress = worker.indexOf(').reconcileBatch(5);', relay);
     const detectorEnd = worker.indexOf('}).scan(25);');
     const workflowDrain = worker.indexOf(').drain(25);', detectorEnd);
     const concurrentStart = worker.indexOf('await Promise.all([', detectorEnd);
     const concurrentEnd = worker.indexOf(']);', concurrentStart);
-    const relay = worker.indexOf('relay.relay(),', concurrentStart);
     const workflowReconciliation = worker.indexOf(
       'reconcileWorkflowInstancesFromEnv(env),',
       concurrentStart,
     );
 
+    expect(relay).toBeGreaterThan(-1);
+    expect(executionProgress).toBeGreaterThan(relay);
     expect(detectorEnd).toBeGreaterThan(-1);
+    expect(executionProgress).toBeLessThan(detectorEnd);
     expect(workflowDrain).toBeGreaterThan(detectorEnd);
     expect(workflowDrain).toBeLessThan(concurrentStart);
     expect(concurrentStart).toBeGreaterThan(detectorEnd);
     expect(concurrentEnd).toBeGreaterThan(concurrentStart);
-    expect(relay).toBeGreaterThan(concurrentStart);
-    expect(relay).toBeLessThan(concurrentEnd);
     expect(workflowReconciliation).toBeGreaterThan(concurrentStart);
     expect(workflowReconciliation).toBeLessThan(concurrentEnd);
     expect(worker.slice(detectorEnd, concurrentStart)).not.toContain(
       'reconcileWorkflowInstancesFromEnv(env)',
     );
+    expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain('relay.relay()');
   });
 });
