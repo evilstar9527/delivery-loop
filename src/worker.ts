@@ -83,6 +83,7 @@ import { reconcileGitHubMergeGatesFromEnv } from './reconciliation/github-merge-
 import { reconcileGitHubMergeStatusesFromEnv } from './reconciliation/github-merge-status-runtime.js';
 import { reconcileGitHubProductionDeploymentStatusesFromEnv } from './reconciliation/github-production-deployment-status-runtime.js';
 import { BaseRebaseAttemptReconciler } from './reconciliation/base-rebase-attempt-reconciler.js';
+import { ExecutionProgressReconciler } from './reconciliation/execution-progress-reconciler.js';
 import { revokeRepoWriteCredentialsFromEnv } from './reconciliation/repo-write-credential-runtime.js';
 import { RunStuckDetector } from './reconciliation/run-stuck-detector.js';
 import { reconcileWorkflowInstancesFromEnv } from './reconciliation/workflow-instance-reconciler.js';
@@ -213,6 +214,12 @@ export default {
         env.DB_CONTROL,
         new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
       ).drain(25);
+      // Approval, initial execution scheduling, Evidence closure, and Draft PR
+      // publication form one bounded durable progression before this cycle's relay.
+      await new ExecutionProgressReconciler(
+        env.DB_CONTROL,
+        env.TASK_OBJECTS,
+      ).reconcileBatch(25);
       await Promise.all([
         relay.relay(),
         reconcileWorkflowInstancesFromEnv(env),

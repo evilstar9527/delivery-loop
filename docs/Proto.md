@@ -236,7 +236,7 @@ type PlanItemProgress = {
 5. required Item 只有 Evidence 经控制面或外部 API 核对后才能 `passed`；`skipped` 不能满足 required Item。
 6. Plan 内容不保存原始日志、数据库行、Secret 或完整 PRD；只保存脱敏摘要、受控引用和 digest。
 7. 每条 Task acceptance criterion 必须至少被一个 `required` Item覆盖；把全部 Item或覆盖 Item改成 optional 不能通过 validation。
-8. 每个 `change/repo_write` Item 必须流向一个下游 `required verification` Item；该 verification 必须引用 delivery policy明确分类为 test/verify/lint/build 的命令，并要求 test/lint/build Evidence。任意“跳过测试”、optional verification、仅 diagnostic Evidence或与 change无依赖的并行 verification均拒绝。
+8. 每个 `change/repo_write` Item 必须验证其最终 commit head。MVP 首选一个 self-verifying `required change` Item：同时声明 `repo_write`、至少一个 `test:*`、至少一个受信 `verify:*`，并要求 `commit + test` Evidence；也允许它流向一个下游 `required verification` Item，由后者引用受信 test/verify/lint/build 命令并要求对应 Evidence。任意“跳过测试”、optional/detached verification、仅 diagnostic Evidence或没有 commit-bound trusted verify 的 change 均拒绝。
 
 ### 3.1 DiagnosticEvidence v1（bug analysis根因引用）
 
@@ -313,12 +313,13 @@ deployment:
 首次执行 Attempt 只能由控制面 scheduler 创建，遵循以下状态与并发契约：
 
 1. Plan 激活时所有 Item 为 `pending`。scheduler 只在 Run 为 `executing`、`expectedRunVersion` 命中、Plan 是 Run 的 exact active version 且状态为 `active` 时，把所有依赖均为 `passed` 的 `pending` Item 以 CAS 晋升为 `ready`；无依赖的根 Item 可直接晋升。
-2. 领取请求 strict schema 只有 `runId + expectedRunVersion + planVersion + planItemId + expectedProgressVersion`。只有 `ready + exact progress version + activeAttemptId=null` 且执行前重新核对全部依赖仍为 `passed` 的 Item，才能原子创建 `pending` Attempt 并变为 `in_progress`。
-3. Attempt ID 由 `run/plan/version/item/claimedProgressVersion` canonical digest稳定派生；D1另以相同五元组唯一约束。相同领取并发或重放收敛到一个 Attempt和一个`activeAttemptId`，零行CAS或不同绑定不得当成成功。
+2. 领取请求 strict schema 只有 `runId + expectedRunVersion + planVersion + planItemId + expectedProgressVersion`。只有 `ready + exact progress version + activeAttemptId=null` 且执行前重新核对全部依赖仍为 `passed` 的 Item，才能领取；`repo_write` Item还必须在同一SQL边界重新核对Task policy及exact latest approval未过期、未失效且没有更新reject。
+3. Attempt ID 由 `run/plan/version/item/claimedProgressVersion` canonical digest稳定派生；D1另以相同五元组唯一约束。`implement`领取在一个D1 batch中同时创建`pending` Attempt、把Item变为`in_progress`并写唯一`execution_dispatch` outbox，稳定identity分别为Attempt ID、`outbox_execution_<attemptId>`和`execution-dispatch:<attemptId>`；相同领取并发或重放收敛到同一组记录，零行CAS、缺outbox或不同绑定不得当成成功。`deploy`领取不创建该Actions outbox，继续由专用deployment producer接线。
 4. Attempt mode由受信Plan effect派生：包含测试/生产部署effect才为`deploy`，其余首次Item Attempt为`implement`；repository、base SHA和固定workflow ref来自D1 Run/Task，不接受领取调用者自报。
 5. Runner/Agent API没有Plan Item status字段，strict schema拒绝夹带`passed/skipped`。Agent complete/failure只是待核对事实，不能直接改变Item进度；`passed`只允许后续控制面Evidence verifier写入。
 6. D1 trigger禁止任何required Item以及所有`investigation/verification` Item进入`skipped`。依赖只能由真实`passed`满足，`skipped`、Agent自报、Attempt completed或旧Plan状态均不解锁下游Item。
 7. lost Attempt恢复不重新领取或跳过Item：progress保持`in_progress`，recovery只在旧Runner/Workflow完成fencing后以CAS替换同Item的`activeAttemptId`。
+8. 每分钟的有界execution reconciler只从D1真源推进主链：exact `repo_write` approval使`awaiting_approval → executing`，随后promote/claim唯一self-verifying change Item；GitHub `completed/success`与同Attempt/Plan/Item/head的completed suite同时成立后，它为每条`doneWhen`提交完整Evidence mapping。全部required Item经decision变为`passed`后才CAS到`verifying`、准备immutable Draft PR并创建唯一publication/outbox；任一步的陈旧scan或并发重放均由下层CAS、stable identity和唯一约束吸收。
 
 ### 3.4 ExecutionPlan revision
 

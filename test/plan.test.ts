@@ -121,6 +121,54 @@ describe('ExecutionPlan v1 validation', () => {
     expect(result.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
+  it('accepts one required self-verifying change item that matches the execution Runner contract', async () => {
+    const input = await proposal((body) => {
+      body.items = [{
+        id: 'change',
+        kind: 'change',
+        title: 'Implement and verify the fix',
+        objective: 'Make the smallest safe change and prove it with the trusted commands.',
+        acceptanceCriteriaIndexes: [0, 1],
+        doneWhen: [
+          'The bot commit contains the required change.',
+          'Targeted and required verification both pass on the committed head.',
+        ],
+        verification: {
+          commandRefs: ['test:unit', 'verify:all'],
+          evidenceKinds: ['commit', 'test'],
+        },
+        effects: ['repo_write'],
+        dependsOn: [],
+        required: true,
+      }];
+    });
+
+    await expect(validateExecutionPlanProposal(input, CONTEXT)).resolves.toEqual(input);
+  });
+
+  it('rejects a repo-write item that cannot verify its own committed head', async () => {
+    await expectIssue(
+      await proposal((body) => {
+        body.items = [{
+          id: 'change',
+          kind: 'change',
+          title: 'Implement an unverified fix',
+          objective: 'Change code without a complete trusted verification contract.',
+          acceptanceCriteriaIndexes: [0, 1],
+          doneWhen: ['The change is written.'],
+          verification: {
+            commandRefs: ['test:unit'],
+            evidenceKinds: ['commit'],
+          },
+          effects: ['repo_write'],
+          dependsOn: [],
+          required: true,
+        }];
+      }),
+      'verification_required_after_change',
+    );
+  });
+
   it('rejects malformed and duplicate item IDs', async () => {
     await expectIssue(
       await proposal((body) => {

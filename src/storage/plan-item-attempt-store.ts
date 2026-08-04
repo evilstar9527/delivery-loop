@@ -47,6 +47,7 @@ export interface PlanItemAttemptClaim {
   planItemId: string;
   ordinal: number;
   mode: 'implement' | 'deploy';
+  outboxId: string | null;
   created: boolean;
 }
 
@@ -81,6 +82,7 @@ interface ClaimProjectionRow {
   plan_version: number;
   plan_item_id: string;
   claimed_progress_version: number;
+  outbox_id: string | null;
 }
 
 function parseInput<T>(schema: z.ZodType<T>, input: unknown): T {
@@ -161,6 +163,7 @@ export class PlanItemAttemptStore {
     if (context.base_sha === null) throw new PlanItemAttemptError('state_conflict');
 
     const attemptId = await this.claimAttemptId(context.plan_id, input);
+    const outboxId = `outbox_execution_${attemptId}`;
     const existing = await this.existingClaim(attemptId, input);
     if (existing !== null) return this.claimResult(existing, false);
 
@@ -208,6 +211,45 @@ export class PlanItemAttemptStore {
              AND plan_item_progress.status = 'ready'
              AND plan_item_progress.version = ?
              AND plan_item_progress.active_attempt_id IS NULL
+             AND (
+               NOT EXISTS (
+                 SELECT 1 FROM plan_item_effects
+                 WHERE plan_item_effects.plan_id = plan_items.plan_id
+                   AND plan_item_effects.item_id = plan_items.item_id
+                   AND plan_item_effects.effect = 'repo_write'
+               )
+               OR (
+                 tasks.allow_repository_write = 1
+                 AND EXISTS (
+                   SELECT 1 FROM trusted_effect_approvals AS approval
+                   WHERE approval.run_id = runs.run_id
+                     AND approval.task_revision = runs.task_revision
+                     AND approval.plan_id = execution_plans.plan_id
+                     AND approval.plan_version = execution_plans.plan_version
+                     AND approval.plan_digest = execution_plans.digest
+                     AND approval.base_sha = runs.base_sha
+                     AND approval.effect = 'repo_write'
+                     AND approval.decision = 'approve'
+                     AND approval.expires_at > ?
+                     AND NOT EXISTS (
+                       SELECT 1 FROM invalidated_approvals
+                       WHERE invalidated_approvals.approval_id = approval.approval_id
+                     )
+                     AND NOT EXISTS (
+                       SELECT 1 FROM approvals AS rejection
+                       WHERE rejection.run_id = approval.run_id
+                         AND rejection.task_revision = approval.task_revision
+                         AND rejection.plan_id = approval.plan_id
+                         AND rejection.plan_version = approval.plan_version
+                         AND rejection.plan_digest = approval.plan_digest
+                         AND rejection.base_sha = approval.base_sha
+                         AND rejection.effect = approval.effect
+                         AND rejection.decision = 'reject'
+                         AND rejection.created_at >= approval.created_at
+                     )
+                 )
+               )
+             )
              AND NOT EXISTS (
                SELECT 1
                FROM plan_item_dependencies
@@ -235,6 +277,7 @@ export class PlanItemAttemptStore {
           input.planVersion,
           input.planItemId,
           input.expectedProgressVersion,
+          nowIso,
         ),
       this.db
         .prepare(
@@ -277,6 +320,39 @@ export class PlanItemAttemptStore {
           attemptId,
           input.runId,
           input.planVersion,
+          input.expectedProgressVersion,
+        ),
+      this.db
+        .prepare(
+          `INSERT INTO outbox (
+             outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+             delivery_state, created_at, updated_at
+           )
+           SELECT ?, attempts.run_id, 'execution_dispatch', 'github_actions', ?, ?,
+                  'pending', ?, ?
+           FROM attempts
+           JOIN plan_item_progress
+             ON plan_item_progress.plan_id = attempts.plan_id
+            AND plan_item_progress.item_id = attempts.plan_item_id
+           WHERE attempts.attempt_id = ? AND attempts.run_id = ?
+             AND attempts.status = 'pending'
+             AND attempts.mode = 'implement'
+             AND attempts.plan_version = ? AND attempts.plan_item_id = ?
+             AND attempts.claimed_progress_version = ?
+             AND plan_item_progress.status = 'in_progress'
+             AND plan_item_progress.active_attempt_id = attempts.attempt_id
+           ON CONFLICT DO NOTHING`,
+        )
+        .bind(
+          outboxId,
+          `d1://attempts/${attemptId}`,
+          `execution-dispatch:${attemptId}`,
+          nowIso,
+          nowIso,
+          attemptId,
+          input.runId,
+          input.planVersion,
+          input.planItemId,
           input.expectedProgressVersion,
         ),
     ]);
@@ -392,13 +468,17 @@ export class PlanItemAttemptStore {
       .prepare(
         `SELECT attempts.attempt_id, attempts.run_id, attempts.ordinal, attempts.mode,
                 attempts.plan_id, attempts.plan_version, attempts.plan_item_id,
-                attempts.claimed_progress_version
+                attempts.claimed_progress_version, outbox.outbox_id
          FROM attempts
          JOIN runs ON runs.run_id = attempts.run_id
          JOIN execution_plans ON execution_plans.plan_id = attempts.plan_id
          JOIN plan_item_progress
            ON plan_item_progress.plan_id = attempts.plan_id
           AND plan_item_progress.item_id = attempts.plan_item_id
+         LEFT JOIN outbox
+           ON outbox.run_id = attempts.run_id
+          AND outbox.kind = 'execution_dispatch'
+          AND outbox.dedupe_key = 'execution-dispatch:' || attempts.attempt_id
          WHERE attempts.attempt_id = ?
            AND attempts.run_id = ?
            AND attempts.plan_version = ?
@@ -411,7 +491,8 @@ export class PlanItemAttemptStore {
            AND runs.active_plan_version = attempts.plan_version
            AND execution_plans.status = 'active'
            AND plan_item_progress.status = 'in_progress'
-           AND plan_item_progress.active_attempt_id = attempts.attempt_id`,
+           AND plan_item_progress.active_attempt_id = attempts.attempt_id
+           AND (attempts.mode = 'deploy' OR outbox.outbox_id IS NOT NULL)`,
       )
       .bind(
         attemptId,
@@ -433,6 +514,7 @@ export class PlanItemAttemptStore {
       planItemId: row.plan_item_id,
       ordinal: row.ordinal,
       mode: row.mode,
+      outboxId: row.outbox_id,
       created,
     };
   }

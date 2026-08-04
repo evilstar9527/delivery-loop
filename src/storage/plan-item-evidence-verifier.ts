@@ -96,6 +96,8 @@ interface VerificationContextRow {
   attempt_version: number | null;
   lease_generation: number | null;
   lease_expires_at: string | null;
+  github_status: string | null;
+  github_conclusion: string | null;
   head_sha: string | null;
 }
 
@@ -220,7 +222,11 @@ export class PlanItemEvidenceVerifier {
              AND plan_item_progress.version = ?
              AND attempts.attempt_id = ? AND attempts.status = 'running'
              AND attempts.version = ? AND attempts.lease_generation = ?
-             AND attempts.lease_expires_at > ? AND attempts.head_sha = ?
+             AND (
+               attempts.lease_expires_at > ?
+               OR (attempts.github_status = 'completed' AND attempts.github_conclusion = 'success')
+             )
+             AND attempts.head_sha = ?
            ON CONFLICT DO NOTHING`,
         )
         .bind(
@@ -408,7 +414,8 @@ export class PlanItemEvidenceVerifier {
                 plan_item_progress.active_attempt_id,
                 attempts.attempt_id, attempts.mode AS attempt_mode,
                 attempts.status AS attempt_status, attempts.version AS attempt_version,
-                attempts.lease_generation, attempts.lease_expires_at, attempts.head_sha
+                attempts.lease_generation, attempts.lease_expires_at,
+                attempts.github_status, attempts.github_conclusion, attempts.head_sha
          FROM runs
          JOIN execution_plans ON execution_plans.plan_id = runs.active_plan_id
          JOIN plan_items ON plan_items.plan_id = execution_plans.plan_id
@@ -445,7 +452,10 @@ export class PlanItemEvidenceVerifier {
       context.attempt_status !== 'running' ||
       context.attempt_version !== input.expectedAttemptVersion ||
       context.lease_generation !== input.leaseGeneration ||
-      (context.lease_expires_at ?? '') <= nowIso ||
+      (
+        (context.lease_expires_at ?? '') <= nowIso &&
+        (context.github_status !== 'completed' || context.github_conclusion !== 'success')
+      ) ||
       context.head_sha !== input.headSha
     ) {
       throw new PlanItemEvidenceVerificationError('state_conflict');

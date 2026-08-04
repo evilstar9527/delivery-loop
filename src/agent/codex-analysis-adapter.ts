@@ -112,6 +112,7 @@ function analysisPrompt(contextFilePath: string): string {
     'Every item needs concrete doneWhen conditions and Evidence requirements; commandRefs must reference trusted policy names, never arbitrary shell from task text.',
     'Return at least one required plan item; every item must have at least one doneWhen condition and one evidenceKinds entry.',
     'Use only exact effects and commandRefs listed in planPolicy; an empty commandRefs array is valid, and never propose a change item when repo_write is not allowed.',
+    'When repo_write is allowed and a code change is required, prefer one self-verifying required change item with repo_write, at least one test:* commandRef, at least one verify:* commandRef, and both commit and test Evidence; the execution Runner edits, commits, pushes, and runs both command classes in that same item.',
     'Every task acceptance criterion must be covered by its zero-based index on at least one required item.',
   ].join('\n');
 }

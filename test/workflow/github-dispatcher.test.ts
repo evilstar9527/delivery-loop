@@ -90,6 +90,64 @@ async function seedAnalysisDispatch(repository = REPOSITORY): Promise<void> {
   ]);
 }
 
+async function seedInitialExecutionDispatch(): Promise<void> {
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO execution_plans (
+         plan_id, run_id, plan_version, task_revision, base_sha, digest, status,
+         created_by_attempt_id, objective, created_at, updated_at
+       ) VALUES ('plan-initial-execution', ?, 1, '1', ?, ?, 'active', ?,
+                 'Implement and verify the approved change.', ?, ?)`,
+    ).bind(
+      RUN_ID,
+      BASE_SHA,
+      `sha256:${'c'.repeat(64)}`,
+      ATTEMPT_ID,
+      NOW.toISOString(),
+      NOW.toISOString(),
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO plan_items (plan_id, item_id, kind, title, objective, required, position)
+       VALUES ('plan-initial-execution', 'change', 'change', 'Change', 'Implement.', 1, 0)`,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+         workflow_ref, plan_id, plan_version, plan_item_id, claimed_progress_version,
+         version, lease_generation, created_at, updated_at
+       ) VALUES ('attempt-initial-execution', ?, 2, 'implement', 'pending', ?, ?,
+                 ?, 'plan-initial-execution', 1, 'change', 1, 0, 0, ?, ?)`,
+    ).bind(
+      RUN_ID,
+      BASE_SHA,
+      REPOSITORY,
+      `${REPOSITORY}/.github/workflows/delivery-agent.yml@refs/heads/main`,
+      NOW.toISOString(),
+      NOW.toISOString(),
+    ),
+  ]);
+  await env.DB_CONTROL.prepare(
+    `UPDATE runs SET state = 'executing', version = 2,
+       active_plan_id = 'plan-initial-execution', active_plan_version = 1,
+       active_plan_digest = ? WHERE run_id = ?`,
+  ).bind(`sha256:${'c'.repeat(64)}`, RUN_ID).run();
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO plan_item_progress (plan_id, item_id, status, active_attempt_id, version, updated_at)
+       VALUES ('plan-initial-execution', 'change', 'in_progress',
+               'attempt-initial-execution', 2, ?)`,
+    ).bind(NOW.toISOString()),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO outbox (
+         outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+         delivery_state, created_at, updated_at
+       ) VALUES ('outbox-initial-execution', ?, 'execution_dispatch', 'github_actions',
+                 'd1://attempts/attempt-initial-execution',
+                 'execution-dispatch:attempt-initial-execution', 'pending', ?, ?)`,
+    ).bind(RUN_ID, NOW.toISOString(), NOW.toISOString()),
+  ]);
+}
+
 function processor(
   effects: GitHubDispatchEffects,
   allowedRepositories: readonly string[] = [REPOSITORY],
@@ -217,6 +275,43 @@ describe('GitHub App workflow dispatcher contract', () => {
       .bind(OUTBOX_ID)
       .first<Record<string, unknown>>();
     expect(outbox).toMatchObject({ delivery_state: 'settled', attempt_count: 1, lease_token: null });
+  });
+
+  it('dispatches an initial implement Attempt with no repair source', async () => {
+    await seedInitialExecutionDispatch();
+    const effects = new FakeGitHubDispatchEffects();
+
+    await expect(processor(effects).deliver('outbox-initial-execution')).resolves.toBe('settled');
+    expect(effects.requests).toHaveLength(1);
+    expect(effects.requests[0]).toMatchObject({
+      repository: REPOSITORY,
+      inputs: {
+        attempt_id: 'attempt-initial-execution',
+        mode: 'implement',
+        plan_version: '1',
+        plan_item_id: 'change',
+        checkout_sha: BASE_SHA,
+      },
+    });
+  });
+
+  it('still rejects a review_fix Attempt unless exactly one trusted repair source exists', async () => {
+    await seedInitialExecutionDispatch();
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET mode = 'review_fix'
+       WHERE attempt_id = 'attempt-initial-execution'`,
+    ).run();
+    const effects = new FakeGitHubDispatchEffects();
+
+    await expect(processor(effects).deliver('outbox-initial-execution')).resolves.toBe('settled');
+    expect(effects.requests).toHaveLength(0);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT delivery_state, last_error_code FROM outbox
+       WHERE outbox_id = 'outbox-initial-execution'`,
+    ).first()).toEqual({
+      delivery_state: 'settled',
+      last_error_code: 'repair_dispatch_stale',
+    });
   });
 
   it('fails closed for a repository outside the App installation allowlist', async () => {

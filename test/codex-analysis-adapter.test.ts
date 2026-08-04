@@ -190,6 +190,10 @@ describe('Codex analysis Agent adapter', () => {
     expect(observed?.stdin).toContain('at least one required plan item');
     expect(observed?.stdin).toContain('at least one doneWhen condition');
     expect(observed?.stdin).toContain('never propose a change item when repo_write is not allowed');
+    expect(observed?.stdin).toContain('self-verifying required change item');
+    expect(observed?.stdin).toContain('repo_write, at least one test:* commandRef');
+    expect(observed?.stdin).toContain('at least one verify:* commandRef');
+    expect(observed?.stdin).toContain('commit and test Evidence');
     expect(observed?.stdin).toContain('covered by its zero-based index');
     expect(observed?.stdin).toContain(paths.contextFile);
     expect(observed?.stdin).not.toContain('CANARY_NOT_IN_PROMPT');
