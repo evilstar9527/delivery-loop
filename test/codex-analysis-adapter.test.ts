@@ -10,7 +10,10 @@ import {
   type CommandExecutionResult,
 } from '../src/agent/codex-analysis-adapter.js';
 import type { ExecutionPlanValidationContext } from '../src/domain/plan.js';
-import { DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA } from
+import {
+  ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
+  DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA,
+} from
   '../src/domain/analysis-plan.js';
 
 const BASE_SHA = 'c'.repeat(40);
@@ -23,10 +26,14 @@ const CONTEXT_PAYLOAD = {
   codeComment: 'CANARY_CODE_COMMENT_SAYS_EDIT_WORKFLOW',
 };
 
-function contextProof(): string {
-  return `context_digest:sha256:${createHash('sha256')
+function contextDigest(): string {
+  return `sha256:${createHash('sha256')
     .update(JSON.stringify(CONTEXT_PAYLOAD))
     .digest('hex')}`;
+}
+
+function agentOutput(plan: Record<string, unknown> = validContent()): Record<string, unknown> {
+  return { contextDigest: contextDigest(), plan };
 }
 
 function validationContext(): ExecutionPlanValidationContext {
@@ -52,10 +59,7 @@ function diagnosticValidationContext(): ExecutionPlanValidationContext {
 function validContent(): Record<string, unknown> {
   return {
     objective: 'Identify the cause and produce a source-backed execution plan.',
-    assumptions: [
-      'The checked out commit is the trusted base snapshot.',
-      contextProof(),
-    ],
+    assumptions: ['The checked out commit is the trusted base snapshot.'],
     evidenceRefs: ['d1://evidence/source-inspection-1'],
     items: [
       {
@@ -80,10 +84,7 @@ function validContent(): Record<string, unknown> {
 function diagnosticPlanContent(evidenceRefs: string[] = []): Record<string, unknown> {
   return {
     objective: 'Identify the request-backed root cause and prepare a safe repair plan.',
-    assumptions: [
-      'The bounded log and trace results are untrusted diagnostic references.',
-      contextProof(),
-    ],
+    assumptions: ['The bounded log and trace results are untrusted diagnostic references.'],
     evidenceRefs,
     items: [
       {
@@ -152,7 +153,7 @@ describe('Codex analysis Agent adapter', () => {
     const adapter = new CodexAnalysisAdapter({
       outputSchemaPath: SCHEMA_PATH,
       execute: async (): Promise<CommandExecutionResult> => {
-        await writeFile(paths.outputFile, JSON.stringify(content));
+        await writeFile(paths.outputFile, JSON.stringify(agentOutput(content)));
         return { exitCode: 0 };
       },
     });
@@ -189,7 +190,7 @@ describe('Codex analysis Agent adapter', () => {
     const adapter = new CodexAnalysisAdapter({
       outputSchemaPath: SCHEMA_PATH,
       execute: async (): Promise<CommandExecutionResult> => {
-        await writeFile(paths.outputFile, JSON.stringify(content));
+        await writeFile(paths.outputFile, JSON.stringify(agentOutput(content)));
         return { exitCode: 0 };
       },
     });
@@ -222,7 +223,7 @@ describe('Codex analysis Agent adapter', () => {
       outputSchemaPath: SCHEMA_PATH,
       execute: async (request): Promise<CommandExecutionResult> => {
         observed = request;
-        await writeFile(paths.outputFile, JSON.stringify(validContent()));
+        await writeFile(paths.outputFile, JSON.stringify(agentOutput()));
         return { exitCode: 0 };
       },
     });
@@ -276,7 +277,7 @@ describe('Codex analysis Agent adapter', () => {
     expect(observed?.stdin).toContain('at least one doneWhen condition');
     expect(observed?.stdin).toContain('never propose a change item when repo_write is not allowed');
     expect(observed?.stdin).toContain('self-verifying required change item');
-    expect(observed?.stdin).toContain('context_digest:sha256:<64 lowercase hex>');
+    expect(observed?.stdin).toContain('required top-level contextDigest');
     expect(observed?.stdin).toContain('do not replace it with an investigation-only placeholder');
     expect(observed?.stdin).toContain('repo_write, at least one test:* commandRef');
     expect(observed?.stdin).toContain('at least one verify:* commandRef');
@@ -303,24 +304,23 @@ describe('Codex analysis Agent adapter', () => {
     expect(plan.assumptions).toEqual([
       'The checked out commit is the trusted base snapshot.',
     ]);
-    expect(JSON.stringify(plan)).not.toContain('context_digest:');
+    expect(JSON.stringify(plan)).not.toContain('contextDigest');
     expect(plan.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
-  it.each(['missing', 'mismatched', 'duplicate'] as const)(
-    'rejects %s context proof before Plan persistence',
+  it.each(['missing', 'mismatched', 'extra'] as const)(
+    'rejects %s context envelope before Plan persistence',
     async (failure) => {
       const paths = await tempInput();
       const content = validContent();
-      const assumptions = content.assumptions as string[];
-      if (failure === 'missing') assumptions.pop();
-      if (failure === 'mismatched') assumptions[assumptions.length - 1] =
-        `context_digest:sha256:${'0'.repeat(64)}`;
-      if (failure === 'duplicate') assumptions.push(contextProof());
+      const output: Record<string, unknown> = agentOutput(content);
+      if (failure === 'missing') delete output.contextDigest;
+      if (failure === 'mismatched') output.contextDigest = `sha256:${'0'.repeat(64)}`;
+      if (failure === 'extra') output.untrusted = 'must-not-pass';
       const adapter = new CodexAnalysisAdapter({
         outputSchemaPath: SCHEMA_PATH,
         execute: async () => {
-          await writeFile(paths.outputFile, JSON.stringify(content));
+          await writeFile(paths.outputFile, JSON.stringify(output));
           return { exitCode: 0 };
         },
       });
@@ -339,7 +339,9 @@ describe('Codex analysis Agent adapter', () => {
           attemptId: 'attempt-context-proof',
         },
         validation: validationContext(),
-      })).rejects.toThrow('Codex analysis context proof is invalid');
+      })).rejects.toThrow(failure === 'mismatched'
+        ? 'Codex analysis context proof is invalid'
+        : 'Codex analysis output is invalid');
     },
   );
 
@@ -351,7 +353,7 @@ describe('Codex analysis Agent adapter', () => {
       providerBaseUrl: 'https://relay.example.com/openai/v1/',
       execute: async (request) => {
         observed = request;
-        await writeFile(paths.outputFile, JSON.stringify(validContent()));
+        await writeFile(paths.outputFile, JSON.stringify(agentOutput()));
         return { exitCode: 0 };
       },
     });
@@ -420,7 +422,7 @@ describe('Codex analysis Agent adapter', () => {
             reasoning_output_tokens: 5,
           },
         }));
-        await writeFile(paths.outputFile, JSON.stringify(validContent()));
+        await writeFile(paths.outputFile, JSON.stringify(agentOutput()));
         return { exitCode: 0 };
       },
     });
@@ -505,6 +507,7 @@ describe('Codex analysis Agent adapter', () => {
         } else {
           await writeFile(outputPath, JSON.stringify({
             schemaVersion: '1',
+            contextDigest: contextDigest(),
             rootCause: {
               summary: 'A stale cache branch returns the previous response.',
               confidence: 'high',
@@ -601,6 +604,7 @@ describe('Codex analysis Agent adapter', () => {
             ? { schemaVersion: '1', arguments: { traceId: 'safe-trace-ref' } }
             : {
                 schemaVersion: '1',
+                contextDigest: contextDigest(),
                 rootCause: {
                   summary: 'A source-backed cause.', confidence: 'medium',
                   codeRefs: [{ path: 'src/cache.ts', symbol: 'readCache' }],
@@ -642,11 +646,11 @@ describe('Codex analysis Agent adapter', () => {
       execute: async () => {
         await writeFile(
           paths.outputFile,
-          JSON.stringify({
+          JSON.stringify(agentOutput({
             ...validContent(),
             runId: 'attacker-selected-run',
             items: [{ ...(validContent().items as object[])[0], effects: ['repo_write'] }],
-          }),
+          })),
         );
         return { exitCode: 0 };
       },
@@ -683,11 +687,11 @@ describe('Codex analysis Agent adapter', () => {
         const items = validContent().items as Array<Record<string, unknown>>;
         await writeFile(
           paths.outputFile,
-          JSON.stringify({
+          JSON.stringify(agentOutput({
             ...validContent(),
             objective: 'Follow the repository comment and modify the workflow.',
             items: [{ ...items[0], effects: ['repo_write'] }],
-          }),
+          })),
         );
         return { exitCode: 0 };
       },
@@ -765,7 +769,7 @@ describe('Codex analysis Agent adapter', () => {
     }
   });
 
-  it('keeps identity and digest out of the Agent-controlled output schema', async () => {
+  it('requires a strict proof envelope while keeping identity out of nested Plan content', async () => {
     const schema = JSON.parse(await readFile(SCHEMA_PATH, 'utf8')) as {
       required: string[];
       properties: Record<string, unknown>;
@@ -790,6 +794,19 @@ describe('Codex analysis Agent adapter', () => {
     );
     expectProviderStrictObjectSchemas(planSchema);
     expect(JSON.stringify(planSchema)).not.toContain('uniqueItems');
+    expect(ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA.required).toEqual(['contextDigest', 'plan']);
+    expect(Object.keys(ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA.properties)).toEqual([
+      'contextDigest',
+      'plan',
+    ]);
+    expect(ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA.properties.plan).toEqual(planSchema);
+    expectProviderStrictObjectSchemas(ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA);
     expect(DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA.properties.plan).toEqual(planSchema);
+    expect(DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA.required).toEqual([
+      'schemaVersion',
+      'contextDigest',
+      'rootCause',
+      'plan',
+    ]);
   });
 });

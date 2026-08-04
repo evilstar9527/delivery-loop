@@ -21,6 +21,18 @@ export const AnalysisPlanContentV1Schema = z
 
 export type AnalysisPlanContentV1 = z.infer<typeof AnalysisPlanContentV1Schema>;
 
+const CONTEXT_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+
+/** Ephemeral model output; contextDigest is verified and never persisted in ExecutionPlan. */
+export const AnalysisAgentOutputV1Schema = z
+  .object({
+    contextDigest: z.string().regex(CONTEXT_DIGEST_PATTERN),
+    plan: AnalysisPlanContentV1Schema,
+  })
+  .strict();
+
+export type AnalysisAgentOutputV1 = z.infer<typeof AnalysisAgentOutputV1Schema>;
+
 const TOOL_ARGUMENT_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
 
 const DiagnosticToolArgumentsSchema = z
@@ -61,6 +73,7 @@ export const DiagnosticTraceRequestV1Schema = z
 export const DiagnosticAnalysisResultV1Schema = z
   .object({
     schemaVersion: z.literal('1'),
+    contextDigest: z.string().regex(CONTEXT_DIGEST_PATTERN),
     rootCause: DiagnosticRootCauseV1Schema,
     plan: AnalysisPlanContentV1Schema,
   })
@@ -223,12 +236,23 @@ const analysisPlanContentV1JsonSchema = {
   },
 } as const;
 
+export const ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['contextDigest', 'plan'],
+  properties: {
+    contextDigest: { type: 'string', pattern: '^sha256:[a-f0-9]{64}$' },
+    plan: analysisPlanContentV1JsonSchema,
+  },
+} as const;
+
 export const DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['schemaVersion', 'rootCause', 'plan'],
+  required: ['schemaVersion', 'contextDigest', 'rootCause', 'plan'],
   properties: {
     schemaVersion: { const: '1' },
+    contextDigest: { type: 'string', pattern: '^sha256:[a-f0-9]{64}$' },
     rootCause: {
       type: 'object',
       additionalProperties: false,
