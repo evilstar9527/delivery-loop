@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -384,7 +385,14 @@ describe('analysis Runner bootstrap', () => {
             reasoning_output_tokens: 5,
           },
         }));
-        await writeFile(request.args[request.args.indexOf('--output-last-message') + 1]!, JSON.stringify(planContent()));
+        const content = planContent();
+        (content.assumptions as string[]).push(
+          `context_digest:sha256:${createHash('sha256').update(context).digest('hex')}`,
+        );
+        await writeFile(
+          request.args[request.args.indexOf('--output-last-message') + 1]!,
+          JSON.stringify(content),
+        );
         return { exitCode: 0 };
       },
     });
@@ -1118,7 +1126,22 @@ describe('analysis Runner bootstrap', () => {
             reasoning_output_tokens: 5,
           },
         }));
-        await writeFile(request.args[request.args.indexOf('--output-last-message') + 1]!, JSON.stringify(planContent()));
+        const contextDirectoryName = (await readdir(environment.GITHUB_WORKSPACE!)).find(
+          (name) => name.startsWith('.delivery-loop-analysis-context-'),
+        );
+        expect(contextDirectoryName).toBeDefined();
+        const context = await readFile(
+          join(environment.GITHUB_WORKSPACE!, contextDirectoryName!, 'context.json'),
+          'utf8',
+        );
+        const content = planContent();
+        (content.assumptions as string[]).push(
+          `context_digest:sha256:${createHash('sha256').update(context).digest('hex')}`,
+        );
+        await writeFile(
+          request.args[request.args.indexOf('--output-last-message') + 1]!,
+          JSON.stringify(content),
+        );
         return { exitCode: 0 };
       },
     });

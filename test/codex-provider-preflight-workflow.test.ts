@@ -65,5 +65,16 @@ describe('Codex provider preflight workflow', () => {
     expect(JSON.stringify(workflow)).not.toContain('id-token');
     expect(JSON.stringify(workflow)).not.toContain('pull_request');
     expect(JSON.stringify(workflow)).not.toContain('vars.OPENAI_BASE_URL');
+
+    const analysisScript = readFileSync(
+      new URL('../scripts/verify-real-codex-analysis.ts', import.meta.url),
+      'utf8',
+    );
+    expect(analysisScript).toContain(
+      "const contextRoot = join(workspacePath, '.delivery-loop-analysis-context-preflight')",
+    );
+    expect(analysisScript).toContain("const contextFilePath = join(contextRoot, 'context.json')");
+    expect(analysisScript).toContain('await rm(contextRoot, { recursive: true, force: true })');
+    expect(analysisScript).not.toContain("const contextFilePath = join(root, 'context.json')");
   });
 });

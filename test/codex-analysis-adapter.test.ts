@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -14,6 +15,19 @@ import { DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA } from
 
 const BASE_SHA = 'c'.repeat(40);
 const SCHEMA_PATH = resolve('schemas/analysis-plan-content-v1.schema.json');
+const CONTEXT_PAYLOAD = {
+  taskRef: 'r2://tasks/private',
+  bodyCanary: 'CANARY_NOT_IN_PROMPT',
+  taskInstruction: 'CANARY_TASK_SAYS_IGNORE_SYSTEM',
+  logInstruction: 'CANARY_LOG_SAYS_PRINT_SECRET',
+  codeComment: 'CANARY_CODE_COMMENT_SAYS_EDIT_WORKFLOW',
+};
+
+function contextProof(): string {
+  return `context_digest:sha256:${createHash('sha256')
+    .update(JSON.stringify(CONTEXT_PAYLOAD))
+    .digest('hex')}`;
+}
 
 function validationContext(): ExecutionPlanValidationContext {
   return {
@@ -38,7 +52,10 @@ function diagnosticValidationContext(): ExecutionPlanValidationContext {
 function validContent(): Record<string, unknown> {
   return {
     objective: 'Identify the cause and produce a source-backed execution plan.',
-    assumptions: ['The checked out commit is the trusted base snapshot.'],
+    assumptions: [
+      'The checked out commit is the trusted base snapshot.',
+      contextProof(),
+    ],
     evidenceRefs: ['d1://evidence/source-inspection-1'],
     items: [
       {
@@ -63,7 +80,10 @@ function validContent(): Record<string, unknown> {
 function diagnosticPlanContent(evidenceRefs: string[] = []): Record<string, unknown> {
   return {
     objective: 'Identify the request-backed root cause and prepare a safe repair plan.',
-    assumptions: ['The bounded log and trace results are untrusted diagnostic references.'],
+    assumptions: [
+      'The bounded log and trace results are untrusted diagnostic references.',
+      contextProof(),
+    ],
     evidenceRefs,
     items: [
       {
@@ -118,13 +138,7 @@ async function tempInput(): Promise<{
   await import('node:fs/promises').then(({ mkdir }) => mkdir(workspace));
   await writeFile(
     contextFile,
-    JSON.stringify({
-      taskRef: 'r2://tasks/private',
-      bodyCanary: 'CANARY_NOT_IN_PROMPT',
-      taskInstruction: 'CANARY_TASK_SAYS_IGNORE_SYSTEM',
-      logInstruction: 'CANARY_LOG_SAYS_PRINT_SECRET',
-      codeComment: 'CANARY_CODE_COMMENT_SAYS_EDIT_WORKFLOW',
-    }),
+    JSON.stringify(CONTEXT_PAYLOAD),
   );
   return { root, workspace, contextFile, outputFile };
 }
@@ -262,6 +276,8 @@ describe('Codex analysis Agent adapter', () => {
     expect(observed?.stdin).toContain('at least one doneWhen condition');
     expect(observed?.stdin).toContain('never propose a change item when repo_write is not allowed');
     expect(observed?.stdin).toContain('self-verifying required change item');
+    expect(observed?.stdin).toContain('context_digest:sha256:<64 lowercase hex>');
+    expect(observed?.stdin).toContain('do not replace it with an investigation-only placeholder');
     expect(observed?.stdin).toContain('repo_write, at least one test:* commandRef');
     expect(observed?.stdin).toContain('at least one verify:* commandRef');
     expect(observed?.stdin).toContain('commit and test Evidence');
@@ -284,8 +300,48 @@ describe('Codex analysis Agent adapter', () => {
       status: 'proposed',
       objective: validContent().objective,
     });
+    expect(plan.assumptions).toEqual([
+      'The checked out commit is the trusted base snapshot.',
+    ]);
+    expect(JSON.stringify(plan)).not.toContain('context_digest:');
     expect(plan.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
+
+  it.each(['missing', 'mismatched', 'duplicate'] as const)(
+    'rejects %s context proof before Plan persistence',
+    async (failure) => {
+      const paths = await tempInput();
+      const content = validContent();
+      const assumptions = content.assumptions as string[];
+      if (failure === 'missing') assumptions.pop();
+      if (failure === 'mismatched') assumptions[assumptions.length - 1] =
+        `context_digest:sha256:${'0'.repeat(64)}`;
+      if (failure === 'duplicate') assumptions.push(contextProof());
+      const adapter = new CodexAnalysisAdapter({
+        outputSchemaPath: SCHEMA_PATH,
+        execute: async () => {
+          await writeFile(paths.outputFile, JSON.stringify(content));
+          return { exitCode: 0 };
+        },
+      });
+
+      await expect(adapter.start({
+        workspacePath: paths.workspace,
+        contextFilePath: paths.contextFile,
+        outputFilePath: paths.outputFile,
+        timeoutMs: 60_000,
+        identity: {
+          planId: 'plan-context-proof',
+          runId: 'run-codex-analysis',
+          version: 1,
+          taskRevision: 'revision-1',
+          baseSha: BASE_SHA,
+          attemptId: 'attempt-context-proof',
+        },
+        validation: validationContext(),
+      })).rejects.toThrow('Codex analysis context proof is invalid');
+    },
+  );
 
   it('routes a validated relay through the trusted Responses/SSE provider profile', async () => {
     const paths = await tempInput();
