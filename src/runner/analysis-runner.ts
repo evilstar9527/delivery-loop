@@ -17,6 +17,7 @@ import {
   DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA,
   DiagnosticLogSearchRequestV1Schema,
   DiagnosticTraceRequestV1Schema,
+  createAnalysisContextFileV1,
   deriveAnalysisPlanId,
   type AnalysisPlanContentV1,
   type DiagnosticLogSearchRequestV1,
@@ -973,7 +974,11 @@ export async function runAnalysisAttempt(
     ).catch((error: unknown) => {
       heartbeatFailure = error;
     });
-    await writeFile(contextFilePath, JSON.stringify(context), { mode: 0o600, flag: 'wx' });
+    await writeFile(
+      contextFilePath,
+      JSON.stringify(await createAnalysisContextFileV1(context)),
+      { mode: 0o600, flag: 'wx' },
+    );
     await Promise.all([
       writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' }),
       writeFile(

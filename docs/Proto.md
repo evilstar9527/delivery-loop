@@ -237,7 +237,7 @@ type PlanItemProgress = {
 6. Plan 内容不保存原始日志、数据库行、Secret 或完整 PRD；只保存脱敏摘要、受控引用和 digest。
 7. 每条 Task acceptance criterion 必须至少被一个 `required` Item覆盖；把全部 Item或覆盖 Item改成 optional 不能通过 validation。
 8. 每个 `change/repo_write` Item 必须验证其最终 commit head。MVP 首选一个 self-verifying `required change` Item：同时声明 `repo_write`、至少一个 `test:*`、至少一个受信 `verify:*`，并要求 `commit + test` Evidence；也允许它流向一个下游 `required verification` Item，由后者引用受信 test/verify/lint/build 命令并要求对应 Evidence。任意“跳过测试”、optional/detached verification、仅 diagnostic Evidence或没有 commit-bound trusted verify 的 change 均拒绝。
-9. analysis Agent 必须证明实际打开了本次 digest-verified context，而不能只根据prompt中的路径生成占位Plan。Runner把exact `context.json`原始字节的SHA-256作为预期值，但不把预期值放进prompt；requirement最终structured output必须是strict `{contextDigest, plan}` envelope，`contextDigest`为顶层必填`sha256:<64 lowercase hex>`。Runner在Plan validation/digest/API前以原始字节重算并核对，只把嵌套`plan`交给后续边界；缺失、猜错或额外顶层字段均fail-closed，proof不会成为持久assumption或Evidence。该proof只证明读取能力，不能替代Plan语义、人审或Evidence核对。
+9. analysis Agent 必须证明实际打开了本次 digest-verified context，而不能只根据prompt中的路径生成占位Plan。Runner把0600 `context.json`写成strict `{schemaVersion:'1', contextDigest, context}`：`contextDigest`是Runner预先对`JSON.stringify(context)`计算的SHA-256，原Task/Plan policy只存在于嵌套`context`；digest值不进入prompt。Adapter在模型调用前解析文件并重算嵌套context核对marker，模型结束后再次核对文件未变化；requirement最终structured output必须是strict `{contextDigest, plan}` envelope，并原样回显文件marker。Runner在Plan validation/digest/API前再核对模型输出且只把嵌套`plan`交给后续边界；文件缺marker、marker与嵌套context不一致、模型缺失/猜错digest或额外顶层字段均fail-closed，proof不会成为持久assumption或Evidence。该proof只证明读取能力，不能替代Plan语义、人审或Evidence核对。
 
 ### 3.1 DiagnosticEvidence v1（bug analysis根因引用）
 
@@ -261,7 +261,7 @@ type DiagnosticEvidenceV1 = {
 
 bug Plan只要声明`logs_read` effect，就必须在`evidenceRefs`中精确引用同一analysis Attempt的verified diagnostic Evidence；不存在、失败、跨Run/Attempt或缺logs/trace source均返回conflict。通用ExecutionPlan仍可引用其他Evidence，但自由字符串不能冒充该根因绑定。
 
-固定analysis Runner对`bug`使用三个、且仅三个受控structured-output阶段：Agent先输出`{schemaVersion, locatorKinds, arguments}`，Runner固定调用`logs/search`；再把成功结果作为repo外0600临时不可信上下文回喂，Agent只输出`traces/get`的`arguments`；最后Agent输出strict `{schemaVersion, contextDigest, rootCause, plan}`，顶层`contextDigest`适用上述同一原始字节核对。Agent不能选择tool path/scope/effect、不能接触attempt/tool token，也不能填写`diagnostic_*` Evidence ref。Runner分别对两次arguments和两次result做schema、大小及runtime Secret/credential shape扫描；固定调用必须严格是`logs/search → traces/get`，每阶段至多一次，总timeout仍受单个analysis Attempt上限约束。
+固定analysis Runner对`bug`使用三个、且仅三个受控structured-output阶段：Agent先输出`{schemaVersion, locatorKinds, arguments}`，Runner固定调用`logs/search`；再把成功结果作为repo外0600临时不可信上下文回喂，Agent只输出`traces/get`的`arguments`；最后Agent输出strict `{schemaVersion, contextDigest, rootCause, plan}`，顶层`contextDigest`必须原样回显上述Runner生成且已重算核对的文件marker。Agent不能选择tool path/scope/effect、不能接触attempt/tool token，也不能填写`diagnostic_*` Evidence ref。Runner分别对两次arguments和两次result做schema、大小及runtime Secret/credential shape扫描；固定调用必须严格是`logs/search → traces/get`，每阶段至多一次，总timeout仍受单个analysis Attempt上限约束。
 
 三次真实Codex调用分别建立、结算独立model reservation/usage，不能把三轮合并成一条usage。两次tool call使用心跳轮换后的当前tool token，并与heartbeat通过进程内fencing lock串行，避免旧token竞态。Agent完成后Runner先重验Plan、root cause与Git workspace不变，再以两次arguments的canonical digest和控制面返回的两个tool trace ID创建Evidence；只有控制面返回的Evidence/root-cause digest与本地计算完全一致时，Runner才把exact Evidence ref注入Plan、重算Plan digest并提交。任一tool失败、越序/重复调用、Agent自填ref、Secret结果或workspace变化都在Evidence/Plan写入前失败；Evidence成功后发生的控制面Plan冲突保留该未引用Evidence作为失败审计，不反向删除。
 

@@ -32,6 +32,17 @@ function contextDigest(): string {
     .digest('hex')}`;
 }
 
+function contextFileEnvelope(
+  context: unknown = CONTEXT_PAYLOAD,
+  digest: string = contextDigest(),
+): Record<string, unknown> {
+  return {
+    schemaVersion: '1',
+    contextDigest: digest,
+    context,
+  };
+}
+
 function agentOutput(plan: Record<string, unknown> = validContent()): Record<string, unknown> {
   return { contextDigest: contextDigest(), plan };
 }
@@ -139,7 +150,7 @@ async function tempInput(): Promise<{
   await import('node:fs/promises').then(({ mkdir }) => mkdir(workspace));
   await writeFile(
     contextFile,
-    JSON.stringify(CONTEXT_PAYLOAD),
+    JSON.stringify(contextFileEnvelope()),
   );
   return { root, workspace, contextFile, outputFile };
 }
@@ -278,6 +289,8 @@ describe('Codex analysis Agent adapter', () => {
     expect(observed?.stdin).toContain('never propose a change item when repo_write is not allowed');
     expect(observed?.stdin).toContain('self-verifying required change item');
     expect(observed?.stdin).toContain('required top-level contextDigest');
+    expect(observed?.stdin).toContain('contextDigest marker');
+    expect(observed?.stdin).not.toContain('calculate the SHA-256');
     expect(observed?.stdin).toContain('do not replace it with an investigation-only placeholder');
     expect(observed?.stdin).toContain('repo_write, at least one test:* commandRef');
     expect(observed?.stdin).toContain('at least one verify:* commandRef');
@@ -344,6 +357,81 @@ describe('Codex analysis Agent adapter', () => {
         : 'Codex analysis output is invalid');
     },
   );
+
+  it.each([
+    ['raw context without a trusted marker', CONTEXT_PAYLOAD],
+    [
+      'a marker that does not match the nested context',
+      contextFileEnvelope(CONTEXT_PAYLOAD, `sha256:${'0'.repeat(64)}`),
+    ],
+  ] as const)('rejects %s before Plan persistence', async (_name, contextFileValue) => {
+    const paths = await tempInput();
+    await writeFile(paths.contextFile, JSON.stringify(contextFileValue));
+    let executed = false;
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async () => {
+        executed = true;
+        await writeFile(paths.outputFile, JSON.stringify(agentOutput()));
+        return { exitCode: 0 };
+      },
+    });
+
+    await expect(adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-context-file-marker',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-context-file-marker',
+      },
+      validation: validationContext(),
+    })).rejects.toThrow('Codex analysis context proof is invalid');
+    expect(executed).toBe(false);
+  });
+
+  it('rejects a valid context file replaced while the Agent is running', async () => {
+    const paths = await tempInput();
+    const replacementContext = { ...CONTEXT_PAYLOAD, taskRef: 'r2://tasks/replaced' };
+    const replacementDigest = `sha256:${createHash('sha256')
+      .update(JSON.stringify(replacementContext))
+      .digest('hex')}`;
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async () => {
+        await writeFile(
+          paths.contextFile,
+          JSON.stringify(contextFileEnvelope(replacementContext, replacementDigest)),
+        );
+        await writeFile(paths.outputFile, JSON.stringify({
+          contextDigest: replacementDigest,
+          plan: validContent(),
+        }));
+        return { exitCode: 0 };
+      },
+    });
+
+    await expect(adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-context-file-replaced',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-context-file-replaced',
+      },
+      validation: validationContext(),
+    })).rejects.toThrow('Codex analysis context proof is invalid');
+  });
 
   it('routes a validated relay through the trusted Responses/SSE provider profile', async () => {
     const paths = await tempInput();

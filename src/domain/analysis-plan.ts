@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { canonicalSha256 } from './digest.js';
+import { canonicalSha256, sha256Bytes } from './digest.js';
 import {
   DIAGNOSTIC_LOCATOR_KINDS,
   DiagnosticRootCauseV1Schema,
@@ -22,6 +22,36 @@ export const AnalysisPlanContentV1Schema = z
 export type AnalysisPlanContentV1 = z.infer<typeof AnalysisPlanContentV1Schema>;
 
 const CONTEXT_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+
+/**
+ * Ephemeral Runner-owned file envelope. Only `context` contains the untrusted
+ * Task/Plan policy payload; the marker is computed before the Agent starts.
+ */
+export const AnalysisContextFileV1Schema = z
+  .object({
+    schemaVersion: z.literal('1'),
+    contextDigest: z.string().regex(CONTEXT_DIGEST_PATTERN),
+    context: z.json(),
+  })
+  .strict();
+
+export type AnalysisContextFileV1 = z.infer<typeof AnalysisContextFileV1Schema>;
+
+export async function computeAnalysisContextDigest(context: unknown): Promise<string> {
+  const jsonContext = z.json().parse(context);
+  return await sha256Bytes(new TextEncoder().encode(JSON.stringify(jsonContext)));
+}
+
+export async function createAnalysisContextFileV1(
+  context: unknown,
+): Promise<AnalysisContextFileV1> {
+  const jsonContext = z.json().parse(context);
+  return {
+    schemaVersion: '1',
+    contextDigest: await computeAnalysisContextDigest(jsonContext),
+    context: jsonContext,
+  };
+}
 
 /** Ephemeral model output; contextDigest is verified and never persisted in ExecutionPlan. */
 export const AnalysisAgentOutputV1Schema = z
