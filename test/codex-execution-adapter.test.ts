@@ -71,7 +71,7 @@ describe('Codex execution adapter', () => {
       '-c',
       'model_providers.delivery_loop_relay.supports_websockets=false',
       '-c',
-      'model_reasoning_effort="high"',
+      'model_reasoning_effort="medium"',
       '--output-last-message',
       outputFilePath,
       '--cd',
