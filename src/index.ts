@@ -912,6 +912,11 @@ export {
   type VerifyPlanItemInput,
 } from './storage/plan-item-evidence-verifier.js';
 export {
+  ExecutionProgressReconciler,
+  type ExecutionProgressReconciliationResult,
+  type ExecutionProgressReconcilerOptions,
+} from './reconciliation/execution-progress-reconciler.js';
+export {
   RunStore,
   type AnalysisDispatch,
   type RunProjection,

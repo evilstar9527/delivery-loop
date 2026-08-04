@@ -171,6 +171,7 @@ describe('Plan Item readiness and Attempt claims', () => {
       ordinal: 2,
       mode: 'implement',
     });
+    expect(claims[0]?.outboxId).toBe(`outbox_execution_${claims[0]?.attemptId}`);
 
     const progress = await env.DB_CONTROL.prepare(
       `SELECT status, version, active_attempt_id FROM plan_item_progress
@@ -200,6 +201,17 @@ describe('Plan Item readiness and Attempt claims', () => {
       plan_version: 1,
       plan_item_id: 'investigate',
       claimed_progress_version: 1,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT outbox_id, kind, destination, payload_ref, dedupe_key, delivery_state
+       FROM outbox WHERE run_id = ? AND kind = 'execution_dispatch'`,
+    ).bind(RUN_ID).first()).toEqual({
+      outbox_id: `outbox_execution_${claims[0]?.attemptId}`,
+      kind: 'execution_dispatch',
+      destination: 'github_actions',
+      payload_ref: `d1://attempts/${claims[0]?.attemptId}`,
+      dedupe_key: `execution-dispatch:${claims[0]?.attemptId}`,
+      delivery_state: 'pending',
     });
   });
 

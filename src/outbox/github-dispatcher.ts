@@ -625,11 +625,14 @@ export class GitHubDispatchOutboxProcessor {
       throw new OutboxEffectError('dispatch_mode_not_allowed');
     }
     if (executionDispatch) {
-      const exactSource = Number(attempt.repair_id !== null) +
+      const sourceCount = Number(attempt.repair_id !== null) +
         Number(attempt.review_feedback_id !== null) +
-        Number(attempt.base_rebase_id !== null) === 1;
-      const activeRepair =
-        exactSource &&
+        Number(attempt.base_rebase_id !== null);
+      const validSource = attempt.mode === 'implement'
+        ? sourceCount === 0
+        : sourceCount === 1;
+      const activeExecution =
+        validSource &&
         (attempt.run_state === 'executing' || attempt.run_state === 'verifying') &&
         attempt.plan_version !== null &&
         attempt.plan_item_id !== null &&
@@ -641,7 +644,7 @@ export class GitHubDispatchOutboxProcessor {
         attempt.active_attempt_id === attempt.attempt_id &&
         attempt.protected_path_gate_id === null &&
         (attempt.status === 'pending' || attempt.status === 'starting');
-      if (!activeRepair) return { settledCode: 'repair_dispatch_stale' };
+      if (!activeExecution) return { settledCode: 'repair_dispatch_stale' };
     }
     const ref = `refs/heads/${attempt.target_base_branch}`;
     const expectedWorkflowRef =
@@ -727,6 +730,24 @@ export class GitHubDispatchOutboxProcessor {
                    AND plan_item_progress.protected_path_gate_id IS NULL
                    AND (
                      (
+                       attempts.mode = 'implement'
+                       AND NOT EXISTS (
+                         SELECT 1 FROM attempt_repairs
+                         WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM review_feedback_attempts
+                         WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM base_rebase_attempts
+                         WHERE base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
+                       )
+                     )
+                     OR (
+                       attempts.mode = 'review_fix'
+                       AND (
+                     (
                        EXISTS (
                          SELECT 1 FROM attempt_repairs
                          WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id
@@ -780,6 +801,8 @@ export class GitHubDispatchOutboxProcessor {
                        AND NOT EXISTS (
                          SELECT 1 FROM review_feedback_attempts
                          WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
+                       )
+                     )
                        )
                      )
                    )

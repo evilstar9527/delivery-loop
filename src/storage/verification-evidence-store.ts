@@ -143,7 +143,7 @@ export class VerificationEvidenceStore {
              AND runs.active_plan_version = attempts.plan_version
              AND runs.active_plan_digest = execution_plans.digest
              AND execution_plans.status = 'active'
-             AND plan_items.kind = 'verification' AND plan_items.required = 1
+             AND plan_items.kind IN ('change', 'verification') AND plan_items.required = 1
              AND plan_item_progress.status = 'in_progress'
              AND plan_item_progress.active_attempt_id = attempts.attempt_id
              AND plan_item_progress.protected_path_gate_id IS NULL

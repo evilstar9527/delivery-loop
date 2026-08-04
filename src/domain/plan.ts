@@ -352,12 +352,22 @@ export async function validateExecutionPlanProposal(
   );
   for (const [index, item] of plan.items.entries()) {
     if (item.kind !== 'change' && !item.effects.includes('repo_write')) continue;
-    if (!verifications.some((verification) =>
-      dependsTransitivelyOn(verification.id, item.id, dependencies))) {
+    const commandRefs = item.verification.commandRefs ?? [];
+    const selfVerifying =
+      item.kind === 'change' &&
+      item.required &&
+      item.effects.includes('repo_write') &&
+      commandRefs.some((ref) => ref.startsWith('test:')) &&
+      commandRefs.some((ref) => verificationCommandRefs.has(ref)) &&
+      item.verification.evidenceKinds.includes('commit') &&
+      item.verification.evidenceKinds.includes('test');
+    const downstreamVerification = verifications.some((verification) =>
+      dependsTransitivelyOn(verification.id, item.id, dependencies));
+    if (!selfVerifying && !downstreamVerification) {
       push(
         'verification_required_after_change',
         `items.${index}`,
-        'every change must feed a required trusted verification with test, lint, or build Evidence',
+        'every change must verify its committed head or feed a required trusted verification',
       );
     }
   }
