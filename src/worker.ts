@@ -199,9 +199,15 @@ export default {
         await revokeRepoWriteCredentialsFromEnv(env);
         return;
       }
-      // Free-plan scheduled invocations have a 10 ms CPU ceiling. Put the two
-      // durable delivery-loop critical paths first so background inventory
-      // reconciliation cannot starve already-persisted external effects.
+      // Free-plan scheduled and Queue invocations have a 10 ms CPU ceiling.
+      // Workflow creation is the control-flow root, so attempt its fenced
+      // direct delivery before spending CPU enqueueing or scanning anything.
+      await new WorkflowOutboxProcessor(
+        env.DB_CONTROL,
+        new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
+      ).drain(5);
+      // Relay every remaining durable effect, then advance a bounded number of
+      // approved executions before background inventory reconciliation.
       await relay.relay();
       await new ExecutionProgressReconciler(
         env.DB_CONTROL,
@@ -215,13 +221,6 @@ export default {
           secrets: configuredSecrets(env),
         }),
       }).scan(25);
-      // Cloudflare Workflow creation is the control-flow root. Drain it
-      // directly as a fenced fallback before relying on Queue delivery; the
-      // shared outbox lease keeps this race-safe with queued consumers.
-      await new WorkflowOutboxProcessor(
-        env.DB_CONTROL,
-        new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
-      ).drain(25);
       await Promise.all([
         reconcileWorkflowInstancesFromEnv(env),
         new FeishuIngressRelay(env.DB_CONTROL, env.FEISHU_INGRESS_QUEUE).relay(),
