@@ -239,8 +239,10 @@ try {
             ? 'usage_unavailable'
             : message === 'Codex analysis output is invalid'
               ? `structured_output_invalid_${structuredOutputIssueCode ?? 'unknown'}`
-              : message === 'Codex analysis context proof is invalid'
-                ? 'context_proof_invalid'
+            : message === 'Codex analysis context proof is invalid'
+              ? 'context_proof_invalid'
+              : message === 'Codex analysis context access proof is unavailable'
+                ? 'context_access_proof_unavailable'
               : message.startsWith('ExecutionPlan validation failed with ')
                 ? 'plan_validation_failed'
                 : 'analysis_adapter_failed';

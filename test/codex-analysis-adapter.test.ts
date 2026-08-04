@@ -47,6 +47,24 @@ function agentOutput(plan: Record<string, unknown> = validContent()): Record<str
   return { contextDigest: contextDigest(), plan };
 }
 
+function emitContextAccess(
+  request: CommandExecutionRequest,
+  contextFilePath: string,
+  digest: string = contextDigest(),
+): void {
+  request.onStdoutLine?.(JSON.stringify({
+    type: 'item.completed',
+    item: {
+      id: 'item-context-access',
+      type: 'command_execution',
+      command: `node read-context-marker ${contextFilePath}`,
+      aggregated_output: digest,
+      exit_code: 0,
+      status: 'completed',
+    },
+  }));
+}
+
 function validationContext(): ExecutionPlanValidationContext {
   return {
     runId: 'run-codex-analysis',
@@ -321,6 +339,43 @@ describe('Codex analysis Agent adapter', () => {
     expect(plan.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
+  it('requires a completed exact-file command proof for a metered model', async () => {
+    const paths = await tempInput();
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async (request) => {
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 100,
+            cached_input_tokens: 60,
+            output_tokens: 20,
+            reasoning_output_tokens: 5,
+          },
+        }));
+        await writeFile(paths.outputFile, JSON.stringify(agentOutput()));
+        return { exitCode: 0 };
+      },
+    });
+
+    await expect(adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-context-command-proof',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-context-command-proof',
+      },
+      validation: validationContext(),
+      model: 'gpt-test-metered',
+    })).rejects.toThrow('Codex analysis context access proof is unavailable');
+  });
+
   it.each(['missing', 'mismatched', 'extra'] as const)(
     'rejects %s context envelope before Plan persistence',
     async (failure) => {
@@ -497,6 +552,7 @@ describe('Codex analysis Agent adapter', () => {
       outputSchemaPath: SCHEMA_PATH,
       execute: async (request) => {
         observed = request;
+        emitContextAccess(request, paths.contextFile);
         request.onStdoutLine?.(JSON.stringify({
           type: 'item.completed',
           item: { type: 'agent_message', text: 'CANARY_JSONL_OUTPUT' },
@@ -571,6 +627,7 @@ describe('Codex analysis Agent adapter', () => {
       outputSchemaPath: SCHEMA_PATH,
       execute: async (request) => {
         commands.push(request);
+        if (commands.length === 3) emitContextAccess(request, paths.contextFile);
         request.onStdoutLine?.(JSON.stringify({
           type: 'turn.completed',
           usage: {
