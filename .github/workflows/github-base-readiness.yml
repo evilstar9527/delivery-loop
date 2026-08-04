@@ -2,6 +2,12 @@ name: GitHub base readiness
 
 on:
   workflow_dispatch:
+    inputs:
+      diagnostic_run_id:
+        description: Optional exact Run ID for a read-only open dead-letter diagnostic
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -76,6 +82,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run exactly one GitHub base readiness GET
+        if: inputs.diagnostic_run_id == ''
         env:
           DELIVERY_LOOP_GITHUB_BASE_READINESS: '1'
           GITHUB_BASE_READINESS_CONTROL_PLANE_URL: https://delivery-loop-control-plane.eve55265.workers.dev
@@ -83,3 +90,36 @@ jobs:
           GITHUB_BASE_READINESS_REPOSITORY: evilstar9527/delivery-loop
           GITHUB_BASE_READINESS_BASE_BRANCH: main
         run: pnpm run ops:github-base-readiness
+
+      - name: Query one exact open workflow-create dead letter
+        if: inputs.diagnostic_run_id != ''
+        env:
+          DELIVERY_DIAGNOSTIC_RUN_ID: ${{ inputs.diagnostic_run_id }}
+          DELIVERY_OPERATIONS_TOKEN: ${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$DELIVERY_DIAGNOSTIC_RUN_ID" =~ ^run_[a-f0-9]{64}$ ]]
+          response_file="$RUNNER_TEMP/open-dead-letters.json"
+          status="$(curl --silent --show-error --max-time 30 \
+            --url 'https://delivery-loop-control-plane.eve55265.workers.dev/v1/dead-letters?status=open&limit=100' \
+            --header "Authorization: Bearer $DELIVERY_OPERATIONS_TOKEN" \
+            --header 'Accept: application/json' \
+            --output "$response_file" \
+            --write-out '%{http_code}')"
+          test "$status" = 200
+          jq -e \
+            --arg run_id "$DELIVERY_DIAGNOSTIC_RUN_ID" \
+            '[.deadLetters[] | select(
+              .runId == $run_id
+              and .outboxKind == "workflow_create"
+              and .status == "open"
+            )] as $matches
+            | select($matches | length == 1)
+            | $matches[0]
+            | {
+                deadLetterId: .id,
+                outboxAttemptCount,
+                lastErrorCode: (.lastErrorCode // null),
+                status
+              }' \
+            "$response_file"

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 interface WorkflowStep {
   name?: string;
+  if?: string;
   uses?: string;
   run?: string;
   with?: Record<string, unknown>;
@@ -22,7 +23,16 @@ interface WorkflowJob {
 
 interface Workflow {
   name: string;
-  on: Record<string, unknown>;
+  on: {
+    workflow_dispatch: {
+      inputs: Record<string, {
+        description: string;
+        required: boolean;
+        default: string;
+        type: string;
+      }>;
+    };
+  };
   permissions: Record<string, string>;
   concurrency: { group: string; 'cancel-in-progress': boolean };
   jobs: { preflight: WorkflowJob; readiness: WorkflowJob };
@@ -58,7 +68,18 @@ describe('GitHub-hosted base readiness workflow', () => {
     const workflow = parse(source) as Workflow;
 
     expect(workflow.name).toBe('GitHub base readiness');
-    expect(workflow.on).toEqual({ workflow_dispatch: null });
+    expect(workflow.on).toEqual({
+      workflow_dispatch: {
+        inputs: {
+          diagnostic_run_id: {
+            description: 'Optional exact Run ID for a read-only open dead-letter diagnostic',
+            required: false,
+            default: '',
+            type: 'string',
+          },
+        },
+      },
+    });
     expect(workflow.permissions).toEqual({ contents: 'read' });
     expect(workflow.concurrency).toEqual({
       group: 'phase1-github-base-readiness',
@@ -103,6 +124,7 @@ describe('GitHub-hosted base readiness workflow', () => {
     );
     expect(readinessStep).toEqual({
       name: 'Run exactly one GitHub base readiness GET',
+      if: "inputs.diagnostic_run_id == ''",
       env: {
         DELIVERY_LOOP_GITHUB_BASE_READINESS: '1',
         GITHUB_BASE_READINESS_CONTROL_PLANE_URL:
@@ -114,6 +136,40 @@ describe('GitHub-hosted base readiness workflow', () => {
       },
       run: 'pnpm run ops:github-base-readiness',
     });
+
+    const diagnosticStep = readiness.steps.find(
+      (step) => step.name === 'Query one exact open workflow-create dead letter',
+    );
+    expect(diagnosticStep?.if).toBe("inputs.diagnostic_run_id != ''");
+    expect(diagnosticStep?.env).toEqual({
+      DELIVERY_DIAGNOSTIC_RUN_ID: '${{ inputs.diagnostic_run_id }}',
+      DELIVERY_OPERATIONS_TOKEN:
+        '${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}',
+    });
+    expect(diagnosticStep?.run).toContain(
+      '/v1/dead-letters?status=open&limit=100',
+    );
+    expect(diagnosticStep?.run).toContain(
+      '[[ "$DELIVERY_DIAGNOSTIC_RUN_ID" =~ ^run_[a-f0-9]{64}$ ]]',
+    );
+    expect(diagnosticStep?.run).toContain('.runId == $run_id');
+    expect(diagnosticStep?.run).toContain('.outboxKind == "workflow_create"');
+    expect(diagnosticStep?.run).toContain('select($matches | length == 1)');
+    expect(diagnosticStep?.run?.match(/\bcurl\b/g)).toHaveLength(1);
+    for (const allowed of [
+      'deadLetterId: .id',
+      'outboxAttemptCount',
+      'lastErrorCode: (.lastErrorCode // null)',
+      'status',
+    ]) expect(diagnosticStep?.run).toContain(allowed);
+    for (const forbidden of [
+      '--request POST',
+      '/replay',
+      'sourceMessageId',
+      'destination',
+      'capturedAt',
+      'outboxId',
+    ]) expect(diagnosticStep?.run).not.toContain(forbidden);
 
     const serializedPreflight = JSON.stringify(preflight);
     expect(serializedPreflight).not.toContain('secrets.');
