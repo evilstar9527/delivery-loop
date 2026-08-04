@@ -17,6 +17,26 @@ on:
         required: false
         default: ''
         type: string
+      cancel_run_id:
+        description: Optional exact Run to cancel through the control-plane CAS API
+        required: false
+        default: ''
+        type: string
+      cancel_expected_version:
+        description: Expected Run version for cancellation
+        required: false
+        default: ''
+        type: string
+      cancel_expected_base_sha:
+        description: Expected frozen base SHA for cancellation
+        required: false
+        default: ''
+        type: string
+      cancel_expected_plan_digest:
+        description: Expected active Plan digest for cancellation
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -108,3 +128,50 @@ jobs:
               githubConclusion
             }]
           }' "$response_file"
+      - name: Cancel only the exact stale awaiting-approval Run
+        if: inputs.cancel_run_id != ''
+        env:
+          DELIVERY_CANCEL_RUN_ID: ${{ inputs.cancel_run_id }}
+          DELIVERY_CANCEL_EXPECTED_VERSION: ${{ inputs.cancel_expected_version }}
+          DELIVERY_CANCEL_EXPECTED_BASE_SHA: ${{ inputs.cancel_expected_base_sha }}
+          DELIVERY_CANCEL_EXPECTED_PLAN_DIGEST: ${{ inputs.cancel_expected_plan_digest }}
+          DELIVERY_TASK_INTAKE_TOKEN: ${{ secrets.TASK_INTAKE_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$DELIVERY_CANCEL_RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$ ]]
+          [[ "$DELIVERY_CANCEL_EXPECTED_VERSION" =~ ^[0-9]+$ ]]
+          [[ "$DELIVERY_CANCEL_EXPECTED_BASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$DELIVERY_CANCEL_EXPECTED_PLAN_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          before_file="$RUNNER_TEMP/cancel-before.json"
+          before_status="$(curl --silent --show-error --max-time 30 \
+            --url "https://delivery-loop-control-plane.eve55265.workers.dev/v1/runs/$DELIVERY_CANCEL_RUN_ID/plan" \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header 'Accept: application/json' \
+            --output "$before_file" \
+            --write-out '%{http_code}')"
+          test "$before_status" = 200
+          jq -e \
+            --arg run_id "$DELIVERY_CANCEL_RUN_ID" \
+            --argjson version "$DELIVERY_CANCEL_EXPECTED_VERSION" \
+            --arg base_sha "$DELIVERY_CANCEL_EXPECTED_BASE_SHA" \
+            --arg plan_digest "$DELIVERY_CANCEL_EXPECTED_PLAN_DIGEST" \
+            '.run.id == $run_id
+              and .run.state == "awaiting_approval"
+              and .run.version == $version
+              and .run.baseSha == $base_sha
+              and .plan.digest == $plan_digest
+              and ([.attempts[] | select(.status == "pending" or .status == "starting" or .status == "running" or .status == "cancel_requested")] | length) == 0' \
+            "$before_file"
+          cancel_file="$RUNNER_TEMP/cancel-response.json"
+          cancel_status="$(curl --silent --show-error --max-time 30 \
+            --request POST \
+            --url "https://delivery-loop-control-plane.eve55265.workers.dev/v1/runs/$DELIVERY_CANCEL_RUN_ID/cancel" \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header 'Accept: application/json' \
+            --header 'Content-Type: application/json' \
+            --data-binary "{\"expectedRunVersion\":$DELIVERY_CANCEL_EXPECTED_VERSION}" \
+            --output "$cancel_file" \
+            --write-out '%{http_code}')"
+          test "$cancel_status" = 202
+          jq -e '{accepted,runId,state,version,revokedAttempts,workflowCancelOutboxId}
+            | select(.accepted == true and .state == "cancelled")' "$cancel_file"
