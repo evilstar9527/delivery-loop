@@ -397,6 +397,17 @@ describe('analysis Runner bootstrap', () => {
         );
         await heartbeatDone;
         request.onStdoutLine?.(JSON.stringify({
+          type: 'item.completed',
+          item: {
+            id: 'item-context-access',
+            type: 'command_execution',
+            command: `node read-context-marker ${contextPath}`,
+            aggregated_output: contextFile.contextDigest,
+            exit_code: 0,
+            status: 'completed',
+          },
+        }));
+        request.onStdoutLine?.(JSON.stringify({
           type: 'turn.completed',
           usage: {
             input_tokens: 100,
@@ -1153,6 +1164,22 @@ describe('analysis Runner bootstrap', () => {
           join(environment.GITHUB_WORKSPACE!, contextDirectoryName!, 'context.json'),
           'utf8',
         )) as { contextDigest: string };
+        const contextPath = join(
+          environment.GITHUB_WORKSPACE!,
+          contextDirectoryName!,
+          'context.json',
+        );
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'item.completed',
+          item: {
+            id: 'item-context-access',
+            type: 'command_execution',
+            command: `node read-context-marker ${contextPath}`,
+            aggregated_output: contextFile.contextDigest,
+            exit_code: 0,
+            status: 'completed',
+          },
+        }));
         await writeFile(
           request.args[request.args.indexOf('--output-last-message') + 1]!,
           JSON.stringify({
