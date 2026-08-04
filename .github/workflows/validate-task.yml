@@ -98,7 +98,9 @@ jobs:
               version: .run.version,
               baseSha: .run.baseSha,
               activePlan: .run.activePlan,
-              blocker: .run.blocker
+              blocker: .run.blocker,
+              stuckIncidents: .run.stuckIncidents,
+              workflowInstance: .run.workflowInstance
             },
             plan: (
               if .plan == null then null else {
