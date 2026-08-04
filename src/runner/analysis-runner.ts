@@ -9,6 +9,7 @@ import {
   type CodexAnalysisStartInput,
 } from '../agent/codex-analysis-adapter.js';
 import {
+  ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
   AnalysisPlanContentV1Schema,
   DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA,
   DIAGNOSTIC_EVIDENCE_REF_PATTERN,
@@ -892,6 +893,7 @@ export async function runAnalysisAttempt(
   }
   const contextFilePath = join(workspaceContextRoot, 'context.json');
   const outputFilePath = join(temporaryRoot, 'plan-content.json');
+  const analysisOutputSchemaPath = join(temporaryRoot, 'analysis-agent-output-schema.json');
   const mediationContextFilePath = join(temporaryRoot, 'diagnostic-context.json');
   const logRequestOutputFilePath = join(temporaryRoot, 'diagnostic-log-request.json');
   const traceRequestOutputFilePath = join(temporaryRoot, 'diagnostic-trace-request.json');
@@ -972,7 +974,14 @@ export async function runAnalysisAttempt(
       heartbeatFailure = error;
     });
     await writeFile(contextFilePath, JSON.stringify(context), { mode: 0o600, flag: 'wx' });
-    await writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' });
+    await Promise.all([
+      writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' }),
+      writeFile(
+        analysisOutputSchemaPath,
+        JSON.stringify(ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA),
+        { mode: 0o600, flag: 'wx' },
+      ),
+    ]);
     if (diagnosticMediation !== null) {
       await Promise.all([
         writeFile(mediationContextFilePath, '', { mode: 0o600, flag: 'wx' }),
@@ -1019,7 +1028,7 @@ export async function runAnalysisAttempt(
     const agent =
       options.agent ??
       new CodexAnalysisAdapter({
-        outputSchemaPath: join(config.workspacePath, 'schemas/analysis-plan-content-v1.schema.json'),
+        outputSchemaPath: analysisOutputSchemaPath,
         ...(environment.OPENAI_BASE_URL === undefined || environment.OPENAI_BASE_URL === ''
           ? {}
           : { providerBaseUrl: environment.OPENAI_BASE_URL }),

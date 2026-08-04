@@ -372,6 +372,16 @@ describe('analysis Runner bootstrap', () => {
         const outputPath = request.args[request.args.indexOf('--output-last-message') + 1]!;
         expect(outputPath.startsWith(`${environment.RUNNER_TEMP!}/`)).toBe(true);
         expect((await stat(outputPath)).mode & 0o777).toBe(0o600);
+        const schemaPath = join(
+          resolve(outputPath, '..'),
+          'analysis-agent-output-schema.json',
+        );
+        expect(schemaPath.startsWith(`${environment.RUNNER_TEMP!}/`)).toBe(true);
+        expect((await stat(schemaPath)).mode & 0o777).toBe(0o600);
+        expect(JSON.parse(await readFile(schemaPath, 'utf8'))).toMatchObject({
+          additionalProperties: false,
+          required: ['contextDigest', 'plan'],
+        });
         const context = await readFile(contextPath, 'utf8');
         expect(context).toContain(BODY_CANARY);
         expect(context).toContain(REVISION_CANARY);
@@ -385,13 +395,12 @@ describe('analysis Runner bootstrap', () => {
             reasoning_output_tokens: 5,
           },
         }));
-        const content = planContent();
-        (content.assumptions as string[]).push(
-          `context_digest:sha256:${createHash('sha256').update(context).digest('hex')}`,
-        );
         await writeFile(
           request.args[request.args.indexOf('--output-last-message') + 1]!,
-          JSON.stringify(content),
+          JSON.stringify({
+            contextDigest: `sha256:${createHash('sha256').update(context).digest('hex')}`,
+            plan: planContent(),
+          }),
         );
         return { exitCode: 0 };
       },
@@ -1134,13 +1143,12 @@ describe('analysis Runner bootstrap', () => {
           join(environment.GITHUB_WORKSPACE!, contextDirectoryName!, 'context.json'),
           'utf8',
         );
-        const content = planContent();
-        (content.assumptions as string[]).push(
-          `context_digest:sha256:${createHash('sha256').update(context).digest('hex')}`,
-        );
         await writeFile(
           request.args[request.args.indexOf('--output-last-message') + 1]!,
-          JSON.stringify(content),
+          JSON.stringify({
+            contextDigest: `sha256:${createHash('sha256').update(context).digest('hex')}`,
+            plan: planContent(),
+          }),
         );
         return { exitCode: 0 };
       },

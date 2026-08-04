@@ -237,7 +237,7 @@ type PlanItemProgress = {
 6. Plan 内容不保存原始日志、数据库行、Secret 或完整 PRD；只保存脱敏摘要、受控引用和 digest。
 7. 每条 Task acceptance criterion 必须至少被一个 `required` Item覆盖；把全部 Item或覆盖 Item改成 optional 不能通过 validation。
 8. 每个 `change/repo_write` Item 必须验证其最终 commit head。MVP 首选一个 self-verifying `required change` Item：同时声明 `repo_write`、至少一个 `test:*`、至少一个受信 `verify:*`，并要求 `commit + test` Evidence；也允许它流向一个下游 `required verification` Item，由后者引用受信 test/verify/lint/build 命令并要求对应 Evidence。任意“跳过测试”、optional/detached verification、仅 diagnostic Evidence或没有 commit-bound trusted verify 的 change 均拒绝。
-9. analysis Agent 必须证明实际打开了本次 digest-verified context，而不能只根据prompt中的路径生成占位Plan。Runner把exact `context.json`原始字节的SHA-256作为预期值，但不把预期值放进prompt；Agent必须从文件计算并在`assumptions`中临时返回唯一`context_digest:sha256:<hex>`。缺失、猜错或重复时在Plan API前失败；匹配项由Runner在Plan validation/digest/persistence前删除，不能成为持久assumption或Evidence。该proof只证明读取能力，不能替代Plan语义、人审或Evidence核对。
+9. analysis Agent 必须证明实际打开了本次 digest-verified context，而不能只根据prompt中的路径生成占位Plan。Runner把exact `context.json`原始字节的SHA-256作为预期值，但不把预期值放进prompt；requirement最终structured output必须是strict `{contextDigest, plan}` envelope，`contextDigest`为顶层必填`sha256:<64 lowercase hex>`。Runner在Plan validation/digest/API前以原始字节重算并核对，只把嵌套`plan`交给后续边界；缺失、猜错或额外顶层字段均fail-closed，proof不会成为持久assumption或Evidence。该proof只证明读取能力，不能替代Plan语义、人审或Evidence核对。
 
 ### 3.1 DiagnosticEvidence v1（bug analysis根因引用）
 
@@ -261,7 +261,7 @@ type DiagnosticEvidenceV1 = {
 
 bug Plan只要声明`logs_read` effect，就必须在`evidenceRefs`中精确引用同一analysis Attempt的verified diagnostic Evidence；不存在、失败、跨Run/Attempt或缺logs/trace source均返回conflict。通用ExecutionPlan仍可引用其他Evidence，但自由字符串不能冒充该根因绑定。
 
-固定analysis Runner对`bug`使用三个、且仅三个受控structured-output阶段：Agent先输出`{schemaVersion, locatorKinds, arguments}`，Runner固定调用`logs/search`；再把成功结果作为repo外0600临时不可信上下文回喂，Agent只输出`traces/get`的`arguments`；最后Agent输出`{rootCause, plan}`，其中Plan同样必须携带上述临时context proof。Agent不能选择tool path/scope/effect、不能接触attempt/tool token，也不能填写`diagnostic_*` Evidence ref。Runner分别对两次arguments和两次result做schema、大小及runtime Secret/credential shape扫描；固定调用必须严格是`logs/search → traces/get`，每阶段至多一次，总timeout仍受单个analysis Attempt上限约束。
+固定analysis Runner对`bug`使用三个、且仅三个受控structured-output阶段：Agent先输出`{schemaVersion, locatorKinds, arguments}`，Runner固定调用`logs/search`；再把成功结果作为repo外0600临时不可信上下文回喂，Agent只输出`traces/get`的`arguments`；最后Agent输出strict `{schemaVersion, contextDigest, rootCause, plan}`，顶层`contextDigest`适用上述同一原始字节核对。Agent不能选择tool path/scope/effect、不能接触attempt/tool token，也不能填写`diagnostic_*` Evidence ref。Runner分别对两次arguments和两次result做schema、大小及runtime Secret/credential shape扫描；固定调用必须严格是`logs/search → traces/get`，每阶段至多一次，总timeout仍受单个analysis Attempt上限约束。
 
 三次真实Codex调用分别建立、结算独立model reservation/usage，不能把三轮合并成一条usage。两次tool call使用心跳轮换后的当前tool token，并与heartbeat通过进程内fencing lock串行，避免旧token竞态。Agent完成后Runner先重验Plan、root cause与Git workspace不变，再以两次arguments的canonical digest和控制面返回的两个tool trace ID创建Evidence；只有控制面返回的Evidence/root-cause digest与本地计算完全一致时，Runner才把exact Evidence ref注入Plan、重算Plan digest并提交。任一tool失败、越序/重复调用、Agent自填ref、Secret结果或workspace变化都在Evidence/Plan写入前失败；Evidence成功后发生的控制面Plan冲突保留该未引用Evidence作为失败审计，不反向删除。
 
@@ -829,7 +829,7 @@ Analysis context/Plan 约束：
 - context 只接受当前 Attempt opaque token，且必须命中 running/status/version/generation/lease 与 `repo:read` scope；服务端按 D1 `payload_ref` 读取私有 R2 Task，重新校验 R2 custom metadata digest、canonical Task digest、revision、repo 和 base branch 后才返回，响应 no-store；
 - context 返回原始用户反馈/PRD 是为了 Agent 分析，属于 untrusted data；不返回 attempt/OIDC token、installation token、DSN 或 tool-bridge Admin SK。Plan policy 明确 server-selected next version、allowedEffects 和 trusted commandRefs；
 - re-analysis context可带strict optional `revisionSource`。review source从私有R2回读正文并复算body/source digest；base source从immutable observation重算规范化fact digest；supplemental source分别回读context对象和完整新Task revision，核对D1 ref、R2 metadata/schema、canonical context/task digest与source lineage。Attempt绑定零个source时字段缺省，超过一个、对象缺失或任一篡改时fail-closed；Agent只把这些内容当untrusted data，不能由其字段提升Plan effect；
-- `POST .../plan` body 与 Codex output schema相同，只含 objective/assumptions/evidenceRefs/items。控制面从 D1 Attempt/Run/Task 注入 plan/run/task/base/attempt identity、计算 digest、固定 proposed，再经过 ExecutionPlan validator 与 store 持久化为 validated；
+- Codex requirement output使用临时strict `{contextDigest, plan}` envelope；Runner核对顶层proof后，`POST .../plan` body只发送嵌套Plan content，即objective/assumptions/evidenceRefs/items。控制面从 D1 Attempt/Run/Task 注入 plan/run/task/base/attempt identity、计算 digest、固定 proposed，再经过 ExecutionPlan validator 与 store 持久化为 validated；
 - Agent Plan 在两个独立边界做 Secret scan：Runner 在任何 `/plan` 网络请求前扫描全部已见 OIDC/attempt/runtime token和敏感环境值；控制面在任何 D1 plan/item/assumption写入前再扫描当前 attempt token、Worker Secret bindings与credential形状。命中只返回固定 `policy_denied`，finding和错误不携带值；
 - 20 路相同 content 并发提交收敛到同一 plan/version/digest。额外 identity 字段、越权 effect、旧 token、R2 digest 冲突或 Plan immutable conflict 均 fail-closed。
 
@@ -1093,7 +1093,7 @@ Phase 1 Codex analysis adapter 采用官方非交互 CLI 契约：
 - Agent输出的acceptance coverage仍是不可信提案。只有Plan恰好一个required Item时，adapter才能用可信Task快照的`0..acceptanceCriteriaCount-1`补全该Item漏报的`acceptanceCriteriaIndexes`；这不会生成doneWhen、Evidence、command、effect或执行权限。多个required Item、重复或越界index继续fail-closed，不猜测语义归属；
 - `shell_environment_policy.ignore_default_excludes=false`，并额外排除 `*KEY*/*SECRET*/*TOKEN*/*PASSWORD*`，API key 只供 Codex 客户端认证，不进入模型启动的 shell 子进程；
 - CLI 执行器捕获的 stderr 在返回 adapter 前按当前敏感环境变量与 credential 形状脱敏；上层错误仍只公开固定 exit code，不公开 stderr；
-- Agent output schema 只允许 objective/assumptions/evidenceRefs/items。`planId/runId/version/taskRevision/baseSha/createdByAttemptId/status/digest` 由可信 Runner 注入/计算，再调用同一 ExecutionPlan validator；模型不能自选 identity、提升 effect 或伪造 digest；
+- Agent output schema顶层只允许必填`contextDigest`与`plan`；嵌套Plan content只允许objective/assumptions/evidenceRefs/items。schema由Runner写入repo外0700临时目录中的0600文件，proof核对后仅嵌套Plan进入validation/API。`planId/runId/version/taskRevision/baseSha/createdByAttemptId/status/digest` 由可信 Runner 注入/计算；模型不能自选 identity、提升 effect 或伪造 digest；
 - Runner 保存一次 attempt 中所有轮换前后的 token集合，Plan output scan必须覆盖旧 token与最新 token；本地 scanner通过后，控制面 persistence scanner仍独立执行，不能把受限CLI或Runner自检当唯一防线；
 - context 正文通过 Runner 临时文件路径提供，不拼进命令行/日志；CLI stderr 不进入控制面错误或 Evidence。CLI 版本由 lockfile 固定，默认测试不调用计费模型。
 - execution adapter把同一有界Codex JSONL逐行同时送入usage accumulator与Runner transcript collector，不写stdout或普通控制面请求。collector只接受JSON object line、上限512 KiB，并在Agent decision后、任何commit/push前用当前fencing上传；正文只存在于该专用artifact请求和加密raw对象，不进入Action结构化结果日志、checkpoint、Evidence或PR。

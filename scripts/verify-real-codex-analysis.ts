@@ -11,7 +11,10 @@ import {
 import {
   classifyProviderProcessFailure,
 } from '../src/agent/provider-preflight-failure.js';
-import { AnalysisPlanContentV1Schema } from '../src/domain/analysis-plan.js';
+import {
+  ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
+  AnalysisAgentOutputV1Schema,
+} from '../src/domain/analysis-plan.js';
 import { ExecutionPlanValidationError } from '../src/domain/plan.js';
 import type { CodexModelUsage } from '../src/domain/quota.js';
 
@@ -55,6 +58,7 @@ async function run(): Promise<void> {
   const contextRoot = join(workspacePath, '.delivery-loop-analysis-context-preflight');
   const contextFilePath = join(contextRoot, 'context.json');
   const outputFilePath = join(root, 'plan.json');
+  const analysisOutputSchemaPath = join(root, 'analysis-agent-output-schema.json');
   await mkdir(workspacePath, { mode: 0o700 });
   await mkdir(contextRoot, { mode: 0o700 });
   await git(['init', '--initial-branch=main'], workspacePath);
@@ -92,12 +96,17 @@ async function run(): Promise<void> {
     },
   }), { mode: 0o600, flag: 'wx' });
   await writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' });
+  await writeFile(
+    analysisOutputSchemaPath,
+    JSON.stringify(ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA),
+    { mode: 0o600, flag: 'wx' },
+  );
   await chmod(contextFilePath, 0o600);
   await chmod(outputFilePath, 0o600);
 
   let usage: CodexModelUsage | undefined;
   const adapter = new CodexAnalysisAdapter({
-    outputSchemaPath: join(projectRoot, 'schemas/analysis-plan-content-v1.schema.json'),
+    outputSchemaPath: analysisOutputSchemaPath,
     providerBaseUrl,
     reasoningEffort,
     execute: async (request) => {
@@ -136,7 +145,7 @@ async function run(): Promise<void> {
       } else {
         try {
           const raw = JSON.parse(await readFile(outputFilePath, 'utf8')) as unknown;
-          const parsed = AnalysisPlanContentV1Schema.safeParse(raw);
+          const parsed = AnalysisAgentOutputV1Schema.safeParse(raw);
           if (!parsed.success) {
             structuredOutputIssueCode = [...new Set(parsed.error.issues.map((issue) => {
               const path = issue.path.map((part) => typeof part === 'number' ? '*' : part).join('.');
