@@ -475,6 +475,9 @@ export class CodexAnalysisAdapter {
     } catch {
       throw new Error('Codex analysis process could not be started');
     }
+    if (result.timedOut === true) {
+      throw new Error('Codex analysis process timed out');
+    }
     if (result.exitCode !== 0) {
       throw new Error(`Codex analysis process failed with exit code ${result.exitCode}`);
     }

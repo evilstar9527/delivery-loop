@@ -21,6 +21,8 @@ export interface CommandExecutionRequest {
 
 export interface CommandExecutionResult {
   exitCode: number;
+  /** The runtime deadline fired, even if the child handled SIGTERM and exited zero. */
+  timedOut?: true;
   stderr?: string;
 }
 
@@ -58,6 +60,7 @@ export function launchCommand(request: CommandExecutionRequest): CommandProcessH
   let interruptPromise: Promise<void> | undefined;
   let stdoutBuffer = '';
   let stdoutFailed = false;
+  let timedOut = false;
   child.stderr!.setEncoding('utf8');
   child.stderr!.on('data', (chunk: string) => {
     if (stderr.length < MAX_STDERR_BYTES) {
@@ -105,7 +108,11 @@ export function launchCommand(request: CommandExecutionRequest): CommandProcessH
         }
       }
       resolvePromise({
-        exitCode: stdoutFailed ? 1 : (code ?? 1),
+        // Preserve a non-success process contract for every caller. A child may
+        // handle the runtime SIGTERM and report zero, but the requested command
+        // still exceeded its trusted deadline.
+        exitCode: timedOut ? 124 : stdoutFailed ? 1 : (code ?? 1),
+        ...(timedOut ? { timedOut: true as const } : {}),
         ...(stderr.length === 0 ? {} : { stderr: redactor.redactText(stderr) }),
       });
     });
@@ -129,7 +136,10 @@ export function launchCommand(request: CommandExecutionRequest): CommandProcessH
     return await interruptPromise;
   };
 
-  const timeout = setTimeout(() => void interrupt(), request.timeoutMs);
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    void interrupt();
+  }, request.timeoutMs);
   void completion.finally(() => clearTimeout(timeout)).catch(() => undefined);
   child.stdin!.end(request.stdin);
   return { completion, interrupt };

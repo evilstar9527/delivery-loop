@@ -747,6 +747,31 @@ describe('Codex analysis Agent adapter', () => {
     await expect(promise).rejects.not.toThrow('CANARY_SECRET_FROM_CLI_STDERR');
   });
 
+  it('rejects a timed-out process even when the child reports exit zero', async () => {
+    const paths = await tempInput();
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async () => ({ exitCode: 0, timedOut: true }),
+    });
+
+    await expect(adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-timeout',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-timeout',
+      },
+      validation: validationContext(),
+      model: 'gpt-test-metered',
+    })).rejects.toThrow('Codex analysis process timed out');
+  });
+
   it('redacts sensitive command environment values before returning captured stderr', async () => {
     const key = 'DELIVERY_TEST_COMMAND_TOKEN';
     const secret = 'CANARY_REAL_COMMAND_ENV_SECRET_123456';
@@ -767,6 +792,21 @@ describe('Codex analysis Agent adapter', () => {
       if (previous === undefined) delete process.env[key];
       else process.env[key] = previous;
     }
+  });
+
+  it('preserves timeout fact when a terminated child exits successfully', async () => {
+    const result = await executeCommand({
+      command: process.execPath,
+      args: [
+        '-e',
+        'process.on("SIGTERM", () => process.exit(0)); setInterval(() => {}, 1000)',
+      ],
+      cwd: process.cwd(),
+      stdin: '',
+      timeoutMs: 100,
+    });
+
+    expect(result).toEqual({ exitCode: 124, timedOut: true });
   });
 
   it('requires a strict proof envelope while keeping identity out of nested Plan content', async () => {
