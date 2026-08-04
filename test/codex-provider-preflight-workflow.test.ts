@@ -43,7 +43,7 @@ describe('Codex provider preflight workflow', () => {
     const probe = job?.steps.find((step) => step.name === 'Verify exact provider route');
     expect(probe?.env).toEqual({
       DELIVERY_LOOP_CODEX_ADAPTER_E2E: '1',
-      DELIVERY_LOOP_CODEX_ADAPTER_MODEL: 'gpt-5.6-sol',
+      DELIVERY_LOOP_CODEX_ADAPTER_MODEL: 'gpt-5.6-terra',
       CODEX_API_KEY: '${{ secrets.OPENAI_API_KEY }}',
       OPENAI_BASE_URL: '${{ secrets.OPENAI_BASE_URL }}',
     });
@@ -53,7 +53,7 @@ describe('Codex provider preflight workflow', () => {
     const analysis = job?.steps.find((step) => step.name === 'Verify exact analysis schema');
     expect(analysis?.env).toEqual({
       DELIVERY_LOOP_CODEX_ANALYSIS_E2E: '1',
-      DELIVERY_LOOP_CODEX_ADAPTER_MODEL: 'gpt-5.6-sol',
+      DELIVERY_LOOP_CODEX_ADAPTER_MODEL: 'gpt-5.6-terra',
       DELIVERY_LOOP_CODEX_ANALYSIS_REASONING_EFFORT: 'medium',
       CODEX_API_KEY: '${{ secrets.OPENAI_API_KEY }}',
       OPENAI_BASE_URL: '${{ secrets.OPENAI_BASE_URL }}',
