@@ -382,9 +382,19 @@ describe('analysis Runner bootstrap', () => {
           additionalProperties: false,
           required: ['contextDigest', 'plan'],
         });
-        const context = await readFile(contextPath, 'utf8');
-        expect(context).toContain(BODY_CANARY);
-        expect(context).toContain(REVISION_CANARY);
+        const contextFile = JSON.parse(await readFile(contextPath, 'utf8')) as {
+          schemaVersion: string;
+          contextDigest: string;
+          context: unknown;
+        };
+        expect(contextFile.schemaVersion).toBe('1');
+        expect(JSON.stringify(contextFile.context)).toContain(BODY_CANARY);
+        expect(JSON.stringify(contextFile.context)).toContain(REVISION_CANARY);
+        expect(contextFile.contextDigest).toBe(
+          `sha256:${createHash('sha256')
+            .update(JSON.stringify(contextFile.context))
+            .digest('hex')}`,
+        );
         await heartbeatDone;
         request.onStdoutLine?.(JSON.stringify({
           type: 'turn.completed',
@@ -398,7 +408,7 @@ describe('analysis Runner bootstrap', () => {
         await writeFile(
           request.args[request.args.indexOf('--output-last-message') + 1]!,
           JSON.stringify({
-            contextDigest: `sha256:${createHash('sha256').update(context).digest('hex')}`,
+            contextDigest: contextFile.contextDigest,
             plan: planContent(),
           }),
         );
@@ -1139,14 +1149,14 @@ describe('analysis Runner bootstrap', () => {
           (name) => name.startsWith('.delivery-loop-analysis-context-'),
         );
         expect(contextDirectoryName).toBeDefined();
-        const context = await readFile(
+        const contextFile = JSON.parse(await readFile(
           join(environment.GITHUB_WORKSPACE!, contextDirectoryName!, 'context.json'),
           'utf8',
-        );
+        )) as { contextDigest: string };
         await writeFile(
           request.args[request.args.indexOf('--output-last-message') + 1]!,
           JSON.stringify({
-            contextDigest: `sha256:${createHash('sha256').update(context).digest('hex')}`,
+            contextDigest: contextFile.contextDigest,
             plan: planContent(),
           }),
         );

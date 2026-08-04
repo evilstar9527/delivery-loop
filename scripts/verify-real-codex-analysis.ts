@@ -14,6 +14,7 @@ import {
 import {
   ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
   AnalysisAgentOutputV1Schema,
+  createAnalysisContextFileV1,
 } from '../src/domain/analysis-plan.js';
 import { ExecutionPlanValidationError } from '../src/domain/plan.js';
 import type { CodexModelUsage } from '../src/domain/quota.js';
@@ -79,7 +80,7 @@ async function run(): Promise<void> {
   if (!/^[a-f0-9]{40}$/.test(baseSha) || statusBefore !== '') {
     throw new Error('workspace_precondition_failed');
   }
-  await writeFile(contextFilePath, JSON.stringify({
+  const context = {
     schemaVersion: '1',
     task: {
       source: { system: 'manual', revision: 'provider-analysis-preflight-v1' },
@@ -94,7 +95,12 @@ async function run(): Promise<void> {
       allowedEffects: ['repo_read'],
       allowedCommandRefs: ['policy:inspect'],
     },
-  }), { mode: 0o600, flag: 'wx' });
+  };
+  await writeFile(
+    contextFilePath,
+    JSON.stringify(await createAnalysisContextFileV1(context)),
+    { mode: 0o600, flag: 'wx' },
+  );
   await writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' });
   await writeFile(
     analysisOutputSchemaPath,
