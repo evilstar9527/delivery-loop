@@ -199,7 +199,7 @@ async function runnerEnvironment(root: string): Promise<NodeJS.ProcessEnv> {
 }
 
 describe('analysis Runner bootstrap', () => {
-  it('rotates heartbeat fencing, submits content-only Plan, completes, and cleans temp data', async () => {
+  it('keeps trusted context readable inside the read-only workspace and removes it before the final snapshot', async () => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-test-'));
     const environment = await runnerEnvironment(root);
     const { mkdir } = await import('node:fs/promises');
@@ -359,15 +359,18 @@ describe('analysis Runner bootstrap', () => {
     const adapter = new CodexAnalysisAdapter({
       outputSchemaPath: SCHEMA_PATH,
       execute: async (request) => {
-        const attemptTemp = join(
-          environment.RUNNER_TEMP!,
-          (await readdir(environment.RUNNER_TEMP!))[0]!,
+        const contextDirectoryName = (await readdir(environment.GITHUB_WORKSPACE!)).find(
+          (name) => name.startsWith('.delivery-loop-analysis-context-'),
         );
-        const contextPath = join(attemptTemp, 'context.json');
+        expect(contextDirectoryName).toBeDefined();
+        const contextDirectory = join(environment.GITHUB_WORKSPACE!, contextDirectoryName!);
+        const contextPath = join(contextDirectory, 'context.json');
+        expect((await stat(contextDirectory)).mode & 0o777).toBe(0o700);
         expect((await stat(contextPath)).mode & 0o777).toBe(0o600);
-        expect(
-          (await stat(request.args[request.args.indexOf('--output-last-message') + 1]!)).mode & 0o777,
-        ).toBe(0o600);
+        expect(request.stdin).toContain(contextPath);
+        const outputPath = request.args[request.args.indexOf('--output-last-message') + 1]!;
+        expect(outputPath.startsWith(`${environment.RUNNER_TEMP!}/`)).toBe(true);
+        expect((await stat(outputPath)).mode & 0o777).toBe(0o600);
         const context = await readFile(contextPath, 'utf8');
         expect(context).toContain(BODY_CANARY);
         expect(context).toContain(REVISION_CANARY);
@@ -385,14 +388,20 @@ describe('analysis Runner bootstrap', () => {
         return { exitCode: 0 };
       },
     });
-    const snapshots = ['clean-snapshot', 'clean-snapshot'];
+    let snapshotCount = 0;
 
     const result = await runAnalysisAttempt({
       environment,
       fetch: fetchImplementation,
       agent: adapter,
       heartbeatIntervalMs: 500,
-      snapshotWorkspace: async () => snapshots.shift() ?? 'unexpected-snapshot',
+      snapshotWorkspace: async () => {
+        snapshotCount += 1;
+        if (snapshotCount === 2) {
+          expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
+        }
+        return 'clean-snapshot';
+      },
       now: () => new Date('2026-07-25T00:01:00.000Z'),
     });
 
@@ -425,6 +434,8 @@ describe('analysis Runner bootstrap', () => {
       leaseGeneration: 3,
     });
     expect(JSON.stringify(requestLog)).not.toContain(BODY_CANARY);
+    expect(snapshotCount).toBe(2);
+    expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
     expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
   });
 
@@ -769,6 +780,7 @@ describe('analysis Runner bootstrap', () => {
       neededHumanInput: 'resolve_external_dependency',
     });
     expect(JSON.stringify(failureBody)).not.toContain(INITIAL_TOKEN);
+    expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
     expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
   });
 
@@ -1134,6 +1146,7 @@ describe('analysis Runner bootstrap', () => {
     });
     expect(JSON.stringify(failureBody)).not.toContain(BODY_CANARY);
     expect(JSON.stringify(failureBody)).not.toContain(INITIAL_TOKEN);
+    expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
     expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
   });
 

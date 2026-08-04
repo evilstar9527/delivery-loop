@@ -876,8 +876,21 @@ export async function runAnalysisAttempt(
   }
 
   const temporaryRoot = await mkdtemp(join(config.runnerTempPath, 'delivery-loop-analysis-'));
-  await chmod(temporaryRoot, 0o700);
-  const contextFilePath = join(temporaryRoot, 'context.json');
+  let workspaceContextRoot: string | undefined;
+  try {
+    await chmod(temporaryRoot, 0o700);
+    workspaceContextRoot = await mkdtemp(
+      join(config.workspacePath, '.delivery-loop-analysis-context-'),
+    );
+    await chmod(workspaceContextRoot, 0o700);
+  } catch (error) {
+    if (workspaceContextRoot !== undefined) {
+      await rm(workspaceContextRoot, { recursive: true, force: true });
+    }
+    await rm(temporaryRoot, { recursive: true, force: true });
+    throw error;
+  }
+  const contextFilePath = join(workspaceContextRoot, 'context.json');
   const outputFilePath = join(temporaryRoot, 'plan-content.json');
   const mediationContextFilePath = join(temporaryRoot, 'diagnostic-context.json');
   const logRequestOutputFilePath = join(temporaryRoot, 'diagnostic-log-request.json');
@@ -900,6 +913,12 @@ export async function runAnalysisAttempt(
         requestLock,
       )
     : null;
+  let workspaceContextRemoved = false;
+  const removeWorkspaceContext = async (): Promise<void> => {
+    if (workspaceContextRemoved) return;
+    await rm(workspaceContextRoot, { recursive: true, force: true });
+    workspaceContextRemoved = true;
+  };
 
   try {
     if (options.agent === undefined || options.agent.usesMeteredModel === true) {
@@ -1007,8 +1026,9 @@ export async function runAnalysisAttempt(
       });
     let localPlan: ExecutionPlanV1;
     try {
-      localPlan = ExecutionPlanV1Schema.parse(
-        await agent.start({
+      let agentResult: unknown;
+      try {
+        agentResult = await agent.start({
           workspacePath: config.workspacePath,
           contextFilePath,
           outputFilePath,
@@ -1039,8 +1059,11 @@ export async function runAnalysisAttempt(
                   mediation: diagnosticMediation.agentInterface(),
                 },
               }),
-        }),
-      );
+          });
+      } finally {
+        await removeWorkspaceContext();
+      }
+      localPlan = ExecutionPlanV1Schema.parse(agentResult);
     } catch (error) {
       if (error instanceof AnalysisRunnerError) throw error;
       throw new AnalysisRunnerError('analysis Agent output is invalid', {
@@ -1220,6 +1243,10 @@ export async function runAnalysisAttempt(
   } finally {
     heartbeatController.abort();
     await heartbeatTask;
-    await rm(temporaryRoot, { recursive: true, force: true });
+    try {
+      await removeWorkspaceContext();
+    } finally {
+      await rm(temporaryRoot, { recursive: true, force: true });
+    }
   }
 }
