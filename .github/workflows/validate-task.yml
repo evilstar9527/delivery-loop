@@ -158,11 +158,13 @@ jobs:
             --arg base_sha "$DELIVERY_CANCEL_EXPECTED_BASE_SHA" \
             --arg plan_digest "$DELIVERY_CANCEL_EXPECTED_PLAN_DIGEST" \
             '.run.id == $run_id
-              and .run.state == "awaiting_approval"
               and .run.version == $version
               and .run.baseSha == $base_sha
-              and .plan.digest == $plan_digest
-              and ([.attempts[] | select(.status == "pending" or .status == "starting" or .status == "running" or .status == "cancel_requested")] | length) == 0' \
+              and ([.attempts[] | select(.status == "pending" or .status == "starting" or .status == "running" or .status == "cancel_requested")] | length) == 0
+              and (
+                (.run.state == "queued" and .plan == null)
+                or (.run.state == "awaiting_approval" and .plan.digest == $plan_digest)
+              )' \
             "$before_file"
           cancel_file="$RUNNER_TEMP/cancel-response.json"
           cancel_status="$(curl --silent --show-error --max-time 30 \
