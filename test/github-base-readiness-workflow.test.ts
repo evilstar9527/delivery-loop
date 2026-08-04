@@ -150,8 +150,14 @@ describe('GitHub-hosted base readiness workflow', () => {
       '/v1/dead-letters?status=open&limit=100',
     );
     expect(diagnosticStep?.run).toContain(
-      '[[ "$DELIVERY_DIAGNOSTIC_RUN_ID" =~ ^run_[a-f0-9]{64}$ ]]',
+      '[[ "$DELIVERY_DIAGNOSTIC_RUN_ID" =~ ^run_[a-f0-9]{56}$ ]]',
     );
+    const runIdPattern = diagnosticStep?.run?.match(/=~ (\^run_.+?\$) \]\]/)?.[1];
+    expect(runIdPattern).toBe('^run_[a-f0-9]{56}$');
+    expect(new RegExp(runIdPattern!).test(
+      'run_bc31ceaf855e3aec031fc419eaa4b6095df957650281791706723691',
+    )).toBe(true);
+    expect(new RegExp(runIdPattern!).test(`run_${'a'.repeat(64)}`)).toBe(false);
     expect(diagnosticStep?.run).toContain('.runId == $run_id');
     expect(diagnosticStep?.run).toContain('.outboxKind == "workflow_create"');
     expect(diagnosticStep?.run).toContain('select($matches | length == 1)');

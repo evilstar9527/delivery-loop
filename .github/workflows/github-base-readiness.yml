@@ -98,7 +98,7 @@ jobs:
           DELIVERY_OPERATIONS_TOKEN: ${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}
         run: |
           set -euo pipefail
-          [[ "$DELIVERY_DIAGNOSTIC_RUN_ID" =~ ^run_[a-f0-9]{64}$ ]]
+          [[ "$DELIVERY_DIAGNOSTIC_RUN_ID" =~ ^run_[a-f0-9]{56}$ ]]
           response_file="$RUNNER_TEMP/open-dead-letters.json"
           status="$(curl --silent --show-error --max-time 30 \
             --url 'https://delivery-loop-control-plane.eve55265.workers.dev/v1/dead-letters?status=open&limit=100' \
