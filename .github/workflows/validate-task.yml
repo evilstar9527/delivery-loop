@@ -7,6 +7,11 @@ on:
         description: TaskEnvelope v1 JSON (contract validation only)
         required: true
         type: string
+      intake:
+        description: Submit the validated envelope to the production control plane
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -25,3 +30,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Validate without printing the task body
         run: pnpm validate:task
+      - name: Intake validated task without printing the task body
+        if: inputs.intake
+        env:
+          DELIVERY_TASK_JSON: ${{ inputs.task_json }}
+          DELIVERY_TASK_INTAKE_TOKEN: ${{ secrets.TASK_INTAKE_TOKEN }}
+        run: |
+          set -euo pipefail
+          response_file="$RUNNER_TEMP/task-intake-response.json"
+          status="$(curl --silent --show-error --max-time 30 \
+            --request POST \
+            --url https://delivery-loop-control-plane.eve55265.workers.dev/v1/tasks \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header 'Accept: application/json' \
+            --header 'Content-Type: application/json' \
+            --header "Idempotency-Key: task-intake-$GITHUB_RUN_ID" \
+            --data-binary "$DELIVERY_TASK_JSON" \
+            --output "$response_file" \
+            --write-out '%{http_code}')"
+          test "$status" = 202
+          jq -e '{accepted, taskId, runId} | select(.accepted == true)' "$response_file"
