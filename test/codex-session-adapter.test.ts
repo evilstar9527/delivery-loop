@@ -144,7 +144,7 @@ describe('Codex AgentAdapter session contract', () => {
       '-c',
       'model_providers.delivery_loop_relay.supports_websockets=false',
       '-c',
-      'model_reasoning_effort="high"',
+      'model_reasoning_effort="medium"',
       '--model',
       'gpt-5.6-sol',
       '--output-schema',

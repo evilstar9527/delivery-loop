@@ -253,7 +253,7 @@ describe('Codex analysis Agent adapter', () => {
       '-c',
       'model_providers.delivery_loop_relay.supports_websockets=false',
       '-c',
-      'model_reasoning_effort="high"',
+      'model_reasoning_effort="medium"',
     ]));
     expect(observed?.args.join(' ')).not.toContain('OPENAI_API_KEY');
   });

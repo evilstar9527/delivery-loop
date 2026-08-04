@@ -11,7 +11,7 @@ describe('Codex relay provider profile', () => {
     const args = codexProviderProfileArguments('https://relay.example.com/openai/v1');
 
     expect(CODEX_RELAY_PROVIDER_ID).toBe('delivery_loop_relay');
-    expect(CODEX_RELAY_REASONING_EFFORT).toBe('high');
+    expect(CODEX_RELAY_REASONING_EFFORT).toBe('medium');
     expect(args).toEqual([
       '-c',
       'model_provider="delivery_loop_relay"',
@@ -26,7 +26,7 @@ describe('Codex relay provider profile', () => {
       '-c',
       'model_providers.delivery_loop_relay.supports_websockets=false',
       '-c',
-      'model_reasoning_effort="high"',
+      'model_reasoning_effort="medium"',
     ]);
     expect(JSON.stringify(args)).not.toContain('openai_base_url');
     expect(JSON.stringify(args)).not.toContain('OPENAI_API_KEY');
@@ -37,24 +37,24 @@ describe('Codex relay provider profile', () => {
     expect(codexProviderProfileArguments(undefined)).toEqual([]);
   });
 
-  it('allows a bounded preflight to lower reasoning without changing the production default', () => {
-    expect(codexProviderProfileArguments('https://relay.example.com/v1', 'medium'))
-      .toEqual(expect.arrayContaining(['model_reasoning_effort="medium"']));
-    expect(codexProviderProfileArguments('https://relay.example.com/v1'))
+  it('allows a bounded preflight to override reasoning without changing the production default', () => {
+    expect(codexProviderProfileArguments('https://relay.example.com/v1', 'high'))
       .toEqual(expect.arrayContaining(['model_reasoning_effort="high"']));
+    expect(codexProviderProfileArguments('https://relay.example.com/v1'))
+      .toEqual(expect.arrayContaining(['model_reasoning_effort="medium"']));
   });
 
-  it('binds the deployed control plane to a new immutable Sol/high quota profile', () => {
+  it('binds the deployed control plane to an immutable Terra/medium relay profile', () => {
     const wrangler = JSON.parse(readFileSync(
       new URL('../wrangler.jsonc', import.meta.url),
       'utf8',
     )) as { vars?: { CODEX_MODEL_PROFILE_ID?: string } };
 
     expect(wrangler.vars?.CODEX_MODEL_PROFILE_ID)
-      .toBe('codex-gpt-5p6-sol-high-20260729');
+      .toBe('codex-gpt-5p6-terra-medium-20260804');
 
     const migration = readFileSync(
-      new URL('../migrations/0062_codex_sol_relay_profile.sql', import.meta.url),
+      new URL('../migrations/0064_codex_terra_medium_relay_profile.sql', import.meta.url),
       'utf8',
     );
     expect(migration).toContain('INSERT INTO quota_model_profiles');

@@ -1,7 +1,7 @@
 import { normalizeProviderBaseUrl } from './provider-base-url.js';
 
 export const CODEX_RELAY_PROVIDER_ID = 'delivery_loop_relay';
-export const CODEX_RELAY_REASONING_EFFORT = 'high';
+export const CODEX_RELAY_REASONING_EFFORT = 'medium';
 export type CodexRelayReasoningEffort = 'low' | 'medium' | 'high';
 
 /**
