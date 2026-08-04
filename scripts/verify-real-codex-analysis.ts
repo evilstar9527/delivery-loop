@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,9 +52,11 @@ async function run(): Promise<void> {
 
   const root = await mkdtemp(join(tmpdir(), 'delivery-loop-real-analysis-'));
   const workspacePath = join(root, 'repo');
-  const contextFilePath = join(root, 'context.json');
+  const contextRoot = join(workspacePath, '.delivery-loop-analysis-context-preflight');
+  const contextFilePath = join(contextRoot, 'context.json');
   const outputFilePath = join(root, 'plan.json');
   await mkdir(workspacePath, { mode: 0o700 });
+  await mkdir(contextRoot, { mode: 0o700 });
   await git(['init', '--initial-branch=main'], workspacePath);
   await git(['config', 'user.name', 'Delivery Loop E2E'], workspacePath);
   await git(['config', 'user.email', 'delivery-loop-e2e@example.test'], workspacePath);
@@ -148,31 +150,36 @@ async function run(): Promise<void> {
       return result;
     },
   });
-  const plan = await adapter.start({
-    workspacePath,
-    contextFilePath,
-    outputFilePath,
-    timeoutMs: 10 * 60_000,
-    identity: {
-      planId: 'plan-provider-analysis-preflight-v1',
-      runId: 'run-provider-analysis-preflight-v1',
-      version: 1,
-      taskRevision: 'provider-analysis-preflight-v1',
-      baseSha,
-      attemptId: 'attempt-provider-analysis-preflight-v1',
-    },
-    validation: {
-      runId: 'run-provider-analysis-preflight-v1',
-      taskRevision: 'provider-analysis-preflight-v1',
-      baseSha,
-      expectedVersion: 1,
-      acceptanceCriteriaCount: 1,
-      allowedEffects: ['repo_read'],
-      allowedCommandRefs: ['policy:inspect'],
-    },
-    model,
-    onUsage: (value) => { usage = value; },
-  });
+  let plan: Awaited<ReturnType<CodexAnalysisAdapter['start']>>;
+  try {
+    plan = await adapter.start({
+      workspacePath,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: 10 * 60_000,
+      identity: {
+        planId: 'plan-provider-analysis-preflight-v1',
+        runId: 'run-provider-analysis-preflight-v1',
+        version: 1,
+        taskRevision: 'provider-analysis-preflight-v1',
+        baseSha,
+        attemptId: 'attempt-provider-analysis-preflight-v1',
+      },
+      validation: {
+        runId: 'run-provider-analysis-preflight-v1',
+        taskRevision: 'provider-analysis-preflight-v1',
+        baseSha,
+        expectedVersion: 1,
+        acceptanceCriteriaCount: 1,
+        allowedEffects: ['repo_read'],
+        allowedCommandRefs: ['policy:inspect'],
+      },
+      model,
+      onUsage: (value) => { usage = value; },
+    });
+  } finally {
+    await rm(contextRoot, { recursive: true, force: true });
+  }
   const [statusAfter, output] = await Promise.all([
     git(['status', '--porcelain=v1', '--untracked-files=all'], workspacePath),
     readFile(outputFilePath, 'utf8'),
@@ -215,6 +222,8 @@ try {
             ? 'usage_unavailable'
             : message === 'Codex analysis output is invalid'
               ? `structured_output_invalid_${structuredOutputIssueCode ?? 'unknown'}`
+              : message === 'Codex analysis context proof is invalid'
+                ? 'context_proof_invalid'
               : message.startsWith('ExecutionPlan validation failed with ')
                 ? 'plan_validation_failed'
                 : 'analysis_adapter_failed';
