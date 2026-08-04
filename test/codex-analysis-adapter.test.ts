@@ -130,6 +130,77 @@ async function tempInput(): Promise<{
 }
 
 describe('Codex analysis Agent adapter', () => {
+  it('binds all trusted acceptance criteria to a single required item', async () => {
+    const paths = await tempInput();
+    const content = validContent();
+    const items = content.items as Array<Record<string, unknown>>;
+    items[0]!.acceptanceCriteriaIndexes = [];
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async (): Promise<CommandExecutionResult> => {
+        await writeFile(paths.outputFile, JSON.stringify(content));
+        return { exitCode: 0 };
+      },
+    });
+
+    const plan = await adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-single-required-coverage',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-single-required-coverage',
+      },
+      validation: { ...validationContext(), acceptanceCriteriaCount: 3 },
+    });
+
+    expect(plan.items[0]?.acceptanceCriteriaIndexes).toEqual([0, 1, 2]);
+  });
+
+  it('does not guess criterion ownership when multiple required items are ambiguous', async () => {
+    const paths = await tempInput();
+    const content = validContent();
+    const first = (content.items as Array<Record<string, unknown>>)[0]!;
+    first.acceptanceCriteriaIndexes = [];
+    (content.items as Array<Record<string, unknown>>).push({
+      ...first,
+      id: 'inspect-secondary',
+      acceptanceCriteriaIndexes: [],
+    });
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async (): Promise<CommandExecutionResult> => {
+        await writeFile(paths.outputFile, JSON.stringify(content));
+        return { exitCode: 0 };
+      },
+    });
+
+    await expect(adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-ambiguous-coverage',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-ambiguous-coverage',
+      },
+      validation: validationContext(),
+    })).rejects.toMatchObject({
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: 'acceptance_criterion_uncovered' }),
+      ]),
+    });
+  });
+
   it('runs non-interactively in a read-only ephemeral sandbox and injects trusted identity/digest', async () => {
     const paths = await tempInput();
     let observed: CommandExecutionRequest | undefined;
