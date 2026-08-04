@@ -191,6 +191,22 @@ describe('Workflow outbox delivery', () => {
     expect(effects.createCalls).toBe(2);
   });
 
+  it('drains pending Workflow creation directly and remains idempotent with Queue consumers', async () => {
+    const seeded = await seedRun('scheduled-direct-drain');
+    const effects = new FakeWorkflowEffects();
+    const processor = new WorkflowOutboxProcessor(env.DB_CONTROL, effects);
+
+    expect(await processor.drain(25)).toEqual(['settled']);
+    expect(await processor.drain(25)).toEqual([]);
+    expect(await processor.deliver(seeded.outboxId)).toBe('settled');
+    expect(effects.createCalls).toBe(1);
+    expect(await outbox(seeded.outboxId)).toEqual({
+      delivery_state: 'settled',
+      attempt_count: 1,
+      last_error_code: null,
+    });
+  });
+
   it('does not create a Workflow before a trusted base SHA is persisted', async () => {
     const seeded = await seedRun('base-sha-blocked', false);
     const effects = new FakeWorkflowEffects();

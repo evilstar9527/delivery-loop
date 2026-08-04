@@ -1015,7 +1015,7 @@ Dispatcher 约束：
 
 - `workflowFile` 固定为 `.github/workflows/delivery-agent.yml`，ref 固定为 D1 Task 的 `refs/heads/<baseBranch>`；repository 必须同时存在于控制面 allowlist 与 GitHub App installation 范围；
 - D1 `analysis_dispatch` outbox 与 Workflow outbox 共用同一 pending → delivering → settled/fencing 实现。20 路 consumer 只能有一个执行外部 effect，普通失败回 pending；
-- scheduled relay 向同一 Queue 只发送 `{outboxId}`，并只在 GitHub App + control-plane 配置完整时选择 `github_actions` destination；watchdog完成re-arm后，relay必须与Workflow instance reconciliation并发启动，逐实例`status()`变慢不能阻塞已有outbox投递；本轮reconciliation产生的新repair intent允许下一分钟投递。Queue 消息不携带/决定 destination；
+- scheduled relay 向同一 Queue 只发送 `{outboxId}`，并只在 GitHub App + control-plane 配置完整时选择 `github_actions` destination；watchdog完成re-arm后，Cron必须先用同一fenced processor直接drain最多25条`cloudflare_workflows` outbox，再让relay与Workflow instance reconciliation并发启动。direct drain与Queue consumer共享pending→delivering lease，重复命中不得重复effect；逐实例`status()`变慢或Queue消息未产生都不能永久阻塞已有Workflow控制流根节点。本轮reconciliation产生的新repair intent允许下一分钟投递。Queue消息不携带/决定destination；
 - consumer 按 D1 `outbox.destination` 路由到 Cloudflare Workflow、GitHub Actions、GitHub PR API、GitHub Deployments、test acceptance或test rollback processor。只有 settled/missing 可 ack；retry/busy/unconfigured/unsupported 必须 retry，禁止把 GitHub outbox交给错误processor后误判 missing/ack；
 - REST adapter 使用短期 GitHub App installation token，token 只放 Authorization header。目标 workflow 必须设置 `run-name: delivery-loop/${{ inputs.attempt_id }}`；每次 dispatch 前先按该稳定 run-name 查询，204 后也必须查询到外部 run ID 才能 settle/启动 Attempt lease；
 - 204 后查询暂不可见或网络结果不确定时保持 pending。下轮重试先 reconciliation，查到已有 run 返回 `existing`，不得再次创建；Runner 自报 run ID 不能替代该外部查询。

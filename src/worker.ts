@@ -206,6 +206,13 @@ export default {
           secrets: configuredSecrets(env),
         }),
       }).scan(25);
+      // Cloudflare Workflow creation is the control-flow root. Drain it
+      // directly as a fenced fallback before relying on Queue delivery; the
+      // shared outbox lease keeps this race-safe with queued consumers.
+      await new WorkflowOutboxProcessor(
+        env.DB_CONTROL,
+        new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
+      ).drain(25);
       await Promise.all([
         relay.relay(),
         reconcileWorkflowInstancesFromEnv(env),

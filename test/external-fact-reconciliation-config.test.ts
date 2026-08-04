@@ -27,6 +27,7 @@ describe('periodic external-fact reconciliation wiring', () => {
   it('starts the outbox relay without waiting for workflow status reconciliation', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     const detectorEnd = worker.indexOf('}).scan(25);');
+    const workflowDrain = worker.indexOf(').drain(25);', detectorEnd);
     const concurrentStart = worker.indexOf('await Promise.all([', detectorEnd);
     const concurrentEnd = worker.indexOf(']);', concurrentStart);
     const relay = worker.indexOf('relay.relay(),', concurrentStart);
@@ -36,6 +37,8 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
 
     expect(detectorEnd).toBeGreaterThan(-1);
+    expect(workflowDrain).toBeGreaterThan(detectorEnd);
+    expect(workflowDrain).toBeLessThan(concurrentStart);
     expect(concurrentStart).toBeGreaterThan(detectorEnd);
     expect(concurrentEnd).toBeGreaterThan(concurrentStart);
     expect(relay).toBeGreaterThan(concurrentStart);
