@@ -24,12 +24,12 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(feishuRuntime).toContain('runtime.messageReconciler.reconcileBatch(25)');
   });
 
-  it('prioritizes durable outbox and execution progress before background recovery', () => {
+  it('direct-drains durable Workflow effects before Queue relay and background recovery', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
+    const workflowDrain = worker.indexOf(').drain(5);');
     const relay = worker.indexOf('await relay.relay();');
     const executionProgress = worker.indexOf(').reconcileBatch(5);', relay);
     const detectorEnd = worker.indexOf('}).scan(25);');
-    const workflowDrain = worker.indexOf(').drain(25);', detectorEnd);
     const concurrentStart = worker.indexOf('await Promise.all([', detectorEnd);
     const concurrentEnd = worker.indexOf(']);', concurrentStart);
     const workflowReconciliation = worker.indexOf(
@@ -37,17 +37,17 @@ describe('periodic external-fact reconciliation wiring', () => {
       concurrentStart,
     );
 
+    expect(workflowDrain).toBeGreaterThan(-1);
     expect(relay).toBeGreaterThan(-1);
+    expect(workflowDrain).toBeLessThan(relay);
     expect(executionProgress).toBeGreaterThan(relay);
     expect(detectorEnd).toBeGreaterThan(-1);
     expect(executionProgress).toBeLessThan(detectorEnd);
-    expect(workflowDrain).toBeGreaterThan(detectorEnd);
-    expect(workflowDrain).toBeLessThan(concurrentStart);
     expect(concurrentStart).toBeGreaterThan(detectorEnd);
     expect(concurrentEnd).toBeGreaterThan(concurrentStart);
     expect(workflowReconciliation).toBeGreaterThan(concurrentStart);
     expect(workflowReconciliation).toBeLessThan(concurrentEnd);
-    expect(worker.slice(detectorEnd, concurrentStart)).not.toContain(
+    expect(worker.slice(workflowDrain, concurrentStart)).not.toContain(
       'reconcileWorkflowInstancesFromEnv(env)',
     );
     expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain('relay.relay()');
