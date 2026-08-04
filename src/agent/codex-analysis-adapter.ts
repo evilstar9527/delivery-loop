@@ -94,6 +94,41 @@ function isInside(parent: string, child: string): boolean {
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
 }
 
+/**
+ * Bind task-level acceptance coverage only when ownership is unambiguous.
+ *
+ * This fills a declaration derived from the trusted Task snapshot; it does not
+ * add doneWhen conditions, Evidence, commands, effects, or execution authority.
+ * Multiple required items, duplicate indexes, and out-of-range indexes remain
+ * validation errors because assigning them would require semantic judgment.
+ */
+function bindSingleRequiredItemAcceptanceCoverage(
+  content: AnalysisPlanContentV1,
+  acceptanceCriteriaCount: number,
+): AnalysisPlanContentV1 {
+  if (!Number.isSafeInteger(acceptanceCriteriaCount) || acceptanceCriteriaCount <= 0) {
+    return content;
+  }
+  const requiredItems = content.items.filter((item) => item.required);
+  if (requiredItems.length !== 1) return content;
+  const item = requiredItems[0]!;
+  const indexes = item.acceptanceCriteriaIndexes;
+  if (
+    new Set(indexes).size !== indexes.length ||
+    indexes.some((index) => index < 0 || index >= acceptanceCriteriaCount)
+  ) {
+    return content;
+  }
+  const trustedIndexes = Array.from({ length: acceptanceCriteriaCount }, (_, index) => index);
+  if (trustedIndexes.every((index) => indexes.includes(index))) return content;
+  return {
+    ...content,
+    items: content.items.map((candidate) => candidate === item
+      ? { ...candidate, acceptanceCriteriaIndexes: trustedIndexes }
+      : candidate),
+  };
+}
+
 function trustBoundaryPrompt(contextFilePath: string): string[] {
   return [
     'You are an analysis-only software delivery agent.',
@@ -209,6 +244,10 @@ export class CodexAnalysisAdapter {
           outputFilePath,
           deadline,
         });
+    const normalizedContent = bindSingleRequiredItemAcceptanceCoverage(
+      content,
+      input.validation.acceptanceCriteriaCount,
+    );
     const body: ExecutionPlanBodyV1 = {
       schemaVersion: '1',
       id: input.identity.planId,
@@ -217,7 +256,7 @@ export class CodexAnalysisAdapter {
       taskRevision: input.identity.taskRevision,
       baseSha: input.identity.baseSha,
       createdByAttemptId: input.identity.attemptId,
-      ...content,
+      ...normalizedContent,
     };
     const proposal: ExecutionPlanV1 = {
       ...body,
