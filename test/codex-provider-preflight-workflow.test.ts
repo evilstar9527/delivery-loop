@@ -75,6 +75,8 @@ describe('Codex provider preflight workflow', () => {
     );
     expect(analysisScript).toContain("const contextFilePath = join(contextRoot, 'context.json')");
     expect(analysisScript).toContain('await rm(contextRoot, { recursive: true, force: true })');
+    expect(analysisScript).toContain("message === 'Codex analysis process timed out'");
+    expect(analysisScript).toContain("? 'provider_timeout'");
     expect(analysisScript).not.toContain("const contextFilePath = join(root, 'context.json')");
   });
 });

@@ -223,6 +223,8 @@ try {
     ? 'workspace_precondition_failed'
     : message === 'analysis_contract_failed'
       ? 'analysis_contract_failed'
+    : message === 'Codex analysis process timed out'
+      ? 'provider_timeout'
     : message === 'Codex analysis process could not be started'
         ? 'provider_process_start_failed'
     : /^Codex analysis process failed with exit code [0-9]+$/.test(message)

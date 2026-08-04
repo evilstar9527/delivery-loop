@@ -1093,6 +1093,7 @@ Phase 1 Codex analysis adapter 采用官方非交互 CLI 契约：
 - Agent输出的acceptance coverage仍是不可信提案。只有Plan恰好一个required Item时，adapter才能用可信Task快照的`0..acceptanceCriteriaCount-1`补全该Item漏报的`acceptanceCriteriaIndexes`；这不会生成doneWhen、Evidence、command、effect或执行权限。多个required Item、重复或越界index继续fail-closed，不猜测语义归属；
 - `shell_environment_policy.ignore_default_excludes=false`，并额外排除 `*KEY*/*SECRET*/*TOKEN*/*PASSWORD*`，API key 只供 Codex 客户端认证，不进入模型启动的 shell 子进程；
 - CLI 执行器捕获的 stderr 在返回 adapter 前按当前敏感环境变量与 credential 形状脱敏；上层错误仍只公开固定 exit code，不公开 stderr；
+- CLI执行器在deadline触发时先记录`timedOut`再interrupt；即使Codex响应SIGTERM后原始exit为0，对所有调用方仍返回稳定exit 124。analysis adapter优先于usage/output检查拒绝该结果，provider preflight固定投影为`provider_timeout`；
 - Agent output schema顶层只允许必填`contextDigest`与`plan`；嵌套Plan content只允许objective/assumptions/evidenceRefs/items。schema由Runner写入repo外0700临时目录中的0600文件，proof核对后仅嵌套Plan进入validation/API。`planId/runId/version/taskRevision/baseSha/createdByAttemptId/status/digest` 由可信 Runner 注入/计算；模型不能自选 identity、提升 effect 或伪造 digest；
 - Runner 保存一次 attempt 中所有轮换前后的 token集合，Plan output scan必须覆盖旧 token与最新 token；本地 scanner通过后，控制面 persistence scanner仍独立执行，不能把受限CLI或Runner自检当唯一防线；
 - context 正文通过 Runner 临时文件路径提供，不拼进命令行/日志；CLI stderr 不进入控制面错误或 Evidence。CLI 版本由 lockfile 固定，默认测试不调用计费模型。
