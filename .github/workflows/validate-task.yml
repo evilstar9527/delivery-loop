@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      status_run_id:
+        description: Optional allowlisted control-plane Run projection to query
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -50,3 +55,56 @@ jobs:
             --write-out '%{http_code}')"
           test "$status" = 202
           jq -e '{accepted, taskId, runId} | select(.accepted == true)' "$response_file"
+      - name: Query allowlisted run status without printing task or Plan prose
+        if: inputs.status_run_id != ''
+        env:
+          DELIVERY_STATUS_RUN_ID: ${{ inputs.status_run_id }}
+          DELIVERY_TASK_INTAKE_TOKEN: ${{ secrets.TASK_INTAKE_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$DELIVERY_STATUS_RUN_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$ ]]
+          response_file="$RUNNER_TEMP/run-status-response.json"
+          status="$(curl --silent --show-error --max-time 30 \
+            --url "https://delivery-loop-control-plane.eve55265.workers.dev/v1/runs/$DELIVERY_STATUS_RUN_ID/plan" \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header 'Accept: application/json' \
+            --output "$response_file" \
+            --write-out '%{http_code}')"
+          test "$status" = 200
+          jq -e '{
+            run: {
+              id: .run.id,
+              state: .run.state,
+              version: .run.version,
+              baseSha: .run.baseSha,
+              activePlan: .run.activePlan,
+              blocker: .run.blocker
+            },
+            plan: (
+              if .plan == null then null else {
+                id: .plan.id,
+                version: .plan.version,
+                digest: .plan.digest,
+                status: .plan.status,
+                baseSha: .plan.baseSha
+              } end
+            ),
+            items: [.items[] | {
+              id,
+              kind,
+              required,
+              status,
+              effects,
+              commandRefs,
+              evidenceKinds
+            }],
+            attempts: [.attempts[] | {
+              id,
+              mode,
+              status,
+              baseSha,
+              githubRunId,
+              githubStatus,
+              githubConclusion
+            }]
+          }' "$response_file"
