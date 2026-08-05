@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 const MAX_ACTIVITY_COUNT = 262_144;
+const MAX_JSONL_LINE_BYTES = 64 * 1_024;
 
 export const CodexExecutionActivitySchema = z.object({
   schemaVersion: z.literal('1'),
@@ -53,6 +54,22 @@ export class CodexExecutionActivityAccumulator {
     } else if (itemType === 'agent_message' && type === 'item.completed') {
       this.increment('agentMessageCompletedCount');
     }
+  }
+
+  acceptLine(line: string): void {
+    if (new TextEncoder().encode(line).length > MAX_JSONL_LINE_BYTES) {
+      throw new Error('Codex execution activity event is invalid');
+    }
+    let event: unknown;
+    try {
+      event = JSON.parse(line) as unknown;
+    } catch {
+      throw new Error('Codex execution activity event is invalid');
+    }
+    if (typeof event !== 'object' || event === null || Array.isArray(event)) {
+      throw new Error('Codex execution activity event is invalid');
+    }
+    this.accept(event);
   }
 
   result(): CodexExecutionActivity {
