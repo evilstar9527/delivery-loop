@@ -212,7 +212,7 @@ describe('execution Attempt Runner', () => {
     }]);
   });
 
-  it('requires exact Agent input and never reports Agent/Git failures as verification failures', async () => {
+  it('requires exact Agent input and reports Agent failure with a fixed redacted classification', async () => {
     const fixture = await repository();
     const failures: ExecutionAttemptFailure[] = [];
     const base = {
@@ -237,8 +237,13 @@ describe('execution Attempt Runner', () => {
       agent: { apply: async () => { throw new Error('untrusted Agent error'); } },
       agentInput: agentInput(fixture.path),
     });
-    await expect(runner.run()).rejects.toThrow('untrusted Agent error');
-    expect(failures).toEqual([]);
+    await expect(runner.run()).rejects.toThrow('execution Agent failed');
+    expect(failures).toEqual([{
+      failureCode: 'invalid_agent_output',
+      failureSite: 'agent_output',
+      attemptedPaths: ['code_change'],
+      neededHumanInput: 'manual_investigation',
+    }]);
   });
 
   it('requests immutable re-analysis before commit/push/verification when exact review feedback changes the Plan', async () => {

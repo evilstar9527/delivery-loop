@@ -1,5 +1,5 @@
-import { lstat, readFile, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { lstat, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import {
   executeCommand,
@@ -12,6 +12,16 @@ import { normalizeProviderBaseUrl } from './provider-base-url.js';
 
 const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const MAX_DECISION_BYTES = 4 * 1_024;
+const EXECUTION_DECISION_SCHEMA = JSON.stringify({
+  $schema: 'http://json-schema.org/draft-07/schema#',
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    schemaVersion: { type: 'string', const: '1' },
+    action: { type: 'string', enum: ['apply_fix', 'request_replan'] },
+  },
+  required: ['schemaVersion', 'action'],
+});
 
 export const ExecutionAgentDecisionSchema = z.object({
   schemaVersion: z.literal('1'),
@@ -128,6 +138,14 @@ export class CodexExecutionAdapter implements ExecutionAgent {
     ) {
       throw new Error('execution Agent files must be outside repository');
     }
+    const decisionSchemaPath = join(
+      dirname(canonicalOutput),
+      `${input.attemptId}-decision-schema.json`,
+    );
+    await writeFile(decisionSchemaPath, EXECUTION_DECISION_SCHEMA, {
+      mode: 0o600,
+      flag: 'wx',
+    });
     const usage = new CodexUsageAccumulator();
     let result;
     try {
@@ -152,6 +170,8 @@ export class CodexExecutionAdapter implements ExecutionAgent {
           '-c',
           'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
           ...codexProviderProfileArguments(this.providerBaseUrl),
+          '--output-schema',
+          decisionSchemaPath,
           '--output-last-message',
           outputFilePath,
           '--cd',
@@ -172,6 +192,8 @@ export class CodexExecutionAdapter implements ExecutionAgent {
       });
     } catch {
       throw new Error('execution Agent could not be started');
+    } finally {
+      await rm(decisionSchemaPath, { force: true });
     }
     if (result.exitCode !== 0) {
       throw new Error(`execution Agent failed with exit code ${result.exitCode}`);

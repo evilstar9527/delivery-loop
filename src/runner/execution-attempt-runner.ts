@@ -177,11 +177,26 @@ export class ExecutionAttemptRunner {
     if (prepared.baseSha !== this.context.checkoutSha) {
       throw new Error('execution checkout binding changed');
     }
-    const decision = await this.context.agent.apply(this.context.agentInput);
-    if (
-      decision?.schemaVersion !== '1' ||
-      (decision.action !== 'apply_fix' && decision.action !== 'request_replan')
-    ) throw new Error('execution Agent decision is invalid');
+    let decision;
+    try {
+      decision = await this.context.agent.apply(this.context.agentInput);
+      if (
+        decision?.schemaVersion !== '1' ||
+        (decision.action !== 'apply_fix' && decision.action !== 'request_replan')
+      ) throw new Error('invalid decision');
+    } catch {
+      try {
+        await this.context.failureReporter.report({
+          failureCode: 'invalid_agent_output',
+          failureSite: 'agent_output',
+          attemptedPaths: ['code_change'],
+          neededHumanInput: 'manual_investigation',
+        });
+      } catch {
+        throw new Error('execution Agent failure report failed');
+      }
+      throw new Error('execution Agent failed');
+    }
     if (decision.action === 'request_replan') {
       const reporter = this.context.planRevisionReporter;
       if (reporter === undefined) throw new Error('execution Plan revision is not allowed');

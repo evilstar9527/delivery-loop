@@ -24,6 +24,17 @@ describe('Codex execution adapter', () => {
       providerBaseUrl: 'https://relay.example.com/openai/v1/',
       execute: async (request) => {
         observed = request;
+        const schemaPath = request.args[request.args.indexOf('--output-schema') + 1];
+        expect(JSON.parse(await readFile(schemaPath!, 'utf8'))).toEqual({
+          $schema: 'http://json-schema.org/draft-07/schema#',
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            schemaVersion: { type: 'string', const: '1' },
+            action: { type: 'string', enum: ['apply_fix', 'request_replan'] },
+          },
+          required: ['schemaVersion', 'action'],
+        });
         await writeFile(join(workspace, 'fixed.txt'), 'fixed\n');
         await writeFile(outputFilePath, JSON.stringify({
           schemaVersion: '1',
@@ -72,6 +83,8 @@ describe('Codex execution adapter', () => {
       'model_providers.delivery_loop_relay.supports_websockets=false',
       '-c',
       'model_reasoning_effort="medium"',
+      '--output-schema',
+      expect.stringMatching(/decision-schema\.json$/),
       '--output-last-message',
       outputFilePath,
       '--cd',
@@ -79,6 +92,10 @@ describe('Codex execution adapter', () => {
       '-',
     ]);
     expect(observed?.args).not.toContain('--yolo');
+    const observedArgs = observed?.args ?? [];
+    const schemaPath = observedArgs[observedArgs.indexOf('--output-schema') + 1];
+    expect(schemaPath).toBeDefined();
+    await expect(readFile(schemaPath!, 'utf8')).rejects.toThrow();
     expect(observed?.stdin).toContain(contextFilePath);
     expect(observed?.stdin).not.toContain('CANARY_EXECUTION_CONTEXT_NOT_IN_PROMPT');
     expect(observed?.stdin).toContain('untrusted reference material');
