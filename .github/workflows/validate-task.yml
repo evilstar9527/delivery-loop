@@ -7,8 +7,17 @@ on:
         description: TaskEnvelope v1 JSON (contract validation only)
         required: true
         type: string
+      expected_task_id:
+        description: Expected deterministic Task ID for the one-shot intake guard
+        required: true
+        type: string
+      idempotency_key:
+        description: Fresh one-shot intake idempotency key
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -25,3 +34,62 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Validate without printing the task body
         run: pnpm validate:task
+      - name: Guard fresh Task and Agent action inventory
+        env:
+          DELIVERY_EXPECTED_TASK_ID: ${{ inputs.expected_task_id }}
+          DELIVERY_CONTROL_PLANE_ORIGIN: https://delivery-loop-control-plane.eve55265.workers.dev
+          DELIVERY_TASK_INTAKE_TOKEN: ${{ secrets.TASK_INTAKE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$DELIVERY_EXPECTED_TASK_ID" =~ ^task_[a-f0-9]{56}$ ]]
+          test -n "$DELIVERY_TASK_INTAKE_TOKEN"
+          task_response="$RUNNER_TEMP/task-before.json"
+          task_status="$(curl --silent --show-error --max-time 20 \
+            --output "$task_response" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header 'Accept: application/json' \
+            "$DELIVERY_CONTROL_PLANE_ORIGIN/v1/tasks/$DELIVERY_EXPECTED_TASK_ID")"
+          test "$task_status" = 404
+          jq -e '.error.code == "not_found"' "$task_response" >/dev/null
+
+          suffix="${DELIVERY_EXPECTED_TASK_ID#task_}"
+          expected_title="delivery-loop/analysis-run_${suffix}-1"
+          action_count="$(gh api --paginate --slurp \
+            'repos/evilstar9527/delivery-loop/actions/runs?event=workflow_dispatch&per_page=100' \
+            | jq --arg title "$expected_title" \
+              '[.[].workflow_runs[] | select(.display_title == $title)] | length')"
+          test "$action_count" = 0
+          jq -n --arg taskId "$DELIVERY_EXPECTED_TASK_ID" \
+            --arg expectedAgentTitle "$expected_title" \
+            '{freshTask:true, taskId:$taskId, stableAgentActions:0, expectedAgentTitle:$expectedAgentTitle}'
+
+      - name: Submit the validated Task exactly once
+        env:
+          DELIVERY_EXPECTED_TASK_ID: ${{ inputs.expected_task_id }}
+          DELIVERY_IDEMPOTENCY_KEY: ${{ inputs.idempotency_key }}
+          DELIVERY_CONTROL_PLANE_ORIGIN: https://delivery-loop-control-plane.eve55265.workers.dev
+          DELIVERY_TASK_INTAKE_TOKEN: ${{ secrets.TASK_INTAKE_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$DELIVERY_EXPECTED_TASK_ID" =~ ^task_[a-f0-9]{56}$ ]]
+          [[ "$DELIVERY_IDEMPOTENCY_KEY" =~ ^[A-Za-z0-9._:-]{1,200}$ ]]
+          task_file="$RUNNER_TEMP/task.json"
+          response_file="$RUNNER_TEMP/task-response.json"
+          jq -er '.inputs.task_json' "$GITHUB_EVENT_PATH" > "$task_file"
+          chmod 600 "$task_file"
+          status="$(curl --silent --show-error --max-time 30 \
+            --output "$response_file" --write-out '%{http_code}' \
+            --request POST \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header "Idempotency-Key: $DELIVERY_IDEMPOTENCY_KEY" \
+            --header 'Accept: application/json' \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$task_file" \
+            "$DELIVERY_CONTROL_PLANE_ORIGIN/v1/tasks")"
+          test "$status" = 202
+          jq -e --arg taskId "$DELIVERY_EXPECTED_TASK_ID" \
+            --arg runId "run_${DELIVERY_EXPECTED_TASK_ID#task_}" \
+            '.accepted == true and .taskId == $taskId and .runId == $runId
+             | {accepted:true, taskId:$taskId, runId:$runId}' \
+            "$response_file"
