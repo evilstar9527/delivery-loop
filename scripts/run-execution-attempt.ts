@@ -1,5 +1,5 @@
 import { runExecutionAttempt } from '../src/runner/execution-runner.js';
-import { ExecutionAgentAttemptError } from '../src/runner/execution-attempt-runner.js';
+import { ExecutionAttemptError } from '../src/runner/execution-attempt-runner.js';
 import { writeRunnerStructuredLog } from '../src/observability/runner-log.js';
 
 try {
@@ -17,7 +17,7 @@ try {
     'execution_attempt_result',
     'failed',
     process.env,
-    error instanceof ExecutionAgentAttemptError ? error.kind : undefined,
+    error instanceof ExecutionAttemptError ? error.kind : undefined,
   );
   process.exitCode = 1;
 }
