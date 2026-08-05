@@ -13,6 +13,12 @@ export function shouldRetry(
 
 export const REPEATED_FAILURE_LIMIT = 2;
 
+export const ATTEMPT_FAILURE_BLOCKER_REASONS = [
+  'repeated_fingerprint',
+  'attempt_limit',
+  'external_dependency',
+] as const;
+
 export const FAILURE_CODES = [
   'invalid_agent_output',
   'tool_unavailable',
@@ -66,6 +72,7 @@ export type FailureCode = (typeof FAILURE_CODES)[number];
 export type FailureSite = (typeof FAILURE_SITES)[number];
 export type AttemptedPath = (typeof ATTEMPTED_PATHS)[number];
 export type HumanInputCode = (typeof HUMAN_INPUT_CODES)[number];
+export type AttemptFailureBlockerReason = (typeof ATTEMPT_FAILURE_BLOCKER_REASONS)[number];
 export type FailureClass =
   | 'invalid_output'
   | 'tool_error'

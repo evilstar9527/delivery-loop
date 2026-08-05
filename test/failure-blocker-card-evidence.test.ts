@@ -269,6 +269,26 @@ describe('failure blocker Feishu-card live evidence', () => {
       ...manifest,
       blocker: { ...manifest.blocker, attempts: [manifest.blocker.attempts[0]] },
     }).success).toBe(false);
+    const externalDependency = {
+      ...manifest,
+      blocker: {
+        ...manifest.blocker,
+        reason: 'external_dependency',
+        attemptCount: 1,
+        consecutiveFingerprintCount: 1,
+        attempts: [{
+          ...manifest.blocker.attempts[0]!,
+          pathCodes: ['external_reconciliation'],
+        }],
+        neededHumanInput: 'resolve_external_dependency',
+      },
+    };
+    expect(FailureBlockerCardEvidenceManifestV1Schema.safeParse(externalDependency).success)
+      .toBe(true);
+    expect(FailureBlockerCardEvidenceManifestV1Schema.safeParse({
+      ...externalDependency,
+      blocker: { ...externalDependency.blocker, consecutiveFingerprintCount: 2 },
+    }).success).toBe(false);
     expect(FailureBlockerCardEvidenceManifestV1Schema.safeParse({
       ...manifest,
       rawRunnerError: 'untrusted failure text',

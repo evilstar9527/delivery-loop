@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  ATTEMPT_FAILURE_BLOCKER_REASONS,
   ATTEMPTED_PATHS,
   DEFAULT_MAX_ATTEMPTS,
   HUMAN_INPUT_CODES,
@@ -24,11 +25,11 @@ const BlockedAttemptSchema = z.object({
 
 const FailureBlockerSchema = z.object({
   blockerId: IdSchema,
-  reason: z.enum(['repeated_fingerprint', 'attempt_limit']),
+  reason: z.enum(ATTEMPT_FAILURE_BLOCKER_REASONS),
   fingerprintDigest: z.string().regex(DIGEST_PATTERN),
   attemptCount: z.number().int().positive().max(DEFAULT_MAX_ATTEMPTS),
   consecutiveFingerprintCount: z.number().int().positive().max(DEFAULT_MAX_ATTEMPTS),
-  attempts: z.array(BlockedAttemptSchema).min(REPEATED_FAILURE_LIMIT).max(DEFAULT_MAX_ATTEMPTS),
+  attempts: z.array(BlockedAttemptSchema).min(1).max(DEFAULT_MAX_ATTEMPTS),
   neededHumanInput: z.enum(HUMAN_INPUT_CODES),
   createdAt: TimestampSchema,
 }).strict().superRefine((blocker, context) => {
@@ -56,6 +57,15 @@ const FailureBlockerSchema = z.object({
     blocker.attemptCount < DEFAULT_MAX_ATTEMPTS
   ) {
     context.addIssue({ code: 'custom', message: 'attempt limit threshold is not met' });
+  }
+  if (
+    blocker.reason === 'external_dependency' &&
+    (
+      blocker.consecutiveFingerprintCount !== 1 ||
+      blocker.neededHumanInput !== 'resolve_external_dependency'
+    )
+  ) {
+    context.addIssue({ code: 'custom', message: 'external dependency blocker is inconsistent' });
   }
 });
 

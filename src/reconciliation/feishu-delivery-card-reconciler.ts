@@ -1,6 +1,7 @@
 import {
   ATTEMPTED_PATHS,
   type AttemptedPath,
+  type AttemptFailureBlockerReason,
   type HumanInputCode,
 } from '../domain/attempt-failure.js';
 import { canonicalSha256 } from '../domain/digest.js';
@@ -335,7 +336,7 @@ interface SummaryRow {
 }
 
 interface BlockerRow {
-  reason: 'repeated_fingerprint' | 'attempt_limit';
+  reason: AttemptFailureBlockerReason;
   retry_scope_digest: string;
   attempt_count: number;
   needed_human_input: HumanInputCode;

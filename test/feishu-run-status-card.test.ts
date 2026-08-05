@@ -80,6 +80,15 @@ describe('Feishu full run-status card v2', () => {
   it('is strict and rejects raw logs, unsafe links, invalid progress, and unknown effects', () => {
     expect(FeishuDeliveryCardPresentationV2Schema.safeParse({
       ...PRESENTATION,
+      blocker: {
+        reason: 'external_dependency',
+        attemptCount: 1,
+        attemptedPaths: ['external_reconciliation'],
+        neededHumanInput: 'resolve_external_dependency',
+      },
+    }).success).toBe(true);
+    expect(FeishuDeliveryCardPresentationV2Schema.safeParse({
+      ...PRESENTATION,
       rawLog: 'CANARY_RAW_LOG_BODY',
     }).success).toBe(false);
     expect(FeishuDeliveryCardPresentationV2Schema.safeParse({

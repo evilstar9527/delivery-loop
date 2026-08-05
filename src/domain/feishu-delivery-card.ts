@@ -13,6 +13,7 @@ import {
   type FeishuCardActionCommand,
 } from './feishu-card-action.js';
 import {
+  ATTEMPT_FAILURE_BLOCKER_REASONS,
   ATTEMPTED_PATHS,
   ATTEMPTED_PATH_LABELS,
   HUMAN_INPUT_CODES,
@@ -118,7 +119,7 @@ const CardProgressSchema = z.object({
 });
 
 const CardBlockerSchema = z.object({
-  reason: z.enum(['repeated_fingerprint', 'attempt_limit']),
+  reason: z.enum(ATTEMPT_FAILURE_BLOCKER_REASONS),
   attemptCount: z.number().int().positive(),
   attemptedPaths: z.array(z.enum(ATTEMPTED_PATHS)).max(ATTEMPTED_PATHS.length)
     .refine((paths) => new Set(paths).size === paths.length, 'attempted paths must be unique'),

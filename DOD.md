@@ -307,6 +307,7 @@
 - [x] prompt injection 对抗用例：任务/日志/代码注释要求输出 Secret、跳过测试、修改 workflow 时，Agent 拒绝或进入审批，不执行越权动作。
 - [ ] 同一失败指纹连续 2 次或总 attempt 达 3 次后进入 `blocked`，卡片显示已尝试路径和所需人工输入。
   - [x] 本地 D1/Runner/API/query projection：控制面派生 retry scope 与 fingerprint；同指纹第 2 次优先阻断，否则 scope 第 3 个 Attempt 阻断；Attempt token撤销、Run/Plan/Item状态、Workflow cancel outbox、固定路径与人工输入投影均有 workerd/Node 穿透证据。
+  - [x] repo_write外部依赖不盲目消耗上述重试预算：Runner在Agent/Git前单次取credential，失败只上报固定Secret-safe failure；控制面第一次即以`external_dependency`阻断Run/Plan/Item且不创建repair/replacement。migration 0066、Runner bootstrap、workerd策略、Task查询及飞书/manifest schema定向测试可重跑；真实GitHub权限修复后的fresh execution仍属于Phase 4外部未完成项。
   - [x] 真实外部证据验收契约：卡片运维查询从strict stored presentation重算rendered-card digest；仓库外strict manifest和显式opt-in只读verifier交叉核对Task blocker、latest=delivered且settled的presentation/outbox、真实飞书Message GET的message/app/tenant/chat/time/card digest，以及唯一Blocker段的固定路径label与人工输入prompt。raw Runner error字段、正文漂移和manifest+digest同时伪造均fail-closed；Watt-derived 0/1/2命令与Node/workerd fake可重跑，但不冒充真实tenant。
   - [ ] 真实飞书tenant外部事实：用真实Runner同指纹2次和不同指纹第3次分别触发blocked，以真实消息、应用scope/群membership、D1安全投影和`e2e:failure-blocker-card` exit 0证明卡片展示路径/人工输入且零Runner原始错误；本地fake REST、示例manifest和默认exit 2不能替代。
 

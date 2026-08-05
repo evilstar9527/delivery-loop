@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  ATTEMPT_FAILURE_BLOCKER_REASONS,
   ATTEMPTED_PATHS,
   ATTEMPTED_PATH_LABELS,
   FAILURE_CODES,
@@ -8,6 +9,7 @@ import {
   HUMAN_INPUT_PROMPTS,
   failureClassFor,
   type AttemptedPath,
+  type AttemptFailureBlockerReason,
 } from '../domain/attempt-failure.js';
 import { canonicalSha256 } from '../domain/digest.js';
 import {
@@ -54,11 +56,11 @@ const LiveAttemptSchema = z.object({
 
 const LiveBlockerSchema = z.object({
   id: z.string().regex(ID_PATTERN),
-  reason: z.enum(['repeated_fingerprint', 'attempt_limit']),
+  reason: z.enum(ATTEMPT_FAILURE_BLOCKER_REASONS),
   fingerprintDigest: z.string().regex(DIGEST_PATTERN),
   attemptCount: z.number().int().positive(),
   consecutiveFingerprintCount: z.number().int().positive(),
-  attemptedPaths: z.array(LiveAttemptSchema).min(2).max(3),
+  attemptedPaths: z.array(LiveAttemptSchema).min(1).max(3),
   neededHumanInput: z.object({
     code: z.enum(HUMAN_INPUT_CODES),
     prompt: z.string().min(1).max(240),
@@ -125,7 +127,7 @@ export interface FailureBlockerCardEvidenceVerificationSummary {
   repository: string;
   runId: string;
   blocker: 'verified';
-  reason: 'repeated_fingerprint' | 'attempt_limit';
+  reason: AttemptFailureBlockerReason;
   attemptCount: number;
   attemptedPathCount: number;
   presentationId: string;
