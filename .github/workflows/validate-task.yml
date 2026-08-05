@@ -177,7 +177,8 @@ jobs:
               },
               plan: ($plan[0].plan | {id, version, digest, baseSha, status}),
               items: [$plan[0].items[] | {
-                id, kind, required, status, progressVersion,
+                id, kind, title, objective, doneWhen,
+                required, status, progressVersion,
                 effects, commandRefs, evidenceKinds
               }],
               attempts: [$plan[0].attempts[] | {
