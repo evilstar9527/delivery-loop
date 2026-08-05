@@ -39,6 +39,7 @@ interface CandidateRow {
   version: number;
   lease_generation: number;
   lease_expires_at: string | null;
+  base_sha: string | null;
   head_branch: string | null;
   head_sha: string | null;
   plan_id: string | null;
@@ -70,6 +71,8 @@ interface ProjectionRow {
   lease_generation: number;
   attempt_version: number;
   attempt_generation: number;
+  attempt_mode: string;
+  attempt_base_sha: string | null;
   attempt_head_sha: string | null;
   attempt_head_branch: string | null;
 }
@@ -159,7 +162,9 @@ export class ExecutionHeadStore {
            AND attempts.status = 'running'
            AND attempts.version = ? AND attempts.lease_generation = ?
            AND attempts.lease_expires_at > ?
-           AND attempts.head_sha = ? AND attempts.head_branch IS NULL
+           AND COALESCE(attempts.head_sha, attempts.base_sha) = ?
+           AND (attempts.mode = 'implement' OR attempts.head_sha IS NOT NULL)
+           AND attempts.head_branch IS NULL
            AND runs.state IN ('executing', 'verifying')
            AND runs.active_plan_id = attempts.plan_id
            AND runs.active_plan_version = attempts.plan_version
@@ -250,14 +255,17 @@ export class ExecutionHeadStore {
          )
          SELECT ?, ?, attempts.run_id, attempts.attempt_id, attempts.plan_id,
                 attempts.plan_version, attempts.plan_item_id,
-                attempts.lease_generation, attempts.head_sha, ?, ?, ?
+                attempts.lease_generation,
+                COALESCE(attempts.head_sha, attempts.base_sha), ?, ?, ?
          FROM attempts
          JOIN evidence ON evidence.evidence_id = ?
          WHERE attempts.attempt_id = ? AND attempts.run_id = ?
            AND attempts.status = 'running'
            AND attempts.version = ? AND attempts.lease_generation = ?
            AND attempts.lease_expires_at > ?
-           AND attempts.head_sha = ? AND attempts.head_branch IS NULL
+           AND COALESCE(attempts.head_sha, attempts.base_sha) = ?
+           AND (attempts.mode = 'implement' OR attempts.head_sha IS NOT NULL)
+           AND attempts.head_branch IS NULL
            AND evidence.run_id = attempts.run_id
            AND evidence.attempt_id = attempts.attempt_id
            AND evidence.plan_id = attempts.plan_id
@@ -288,13 +296,15 @@ export class ExecutionHeadStore {
            AND status = 'running'
            AND version = ? AND lease_generation = ?
            AND lease_expires_at > ?
-           AND head_sha = ? AND head_branch IS NULL
+           AND COALESCE(head_sha, base_sha) = ?
+           AND (mode = 'implement' OR head_sha IS NOT NULL)
+           AND head_branch IS NULL
            AND EXISTS (
              SELECT 1 FROM attempt_head_updates
              WHERE update_id = ? AND attempt_id = attempts.attempt_id
                AND run_id = attempts.run_id
                AND lease_generation = attempts.lease_generation
-               AND parent_sha = attempts.head_sha
+               AND parent_sha = COALESCE(attempts.head_sha, attempts.base_sha)
                AND head_sha = ? AND branch = ?
            )`,
       ).bind(
@@ -322,7 +332,8 @@ export class ExecutionHeadStore {
     return await this.db.prepare(
       `SELECT attempts.attempt_id, attempts.run_id, tasks.task_id, attempts.mode,
               attempts.status, attempts.version, attempts.lease_generation,
-              attempts.lease_expires_at, attempts.head_branch, attempts.head_sha,
+              attempts.lease_expires_at, attempts.base_sha,
+              attempts.head_branch, attempts.head_sha,
               attempts.plan_id, attempts.plan_version, attempts.plan_item_id,
               runs.state AS run_state, runs.active_plan_id, runs.active_plan_version,
               execution_plans.status AS plan_status,
@@ -374,7 +385,11 @@ export class ExecutionHeadStore {
       row.lease_expires_at !== null &&
       row.lease_expires_at > now.toISOString() &&
       row.head_branch === null &&
-      row.head_sha === input.parentSha &&
+      (
+        row.head_sha === input.parentSha ||
+        (row.mode === 'implement' && row.head_sha === null &&
+          row.base_sha === input.parentSha)
+      ) &&
       row.plan_id !== null &&
       row.plan_version !== null &&
       row.plan_item_id !== null &&
@@ -419,6 +434,8 @@ export class ExecutionHeadStore {
               attempt_head_updates.branch, attempt_head_updates.lease_generation,
               attempts.version AS attempt_version,
               attempts.lease_generation AS attempt_generation,
+              attempts.mode AS attempt_mode,
+              attempts.base_sha AS attempt_base_sha,
               attempts.head_sha AS attempt_head_sha,
               attempts.head_branch AS attempt_head_branch
        FROM attempt_head_updates
@@ -467,7 +484,11 @@ export class ExecutionHeadStore {
       row.lease_generation === input.leaseGeneration &&
       row.attempt_generation === input.leaseGeneration &&
       row.attempt_version === input.expectedVersion &&
-      row.attempt_head_sha === input.parentSha &&
+      (
+        row.attempt_head_sha === input.parentSha ||
+        (row.attempt_mode === 'implement' && row.attempt_head_sha === null &&
+          row.attempt_base_sha === input.parentSha)
+      ) &&
       row.attempt_head_branch === null;
   }
 }

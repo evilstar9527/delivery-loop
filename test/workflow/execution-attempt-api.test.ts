@@ -219,6 +219,72 @@ describe('execution Attempt context and head API', () => {
     });
   });
 
+  it('records the first bot head from the frozen base when implement has no prior head', async () => {
+    await env.DB_CONTROL.prepare(
+      'UPDATE attempts SET head_sha = NULL WHERE attempt_id = ?',
+    ).bind(ATTEMPT_ID).run();
+
+    const wrongParent = await fetchAttempt(`/v1/attempts/${ATTEMPT_ID}/head`, {
+      method: 'POST',
+      token: RAW_TOKEN,
+      body: {
+        expectedVersion: 2,
+        leaseGeneration: 1,
+        parentSha: CHECKOUT_SHA,
+        headSha: HEAD_SHA,
+        branch: BRANCH,
+      },
+    });
+    expect(wrongParent.status).toBe(409);
+
+    const responses = await Promise.all(Array.from({ length: 20 }, async () =>
+      await fetchAttempt(`/v1/attempts/${ATTEMPT_ID}/head`, {
+        method: 'POST',
+        token: RAW_TOKEN,
+        body: {
+          expectedVersion: 2,
+          leaseGeneration: 1,
+          parentSha: BASE_SHA,
+          headSha: HEAD_SHA,
+          branch: BRANCH,
+        },
+      })));
+
+    expect(responses.every((response) => response.status === 200 || response.status === 201))
+      .toBe(true);
+    const results = await Promise.all(responses.map(async (response) => await response.json<{
+      created: boolean;
+      version: number;
+      leaseGeneration: number;
+      parentSha: string;
+      headSha: string;
+      branch: string;
+    }>()));
+    expect(results.filter((result) => result.created)).toHaveLength(1);
+    expect(results.every((result) =>
+      result.version === 3 &&
+      result.leaseGeneration === 1 &&
+      result.parentSha === BASE_SHA &&
+      result.headSha === HEAD_SHA &&
+      result.branch === BRANCH)).toBe(true);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT head_branch, head_sha, version
+       FROM attempts WHERE attempt_id = ?`,
+    ).bind(ATTEMPT_ID).first()).toEqual({
+      head_branch: BRANCH,
+      head_sha: HEAD_SHA,
+      version: 3,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT parent_sha, head_sha, branch
+       FROM attempt_head_updates WHERE attempt_id = ?`,
+    ).bind(ATTEMPT_ID).first()).toEqual({
+      parent_sha: BASE_SHA,
+      head_sha: HEAD_SHA,
+      branch: BRANCH,
+    });
+  });
+
   it('returns only the active Plan Item context and atomically records one exact bot head', async () => {
     const contextResponse = await fetchAttempt(`/v1/attempts/${ATTEMPT_ID}/context`, {
       token: RAW_TOKEN,
