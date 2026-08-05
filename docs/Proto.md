@@ -321,7 +321,7 @@ deployment:
 5. Runner/Agent API没有Plan Item status字段，strict schema拒绝夹带`passed/skipped`。Agent complete/failure只是待核对事实，不能直接改变Item进度；`passed`只允许后续控制面Evidence verifier写入。
 6. D1 trigger禁止任何required Item以及所有`investigation/verification` Item进入`skipped`。依赖只能由真实`passed`满足，`skipped`、Agent自报、Attempt completed或旧Plan状态均不解锁下游Item。
 7. lost Attempt恢复不重新领取或跳过Item：progress保持`in_progress`，recovery只在旧Runner/Workflow完成fencing后以CAS替换同Item的`activeAttemptId`。
-8. 每分钟的有界execution reconciler只从D1真源推进主链：exact `repo_write` approval使`awaiting_approval → executing`，随后promote/claim唯一self-verifying change Item；GitHub `completed/success`与同Attempt/Plan/Item/head的completed suite同时成立后，它为每条`doneWhen`提交完整Evidence mapping。全部required Item经decision变为`passed`后才CAS到`verifying`、准备immutable Draft PR并创建唯一publication/outbox；任一步的陈旧scan或并发重放均由下层CAS、stable identity和唯一约束吸收。
+8. 每分钟的有界execution reconciler只从D1真源推进主链：exact `repo_write` approval使`awaiting_approval → executing`，随后promote/claim唯一self-verifying change Item；候选`limit`只能在Item shape、依赖、Task policy及当前approval expiry/reject/invalidation全部过滤后生效，历史无可领取Item或审批已失效的`executing` Run不得占满批次并永久饿死较新Run。GitHub `completed/success`与同Attempt/Plan/Item/head的completed suite同时成立后，它为每条`doneWhen`提交完整Evidence mapping。全部required Item经decision变为`passed`后才CAS到`verifying`、准备immutable Draft PR并创建唯一publication/outbox；任一步的陈旧scan或并发重放均由下层CAS、stable identity和唯一约束吸收。
 
 ### 3.4 ExecutionPlan revision
 
