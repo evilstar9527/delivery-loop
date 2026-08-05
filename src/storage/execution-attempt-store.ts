@@ -241,7 +241,7 @@ export class ExecutionAttemptContextStore {
         version: row.version,
         leaseGeneration: row.lease_generation,
         baseSha: row.base_sha,
-        checkoutSha: row.head_sha!,
+        checkoutSha: row.head_sha ?? row.base_sha,
         repository: row.repository!,
         baseBranch: row.target_base_branch,
         planId: row.plan_id!,
@@ -333,8 +333,8 @@ export class ExecutionAttemptContextStore {
       row.item_title === null ||
       row.item_objective === null ||
       row.item_required !== 1 ||
-      row.head_sha === null ||
-      !SHA_PATTERN.test(row.head_sha)
+      (row.mode === 'review_fix' && row.head_sha === null) ||
+      (row.head_sha !== null && !SHA_PATTERN.test(row.head_sha))
     ) {
       throw new ExecutionAttemptError('attempt_context_mismatch');
     }
