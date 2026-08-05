@@ -435,7 +435,11 @@ describe('base-only Plan revision rebase Attempt', () => {
     const processor = new GitHubDispatchOutboxProcessor(env.DB_CONTROL, {
       ensureDispatch: async (request) => {
         calls.push(request);
-        return { disposition: 'created', githubRunId: '49001' };
+        return {
+          disposition: 'created',
+          githubRunId: '49001',
+          githubHeadSha: NEW_BASE_SHA,
+        };
       },
     }, {
       allowedRepositories: [REPOSITORY],

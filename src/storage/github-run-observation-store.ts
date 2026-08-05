@@ -61,8 +61,8 @@ interface AttemptRow {
   attempt_id: string;
   repository: string | null;
   workflow_ref: string | null;
-  base_sha: string;
   github_run_id: string | null;
+  github_head_sha: string | null;
   github_status: string | null;
   github_conclusion: string | null;
   github_external_updated_at: string | null;
@@ -84,7 +84,7 @@ function bindingMatches(attempt: AttemptRow, fact: GitHubWorkflowRunFact): boole
     attempt.workflow_ref ===
       `${fact.repository}/${DELIVERY_AGENT_WORKFLOW_PATH}@refs/heads/${fact.headBranch}` &&
     workflowPathMatches(fact.workflowPath, fact.headBranch) &&
-    attempt.base_sha === fact.headSha &&
+    attempt.github_head_sha === fact.headSha &&
     fact.displayTitle === `delivery-loop/${attempt.attempt_id}` &&
     fact.runAttempt === 1
   );
@@ -237,7 +237,8 @@ export class GitHubRunObservationStore {
   ): Promise<ProjectionResult> {
     const attempt = await this.db
       .prepare(
-        `SELECT attempt_id, repository, workflow_ref, base_sha, github_run_id,
+        `SELECT attempt_id, repository, workflow_ref, github_run_id,
+                github_head_sha,
                 github_status, github_conclusion, github_external_updated_at,
                 github_observation_version
          FROM attempts WHERE github_run_id = ?`,
@@ -266,7 +267,7 @@ export class GitHubRunObservationStore {
          WHERE attempt_id = ?
            AND repository = ?
            AND workflow_ref = ?
-           AND base_sha = ?
+           AND github_head_sha = ?
            AND github_run_id = ?
            AND github_observation_version = ?
            AND github_external_updated_at IS ?`,
@@ -290,7 +291,8 @@ export class GitHubRunObservationStore {
     }
     const current = await this.db
       .prepare(
-        `SELECT attempt_id, repository, workflow_ref, base_sha, github_run_id,
+        `SELECT attempt_id, repository, workflow_ref, github_run_id,
+                github_head_sha,
                 github_status, github_conclusion, github_external_updated_at,
                 github_observation_version
          FROM attempts WHERE attempt_id = ?`,

@@ -13,6 +13,7 @@ import {
 
 const NOW = new Date('2026-07-25T10:00:00.000Z');
 const BASE_SHA = 'a'.repeat(40);
+const GITHUB_HEAD_SHA = 'c'.repeat(40);
 const TASK_DIGEST = `sha256:${'b'.repeat(64)}`;
 const RUN_ID = 'run-github-dispatch';
 const ATTEMPT_ID = 'attempt-github-dispatch';
@@ -26,6 +27,7 @@ class FakeGitHubDispatchEffects implements GitHubDispatchEffects {
   result: GitHubDispatchResult = {
     disposition: 'created',
     githubRunId: '123456789',
+    githubHeadSha: GITHUB_HEAD_SHA,
   };
 
   async ensureDispatch(request: GitHubDispatchRequest): Promise<GitHubDispatchResult> {
@@ -201,6 +203,7 @@ describe('GitHub App workflow dispatcher contract', () => {
           display_title: `delivery-loop/${ATTEMPT_ID}`,
           path: '.github/workflows/delivery-agent.yml',
           head_branch: 'main',
+          head_sha: GITHUB_HEAD_SHA,
         }],
       }), { status: 200 }));
     }) as typeof fetch;
@@ -217,7 +220,11 @@ describe('GitHub App workflow dispatcher contract', () => {
         workflowFile: '.github/workflows/delivery-agent.yml',
         ref: 'refs/heads/main',
         inputs: { attempt_id: ATTEMPT_ID },
-      })).resolves.toEqual({ disposition: 'existing', githubRunId: '777' });
+      })).resolves.toEqual({
+        disposition: 'existing',
+        githubRunId: '777',
+        githubHeadSha: GITHUB_HEAD_SHA,
+      });
       expect(fetchImplementation).toHaveBeenCalledOnce();
       expect(usedGlobalReceiver).toEqual([true]);
     } finally {
@@ -255,7 +262,7 @@ describe('GitHub App workflow dispatcher contract', () => {
 
     const attempt = await env.DB_CONTROL.prepare(
       `SELECT status, version, lease_generation, lease_expires_at,
-              github_run_id, github_status, github_observed_at
+              github_run_id, github_head_sha, github_status, github_observed_at
        FROM attempts WHERE attempt_id = ?`,
     )
       .bind(ATTEMPT_ID)
@@ -266,6 +273,7 @@ describe('GitHub App workflow dispatcher contract', () => {
       lease_generation: 1,
       lease_expires_at: '2026-07-25T10:10:00.000Z',
       github_run_id: '123456789',
+      github_head_sha: GITHUB_HEAD_SHA,
       github_status: 'requested',
       github_observed_at: NOW.toISOString(),
     });
@@ -375,15 +383,25 @@ describe('GitHub App workflow dispatcher contract', () => {
       ).bind(ATTEMPT_ID).first(),
     ).toEqual({ released_at: null, release_reason: null });
 
-    effects.result = { disposition: 'existing', githubRunId: '123456789' };
+    effects.result = {
+      disposition: 'existing',
+      githubRunId: '123456789',
+      githubHeadSha: GITHUB_HEAD_SHA,
+    };
     expect(await dispatcher.deliver(OUTBOX_ID)).toBe('settled');
     expect(effects.requests).toHaveLength(2);
     const attempt = await env.DB_CONTROL.prepare(
-      'SELECT status, version, github_run_id FROM attempts WHERE attempt_id = ?',
+      `SELECT status, version, github_run_id, github_head_sha
+       FROM attempts WHERE attempt_id = ?`,
     )
       .bind(ATTEMPT_ID)
       .first();
-    expect(attempt).toEqual({ status: 'starting', version: 1, github_run_id: '123456789' });
+    expect(attempt).toEqual({
+      status: 'starting',
+      version: 1,
+      github_run_id: '123456789',
+      github_head_sha: GITHUB_HEAD_SHA,
+    });
   });
 
   it('uses a GitHub App installation token and reconciles a newly dispatched run', async () => {
@@ -400,6 +418,7 @@ describe('GitHub App workflow dispatcher contract', () => {
               display_title: `delivery-loop/${ATTEMPT_ID}`,
               path: '.github/workflows/delivery-agent.yml',
               head_branch: 'main',
+              head_sha: GITHUB_HEAD_SHA,
             },
           ],
         }),
@@ -441,6 +460,7 @@ describe('GitHub App workflow dispatcher contract', () => {
     await expect(client.ensureDispatch(request)).resolves.toEqual({
       disposition: 'created',
       githubRunId: '123456789',
+      githubHeadSha: GITHUB_HEAD_SHA,
     });
     expect(calls).toHaveLength(3);
     expect(calls[1]?.url).toBe(
@@ -480,6 +500,7 @@ describe('GitHub App workflow dispatcher contract', () => {
                 display_title: `delivery-loop/${ATTEMPT_ID}`,
                 path: '.github/workflows/delivery-agent.yml',
                 head_branch: 'main',
+                head_sha: GITHUB_HEAD_SHA,
               },
             ],
           }),
@@ -495,7 +516,49 @@ describe('GitHub App workflow dispatcher contract', () => {
         ref: 'refs/heads/main',
         inputs: { attempt_id: ATTEMPT_ID },
       }),
-    ).resolves.toEqual({ disposition: 'existing', githubRunId: '777' });
+    ).resolves.toEqual({
+      disposition: 'existing',
+      githubRunId: '777',
+      githubHeadSha: GITHUB_HEAD_SHA,
+    });
+    expect(methods).toEqual(['GET']);
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['malformed', 'not-a-github-head'],
+  ])('rejects a matching external run with %s head_sha without dispatching again', async (
+    _label,
+    headSha,
+  ) => {
+    const methods: string[] = [];
+    const client = new GitHubActionsApiClient({
+      async getInstallationToken() {
+        return 'test-installation-token';
+      },
+    }, {
+      apiBaseUrl: 'https://api.github.test',
+      fetch: async (_input, init) => {
+        methods.push(init?.method ?? 'GET');
+        return new Response(JSON.stringify({
+          workflow_runs: [{
+            id: 777,
+            event: 'workflow_dispatch',
+            display_title: `delivery-loop/${ATTEMPT_ID}`,
+            path: '.github/workflows/delivery-agent.yml',
+            head_branch: 'main',
+            ...(headSha === undefined ? {} : { head_sha: headSha }),
+          }],
+        }), { status: 200 });
+      },
+    });
+
+    await expect(client.ensureDispatch({
+      repository: REPOSITORY,
+      workflowFile: '.github/workflows/delivery-agent.yml',
+      ref: 'refs/heads/main',
+      inputs: { attempt_id: ATTEMPT_ID },
+    })).rejects.toThrow('GitHub workflow run response is invalid');
     expect(methods).toEqual(['GET']);
   });
 });

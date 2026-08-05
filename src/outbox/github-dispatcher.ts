@@ -35,6 +35,7 @@ export interface GitHubDispatchRequest {
 export interface GitHubDispatchResult {
   disposition: 'created' | 'existing';
   githubRunId: string;
+  githubHeadSha: string;
 }
 
 /** Production adapter must reconcile by attempt ID/run-name before retrying an ambiguous dispatch. */
@@ -65,6 +66,12 @@ interface GitHubWorkflowRunRow {
   display_title?: unknown;
   path?: unknown;
   head_branch?: unknown;
+  head_sha?: unknown;
+}
+
+interface ReconciledWorkflowRun {
+  githubRunId: string;
+  githubHeadSha: string;
 }
 
 const WORKFLOW_RUN_STATUSES = [
@@ -184,7 +191,7 @@ export class GitHubActionsApiClient implements GitHubDispatchEffects {
     };
 
     const existing = await this.findRun(request, headers);
-    if (existing !== null) return { disposition: 'existing', githubRunId: existing };
+    if (existing !== null) return { disposition: 'existing', ...existing };
 
     const response = await this.fetcher(this.dispatchUrl(request), {
       method: 'POST',
@@ -194,8 +201,8 @@ export class GitHubActionsApiClient implements GitHubDispatchEffects {
     if (response.status !== 204) throw new Error('GitHub workflow dispatch was rejected');
 
     for (let attempt = 0; attempt < this.reconciliationAttempts; attempt += 1) {
-      const githubRunId = await this.findRun(request, headers);
-      if (githubRunId !== null) return { disposition: 'created', githubRunId };
+      const run = await this.findRun(request, headers);
+      if (run !== null) return { disposition: 'created', ...run };
     }
     throw new Error('GitHub workflow dispatch result is not yet observable');
   }
@@ -369,7 +376,7 @@ export class GitHubActionsApiClient implements GitHubDispatchEffects {
   private async findRun(
     request: GitHubDispatchRequest,
     headers: Record<string, string>,
-  ): Promise<string | null> {
+  ): Promise<ReconciledWorkflowRun | null> {
     const branch = request.ref.slice('refs/heads/'.length);
     const url =
       `${this.apiBaseUrl}/repos/${request.repository}/actions/workflows/` +
@@ -398,7 +405,14 @@ export class GitHubActionsApiClient implements GitHubDispatchEffects {
         pathMatches
       ) {
         const id = workflowRunId(candidate.id);
-        if (id !== null) return id;
+        if (
+          id === null ||
+          typeof candidate.head_sha !== 'string' ||
+          !/^[a-f0-9]{40}$/.test(candidate.head_sha)
+        ) {
+          throw new Error('GitHub workflow run response is invalid');
+        }
+        return { githubRunId: id, githubHeadSha: candidate.head_sha };
       }
     }
     return null;
@@ -689,6 +703,9 @@ export class GitHubDispatchOutboxProcessor {
     if (!/^[0-9]+$/.test(dispatch.githubRunId)) {
       throw new OutboxEffectError('github_run_id_invalid');
     }
+    if (!/^[a-f0-9]{40}$/.test(dispatch.githubHeadSha)) {
+      throw new OutboxEffectError('github_run_head_sha_invalid');
+    }
 
     const nowIso = now.toISOString();
     const attemptLeaseExpiresAt = new Date(now.getTime() + this.attemptLeaseMs).toISOString();
@@ -700,6 +717,7 @@ export class GitHubDispatchOutboxProcessor {
              lease_generation = lease_generation + 1,
              lease_expires_at = ?,
              github_run_id = ?,
+             github_head_sha = ?,
              github_status = 'requested',
              github_observed_at = ?,
              updated_at = ?
@@ -709,6 +727,7 @@ export class GitHubDispatchOutboxProcessor {
            AND version = ?
            AND lease_generation = ?
            AND github_run_id IS NULL
+           AND github_head_sha IS NULL
            AND (
              (? = 'analysis_dispatch' AND mode = 'analysis')
              OR (
@@ -813,6 +832,7 @@ export class GitHubDispatchOutboxProcessor {
       .bind(
         attemptLeaseExpiresAt,
         dispatch.githubRunId,
+        dispatch.githubHeadSha,
         nowIso,
         nowIso,
         attempt.attempt_id,
@@ -827,7 +847,7 @@ export class GitHubDispatchOutboxProcessor {
     const persisted = await this.db
       .prepare(
         `SELECT status, version, lease_generation, lease_expires_at,
-                github_run_id, github_status, github_observed_at
+                github_run_id, github_head_sha, github_status, github_observed_at
          FROM attempts WHERE attempt_id = ? AND run_id = ?`,
       )
       .bind(attempt.attempt_id, attempt.run_id)
@@ -837,6 +857,7 @@ export class GitHubDispatchOutboxProcessor {
         lease_generation: number;
         lease_expires_at: string | null;
         github_run_id: string | null;
+        github_head_sha: string | null;
         github_status: string | null;
         github_observed_at: string | null;
       }>();
@@ -844,6 +865,7 @@ export class GitHubDispatchOutboxProcessor {
       persisted === null ||
       persisted.status !== 'starting' ||
       persisted.github_run_id !== dispatch.githubRunId ||
+      persisted.github_head_sha !== dispatch.githubHeadSha ||
       persisted.github_status !== 'requested' ||
       persisted.github_observed_at === null ||
       persisted.lease_expires_at === null ||

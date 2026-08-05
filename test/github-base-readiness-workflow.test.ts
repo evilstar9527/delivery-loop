@@ -218,6 +218,7 @@ describe('GitHub-hosted base readiness workflow', () => {
     expect(approvalStep?.run).toContain('--request POST');
     expect(approvalStep?.run).toContain("'{commentId:$commentId}'");
     expect(approvalStep?.run).toContain(".status == \"accepted\"");
+    expect(approvalStep?.run).toMatch(/select\(\s+\.status == "accepted"/);
     expect(approvalStep?.run?.match(/\bcurl\b/g)).toHaveLength(1);
     for (const forbidden of ['commentBody', 'actor', 'effect', 'expiresAt', 'planId']) {
       expect(approvalStep?.run).not.toContain(forbidden);
