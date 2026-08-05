@@ -2,7 +2,11 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
-import { CodexExecutionAdapter, type ExecutionAgent } from '../agent/codex-execution-adapter.js';
+import {
+  CodexExecutionAdapter,
+  CodexExecutionAdapterError,
+  type ExecutionAgent,
+} from '../agent/codex-execution-adapter.js';
 import { BoundedEditRecoveryAgent } from '../agent/bounded-edit-recovery-agent.js';
 import {
   CodexExecutionActivityAccumulator,
@@ -33,6 +37,7 @@ import { loadDeliveryPolicyAtCommit } from './delivery-policy-loader.js';
 import { BaseRebaseRunner } from './base-rebase-runner.js';
 import { DeliveryCommandRunner } from './delivery-command-runner.js';
 import { ControlPlaneProtectedPathApprovalReporter } from './protected-path-approval-reporter.js';
+import { validateExecutionPatchProposal } from './execution-patch-policy.js';
 import {
   ControlPlaneVerificationEvidenceReporter,
   type VerificationReporterAuthorization,
@@ -1059,6 +1064,20 @@ export async function runExecutionAttempt(
             ...input,
             onTranscriptLine: (line) => { transcript.accept(line); },
           });
+          if (decision.action === 'apply_patch') {
+            try {
+              decision = {
+                ...decision,
+                proposal: validateExecutionPatchProposal(
+                  decision.proposal,
+                  policy.policy.protectedPaths,
+                  [...runtimeSecrets],
+                ),
+              };
+            } catch {
+              throw new CodexExecutionAdapterError('decision_invalid', 'invalid_output');
+            }
+          }
         } catch (error) {
           failure = error;
         } finally {

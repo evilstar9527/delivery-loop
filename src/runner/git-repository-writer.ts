@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
-import { isAbsolute, resolve } from 'node:path';
+import { constants } from 'node:fs';
+import { lstat, open, readFile, realpath } from 'node:fs/promises';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { DeliveryPolicyV1Schema, type ParsedDeliveryPolicy } from '../domain/delivery-policy.js';
 import { canonicalSha256 } from '../domain/digest.js';
 import {
@@ -10,6 +12,12 @@ import {
   type ProtectedPathChangeType,
   type ProtectedPathChangeV1,
 } from '../domain/protected-path-change.js';
+import {
+  PatchProposalV1Schema,
+  patchContentDigest,
+  patchContentIsUtf8,
+  type PatchProposalV1,
+} from '../domain/patch-proposal.js';
 
 export type { ProtectedPathChangeReportV1 } from '../domain/protected-path-change.js';
 
@@ -83,6 +91,12 @@ export interface PushedRepositoryBranch {
   commitSha: string;
 }
 
+interface PreparedPatchChange {
+  absolutePath: string;
+  content: string;
+  create: boolean;
+}
+
 export class RepositoryWritePolicyError extends Error {
   constructor() {
     super('repository write policy denied');
@@ -98,6 +112,10 @@ export class ProtectedPathApprovalRequired extends Error {
     this.name = 'ProtectedPathApprovalRequired';
     this.report = structuredClone(report);
   }
+}
+
+function pathIsMissing(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
 interface StagedChange {
@@ -348,6 +366,119 @@ export class GitRepositoryWriter {
     return { branch: this.branch, baseSha: this.context.baseSha };
   }
 
+  /** Applies a fully preconditioned text proposal without exposing arbitrary filesystem argv. */
+  async applyPatchProposal(rawProposal: PatchProposalV1): Promise<void> {
+    this.assertCredentialActive();
+    const parsed = PatchProposalV1Schema.safeParse(rawProposal);
+    if (!parsed.success) throw new RepositoryWritePolicyError();
+    await this.assertCurrentBranch();
+    if (await this.requiredScalar(['rev-parse', '--verify', 'HEAD']) !== this.context.baseSha) {
+      throw new RepositoryWritePolicyError();
+    }
+    const status = await this.git(['status', '--porcelain=v1', '--untracked-files=all']);
+    if (status.exitCode !== 0 || status.stdout !== '') throw new RepositoryWritePolicyError();
+
+    let repositoryRoot: string;
+    try {
+      repositoryRoot = await realpath(this.context.repositoryPath);
+    } catch {
+      throw new RepositoryWritePolicyError();
+    }
+    const prepared: PreparedPatchChange[] = [];
+    for (const change of parsed.data.changes) {
+      if (isProtectedRepositoryPath(change.path, this.context.deliveryPolicy.policy.protectedPaths)) {
+        throw new RepositoryWritePolicyError();
+      }
+      const absolutePath = resolve(repositoryRoot, change.path);
+      if (!this.isInside(repositoryRoot, absolutePath)) throw new RepositoryWritePolicyError();
+      await this.assertNoSymlinkComponents(
+        repositoryRoot,
+        change.path,
+        change.baseDigest !== null,
+      );
+      if (change.baseDigest === null) {
+        try {
+          await lstat(absolutePath);
+          throw new RepositoryWritePolicyError();
+        } catch (error) {
+          if (error instanceof RepositoryWritePolicyError) throw error;
+          if (!pathIsMissing(error)) throw new RepositoryWritePolicyError();
+        }
+        let parentMetadata;
+        let parentPath: string;
+        try {
+          [parentMetadata, parentPath] = await Promise.all([
+            lstat(dirname(absolutePath)),
+            realpath(dirname(absolutePath)),
+          ]);
+        } catch {
+          throw new RepositoryWritePolicyError();
+        }
+        if (
+          !parentMetadata.isDirectory() || parentMetadata.isSymbolicLink() ||
+          !this.isInside(repositoryRoot, parentPath)
+        ) throw new RepositoryWritePolicyError();
+        prepared.push({ absolutePath, content: change.content, create: true });
+        continue;
+      }
+      let metadata;
+      let canonicalPath: string;
+      let current: string;
+      try {
+        [metadata, canonicalPath, current] = await Promise.all([
+          lstat(absolutePath),
+          realpath(absolutePath),
+          readFile(absolutePath, 'utf8'),
+        ]);
+      } catch {
+        throw new RepositoryWritePolicyError();
+      }
+      if (
+        !metadata.isFile() || metadata.isSymbolicLink() ||
+        !this.isInside(repositoryRoot, canonicalPath) ||
+        !patchContentIsUtf8(current) ||
+        await patchContentDigest(current) !== change.baseDigest ||
+        await patchContentDigest(change.content) === change.baseDigest
+      ) throw new RepositoryWritePolicyError();
+      prepared.push({ absolutePath, content: change.content, create: false });
+    }
+
+    for (const change of prepared) {
+      let handle: Awaited<ReturnType<typeof open>> | undefined;
+      try {
+        handle = await open(
+          change.absolutePath,
+          change.create
+            ? constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW
+            : constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW,
+          0o644,
+        );
+        await handle.writeFile(change.content, 'utf8');
+      } catch {
+        throw new RepositoryWritePolicyError();
+      } finally {
+        await handle?.close();
+      }
+    }
+    for (const change of prepared) {
+      let content: string;
+      try {
+        content = await readFile(change.absolutePath, 'utf8');
+      } catch {
+        throw new RepositoryWritePolicyError();
+      }
+      if (await patchContentDigest(content) !== await patchContentDigest(change.content)) {
+        throw new RepositoryWritePolicyError();
+      }
+    }
+    if (
+      await this.currentBranch() !== this.branch ||
+      await this.requiredScalar(['rev-parse', '--verify', 'HEAD']) !== this.context.baseSha
+    ) throw new RepositoryWritePolicyError();
+    const changed = await this.git(['status', '--porcelain=v1', '--untracked-files=all']);
+    if (changed.exitCode !== 0 || changed.stdout === '') throw new RepositoryWritePolicyError();
+  }
+
   async commitAll(): Promise<RepositoryCommit> {
     this.assertCredentialActive();
     await this.assertCurrentBranch();
@@ -445,6 +576,34 @@ export class GitRepositoryWriter {
 
   private async assertCurrentBranch(): Promise<void> {
     if (await this.currentBranch() !== this.branch) throw new RepositoryWritePolicyError();
+  }
+
+  private isInside(parent: string, child: string): boolean {
+    const path = relative(parent, child);
+    return path === '' || (!path.startsWith('..') && !isAbsolute(path));
+  }
+
+  private async assertNoSymlinkComponents(
+    repositoryRoot: string,
+    path: string,
+    includeLeaf: boolean,
+  ): Promise<void> {
+    const segments = path.split('/');
+    const count = includeLeaf ? segments.length : segments.length - 1;
+    let current = repositoryRoot;
+    for (let index = 0; index < count; index += 1) {
+      current = resolve(current, segments[index]!);
+      let metadata;
+      try {
+        metadata = await lstat(current);
+      } catch {
+        throw new RepositoryWritePolicyError();
+      }
+      if (
+        metadata.isSymbolicLink() ||
+        (index < count - 1 && !metadata.isDirectory())
+      ) throw new RepositoryWritePolicyError();
+    }
   }
 
   private async protectedPathReport(): Promise<ProtectedPathChangeReportV1 | null> {

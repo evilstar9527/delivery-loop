@@ -708,6 +708,21 @@ export {
   type ExecutionAgentDecision,
 } from './agent/codex-execution-adapter.js';
 export {
+  MAX_PATCH_CHANGES,
+  MAX_PATCH_FILE_BYTES,
+  MAX_PATCH_PATH_BYTES,
+  MAX_PATCH_TOTAL_BYTES,
+  PatchProposalV1Schema,
+  patchContentDigest,
+  patchContentIsUtf8,
+  patchPathIsSafe,
+  type PatchProposalV1,
+} from './domain/patch-proposal.js';
+export {
+  ExecutionPatchPolicyError,
+  validateExecutionPatchProposal,
+} from './runner/execution-patch-policy.js';
+export {
   ExecutionAttemptRunner,
   type ExecutionAttemptFailure,
   type ExecutionAttemptResult,

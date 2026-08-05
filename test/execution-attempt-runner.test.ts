@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { parseDeliveryPolicy } from '../src/domain/delivery-policy.js';
+import { patchContentDigest } from '../src/domain/patch-proposal.js';
 import { CodexExecutionAdapterError } from '../src/agent/codex-execution-adapter.js';
 import type { VerificationEvidenceReporter } from '../src/runner/verification-execution-runner.js';
 import {
@@ -177,6 +178,84 @@ describe('execution Attempt Runner', () => {
       { cwd: fixture.remote },
     )).stdout.trim();
     expect(remoteHead).toBe(heads[0]?.headSha);
+  });
+
+  it('lets the trusted writer apply a valid patch proposal before the same commit and verification gates', async () => {
+    const fixture = await repository();
+    const evidence = evidenceReporter();
+    const failures: ExecutionAttemptFailure[] = [];
+    const runner = new ExecutionAttemptRunner({
+      repositoryPath: fixture.path,
+      checkoutSha: fixture.checkoutSha,
+      planVersion: 1,
+      planItemId: 'verify-and-repair',
+      targetedCommandRefs: ['test:unit'],
+      deliveryPolicy: policy,
+      repositoryWriter: writer(fixture.path, fixture.checkoutSha),
+      agent: { apply: async () => ({
+        schemaVersion: '1',
+        action: 'apply_patch',
+        proposal: {
+          schemaVersion: '1',
+          changes: [{
+            path: 'value.txt',
+            baseDigest: await patchContentDigest('broken\n'),
+            content: 'fixed\n',
+          }],
+        },
+      }) },
+      agentInput: agentInput(fixture.path),
+      headReporter: { record: async () => undefined },
+      evidenceReporter: evidence,
+      failureReporter: { report: async (failure) => { failures.push(failure); } },
+    });
+
+    await expect(runner.run()).resolves.toMatchObject({ status: 'passed' });
+    expect(evidence.commands).toEqual(['test:unit', 'verify:all']);
+    expect(failures).toEqual([]);
+  });
+
+  it('classifies an invalid patch proposal before commit, push, head, or verification', async () => {
+    const fixture = await repository();
+    const failures: ExecutionAttemptFailure[] = [];
+    const evidence = evidenceReporter();
+    const runner = new ExecutionAttemptRunner({
+      repositoryPath: fixture.path,
+      checkoutSha: fixture.checkoutSha,
+      planVersion: 1,
+      planItemId: 'verify-and-repair',
+      targetedCommandRefs: ['test:unit'],
+      deliveryPolicy: policy,
+      repositoryWriter: writer(fixture.path, fixture.checkoutSha),
+      agent: { apply: async () => ({
+        schemaVersion: '1',
+        action: 'apply_patch',
+        proposal: {
+          schemaVersion: '1',
+          changes: [{
+            path: 'value.txt',
+            baseDigest: `sha256:${'a'.repeat(64)}`,
+            content: 'fixed\n',
+          }],
+        },
+      }) },
+      agentInput: agentInput(fixture.path),
+      headReporter: { record: async () => { throw new Error('head must not run'); } },
+      evidenceReporter: evidence,
+      failureReporter: { report: async (failure) => { failures.push(failure); } },
+    });
+
+    await expect(runner.run()).rejects.toMatchObject({
+      name: 'ExecutionAttemptError',
+      kind: 'repository_patch_failed',
+    });
+    expect(evidence.commands).toEqual([]);
+    expect(failures).toEqual([{
+      failureCode: 'unknown_failure',
+      failureSite: 'repo_snapshot',
+      attemptedPaths: ['code_change'],
+      neededHumanInput: 'manual_investigation',
+    }]);
   });
 
   it('reports a trusted targeted failure and does not execute required verify', async () => {

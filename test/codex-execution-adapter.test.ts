@@ -344,14 +344,81 @@ describe('Codex execution adapter', () => {
       outputFilePath,
       timeoutMs: 60_000,
       allowPlanRevision: false,
-      editTurn: 2,
+      editTurn: 1,
       model: 'gpt-test',
     })).resolves.toEqual({ schemaVersion: '1', action: 'apply_fix' });
     expect(observed?.args).not.toContain('--output-schema');
     expect(observed?.args).not.toContain('--output-last-message');
     expect(observed?.stdin).toContain('Your final message is not an execution decision');
-    expect(observed?.stdin).toContain('This is the single recovery turn');
-    expect(observed?.stdin).toContain('Your first action must be a repository command');
+    expect(observed?.stdin).not.toContain('patch-proposal fallback');
+  });
+
+  it('returns one bounded read-only patch proposal and omits its body from transcript', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-patch-proposal-'));
+    const workspace = join(root, 'repo');
+    const contextFilePath = join(root, 'context.json');
+    const outputFilePath = join(root, 'output.txt');
+    await mkdir(workspace, { mode: 0o700 });
+    await writeFile(contextFilePath, '{}', { mode: 0o600 });
+    await writeFile(outputFilePath, '', { mode: 0o600 });
+    const transcript: string[] = [];
+    let observed: CommandExecutionRequest | undefined;
+    const proposal = {
+      schemaVersion: '1' as const,
+      action: 'apply_patch' as const,
+      proposal: {
+        schemaVersion: '1' as const,
+        changes: [{
+          path: 'README.md',
+          baseDigest: `sha256:${'a'.repeat(64)}`,
+          content: 'bounded proposal body\n',
+        }],
+      },
+    };
+    const adapter = new CodexExecutionAdapter({
+      execute: async (request) => {
+        observed = request;
+        const schemaPath = request.args[request.args.indexOf('--output-schema') + 1];
+        const schema = JSON.parse(await readFile(schemaPath!, 'utf8')) as {
+          properties: { action: { const: string } };
+        };
+        expect(schema.properties.action.const).toBe('apply_patch');
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: JSON.stringify(proposal) },
+        }));
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 11,
+            cached_input_tokens: 3,
+            output_tokens: 5,
+            reasoning_output_tokens: 2,
+          },
+        }));
+        await writeFile(outputFilePath, JSON.stringify(proposal));
+        return { exitCode: 0 };
+      },
+    });
+
+    await expect(adapter.apply({
+      attemptId: 'attempt-execution-patch-proposal',
+      workspacePath: workspace,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: 60_000,
+      allowPlanRevision: false,
+      editTurn: 2,
+      patchProposal: true,
+      model: 'gpt-test',
+      onTranscriptLine: (line) => { transcript.push(line); },
+    })).resolves.toEqual(proposal);
+    expect(observed?.args).toContain('read-only');
+    expect(observed?.args).not.toContain('workspace-write');
+    expect(observed?.stdin).toContain('single controlled patch-proposal fallback');
+    expect(observed?.stdin).toContain('baseDigest');
+    expect(transcript.join('\n')).not.toContain('bounded proposal body');
+    expect(transcript.join('\n')).toContain('[PATCH_PROPOSAL_OMITTED]');
   });
 
   it('rejects metered apply_fix before commit when no command or file change was observed', async () => {

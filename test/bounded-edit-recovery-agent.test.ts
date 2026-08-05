@@ -62,7 +62,7 @@ describe('bounded edit recovery Agent', () => {
     }
   });
 
-  it('allows only one recovery turn and settles both invocations', async () => {
+  it('allows only one read-only patch proposal fallback and settles both invocations', async () => {
     const events: string[] = [];
     const agent = new BoundedEditRecoveryAgent({
       agent: meteredApply(async (input) => {
@@ -73,7 +73,23 @@ describe('bounded edit recovery Agent', () => {
           outputTokens: 4,
           reasoningOutputTokens: 1,
         });
-        throw new CodexExecutionAdapterError('decision_invalid', 'no_tool_activity');
+        if (input.editTurn === 1) {
+          expect(input.patchProposal).toBeUndefined();
+          throw new CodexExecutionAdapterError('decision_invalid', 'no_tool_activity');
+        }
+        expect(input.patchProposal).toBe(true);
+        return {
+          schemaVersion: '1',
+          action: 'apply_patch',
+          proposal: {
+            schemaVersion: '1',
+            changes: [{
+              path: 'README.md',
+              baseDigest: `sha256:${'a'.repeat(64)}`,
+              content: 'updated\n',
+            }],
+          },
+        };
       }),
       beforeInvocation: async (invocation) => {
         events.push(`before:${invocation}`);
@@ -88,13 +104,89 @@ describe('bounded edit recovery Agent', () => {
       },
     });
 
-    await expect(agent.apply(INPUT)).rejects.toMatchObject({
-      kind: 'decision_invalid',
-      reason: 'no_tool_activity',
+    await expect(agent.apply(INPUT)).resolves.toMatchObject({
+      action: 'apply_patch',
+      proposal: { changes: [{ path: 'README.md' }] },
     });
     expect(events).toEqual([
       'before:1', 'apply:1', 'after:1:10', 'clean',
       'before:2', 'apply:2', 'after:2:10',
     ]);
+  });
+
+  it('does not start a third invocation when the patch proposal turn fails', async () => {
+    const events: string[] = [];
+    const agent = new BoundedEditRecoveryAgent({
+      agent: meteredApply(async (input) => {
+        events.push(`apply:${input.editTurn}:${input.patchProposal === true}`);
+        input.onUsage?.({
+          inputTokens: 10,
+          cachedInputTokens: 2,
+          outputTokens: 4,
+          reasoningOutputTokens: 1,
+        });
+        throw new CodexExecutionAdapterError('decision_invalid', 'no_tool_activity');
+      }),
+      beforeInvocation: async (invocation) => {
+        events.push(`before:${invocation}`);
+        return { model: 'gpt-test' };
+      },
+      afterInvocation: async (invocation) => { events.push(`after:${invocation}`); },
+      canRecover: async () => true,
+    });
+
+    await expect(agent.apply(INPUT)).rejects.toMatchObject({
+      kind: 'decision_invalid',
+      reason: 'no_tool_activity',
+    });
+    expect(events).toEqual([
+      'before:1', 'apply:1:false', 'after:1',
+      'before:2', 'apply:2:true', 'after:2',
+    ]);
+  });
+
+  it.each([
+    { invalidInvocation: 1 as const, invalidAction: 'apply_patch' as const, calls: 1 },
+    { invalidInvocation: 2 as const, invalidAction: 'apply_fix' as const, calls: 2 },
+  ])('enforces the action type for invocation $invalidInvocation', async (scenario) => {
+    let calls = 0;
+    const agent = new BoundedEditRecoveryAgent({
+      agent: meteredApply(async (input) => {
+        calls += 1;
+        input.onUsage?.({
+          inputTokens: 10,
+          cachedInputTokens: 2,
+          outputTokens: 4,
+          reasoningOutputTokens: 1,
+        });
+        if (input.editTurn === 1 && scenario.invalidInvocation === 2) {
+          throw new CodexExecutionAdapterError('decision_invalid', 'no_tool_activity');
+        }
+        if (scenario.invalidAction === 'apply_fix') {
+          return { schemaVersion: '1', action: 'apply_fix' };
+        }
+        return {
+          schemaVersion: '1',
+          action: 'apply_patch',
+          proposal: {
+            schemaVersion: '1',
+            changes: [{
+              path: 'README.md',
+              baseDigest: `sha256:${'a'.repeat(64)}`,
+              content: 'updated\n',
+            }],
+          },
+        };
+      }),
+      beforeInvocation: async () => ({ model: 'gpt-test' }),
+      afterInvocation: async () => undefined,
+      canRecover: async () => true,
+    });
+
+    await expect(agent.apply(INPUT)).rejects.toMatchObject({
+      kind: 'decision_invalid',
+      reason: 'invalid_output',
+    });
+    expect(calls).toBe(scenario.calls);
   });
 });
