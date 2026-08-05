@@ -173,7 +173,8 @@ jobs:
                 state: $task[0].run.state,
                 version: $task[0].run.version,
                 baseSha: $task[0].run.baseSha,
-                activePlan: $task[0].run.activePlan
+                activePlan: $task[0].run.activePlan,
+                quota: $task[0].run.quota
               },
               plan: ($plan[0].plan | {id, version, digest, baseSha, status}),
               items: [$plan[0].items[] | {
