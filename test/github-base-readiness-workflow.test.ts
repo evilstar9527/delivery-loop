@@ -77,6 +77,18 @@ describe('GitHub-hosted base readiness workflow', () => {
             default: '',
             type: 'string',
           },
+          approval_run_id: {
+            description: 'Optional exact Run ID for a repo-write comment observation',
+            required: false,
+            default: '',
+            type: 'string',
+          },
+          approval_comment_id: {
+            description: 'Optional exact GitHub commit comment ID for repo-write approval',
+            required: false,
+            default: '',
+            type: 'string',
+          },
         },
       },
     });
@@ -124,7 +136,8 @@ describe('GitHub-hosted base readiness workflow', () => {
     );
     expect(readinessStep).toEqual({
       name: 'Run exactly one GitHub base readiness GET',
-      if: "inputs.diagnostic_run_id == ''",
+      if: "inputs.diagnostic_run_id == '' && inputs.approval_run_id == '' && " +
+        "inputs.approval_comment_id == ''",
       env: {
         DELIVERY_LOOP_GITHUB_BASE_READINESS: '1',
         GITHUB_BASE_READINESS_CONTROL_PLANE_URL:
@@ -140,7 +153,10 @@ describe('GitHub-hosted base readiness workflow', () => {
     const diagnosticStep = readiness.steps.find(
       (step) => step.name === 'Query one exact open workflow-create dead letter',
     );
-    expect(diagnosticStep?.if).toBe("inputs.diagnostic_run_id != ''");
+    expect(diagnosticStep?.if).toBe(
+      "inputs.diagnostic_run_id != '' && inputs.approval_run_id == '' && " +
+      "inputs.approval_comment_id == ''",
+    );
     expect(diagnosticStep?.env).toEqual({
       DELIVERY_DIAGNOSTIC_RUN_ID: '${{ inputs.diagnostic_run_id }}',
       DELIVERY_OPERATIONS_TOKEN:
@@ -176,6 +192,36 @@ describe('GitHub-hosted base readiness workflow', () => {
       'capturedAt',
       'outboxId',
     ]) expect(diagnosticStep?.run).not.toContain(forbidden);
+
+    const approvalStep = readiness.steps.find(
+      (step) => step.name === 'Observe one exact GitHub repo-write approval comment',
+    );
+    expect(approvalStep?.if).toBe(
+      "inputs.diagnostic_run_id == '' && inputs.approval_run_id != '' && " +
+      "inputs.approval_comment_id != ''",
+    );
+    expect(approvalStep?.env).toEqual({
+      DELIVERY_APPROVAL_RUN_ID: '${{ inputs.approval_run_id }}',
+      DELIVERY_APPROVAL_COMMENT_ID: '${{ inputs.approval_comment_id }}',
+      DELIVERY_OPERATIONS_TOKEN:
+        '${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}',
+    });
+    expect(approvalStep?.run).toContain(
+      '[[ "$DELIVERY_APPROVAL_RUN_ID" =~ ^run_[a-f0-9]{56}$ ]]',
+    );
+    expect(approvalStep?.run).toContain(
+      '[[ "$DELIVERY_APPROVAL_COMMENT_ID" =~ ^[1-9][0-9]{0,18}$ ]]',
+    );
+    expect(approvalStep?.run).toContain(
+      '/github-commit-approvals',
+    );
+    expect(approvalStep?.run).toContain('--request POST');
+    expect(approvalStep?.run).toContain("'{commentId:$commentId}'");
+    expect(approvalStep?.run).toContain(".status == \"accepted\"");
+    expect(approvalStep?.run?.match(/\bcurl\b/g)).toHaveLength(1);
+    for (const forbidden of ['commentBody', 'actor', 'effect', 'expiresAt', 'planId']) {
+      expect(approvalStep?.run).not.toContain(forbidden);
+    }
 
     const serializedPreflight = JSON.stringify(preflight);
     expect(serializedPreflight).not.toContain('secrets.');
