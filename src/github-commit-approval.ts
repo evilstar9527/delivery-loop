@@ -1,0 +1,357 @@
+import { z } from 'zod';
+import { IdentityMapper } from './auth/identity-mapper.js';
+import { canonicalSha256 } from './domain/digest.js';
+import { GITHUB_API_USER_AGENT, githubApiFetch } from './github-api.js';
+import type { GitHubBaseObservationTokenProvider } from './reconciliation/github-base-observation-reconciler.js';
+import {
+  IdentityBoundApprovalError,
+  IdentityBoundApprovalStore,
+  type IdentityBoundApprovalResult,
+} from './storage/identity-bound-approval-store.js';
+
+const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
+const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const LOGIN_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+const SHA_PATTERN = /^[a-f0-9]{40}$/;
+const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+const MAX_COMMENT_BYTES = 2 * 1024;
+const MAX_RESPONSE_BYTES = 64 * 1024;
+const MAX_SOURCE_AGE_MS = 24 * 60 * 60_000;
+const APPROVAL_TTL_MS = 60 * 60_000;
+
+export const GitHubCommitApprovalRequestSchema = z.object({
+  commentId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+}).strict();
+
+export interface GitHubCommitApprovalFact {
+  schemaVersion: '1';
+  repository: string;
+  commentId: number;
+  commitSha: string;
+  authorLogin: string;
+  authorType: 'User';
+  authorAssociation: 'OWNER' | 'MEMBER' | 'COLLABORATOR' | 'CONTRIBUTOR' | 'NONE';
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  url: string;
+}
+
+export interface GitHubCommitApprovalClient {
+  getCommitComment(repository: string, commentId: number): Promise<GitHubCommitApprovalFact>;
+}
+
+export class GitHubCommitApprovalError extends Error {
+  constructor(readonly code:
+    | 'invalid_request'
+    | 'not_found'
+    | 'state_conflict'
+    | 'external_unavailable'
+    | 'fact_rejected') {
+    super(`GitHub commit approval failed: ${code}`);
+    this.name = 'GitHubCommitApprovalError';
+  }
+}
+
+interface CandidateRow {
+  run_id: string;
+  run_version: number;
+  base_sha: string;
+  task_id: string;
+  task_revision: string;
+  repository: string;
+  plan_id: string;
+  plan_version: number;
+  plan_digest: string;
+}
+
+function object(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function apiOrigin(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('GitHub API URL is invalid');
+  }
+  if (
+    url.protocol !== 'https:' || url.username !== '' || url.password !== '' ||
+    url.search !== '' || url.hash !== '' || (url.pathname !== '' && url.pathname !== '/')
+  ) throw new Error('GitHub API URL is invalid');
+  return url.origin;
+}
+
+export class GitHubCommitApprovalApiClient implements GitHubCommitApprovalClient {
+  private readonly apiBaseUrl: string;
+  private readonly fetcher: typeof globalThis.fetch;
+
+  constructor(
+    private readonly tokenProvider: GitHubBaseObservationTokenProvider,
+    options: { apiBaseUrl?: string; fetch?: typeof globalThis.fetch } = {},
+  ) {
+    this.apiBaseUrl = apiOrigin(options.apiBaseUrl ?? 'https://api.github.com');
+    this.fetcher = githubApiFetch(options.fetch);
+  }
+
+  async getCommitComment(repository: string, commentId: number): Promise<GitHubCommitApprovalFact> {
+    if (!REPOSITORY_PATTERN.test(repository) || !Number.isSafeInteger(commentId) || commentId <= 0) {
+      throw new GitHubCommitApprovalError('invalid_request');
+    }
+    let token: string;
+    try {
+      token = await this.tokenProvider.getBaseObservationToken(repository);
+    } catch {
+      throw new GitHubCommitApprovalError('external_unavailable');
+    }
+    let response: Response;
+    try {
+      response = await this.fetcher(
+        `${this.apiBaseUrl}/repos/${repository}/comments/${commentId}`,
+        {
+          method: 'GET',
+          redirect: 'manual',
+          signal: AbortSignal.timeout(10_000),
+          headers: {
+            accept: 'application/vnd.github+json',
+            authorization: `Bearer ${token}`,
+            'user-agent': GITHUB_API_USER_AGENT,
+            'x-github-api-version': '2022-11-28',
+          },
+        },
+      );
+    } catch {
+      throw new GitHubCommitApprovalError('external_unavailable');
+    }
+    if (response.status !== 200) {
+      await response.body?.cancel();
+      throw new GitHubCommitApprovalError('external_unavailable');
+    }
+    let text: string;
+    try {
+      text = await response.text();
+    } catch {
+      throw new GitHubCommitApprovalError('external_unavailable');
+    }
+    if (new TextEncoder().encode(text).length > MAX_RESPONSE_BYTES) {
+      throw new GitHubCommitApprovalError('external_unavailable');
+    }
+    let raw: Record<string, unknown> | null;
+    try {
+      raw = object(JSON.parse(text) as unknown);
+    } catch {
+      throw new GitHubCommitApprovalError('external_unavailable');
+    }
+    const user = object(raw?.user);
+    if (
+      raw === null || raw.id !== commentId || typeof raw.commit_id !== 'string' ||
+      typeof raw.body !== 'string' || typeof raw.created_at !== 'string' ||
+      typeof raw.updated_at !== 'string' || typeof raw.html_url !== 'string' ||
+      user === null || typeof user.login !== 'string' || user.type !== 'User' ||
+      !['OWNER', 'MEMBER', 'COLLABORATOR', 'CONTRIBUTOR', 'NONE'].includes(
+        String(raw.author_association),
+      )
+    ) throw new GitHubCommitApprovalError('external_unavailable');
+    return {
+      schemaVersion: '1',
+      repository,
+      commentId,
+      commitSha: raw.commit_id,
+      authorLogin: user.login,
+      authorType: 'User',
+      authorAssociation: raw.author_association as GitHubCommitApprovalFact['authorAssociation'],
+      body: raw.body,
+      createdAt: raw.created_at,
+      updatedAt: raw.updated_at,
+      url: raw.html_url,
+    };
+  }
+}
+
+export function githubCommitApprovalBody(candidate: {
+  runId: string;
+  runVersion: number;
+  planId: string;
+  planVersion: number;
+  planDigest: string;
+  baseSha: string;
+}): string {
+  return [
+    '/delivery-loop approve repo_write',
+    `run: ${candidate.runId}`,
+    `run-version: ${candidate.runVersion}`,
+    `plan: ${candidate.planId}`,
+    `plan-version: ${candidate.planVersion}`,
+    `plan-digest: ${candidate.planDigest}`,
+    `base-sha: ${candidate.baseSha}`,
+  ].join('\n');
+}
+
+export class GitHubCommitApprovalService {
+  constructor(
+    private readonly db: D1Database,
+    private readonly client: GitHubCommitApprovalClient,
+    private readonly now: () => Date = () => new Date(),
+  ) {}
+
+  async template(runId: string): Promise<{
+    repository: string;
+    baseSha: string;
+    commentBody: string;
+  }> {
+    const candidate = await this.candidate(runId);
+    if (candidate === null) {
+      const exists = await this.db.prepare('SELECT run_id FROM runs WHERE run_id = ?')
+        .bind(runId).first();
+      throw new GitHubCommitApprovalError(exists === null ? 'not_found' : 'state_conflict');
+    }
+    return {
+      repository: candidate.repository,
+      baseSha: candidate.base_sha,
+      commentBody: githubCommitApprovalBody(this.templateInput(candidate)),
+    };
+  }
+
+  async approve(runId: string, commentId: number): Promise<IdentityBoundApprovalResult> {
+    if (!ID_PATTERN.test(runId) || !Number.isSafeInteger(commentId) || commentId <= 0) {
+      throw new GitHubCommitApprovalError('invalid_request');
+    }
+    const candidate = await this.candidate(runId);
+    if (candidate === null) {
+      const exists = await this.db.prepare('SELECT run_id FROM runs WHERE run_id = ?')
+        .bind(runId).first();
+      throw new GitHubCommitApprovalError(exists === null ? 'not_found' : 'state_conflict');
+    }
+    let fact: GitHubCommitApprovalFact;
+    try {
+      fact = await this.client.getCommitComment(candidate.repository, commentId);
+    } catch (error) {
+      if (error instanceof GitHubCommitApprovalError) throw error;
+      throw new GitHubCommitApprovalError('external_unavailable');
+    }
+    const now = this.now();
+    const expectedBody = githubCommitApprovalBody(this.templateInput(candidate));
+    const bodyBytes = new TextEncoder().encode(fact.body).length;
+    const createdAt = Date.parse(fact.createdAt);
+    const url = this.validUrl(fact, candidate.repository, candidate.base_sha);
+    if (
+      fact.schemaVersion !== '1' || fact.repository !== candidate.repository ||
+      fact.commentId !== commentId || fact.commitSha !== candidate.base_sha ||
+      fact.authorType !== 'User' || fact.authorAssociation !== 'OWNER' ||
+      !LOGIN_PATTERN.test(fact.authorLogin) || bodyBytes < 1 || bodyBytes > MAX_COMMENT_BYTES ||
+      fact.body !== expectedBody || fact.updatedAt !== fact.createdAt ||
+      !Number.isFinite(createdAt) || createdAt < now.getTime() - MAX_SOURCE_AGE_MS ||
+      createdAt > now.getTime() + 5 * 60_000 || url === null
+    ) throw new GitHubCommitApprovalError('fact_rejected');
+
+    const login = fact.authorLogin.toLowerCase();
+    const principal = `user:${login}`;
+    const channel = `github:${candidate.repository}`;
+    const mapper = new IdentityMapper(this.db);
+    await mapper.bind(principal, ['human', 'approve:repo_write'], now.toISOString());
+    await mapper.bindChannelIdentity(channel, login, principal, now.toISOString());
+    const bodyDigest = await canonicalSha256(fact.body);
+    const eventDigest = await canonicalSha256({
+      repository: fact.repository,
+      commentId: fact.commentId,
+      commitSha: fact.commitSha,
+      authorLogin: login,
+      authorType: fact.authorType,
+      authorAssociation: fact.authorAssociation,
+      bodyDigest,
+      createdAt: fact.createdAt,
+      updatedAt: fact.updatedAt,
+      url,
+    });
+    try {
+      return await new IdentityBoundApprovalStore(this.db, { now: this.now })
+        .decideTrustedGitHubRepoWrite({
+          runId: candidate.run_id,
+          expectedRunVersion: candidate.run_version,
+          planVersion: candidate.plan_version,
+          effect: 'repo_write',
+          decision: 'approve',
+          expiresAt: new Date(now.getTime() + APPROVAL_TTL_MS).toISOString(),
+          source: {
+            schemaVersion: '1',
+            provider: 'github',
+            tenantKey: candidate.repository,
+            externalEventId: `commit-comment-${commentId}`,
+            externalSubject: login,
+            eventDigest,
+            occurredAt: fact.createdAt,
+          },
+        });
+    } catch (error) {
+      if (error instanceof IdentityBoundApprovalError) {
+        throw new GitHubCommitApprovalError(
+          error.code === 'not_found' ? 'not_found' : 'state_conflict',
+        );
+      }
+      throw error;
+    }
+  }
+
+  private async candidate(runId: string): Promise<CandidateRow | null> {
+    if (!ID_PATTERN.test(runId)) throw new GitHubCommitApprovalError('invalid_request');
+    return await this.db.prepare(
+      `SELECT runs.run_id, runs.version AS run_version, runs.base_sha,
+              tasks.task_id, runs.task_revision,
+              tasks.target_repository AS repository,
+              plans.plan_id, plans.plan_version, plans.digest AS plan_digest
+       FROM runs
+       JOIN tasks ON tasks.task_id = runs.task_id
+       JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
+       WHERE runs.run_id = ? AND runs.state = 'awaiting_approval'
+         AND runs.base_sha IS NOT NULL AND tasks.allow_repository_write = 1
+         AND plans.status = 'active' AND plans.base_sha = runs.base_sha
+         AND plans.plan_version = runs.active_plan_version
+         AND plans.digest = runs.active_plan_digest
+         AND EXISTS (
+           SELECT 1 FROM plan_item_effects
+           WHERE plan_item_effects.plan_id = plans.plan_id
+             AND plan_item_effects.effect = 'repo_write'
+         )
+       LIMIT 1`,
+    ).bind(runId).first<CandidateRow>();
+  }
+
+  private templateInput(candidate: CandidateRow) {
+    if (
+      !REPOSITORY_PATTERN.test(candidate.repository) || !SHA_PATTERN.test(candidate.base_sha) ||
+      !ID_PATTERN.test(candidate.plan_id) || candidate.plan_version < 1 ||
+      !DIGEST_PATTERN.test(candidate.plan_digest)
+    ) throw new GitHubCommitApprovalError('state_conflict');
+    return {
+      runId: candidate.run_id,
+      runVersion: candidate.run_version,
+      planId: candidate.plan_id,
+      planVersion: candidate.plan_version,
+      planDigest: candidate.plan_digest,
+      baseSha: candidate.base_sha,
+    };
+  }
+
+  private validUrl(
+    fact: GitHubCommitApprovalFact,
+    repository: string,
+    baseSha: string,
+  ): string | null {
+    let url: URL;
+    try {
+      url = new URL(fact.url);
+    } catch {
+      return null;
+    }
+    if (
+      url.protocol !== 'https:' || url.hostname !== 'github.com' ||
+      url.username !== '' || url.password !== '' || url.search !== '' ||
+      url.pathname !== `/${repository}/commit/${baseSha}` ||
+      url.hash !== `#commitcomment-${fact.commentId}`
+    ) return null;
+    return url.href;
+  }
+}

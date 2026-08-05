@@ -20,6 +20,7 @@ import { feishuCardPresentationEvidenceApi } from './http/feishu-card-presentati
 import { feishuCardActionEvidenceApi } from './http/feishu-card-action-evidence-api.js';
 import { supplementalContextEvidenceApi } from './http/supplemental-context-evidence-api.js';
 import { githubWebhookApi } from './http/github-webhook-api.js';
+import { githubCommitApprovalApi } from './http/github-commit-approval-api.js';
 import { meegleTriageApi } from './http/meegle-triage-api.js';
 import { meegleWorkItemEvidenceApi } from './http/meegle-work-item-evidence-api.js';
 import { monitorAlertApi } from './http/monitor-alert-api.js';
@@ -141,6 +142,7 @@ app.route('/', feishuCardActionEvidenceApi());
 app.route('/', supplementalContextEvidenceApi());
 app.route('/', feishuDeliveryCardRefreshApi());
 app.route('/', githubWebhookApi());
+app.route('/', githubCommitApprovalApi());
 app.route('/', meegleTriageApi());
 app.route('/', meegleWorkItemEvidenceApi());
 app.route('/', monitorAlertApi());

@@ -31,10 +31,28 @@ export const IdentityBoundApprovalInputSchema = z.object({
   source: ApprovalDecisionSourceSchema,
 }).strict();
 
+const TrustedGitHubRepoWriteApprovalInputSchema = z.object({
+  runId: z.string().regex(ID_PATTERN),
+  expectedRunVersion: z.number().int().nonnegative(),
+  planVersion: z.number().int().positive(),
+  effect: z.literal('repo_write'),
+  decision: z.literal('approve'),
+  expiresAt: z.iso.datetime({ offset: true }),
+  source: ApprovalDecisionSourceSchema.extend({
+    provider: z.literal('github'),
+  }).strict(),
+}).strict();
+
 export const IdentityBoundApprovalRequestBodySchema =
   IdentityBoundApprovalInputSchema.omit({ runId: true });
 
 export type IdentityBoundApprovalInput = z.infer<typeof IdentityBoundApprovalInputSchema>;
+type TrustedGitHubRepoWriteApprovalInput = z.infer<
+  typeof TrustedGitHubRepoWriteApprovalInputSchema
+>;
+type SupportedApprovalInput =
+  | IdentityBoundApprovalInput
+  | TrustedGitHubRepoWriteApprovalInput;
 export type ApprovalIdentityRejectionReason =
   | 'identity_unresolved'
   | 'actor_not_human'
@@ -156,7 +174,17 @@ export class IdentityBoundApprovalStore {
   async decide(rawInput: unknown): Promise<IdentityBoundApprovalResult> {
     const parsed = IdentityBoundApprovalInputSchema.safeParse(rawInput);
     if (!parsed.success) throw new IdentityBoundApprovalError('invalid_request');
-    const input = parsed.data;
+    return await this.decideParsed(parsed.data);
+  }
+
+  /** Only a server-side GitHub fact observer may call this low-risk path. */
+  async decideTrustedGitHubRepoWrite(rawInput: unknown): Promise<IdentityBoundApprovalResult> {
+    const parsed = TrustedGitHubRepoWriteApprovalInputSchema.safeParse(rawInput);
+    if (!parsed.success) throw new IdentityBoundApprovalError('invalid_request');
+    return await this.decideParsed(parsed.data);
+  }
+
+  private async decideParsed(input: SupportedApprovalInput): Promise<IdentityBoundApprovalResult> {
     const now = this.now();
     this.assertTimes(input, now);
     const channel = `${input.source.provider}:${input.source.tenantKey}`;
@@ -206,12 +234,17 @@ export class IdentityBoundApprovalStore {
     }
     const mapper = new IdentityMapper(this.db);
     const approver = await mapper.resolve(channel, input.source.externalSubject);
-    const authorChannel = `github:${candidate.repository}`;
+    const authorChannel = input.effect === 'repo_write'
+      ? `task:${candidate.repository}`
+      : `github:${candidate.repository}`;
     const author = candidate.pull_request_author_login === null
       ? { principal: ANONYMOUS_PRINCIPAL, roles: [] }
       : await mapper.resolve(authorChannel, candidate.pull_request_author_login);
     const reason = this.rejectionReason(input, candidate, approver, author);
     if (reason !== null) {
+      if (input.effect === 'repo_write') {
+        throw new IdentityBoundApprovalError('state_conflict');
+      }
       const rejectionId = `approval_reject_${this.suffix(await canonicalSha256({
         sourceId,
         runId: candidate.run_id,
@@ -278,7 +311,9 @@ export class IdentityBoundApprovalStore {
     });
     const approvalId = `approval_identity_${this.suffix(approvalIdentity, 46)}`;
     const nonceDigest = await canonicalSha256({ sourceId, approvalId });
-    const separationVerified = approver.principal === author.principal ? 0 : 1;
+    const separationVerified = input.effect === 'repo_write'
+      ? 0
+      : approver.principal === author.principal ? 0 : 1;
     const productionApprovalConstraint = input.effect === 'production_deploy'
       ? `AND tasks.target_environment = 'production'
            AND tasks.allow_production_deploy = 1
@@ -435,7 +470,7 @@ export class IdentityBoundApprovalStore {
     };
   }
 
-  private assertTimes(input: IdentityBoundApprovalInput, now: Date): void {
+  private assertTimes(input: SupportedApprovalInput, now: Date): void {
     const occurredAt = Date.parse(input.source.occurredAt);
     const expiresAt = Date.parse(input.expiresAt);
     const timestamp = now.getTime();
@@ -449,30 +484,66 @@ export class IdentityBoundApprovalStore {
   }
 
   private rejectionReason(
-    input: IdentityBoundApprovalInput,
+    input: SupportedApprovalInput,
     candidate: CandidateRow,
     approver: { principal: string; roles: string[] },
     author: { principal: string; roles: string[] },
   ): ApprovalIdentityRejectionReason | null {
     if (
       approver.principal === ANONYMOUS_PRINCIPAL ||
-      author.principal === ANONYMOUS_PRINCIPAL ||
+      (input.effect !== 'repo_write' && author.principal === ANONYMOUS_PRINCIPAL) ||
       (input.source.provider === 'github' && input.source.tenantKey !== candidate.repository)
     ) return 'identity_unresolved';
     if (!approver.roles.includes('human') || approver.principal.startsWith('agent:') ||
       approver.principal.startsWith('service:')) return 'actor_not_human';
     if (!approver.roles.includes(`approve:${input.effect}`)) return 'actor_not_authorized';
-    if (input.decision === 'approve' && approver.principal === author.principal) {
+    if (
+      input.effect !== 'repo_write' && input.decision === 'approve' &&
+      approver.principal === author.principal
+    ) {
       return 'self_approval_denied';
     }
     if (
+      input.effect !== 'repo_write' &&
       input.decision === 'approve' && candidate.task_actor_type === 'user' &&
       candidate.task_actor_id === approver.principal
     ) return 'task_actor_self_approval';
     return null;
   }
 
-  private async candidate(input: IdentityBoundApprovalInput): Promise<CandidateRow | null> {
+  private async candidate(input: SupportedApprovalInput): Promise<CandidateRow | null> {
+    if (input.effect === 'repo_write') {
+      return await this.db.prepare(
+        `SELECT runs.run_id, tasks.task_id, runs.state AS run_state,
+                runs.version AS run_version, runs.task_revision,
+                tasks.actor_type AS task_actor_type, tasks.actor_id AS task_actor_id,
+                runs.base_sha, plans.plan_id, plans.plan_version,
+                plans.digest AS plan_digest, plans.status AS plan_status,
+                tasks.target_repository AS repository,
+                tasks.actor_id AS pull_request_author_login,
+                NULL AS merge_id, NULL AS merge_sha, NULL AS merged_at,
+                NULL AS environment,
+                EXISTS (
+                  SELECT 1 FROM plan_item_effects
+                  WHERE plan_item_effects.plan_id = plans.plan_id
+                    AND plan_item_effects.effect = 'repo_write'
+                ) AS has_effect
+         FROM runs
+         JOIN tasks ON tasks.task_id = runs.task_id
+         JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
+         WHERE runs.run_id = ? AND runs.version = ? AND runs.base_sha IS NOT NULL
+           AND runs.state = 'awaiting_approval'
+           AND tasks.allow_repository_write = 1
+           AND plans.plan_version = ? AND plans.status = 'active'
+           AND plans.base_sha = runs.base_sha
+           AND EXISTS (
+             SELECT 1 FROM plan_item_effects
+             WHERE plan_item_effects.plan_id = plans.plan_id
+               AND plan_item_effects.effect = 'repo_write'
+           )
+         LIMIT 1`,
+      ).bind(input.runId, input.expectedRunVersion, input.planVersion).first<CandidateRow>();
+    }
     const allowedStates = input.effect === 'merge'
       ? "'pull_request_open','awaiting_review','ready_to_merge'"
       : "'merging','deploying'";
@@ -543,7 +614,7 @@ export class IdentityBoundApprovalStore {
 
   private assertSource(
     row: SourceRow,
-    input: IdentityBoundApprovalInput,
+    input: SupportedApprovalInput,
     channel: string,
     requestDigest: string,
   ): void {
@@ -559,7 +630,7 @@ export class IdentityBoundApprovalStore {
 
   private async outcome(
     sourceId: string,
-    input: IdentityBoundApprovalInput,
+    input: SupportedApprovalInput,
   ): Promise<IdentityBoundApprovalResult | null> {
     const accepted = await this.accepted(sourceId);
     if (accepted !== null) {
@@ -617,7 +688,7 @@ export class IdentityBoundApprovalStore {
   }
 
   private lineageInsert(
-    input: IdentityBoundApprovalInput,
+    input: SupportedApprovalInput,
     sourceId: string,
     approvalId: string,
     principal: string,
