@@ -5,9 +5,11 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { parseDeliveryPolicy } from '../src/domain/delivery-policy.js';
+import { CodexExecutionAdapterError } from '../src/agent/codex-execution-adapter.js';
 import type { VerificationEvidenceReporter } from '../src/runner/verification-execution-runner.js';
 import {
   ExecutionAttemptRunner,
+  type ExecutionAgentAttemptError,
   type ExecutionAttemptFailure,
 } from '../src/runner/execution-attempt-runner.js';
 import {
@@ -234,10 +236,17 @@ describe('execution Attempt Runner', () => {
 
     const runner = new ExecutionAttemptRunner({
       ...base,
-      agent: { apply: async () => { throw new Error('untrusted Agent error'); } },
+      agent: {
+        apply: async () => { throw new CodexExecutionAdapterError('transcript_invalid'); },
+      },
       agentInput: agentInput(fixture.path),
     });
-    await expect(runner.run()).rejects.toThrow('execution Agent failed');
+    const rejected = runner.run();
+    await expect(rejected).rejects.toMatchObject({
+      name: 'ExecutionAgentAttemptError',
+      kind: 'transcript_invalid',
+      message: 'execution Agent failed',
+    } satisfies Partial<ExecutionAgentAttemptError>);
     expect(failures).toEqual([{
       failureCode: 'invalid_agent_output',
       failureSite: 'agent_output',

@@ -2,6 +2,16 @@ import { isSensitiveFieldName } from '../security/redaction.js';
 import { secureStructuredLogSink } from './structured-log.js';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
+const EXECUTION_FAILURE_KINDS = [
+  'process_unavailable',
+  'process_timeout',
+  'process_nonzero_exit',
+  'transcript_invalid',
+  'usage_invalid',
+  'decision_invalid',
+  'unknown',
+] as const;
+export type RunnerExecutionFailureKind = (typeof EXECUTION_FAILURE_KINDS)[number];
 
 export type RunnerLogEvent =
   | 'analysis_attempt_result'
@@ -26,7 +36,15 @@ export function writeRunnerStructuredLog(
   event: RunnerLogEvent,
   outcome: 'accepted' | 'passed' | 'failed' | 'blocked' | 'replanning',
   environment: NodeJS.ProcessEnv = process.env,
+  failureKind?: RunnerExecutionFailureKind,
 ): void {
+  if (
+    failureKind !== undefined && (
+      event !== 'execution_attempt_result' ||
+      outcome !== 'failed' ||
+      !EXECUTION_FAILURE_KINDS.includes(failureKind)
+    )
+  ) throw new Error('Runner failure kind is invalid');
   const failed = outcome === 'failed' || outcome === 'blocked';
   const stream = failed ? process.stderr : process.stdout;
   secureStructuredLogSink({
@@ -38,6 +56,7 @@ export function writeRunnerStructuredLog(
     schemaVersion: '1',
     event,
     outcome,
+    ...(failureKind === undefined ? {} : { failureKind }),
     ...(ID_PATTERN.test(environment.DELIVERY_ATTEMPT_ID ?? '')
       ? { attemptId: environment.DELIVERY_ATTEMPT_ID }
       : {}),

@@ -1,5 +1,9 @@
 import { isAbsolute, resolve } from 'node:path';
-import type { ExecutionAgent } from '../agent/codex-execution-adapter.js';
+import {
+  CodexExecutionAdapterError,
+  type CodexExecutionFailureKind,
+  type ExecutionAgent,
+} from '../agent/codex-execution-adapter.js';
 import { DeliveryPolicyV1Schema, type ParsedDeliveryPolicy } from '../domain/delivery-policy.js';
 import { canonicalSha256 } from '../domain/digest.js';
 import type {
@@ -27,6 +31,15 @@ export interface ExecutionAttemptFailure {
   failureSite: FailureSite;
   attemptedPaths: AttemptedPath[];
   neededHumanInput: HumanInputCode;
+}
+
+export type ExecutionAgentAttemptFailureKind = CodexExecutionFailureKind | 'unknown';
+
+export class ExecutionAgentAttemptError extends Error {
+  constructor(readonly kind: ExecutionAgentAttemptFailureKind) {
+    super('execution Agent failed');
+    this.name = 'ExecutionAgentAttemptError';
+  }
 }
 
 export interface ExecutionHeadReporter {
@@ -184,10 +197,16 @@ export class ExecutionAttemptRunner {
         decision?.schemaVersion !== '1' ||
         (decision.action !== 'apply_fix' && decision.action !== 'request_replan')
       ) throw new Error('invalid decision');
-    } catch {
+    } catch (error) {
+      const kind = error instanceof CodexExecutionAdapterError ? error.kind : 'unknown';
+      const failureCode = kind === 'process_nonzero_exit'
+        ? 'command_nonzero_exit'
+        : kind === 'process_unavailable' || kind === 'process_timeout' || kind === 'unknown'
+          ? 'unknown_failure'
+          : 'invalid_agent_output';
       try {
         await this.context.failureReporter.report({
-          failureCode: 'invalid_agent_output',
+          failureCode,
           failureSite: 'agent_output',
           attemptedPaths: ['code_change'],
           neededHumanInput: 'manual_investigation',
@@ -195,7 +214,7 @@ export class ExecutionAttemptRunner {
       } catch {
         throw new Error('execution Agent failure report failed');
       }
-      throw new Error('execution Agent failed');
+      throw new ExecutionAgentAttemptError(kind);
     }
     if (decision.action === 'request_replan') {
       const reporter = this.context.planRevisionReporter;

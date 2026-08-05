@@ -23,6 +23,8 @@ export interface CommandExecutionResult {
   exitCode: number;
   /** The runtime deadline fired, even if the child handled SIGTERM and exited zero. */
   timedOut?: true;
+  /** The bounded stdout observer rejected a line or line fragment. */
+  stdoutInvalid?: true;
   stderr?: string;
 }
 
@@ -113,6 +115,7 @@ export function launchCommand(request: CommandExecutionRequest): CommandProcessH
         // still exceeded its trusted deadline.
         exitCode: timedOut ? 124 : stdoutFailed ? 1 : (code ?? 1),
         ...(timedOut ? { timedOut: true as const } : {}),
+        ...(stdoutFailed ? { stdoutInvalid: true as const } : {}),
         ...(stderr.length === 0 ? {} : { stderr: redactor.redactText(stderr) }),
       });
     });
