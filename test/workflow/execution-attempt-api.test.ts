@@ -197,6 +197,28 @@ beforeEach(async () => {
 });
 
 describe('execution Attempt context and head API', () => {
+  it('uses the frozen base as checkout for an initial implement Attempt without a head', async () => {
+    await env.DB_CONTROL.prepare(
+      'UPDATE attempts SET head_sha = NULL WHERE attempt_id = ?',
+    ).bind(ATTEMPT_ID).run();
+
+    const response = await fetchAttempt(`/v1/attempts/${ATTEMPT_ID}/context`, {
+      token: RAW_TOKEN,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      attempt: {
+        id: ATTEMPT_ID,
+        mode: 'implement',
+        baseSha: BASE_SHA,
+        checkoutSha: BASE_SHA,
+        targetBranch: BRANCH,
+        targetBranchMode: 'new',
+      },
+    });
+  });
+
   it('returns only the active Plan Item context and atomically records one exact bot head', async () => {
     const contextResponse = await fetchAttempt(`/v1/attempts/${ATTEMPT_ID}/context`, {
       token: RAW_TOKEN,
