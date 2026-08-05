@@ -178,6 +178,70 @@ async function seed(approval: 'approve' | 'reject' | 'none' = 'approve'): Promis
   }
 }
 
+async function seedOlderUnschedulableRuns(count: number): Promise<void> {
+  const createdAt = new Date(NOW.getTime() - 60 * 60_000).toISOString();
+  const taskDigest = await taskRevisionDigest(TASK);
+  for (let index = 0; index < count; index += 1) {
+    const taskId = `task-execution-noise-${index}`;
+    const runId = `run-execution-noise-${index}`;
+    const attemptId = `attempt-analysis-noise-${index}`;
+    const planId = `plan-execution-noise-${index}`;
+    const planDigest = `sha256:${index.toString(16).padStart(64, '0')}`;
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO tasks (
+           task_id, source_system, tenant_key, source_task_key, task_revision,
+           task_digest, payload_ref, actor_type, actor_id, target_repository,
+           target_base_branch, target_environment, intent_kind, title, priority,
+           acceptance_criteria_count, allow_repository_write, allow_test_deploy,
+           allow_production_deploy, require_human_approval, created_at, updated_at
+         ) VALUES (?, 'manual', 'execution-progress', ?, 'revision-1', ?, ?,
+                   'user', 'requester', 'example/delivery-target', 'main', 'none',
+                   'bug', 'Historical unschedulable Run', 'p2', 1, 1, 0, 0, 1, ?, ?)`,
+      ).bind(
+        taskId,
+        `execution-noise-${index}`,
+        taskDigest,
+        `r2://${TASK_OBJECT_KEY}`,
+        createdAt,
+        createdAt,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO runs (
+           run_id, task_id, task_revision, task_digest, base_sha,
+           workflow_instance_id, state, version, active_plan_id,
+           active_plan_version, active_plan_digest, created_at, updated_at
+         ) VALUES (?, ?, 'revision-1', ?, ?, ?, 'executing', 3, ?, 1, ?, ?, ?)`,
+      ).bind(
+        runId,
+        taskId,
+        taskDigest,
+        BASE_SHA,
+        runId,
+        planId,
+        planDigest,
+        createdAt,
+        createdAt,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, version, lease_generation, created_at, updated_at
+         ) VALUES (?, ?, 1, 'analysis', 'completed', ?, 'example/delivery-target',
+                   'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                   1, 0, ?, ?)`,
+      ).bind(attemptId, runId, BASE_SHA, createdAt, createdAt),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO execution_plans (
+           plan_id, run_id, plan_version, task_revision, base_sha, digest, status,
+           created_by_attempt_id, objective, created_at, updated_at
+         ) VALUES (?, ?, 1, 'revision-1', ?, ?, 'active', ?,
+                   'Historical plan without a schedulable change item.', ?, ?)`,
+      ).bind(planId, runId, BASE_SHA, planDigest, attemptId, createdAt, createdAt),
+    ]);
+  }
+}
+
 async function simulateSuccessfulAction(attemptId: string): Promise<void> {
   const expiredLease = new Date(NOW.getTime() - 60_000).toISOString();
   await env.DB_CONTROL.batch([
@@ -322,6 +386,22 @@ describe('execution progress reconciliation', () => {
     expect(await env.DB_CONTROL.prepare(
       'SELECT state, version FROM runs WHERE run_id = ?',
     ).bind(RUN_ID).first()).toEqual({ state: 'executing', version: 3 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts WHERE run_id = ? AND mode = 'implement'`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'execution_dispatch'`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+  });
+
+  it('does not let older unschedulable Runs starve a ready approved Run', async () => {
+    await seed('approve');
+    await seedOlderUnschedulableRuns(5);
+
+    await new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
+      now: () => NOW,
+    }).reconcileBatch(5);
+
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM attempts WHERE run_id = ? AND mode = 'implement'`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });

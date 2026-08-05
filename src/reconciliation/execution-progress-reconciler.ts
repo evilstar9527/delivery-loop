@@ -167,13 +167,104 @@ export class ExecutionProgressReconciler {
       `SELECT runs.run_id, runs.version AS run_version,
               plans.plan_id, plans.plan_version, plans.digest AS plan_digest
        FROM runs
+       JOIN tasks ON tasks.task_id = runs.task_id
        JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
        WHERE runs.state = 'executing'
          AND runs.active_plan_version = plans.plan_version
          AND runs.active_plan_digest = plans.digest
          AND plans.status = 'active'
+         AND tasks.allow_repository_write = 1
+         AND EXISTS (
+           SELECT 1
+           FROM plan_items AS candidate_items
+           JOIN plan_item_progress AS candidate_progress
+             ON candidate_progress.plan_id = candidate_items.plan_id
+            AND candidate_progress.item_id = candidate_items.item_id
+           WHERE candidate_items.plan_id = plans.plan_id
+             AND candidate_items.kind = 'change'
+             AND candidate_items.required = 1
+             AND candidate_progress.status IN ('pending', 'ready')
+             AND candidate_progress.active_attempt_id IS NULL
+             AND EXISTS (
+               SELECT 1 FROM plan_item_effects
+               WHERE plan_item_effects.plan_id = candidate_items.plan_id
+                 AND plan_item_effects.item_id = candidate_items.item_id
+                 AND plan_item_effects.effect = 'repo_write'
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM plan_item_effects
+               WHERE plan_item_effects.plan_id = candidate_items.plan_id
+                 AND plan_item_effects.item_id = candidate_items.item_id
+                 AND plan_item_effects.effect IN ('test_deploy', 'production_deploy')
+             )
+             AND EXISTS (
+               SELECT 1 FROM plan_item_command_refs
+               WHERE plan_item_command_refs.plan_id = candidate_items.plan_id
+                 AND plan_item_command_refs.item_id = candidate_items.item_id
+                 AND plan_item_command_refs.command_ref LIKE 'test:%'
+             )
+             AND EXISTS (
+               SELECT 1 FROM plan_item_command_refs
+               WHERE plan_item_command_refs.plan_id = candidate_items.plan_id
+                 AND plan_item_command_refs.item_id = candidate_items.item_id
+                 AND plan_item_command_refs.command_ref LIKE 'verify:%'
+             )
+             AND EXISTS (
+               SELECT 1 FROM plan_item_evidence_kinds
+               WHERE plan_item_evidence_kinds.plan_id = candidate_items.plan_id
+                 AND plan_item_evidence_kinds.item_id = candidate_items.item_id
+                 AND plan_item_evidence_kinds.evidence_kind = 'commit'
+             )
+             AND EXISTS (
+               SELECT 1 FROM plan_item_evidence_kinds
+               WHERE plan_item_evidence_kinds.plan_id = candidate_items.plan_id
+                 AND plan_item_evidence_kinds.item_id = candidate_items.item_id
+                 AND plan_item_evidence_kinds.evidence_kind = 'test'
+             )
+             AND NOT EXISTS (
+               SELECT 1
+               FROM plan_item_dependencies
+               LEFT JOIN plan_item_progress AS dependency_progress
+                 ON dependency_progress.plan_id = plan_item_dependencies.plan_id
+                AND dependency_progress.item_id = plan_item_dependencies.depends_on_item_id
+               WHERE plan_item_dependencies.plan_id = candidate_items.plan_id
+                 AND plan_item_dependencies.item_id = candidate_items.item_id
+                 AND (
+                   dependency_progress.status IS NULL
+                   OR dependency_progress.status <> 'passed'
+                 )
+             )
+         )
+         AND EXISTS (
+           SELECT 1 FROM trusted_effect_approvals AS approval
+           WHERE approval.run_id = runs.run_id
+             AND approval.task_revision = runs.task_revision
+             AND approval.plan_id = plans.plan_id
+             AND approval.plan_version = plans.plan_version
+             AND approval.plan_digest = plans.digest
+             AND approval.base_sha = plans.base_sha
+             AND approval.effect = 'repo_write'
+             AND approval.decision = 'approve'
+             AND approval.expires_at > ?
+             AND NOT EXISTS (
+               SELECT 1 FROM invalidated_approvals
+               WHERE invalidated_approvals.approval_id = approval.approval_id
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM approvals AS rejection
+               WHERE rejection.run_id = approval.run_id
+                 AND rejection.task_revision = approval.task_revision
+                 AND rejection.plan_id = approval.plan_id
+                 AND rejection.plan_version = approval.plan_version
+                 AND rejection.plan_digest = approval.plan_digest
+                 AND rejection.base_sha = approval.base_sha
+                 AND rejection.effect = approval.effect
+                 AND rejection.decision = 'reject'
+                 AND rejection.created_at >= approval.created_at
+             )
+         )
        ORDER BY runs.updated_at, runs.run_id LIMIT ?`,
-    ).bind(limit).all<RunPlanRow>();
+    ).bind(now.toISOString(), limit).all<RunPlanRow>();
     let scheduled = 0;
     const store = new PlanItemAttemptStore(this.db);
     for (const run of runs.results) {
