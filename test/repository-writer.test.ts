@@ -113,7 +113,10 @@ describe('approved Git repository writer', () => {
     );
     expect(commands.at(-1)?.environment).toMatchObject({
       GIT_CONFIG_KEY_0: 'http.extraHeader',
-      GIT_CONFIG_VALUE_0: `Authorization: Bearer ${credential().token}`,
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${Buffer.from(
+        `x-access-token:${credential().token}`,
+        'utf8',
+      ).toString('base64')}`,
     });
   });
 
