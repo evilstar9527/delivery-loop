@@ -472,7 +472,7 @@ export class VerificationEvidenceStore {
       context.active_plan_version !== context.plan_version ||
       context.active_plan_digest !== context.plan_digest ||
       context.plan_status !== 'active' ||
-      context.item_kind !== 'verification' ||
+      (context.item_kind !== 'change' && context.item_kind !== 'verification') ||
       context.item_required !== 1 ||
       context.progress_status !== 'in_progress' ||
       context.active_attempt_id !== context.attempt_id ||

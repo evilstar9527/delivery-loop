@@ -70,6 +70,8 @@ async function fetchAttempt(
 
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM verification_suite_commands'),
+    env.DB_CONTROL.prepare('DELETE FROM verification_suites'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_head_updates'),
     env.DB_CONTROL.prepare('DELETE FROM evidence'),
     env.DB_CONTROL.prepare('DELETE FROM plan_item_external_facts'),
@@ -160,7 +162,7 @@ async function seed(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare(
       `INSERT INTO plan_items (plan_id, item_id, kind, title, objective, required, position)
-       VALUES (?, ?, 'verification', 'Repair and verify',
+       VALUES (?, ?, 'change', 'Repair and verify',
                'Apply the smallest fix and execute trusted verification.', 1, 0)`,
     ).bind(PLAN_ID, ITEM_ID),
     env.DB_CONTROL.prepare(
@@ -285,6 +287,51 @@ describe('execution Attempt context and head API', () => {
     });
   });
 
+  it('starts verification on the first bot head recorded from the frozen base', async () => {
+    await env.DB_CONTROL.prepare(
+      'UPDATE attempts SET head_sha = NULL WHERE attempt_id = ?',
+    ).bind(ATTEMPT_ID).run();
+
+    const head = await fetchAttempt(`/v1/attempts/${ATTEMPT_ID}/head`, {
+      method: 'POST',
+      token: RAW_TOKEN,
+      body: {
+        expectedVersion: 2,
+        leaseGeneration: 1,
+        parentSha: BASE_SHA,
+        headSha: HEAD_SHA,
+        branch: BRANCH,
+      },
+    });
+    expect(head.status).toBe(201);
+    expect(await head.json()).toMatchObject({ version: 3, headSha: HEAD_SHA });
+
+    const verification = await fetchAttempt(`/v1/attempts/${ATTEMPT_ID}/verifications`, {
+      method: 'POST',
+      token: RAW_TOKEN,
+      body: {
+        expectedVersion: 3,
+        leaseGeneration: 1,
+        manifest: {
+          schemaVersion: '1',
+          headSha: HEAD_SHA,
+          policyDigest: `sha256:${'7'.repeat(64)}`,
+          targetedCommandRefs: ['test:unit'],
+          requiredVerifyCommandRefs: ['verify:all'],
+        },
+      },
+    });
+    expect(verification.status).toBe(201);
+    expect(await verification.json()).toMatchObject({
+      created: true,
+      status: 'running',
+      commands: [
+        { position: 0, phase: 'targeted', commandRef: 'test:unit' },
+        { position: 1, phase: 'required_verify', commandRef: 'verify:all' },
+      ],
+    });
+  });
+
   it('returns only the active Plan Item context and atomically records one exact bot head', async () => {
     const contextResponse = await fetchAttempt(`/v1/attempts/${ATTEMPT_ID}/context`, {
       token: RAW_TOKEN,
@@ -310,7 +357,7 @@ describe('execution Attempt context and head API', () => {
       task: taskEnvelope(),
       item: {
         id: ITEM_ID,
-        kind: 'verification',
+        kind: 'change',
         required: true,
         doneWhen: ['Targeted and required verification pass on the new head.'],
         commandRefs: ['test:unit', 'verify:all'],
