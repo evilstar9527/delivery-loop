@@ -147,6 +147,7 @@ async function seedValidatedPlan(
       acceptanceCriteriaCount: 1,
       allowedCommandRefs: ['policy:diagnose'],
       allowedEffects: ['repo_read'],
+      requiresRepositoryChange: false,
     },
     NOW,
   );
@@ -234,6 +235,7 @@ describe('DeliveryRunWorkflow durable analysis handoff', () => {
         acceptanceCriteriaCount: 1,
         allowedCommandRefs: ['policy:diagnose'],
         allowedEffects: ['repo_read'],
+        requiresRepositoryChange: false,
       },
       NOW,
     );
@@ -257,6 +259,7 @@ describe('DeliveryRunWorkflow durable analysis handoff', () => {
           acceptanceCriteriaCount: 1,
           allowedCommandRefs: ['policy:diagnose'],
           allowedEffects: ['repo_read'],
+          requiresRepositoryChange: false,
         },
         NOW,
       ),

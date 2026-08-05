@@ -388,6 +388,7 @@ describe('immutable ExecutionPlan revision', () => {
         allowedCommandRefs: ['test:unit', 'verify:all'],
         verificationCommandRefs: ['test:unit', 'verify:all'],
         allowedEffects: ['repo_read', 'repo_write', 'test_deploy'],
+        requiresRepositoryChange: false,
       },
       NOW,
     );
@@ -545,6 +546,7 @@ describe('immutable ExecutionPlan revision', () => {
         allowedCommandRefs: ['test:unit'],
         verificationCommandRefs: ['test:unit'],
         allowedEffects: ['repo_read', 'repo_write'],
+        requiresRepositoryChange: false,
       },
       NOW,
     );

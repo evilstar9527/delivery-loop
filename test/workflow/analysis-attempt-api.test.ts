@@ -13,7 +13,10 @@ const ATTEMPT_ID = 'attempt-analysis-context';
 const BASE_SHA = '6'.repeat(40);
 const BODY_CANARY = 'CANARY_ORIGINAL_USER_FEEDBACK_FOR_AGENT_ONLY';
 
-function taskEnvelope(): TaskEnvelope {
+function taskEnvelope(
+  kind: 'requirement' | 'bug' = 'bug',
+  allowRepositoryWrite = false,
+): TaskEnvelope {
   return {
     schemaVersion: '1',
     eventId: 'event-analysis-context-1',
@@ -33,18 +36,46 @@ function taskEnvelope(): TaskEnvelope {
       environment: 'test',
     },
     intent: {
-      kind: 'bug',
+      kind,
       title: 'Analyze a user-reported failure',
       description: BODY_CANARY,
       acceptanceCriteria: ['The source-backed cause and a verifiable plan are returned.'],
       priority: 'p1',
     },
     policy: {
-      allowRepositoryWrite: false,
+      allowRepositoryWrite,
       allowTestDeploy: false,
       allowProductionDeploy: false,
       requireHumanApproval: true,
     },
+  };
+}
+
+function writablePlanContent(): Record<string, unknown> {
+  return {
+    objective: 'Apply the requested repository change and prove the committed result.',
+    assumptions: ['The checked-out base and delivery policy are trusted Runner inputs.'],
+    evidenceRefs: ['d1://evidence/analysis-context-source-1'],
+    items: [
+      {
+        id: 'implement-request',
+        kind: 'change',
+        title: 'Implement and verify the requested change',
+        objective: 'Make the smallest requested change and verify the committed head.',
+        acceptanceCriteriaIndexes: [0],
+        doneWhen: [
+          'The bot commit contains the requested change.',
+          'Targeted and required verification pass on the committed head.',
+        ],
+        verification: {
+          commandRefs: ['test:unit', 'verify:all'],
+          evidenceKinds: ['commit', 'test'],
+        },
+        effects: ['repo_write'],
+        dependsOn: [],
+        required: true,
+      },
+    ],
   };
 }
 
@@ -87,8 +118,7 @@ async function runnerFetch(
   });
 }
 
-async function seedAttemptContext(): Promise<void> {
-  const task = taskEnvelope();
+async function seedAttemptContext(task: TaskEnvelope = taskEnvelope()): Promise<void> {
   const taskDigest = await taskRevisionDigest(task);
   const payloadKey = `tasks/${TASK_ID}/${taskDigest.slice('sha256:'.length)}.json`;
   const now = new Date();
@@ -109,9 +139,17 @@ async function seedAttemptContext(): Promise<void> {
        ) VALUES (
          ?, 'manual', 'analysis-context-test', 'analysis-context-task', 'revision-1',
          ?, ?, 'user', 'analysis-context-user', 'example/delivery-target', 'main',
-         'test', 'bug', 'Analyze a user-reported failure', 'p1', 1, 0, 0, 0, 1, ?, ?
+         'test', ?, 'Analyze a user-reported failure', 'p1', 1, ?, 0, 0, 1, ?, ?
        )`,
-    ).bind(TASK_ID, taskDigest, `r2://${payloadKey}`, nowIso, nowIso),
+    ).bind(
+      TASK_ID,
+      taskDigest,
+      `r2://${payloadKey}`,
+      task.intent.kind,
+      Number(task.policy.allowRepositoryWrite),
+      nowIso,
+      nowIso,
+    ),
     env.DB_CONTROL.prepare(
       `INSERT INTO runs (
          run_id, task_id, task_revision, task_digest, base_sha,
@@ -139,6 +177,31 @@ async function seedAttemptContext(): Promise<void> {
       expiresAt,
       nowIso,
     ),
+  ]);
+}
+
+async function replaceTaskSnapshot(task: TaskEnvelope): Promise<void> {
+  const taskDigest = await taskRevisionDigest(task);
+  const payloadKey = `tasks/${TASK_ID}/${taskDigest.slice('sha256:'.length)}.json`;
+  await env.TASK_OBJECTS.put(payloadKey, JSON.stringify(task), {
+    httpMetadata: { contentType: 'application/json; charset=utf-8' },
+    customMetadata: { taskDigest },
+  });
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `UPDATE tasks
+       SET task_digest = ?, payload_ref = ?, intent_kind = ?, allow_repository_write = ?
+       WHERE task_id = ?`,
+    ).bind(
+      taskDigest,
+      `r2://${payloadKey}`,
+      task.intent.kind,
+      Number(task.policy.allowRepositoryWrite),
+      TASK_ID,
+    ),
+    env.DB_CONTROL.prepare(
+      'UPDATE runs SET task_digest = ? WHERE run_id = ?',
+    ).bind(taskDigest, RUN_ID),
   ]);
 }
 
@@ -253,6 +316,71 @@ describe('attempt-scoped analysis context and Plan proposal API', () => {
       'SELECT COUNT(*) AS count FROM execution_plans',
     ).first<{ count: number }>();
     expect(count?.count).toBe(1);
+  });
+
+  it('requires a self-verifying change Plan for a trusted writable requirement', async () => {
+    const task = taskEnvelope('requirement', true);
+    await replaceTaskSnapshot(task);
+
+    const context = await runnerFetch(`/v1/attempts/${ATTEMPT_ID}/context`, {
+      token: RAW_TOKEN,
+    });
+    expect(context.status).toBe(200);
+    expect(await context.json()).toMatchObject({
+      task,
+      planPolicy: {
+        allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write'],
+        allowedCommandRefs: [
+          'policy:inspect',
+          'policy:diagnose',
+          'test:unit',
+          'verify:all',
+        ],
+        verificationCommandRefs: ['verify:all'],
+        requiresRepositoryChange: true,
+      },
+    });
+
+    const investigationOnly = await runnerFetch(`/v1/attempts/${ATTEMPT_ID}/plan`, {
+      method: 'POST',
+      token: RAW_TOKEN,
+      body: validPlanContent(),
+    });
+    expect(investigationOnly.status).toBe(400);
+    expect(await investigationOnly.json()).toMatchObject({ code: 'invalid_argument' });
+
+    const change = await runnerFetch(`/v1/attempts/${ATTEMPT_ID}/plan`, {
+      method: 'POST',
+      token: RAW_TOKEN,
+      body: writablePlanContent(),
+    });
+    expect(change.status).toBe(201);
+    expect(await change.json()).toMatchObject({ status: 'validated', version: 1 });
+  });
+
+  it('keeps a read-only requirement and bug investigation on the read-only Plan boundary', async () => {
+    const task = taskEnvelope('requirement', false);
+    await replaceTaskSnapshot(task);
+
+    const context = await runnerFetch(`/v1/attempts/${ATTEMPT_ID}/context`, {
+      token: RAW_TOKEN,
+    });
+    expect(context.status).toBe(200);
+    expect(await context.json()).toMatchObject({
+      task,
+      planPolicy: {
+        allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic'],
+        allowedCommandRefs: ['policy:inspect', 'policy:diagnose'],
+        verificationCommandRefs: [],
+        requiresRepositoryChange: false,
+      },
+    });
+    const plan = await runnerFetch(`/v1/attempts/${ATTEMPT_ID}/plan`, {
+      method: 'POST',
+      token: RAW_TOKEN,
+      body: validPlanContent(),
+    });
+    expect(plan.status).toBe(201);
   });
 
   it('rejects Agent-controlled identity and effects without echoing content', async () => {
