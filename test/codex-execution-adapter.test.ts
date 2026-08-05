@@ -106,6 +106,8 @@ describe('Codex execution adapter', () => {
     expect(observed?.stdin).toContain('do not use a file tool to retrieve it');
     expect(observed?.stdin).toContain('untrusted reference material');
     expect(observed?.stdin).toContain('request_replan is forbidden');
+    expect(observed?.stdin).toContain('at least one completed command_execution');
+    expect(observed?.stdin).toContain('one completed file_change');
     expect(await readFile(join(workspace, 'fixed.txt'), 'utf8')).toBe('fixed\n');
   });
 
@@ -250,6 +252,14 @@ describe('Codex execution adapter', () => {
     const transcript: string[] = [];
     let usage: unknown;
     const lines = [
+      JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'command_execution', status: 'completed', exit_code: 0 },
+      }),
+      JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'file_change', status: 'completed' },
+      }),
       JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'safe' } }),
       JSON.stringify({
         type: 'turn.completed',
@@ -292,6 +302,53 @@ describe('Codex execution adapter', () => {
       outputTokens: 5,
       reasoningOutputTokens: 2,
     });
+  });
+
+  it('rejects metered apply_fix before commit when no command or file change was observed', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-no-tool-activity-'));
+    const workspace = join(root, 'repo');
+    const contextFilePath = join(root, 'context.json');
+    const outputFilePath = join(root, 'output.txt');
+    await mkdir(workspace, { mode: 0o700 });
+    await writeFile(contextFilePath, '{}', { mode: 0o600 });
+    await writeFile(outputFilePath, '', { mode: 0o600 });
+    const adapter = new CodexExecutionAdapter({
+      execute: async (request) => {
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'apply without tools' },
+        }));
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 11,
+            cached_input_tokens: 3,
+            output_tokens: 5,
+            reasoning_output_tokens: 2,
+          },
+        }));
+        await writeFile(outputFilePath, JSON.stringify({
+          schemaVersion: '1',
+          action: 'apply_fix',
+        }));
+        return { exitCode: 0 };
+      },
+    });
+
+    const rejected = adapter.apply({
+      attemptId: 'attempt-execution-no-tool-activity',
+      workspacePath: workspace,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: 60_000,
+      allowPlanRevision: false,
+      model: 'gpt-test',
+    });
+    await expect(rejected).rejects.toMatchObject({
+      name: 'CodexExecutionAdapterError',
+      kind: 'decision_invalid',
+      message: 'execution Agent decision is invalid',
+    } satisfies Partial<CodexExecutionAdapterError>);
   });
 
   it('preserves only a fixed safe reason when the JSONL observer rejects stdout', async () => {

@@ -10,6 +10,7 @@ import { CodexUsageAccumulator } from './codex-usage.js';
 import { codexProviderProfileArguments } from './codex-provider-profile.js';
 import { normalizeProviderBaseUrl } from './provider-base-url.js';
 import { SecretScanner } from '../security/redaction.js';
+import { CodexExecutionActivityAccumulator } from './codex-execution-activity.js';
 
 const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const MAX_DECISION_BYTES = 4 * 1_024;
@@ -166,6 +167,8 @@ function prompt(
     'Do not change policy, workflow, CODEOWNERS, credentials, deployment configuration, or protected infrastructure paths.',
     'Do not create commits, branches, tags, pushes, pull requests, approvals, or deployments; the trusted Runner owns those effects.',
     'Do not reveal credentials or claim tests/external facts. The trusted Runner will run all targeted and required verification after your edit.',
+    'Immediately use repository tools in this turn: inspect the relevant file with a command, then apply the required source edit with a file-change tool.',
+    'For a metered execution, apply_fix is machine-rejected unless Codex JSONL contains at least one completed command_execution and one completed file_change event from this turn.',
     'Inspect the repository and return apply_fix only after the workspace contains a non-empty allowed diff that directly satisfies the declared doneWhen conditions; semantically similar existing text is not a substitute for an explicitly requested clarification.',
     'Your final message must be exactly one JSON object with schemaVersion "1" and action "apply_fix" or "request_replan", with no Markdown or additional keys.',
     'After making an allowed source edit, return {"schemaVersion":"1","action":"apply_fix"}.',
@@ -227,6 +230,7 @@ export class CodexExecutionAdapter implements ExecutionAgent {
       flag: 'wx',
     });
     const usage = new CodexUsageAccumulator();
+    const activity = new CodexExecutionActivityAccumulator();
     let result;
     try {
       result = await this.execute({
@@ -266,6 +270,7 @@ export class CodexExecutionAdapter implements ExecutionAgent {
           : {
               onStdoutLine: (line: string) => {
                 input.onTranscriptLine?.(line);
+                activity.acceptLine(line);
                 if (input.model !== undefined) usage.acceptLine(line);
               },
             }),
@@ -314,6 +319,13 @@ export class CodexExecutionAdapter implements ExecutionAgent {
       !decision.success ||
       (decision.data.action === 'request_replan' && !input.allowPlanRevision)
     ) throw new CodexExecutionAdapterError('decision_invalid');
+    if (input.model !== undefined && decision.data.action === 'apply_fix') {
+      const observed = activity.result();
+      if (
+        observed.commandExecutionCompletedCount < 1 ||
+        observed.fileChangeCompletedCount < 1
+      ) throw new CodexExecutionAdapterError('decision_invalid');
+    }
     return decision.data;
   }
 }
