@@ -183,7 +183,14 @@ jobs:
                 effects, commandRefs, evidenceKinds
               }],
               attempts: [$plan[0].attempts[] | {
-                id, mode, status, version, leaseGeneration,
-                githubRunId, githubStatus, githubConclusion
+                id, mode, status, baseSha, headBranch, headSha,
+                version, leaseGeneration, heartbeatAt, result,
+                githubRunId, githubStatus, githubConclusion,
+                githubObservedAt, githubObservationVersion
+              }],
+              evidence: [$plan[0].evidence[] | {
+                id, attemptId, planId, planVersion, planItemId,
+                kind, status, commandRef, exitCode, durationMs,
+                sha, url, artifactDigest, verificationStatus, observedAt
               }]
             }'
