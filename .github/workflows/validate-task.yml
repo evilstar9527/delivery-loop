@@ -5,15 +5,23 @@ on:
     inputs:
       task_json:
         description: TaskEnvelope v1 JSON (contract validation only)
-        required: true
+        required: false
+        default: ''
         type: string
       expected_task_id:
         description: Expected deterministic Task ID for the one-shot intake guard
-        required: true
+        required: false
+        default: ''
         type: string
       idempotency_key:
         description: Fresh one-shot intake idempotency key
-        required: true
+        required: false
+        default: ''
+        type: string
+      query_task_id:
+        description: Optional exact Task ID for a read-only safe state projection
+        required: false
+        default: ''
         type: string
 
 permissions:
@@ -32,9 +40,33 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Validate requested operation
+        env:
+          DELIVERY_TASK_JSON: ${{ inputs.task_json }}
+          DELIVERY_EXPECTED_TASK_ID: ${{ inputs.expected_task_id }}
+          DELIVERY_IDEMPOTENCY_KEY: ${{ inputs.idempotency_key }}
+          DELIVERY_QUERY_TASK_ID: ${{ inputs.query_task_id }}
+        run: |
+          set -euo pipefail
+          modes=0
+          if test -n "$DELIVERY_TASK_JSON" \
+            && test -n "$DELIVERY_EXPECTED_TASK_ID" \
+            && test -n "$DELIVERY_IDEMPOTENCY_KEY" \
+            && test -z "$DELIVERY_QUERY_TASK_ID"; then
+            modes=$((modes + 1))
+          fi
+          if test -z "$DELIVERY_TASK_JSON" \
+            && test -z "$DELIVERY_EXPECTED_TASK_ID" \
+            && test -z "$DELIVERY_IDEMPOTENCY_KEY" \
+            && test -n "$DELIVERY_QUERY_TASK_ID"; then
+            modes=$((modes + 1))
+          fi
+          test "$modes" = 1
       - name: Validate without printing the task body
+        if: inputs.query_task_id == ''
         run: pnpm validate:task
       - name: Read safe Task and Agent action inventory
+        if: inputs.query_task_id == ''
         env:
           DELIVERY_EXPECTED_TASK_ID: ${{ inputs.expected_task_id }}
           DELIVERY_CONTROL_PLANE_ORIGIN: https://delivery-loop-control-plane.eve55265.workers.dev
@@ -72,6 +104,7 @@ jobs:
               expectedAgentTitle:$expectedAgentTitle, stableAgentActions:$stableAgentActions}'
 
       - name: Submit the validated Task exactly once
+        if: inputs.query_task_id == ''
         env:
           DELIVERY_EXPECTED_TASK_ID: ${{ inputs.expected_task_id }}
           DELIVERY_IDEMPOTENCY_KEY: ${{ inputs.idempotency_key }}
@@ -100,3 +133,55 @@ jobs:
             '.accepted == true and .taskId == $taskId and .runId == $runId
              | {accepted:true, taskId:$taskId, runId:$runId}' \
             "$response_file"
+
+      - name: Read safe current Task and Plan state
+        if: inputs.query_task_id != ''
+        env:
+          DELIVERY_QUERY_TASK_ID: ${{ inputs.query_task_id }}
+          DELIVERY_CONTROL_PLANE_ORIGIN: https://delivery-loop-control-plane.eve55265.workers.dev
+          DELIVERY_TASK_INTAKE_TOKEN: ${{ secrets.TASK_INTAKE_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$DELIVERY_QUERY_TASK_ID" =~ ^task_[a-f0-9]{56}$ ]]
+          test -n "$DELIVERY_TASK_INTAKE_TOKEN"
+          run_id="run_${DELIVERY_QUERY_TASK_ID#task_}"
+          task_response="$RUNNER_TEMP/task-state.json"
+          plan_response="$RUNNER_TEMP/plan-state.json"
+          task_status="$(curl --silent --show-error --max-time 20 \
+            --output "$task_response" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header 'Accept: application/json' \
+            "$DELIVERY_CONTROL_PLANE_ORIGIN/v1/tasks/$DELIVERY_QUERY_TASK_ID")"
+          plan_status="$(curl --silent --show-error --max-time 20 \
+            --output "$plan_response" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header 'Accept: application/json' \
+            "$DELIVERY_CONTROL_PLANE_ORIGIN/v1/runs/$run_id/plan")"
+          test "$task_status" = 200
+          test "$plan_status" = 200
+          jq -n --slurpfile task "$task_response" --slurpfile plan "$plan_response" '
+            {
+              task: {
+                id: $task[0].task.id,
+                revision: $task[0].task.source.revision,
+                kind: $task[0].task.intent.kind,
+                repository: $task[0].task.target.repository,
+                baseBranch: $task[0].task.target.baseBranch
+              },
+              run: {
+                id: $task[0].run.id,
+                state: $task[0].run.state,
+                version: $task[0].run.version,
+                baseSha: $task[0].run.baseSha,
+                activePlan: $task[0].run.activePlan
+              },
+              plan: ($plan[0].plan | {id, version, digest, baseSha, status}),
+              items: [$plan[0].items[] | {
+                id, kind, required, status, progressVersion,
+                effects, commandRefs, evidenceKinds
+              }],
+              attempts: [$plan[0].attempts[] | {
+                id, mode, status, version, leaseGeneration,
+                githubRunId, githubStatus, githubConclusion
+              }]
+            }'
