@@ -246,6 +246,81 @@ async function seed(): Promise<void> {
   ]);
 }
 
+async function seedUnchangedBatchCandidates(count: number): Promise<string[]> {
+  const runIds: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const suffix = String(index).padStart(2, '0');
+    const taskId = `task-github-base-fair-${suffix}`;
+    const runId = `run-github-base-fair-${suffix}`;
+    const attemptId = `attempt-github-base-fair-${suffix}`;
+    const planId = `plan-github-base-fair-${suffix}`;
+    runIds.push(runId);
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO tasks (
+           task_id, source_system, tenant_key, source_task_key, task_revision,
+           task_digest, payload_ref, actor_type, actor_id, target_repository,
+           target_base_branch, target_environment, intent_kind, title, priority,
+           acceptance_criteria_count, allow_repository_write, allow_test_deploy,
+           allow_production_deploy, require_human_approval, created_at, updated_at
+         ) VALUES (?, 'manual', 'github-base-observation', ?, 'revision-1', ?, ?,
+                   'system', 'github-base-observation', ?, 'main', 'test',
+                   'requirement', 'Observe unchanged base fairly', 'p2', 1,
+                   0, 0, 0, 1, ?, ?)`,
+      ).bind(
+        taskId,
+        taskId,
+        `sha256:${suffix.padEnd(64, '0')}`,
+        `r2://tasks/${taskId}.json`,
+        REPOSITORY,
+        NOW,
+        NOW,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO runs (
+           run_id, task_id, task_revision, task_digest, base_sha,
+           workflow_instance_id, state, version, active_plan_id,
+           active_plan_version, active_plan_digest, created_at, updated_at
+         ) VALUES (?, ?, 'revision-1', ?, ?, ?, 'awaiting_approval', 2, ?, 1, ?, ?, ?)`,
+      ).bind(
+        runId,
+        taskId,
+        `sha256:${suffix.padEnd(64, '0')}`,
+        BEFORE_SHA,
+        runId,
+        planId,
+        `sha256:${suffix.padEnd(64, '1')}`,
+        NOW,
+        NOW,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, version, lease_generation, created_at, updated_at
+         ) VALUES (?, ?, 1, 'analysis', 'completed', ?, ?,
+                   'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                   1, 1, ?, ?)`,
+      ).bind(attemptId, runId, BEFORE_SHA, REPOSITORY, NOW, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO execution_plans (
+           plan_id, run_id, plan_version, task_revision, base_sha, digest, status,
+           created_by_attempt_id, objective, created_at, updated_at
+         ) VALUES (?, ?, 1, 'revision-1', ?, ?, 'active', ?,
+                   'Observe unchanged base fairly.', ?, ?)`,
+      ).bind(
+        planId,
+        runId,
+        BEFORE_SHA,
+        `sha256:${suffix.padEnd(64, '1')}`,
+        attemptId,
+        NOW,
+        NOW,
+      ),
+    ]);
+  }
+  return runIds;
+}
+
 beforeEach(async () => {
   await reset();
   await seed();
@@ -581,5 +656,24 @@ describe('GitHub base observation reconciliation', () => {
       ineligibleClient,
     ).reconcileRun(RUN_ID)).toBe('not_found');
     expect(ineligibleClient.calls).toEqual([]);
+  });
+
+  it('rotates a bounded batch so unchanged Runs cannot starve later candidates', async () => {
+    const additionalRunIds = await seedUnchangedBatchCandidates(5);
+    let now = new Date('2026-07-25T23:00:00.000Z');
+    const client = new FakeBaseClient({ disposition: 'unchanged', headSha: BEFORE_SHA });
+    const reconciler = new GitHubBaseObservationReconciler(env.DB_CONTROL, client, {
+      now: () => now,
+    });
+
+    const first = await reconciler.reconcileBatch(5);
+    now = new Date(now.getTime() + 60_000);
+    const second = await reconciler.reconcileBatch(5);
+
+    expect(first).toHaveLength(5);
+    expect(second).toHaveLength(5);
+    expect(new Set([...first, ...second].map(({ runId }) => runId))).toEqual(
+      new Set([RUN_ID, ...additionalRunIds]),
+    );
   });
 });

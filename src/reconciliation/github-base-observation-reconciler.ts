@@ -449,21 +449,9 @@ export class GitHubBaseObservationReconciler {
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
       throw new Error('GitHub base reconciliation limit must be between 1 and 100');
     }
-    const candidates = await this.db.prepare(
-      `SELECT runs.run_id
-       FROM runs
-       JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
-       WHERE runs.state IN (
-         'awaiting_approval', 'executing', 'verifying', 'pull_request_open',
-         'awaiting_review', 'ready_to_merge', 'blocked'
-       )
-         AND runs.base_sha IS NOT NULL
-         AND plans.status = 'active' AND plans.base_sha = runs.base_sha
-       ORDER BY runs.updated_at, runs.run_id
-       LIMIT ?`,
-    ).bind(limit).all<{ run_id: string }>();
+    const candidates = await this.rotatingCandidates(limit);
     const results: GitHubBaseBatchResult[] = [];
-    for (const candidate of candidates.results) {
+    for (const candidate of candidates) {
       try {
         results.push({
           runId: candidate.run_id,
@@ -474,6 +462,49 @@ export class GitHubBaseObservationReconciler {
       }
     }
     return results;
+  }
+
+  private async rotatingCandidates(limit: number): Promise<Array<{ run_id: string }>> {
+    const predicate = `FROM runs
+       JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
+       WHERE runs.state IN (
+         'awaiting_approval', 'executing', 'verifying', 'pull_request_open',
+         'awaiting_review', 'ready_to_merge', 'blocked'
+       )
+         AND runs.base_sha IS NOT NULL
+         AND plans.status = 'active' AND plans.base_sha = runs.base_sha`;
+    const countRow = await this.db.prepare(
+      `SELECT COUNT(*) AS count ${predicate}`,
+    ).first<{ count: number }>();
+    const count = countRow?.count ?? 0;
+    if (!Number.isSafeInteger(count) || count <= 0) return [];
+
+    const epochMinute = Math.floor(this.now().getTime() / 60_000);
+    const offset = ((epochMinute % count) * (limit % count)) % count;
+    const selected: Array<{ run_id: string }> = [];
+    const selectedIds = new Set<string>();
+    const append = (rows: Array<{ run_id: string }>): void => {
+      for (const row of rows) {
+        if (selectedIds.has(row.run_id) || selected.length >= limit) continue;
+        selectedIds.add(row.run_id);
+        selected.push(row);
+      }
+    };
+    const tail = await this.db.prepare(
+      `SELECT runs.run_id ${predicate}
+       ORDER BY runs.updated_at, runs.run_id
+       LIMIT ? OFFSET ?`,
+    ).bind(limit, offset).all<{ run_id: string }>();
+    append(tail.results);
+    if (selected.length < limit && offset > 0) {
+      const head = await this.db.prepare(
+        `SELECT runs.run_id ${predicate}
+         ORDER BY runs.updated_at, runs.run_id
+         LIMIT ?`,
+      ).bind(limit - selected.length).all<{ run_id: string }>();
+      append(head.results);
+    }
+    return selected;
   }
 
   private async candidate(runId: string): Promise<CandidateRow | null> {
