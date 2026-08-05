@@ -46,6 +46,7 @@ jobs:
           run_id="run_${DELIVERY_EXPECTED_TASK_ID#task_}"
           task_response="$RUNNER_TEMP/task-safe.json"
           plan_response="$RUNNER_TEMP/plan-safe.json"
+          template_response="$RUNNER_TEMP/template-safe.json"
           task_status="$(curl --silent --show-error --max-time 20 \
             --output "$task_response" --write-out '%{http_code}' \
             --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
@@ -56,8 +57,15 @@ jobs:
             --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
             --header 'Accept: application/json' \
             "$DELIVERY_CONTROL_PLANE_ORIGIN/v1/runs/$run_id/plan")"
+          template_status="$(curl --silent --show-error --max-time 20 \
+            --output "$template_response" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header 'Accept: application/json' \
+            "$DELIVERY_CONTROL_PLANE_ORIGIN/v1/runs/$run_id/github-commit-approval-template")"
           test "$task_status" = 200
           test "$plan_status" = 200
+          jq -n --arg operationsTemplateStatus "$template_status" \
+            '{operationsTemplateStatus:$operationsTemplateStatus}'
           jq -ce --arg task_id "$DELIVERY_EXPECTED_TASK_ID" --arg run_id "$run_id" '
             select(.task.id == $task_id and .run.id == $run_id)
             | {task:{id:.task.id, source:.task.source, target:.task.target,
