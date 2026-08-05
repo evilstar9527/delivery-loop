@@ -755,10 +755,14 @@ export class GitRepositoryWriter {
   }
 
   private credentialGitEnvironment(): Readonly<Record<string, string>> {
+    const authorization = Buffer.from(
+      `x-access-token:${this.context.credential.token}`,
+      'utf8',
+    ).toString('base64');
     return {
       GIT_CONFIG_COUNT: '1',
       GIT_CONFIG_KEY_0: 'http.extraHeader',
-      GIT_CONFIG_VALUE_0: `Authorization: Bearer ${this.context.credential.token}`,
+      GIT_CONFIG_VALUE_0: `Authorization: Basic ${authorization}`,
     };
   }
 
