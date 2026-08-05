@@ -149,6 +149,7 @@ function prompt(
   contextFilePath: string,
   contextBlock: string,
   allowPlanRevision: boolean,
+  structuredDecisionRequired: boolean,
 ): string {
   return [
     'You are executing one approved software delivery Plan Item in a writable repository workspace.',
@@ -168,10 +169,16 @@ function prompt(
     'Do not create commits, branches, tags, pushes, pull requests, approvals, or deployments; the trusted Runner owns those effects.',
     'Do not reveal credentials or claim tests/external facts. The trusted Runner will run all targeted and required verification after your edit.',
     'Immediately use repository tools in this turn: inspect the relevant file with a command, then apply the required source edit with a file-change tool.',
-    'For a metered execution, apply_fix is machine-rejected unless Codex JSONL contains at least one completed command_execution and one completed file_change event from this turn.',
-    'Inspect the repository and return apply_fix only after the workspace contains a non-empty allowed diff that directly satisfies the declared doneWhen conditions; semantically similar existing text is not a substitute for an explicitly requested clarification.',
-    'Your final message must be exactly one JSON object with schemaVersion "1" and action "apply_fix" or "request_replan", with no Markdown or additional keys.',
-    'After making an allowed source edit, return {"schemaVersion":"1","action":"apply_fix"}.',
+    'For a metered execution, completion is machine-rejected unless Codex JSONL contains at least one completed command_execution and one completed file_change event from this turn.',
+    ...(structuredDecisionRequired ? [
+      'Inspect the repository and return apply_fix only after the workspace contains a non-empty allowed diff that directly satisfies the declared doneWhen conditions; semantically similar existing text is not a substitute for an explicitly requested clarification.',
+      'Your final message must be exactly one JSON object with schemaVersion "1" and action "apply_fix" or "request_replan", with no Markdown or additional keys.',
+      'After making an allowed source edit, return {"schemaVersion":"1","action":"apply_fix"}.',
+    ] : [
+      'Inspect the repository and continue only after the workspace contains a non-empty allowed diff that directly satisfies the declared doneWhen conditions; semantically similar existing text is not a substitute for an explicitly requested clarification.',
+      'Your final message is not an execution decision and is ignored by the trusted Runner; do not stop to describe or propose the edit before using repository tools.',
+      'After making the source edit, briefly summarize it; the trusted Runner derives apply_fix only from completed Codex tool events and then independently verifies the Git diff.',
+    ]),
   ].join('\n');
 }
 
@@ -221,14 +228,17 @@ export class CodexExecutionAdapter implements ExecutionAgent {
       throw new Error('execution Agent files must be outside repository');
     }
     const initialContext = await readVerifiedExecutionPromptContext(canonicalContext);
+    const structuredDecisionRequired = input.allowPlanRevision || input.model === undefined;
     const decisionSchemaPath = join(
       dirname(canonicalOutput),
       `${input.attemptId}-decision-schema.json`,
     );
-    await writeFile(decisionSchemaPath, executionDecisionSchema(input.allowPlanRevision), {
-      mode: 0o600,
-      flag: 'wx',
-    });
+    if (structuredDecisionRequired) {
+      await writeFile(decisionSchemaPath, executionDecisionSchema(input.allowPlanRevision), {
+        mode: 0o600,
+        flag: 'wx',
+      });
+    }
     const usage = new CodexUsageAccumulator();
     const activity = new CodexExecutionActivityAccumulator();
     let result;
@@ -254,16 +264,23 @@ export class CodexExecutionAdapter implements ExecutionAgent {
           '-c',
           'shell_environment_policy.exclude=["*KEY*","*SECRET*","*TOKEN*","*PASSWORD*"]',
           ...codexProviderProfileArguments(this.providerBaseUrl),
-          '--output-schema',
-          decisionSchemaPath,
-          '--output-last-message',
-          outputFilePath,
+          ...(structuredDecisionRequired ? [
+            '--output-schema',
+            decisionSchemaPath,
+            '--output-last-message',
+            outputFilePath,
+          ] : []),
           '--cd',
           workspacePath,
           '-',
         ],
         cwd: workspacePath,
-        stdin: prompt(contextFilePath, initialContext.block, input.allowPlanRevision),
+        stdin: prompt(
+          contextFilePath,
+          initialContext.block,
+          input.allowPlanRevision,
+          structuredDecisionRequired,
+        ),
         timeoutMs: input.timeoutMs,
         ...(input.model === undefined && input.onTranscriptLine === undefined
           ? {}
@@ -278,7 +295,7 @@ export class CodexExecutionAdapter implements ExecutionAgent {
     } catch {
       throw new CodexExecutionAdapterError('process_unavailable');
     } finally {
-      await rm(decisionSchemaPath, { force: true });
+      if (structuredDecisionRequired) await rm(decisionSchemaPath, { force: true });
     }
     const finalContext = await readVerifiedExecutionPromptContext(canonicalContext);
     if (finalContext.serialized !== initialContext.serialized) {
@@ -297,6 +314,14 @@ export class CodexExecutionAdapter implements ExecutionAgent {
       const measured = usage.result();
       if (measured === null) throw new CodexExecutionAdapterError('usage_invalid');
       input.onUsage?.(measured);
+    }
+    if (!structuredDecisionRequired) {
+      const observed = activity.result();
+      if (
+        observed.commandExecutionCompletedCount < 1 ||
+        observed.fileChangeCompletedCount < 1
+      ) throw new CodexExecutionAdapterError('decision_invalid');
+      return { schemaVersion: '1', action: 'apply_fix' };
     }
     let decisionText: string;
     try {
