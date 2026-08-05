@@ -796,34 +796,67 @@ export async function runExecutionAttempt(
       heartbeatIntervalMs,
       heartbeatController.signal,
     ).catch((error: unknown) => { heartbeatFailure = error; });
+    const reporterContext = {
+      controlPlaneUrl: config.controlPlaneUrl,
+      attemptId: config.attemptId,
+      fencing,
+    };
+    const failureReporter = new ControlPlaneExecutionFailureReporter(
+      reporterContext,
+      fetcher,
+      { now },
+    );
     await writeFile(contextFilePath, JSON.stringify(context), { mode: 0o600, flag: 'wx' });
     await writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' });
     if (new SecretScanner({ secrets: [...runtimeSecrets] }).scan(context).length > 0) {
       throw new ExecutionRunnerError('execution context contains runtime credentials');
     }
-    const credential = await fencing.withAuthorization(async (authorization) => {
-      const parsed = CredentialResponseSchema.safeParse(await controlPlaneJson(
-        fetcher,
-        config,
-        `/v1/attempts/${config.attemptId}/github/write-token`,
-        authorization.attemptToken,
-        'repo_write credential',
-        [200, 201],
-        {
-          expectedVersion: authorization.expectedVersion,
-          leaseGeneration: authorization.leaseGeneration,
-        },
-      ));
-      if (
-        !parsed.success ||
-        parsed.data.repository !== config.repository ||
-        Date.parse(parsed.data.expiresAt) <= now().getTime()
-      ) {
-        throw new ExecutionRunnerError('repo_write credential response is invalid');
+    let credential: z.infer<typeof CredentialResponseSchema>;
+    try {
+      credential = await fencing.withAuthorization(async (authorization) => {
+        const parsed = CredentialResponseSchema.safeParse(await controlPlaneJson(
+          fetcher,
+          config,
+          `/v1/attempts/${config.attemptId}/github/write-token`,
+          authorization.attemptToken,
+          'repo_write credential',
+          [200, 201],
+          {
+            expectedVersion: authorization.expectedVersion,
+            leaseGeneration: authorization.leaseGeneration,
+          },
+        ));
+        if (
+          !parsed.success ||
+          parsed.data.repository !== config.repository ||
+          Date.parse(parsed.data.expiresAt) <= now().getTime()
+        ) {
+          throw new ExecutionRunnerError('repo_write credential response is invalid');
+        }
+        runtimeSecrets.add(parsed.data.token);
+        return parsed.data;
+      });
+    } catch {
+      let reported = false;
+      try {
+        await failureReporter.report({
+          failureCode: 'tool_unavailable',
+          failureSite: 'external_reconciliation',
+          attemptedPaths: ['external_reconciliation'],
+          neededHumanInput: 'resolve_external_dependency',
+        });
+        reported = true;
+      } catch {
+        reported = false;
+      } finally {
+        heartbeatController.abort();
+        await heartbeatTask;
       }
-      runtimeSecrets.add(parsed.data.token);
-      return parsed.data;
-    });
+      if (!reported) {
+        throw new ExecutionRunnerError('repo_write credential dependency report failed');
+      }
+      throw new ExecutionRunnerError('repo_write credential dependency is unavailable');
+    }
 
     const protectedPathReporter = async (report: Parameters<
       ConstructorParameters<typeof GitRepositoryWriter>[0]['onProtectedPathApprovalRequired']
@@ -836,11 +869,6 @@ export async function runExecutionAttempt(
         leaseGeneration: authorization.leaseGeneration,
       }, fetcher).report(report);
     });
-    const reporterContext = {
-      controlPlaneUrl: config.controlPlaneUrl,
-      attemptId: config.attemptId,
-      fencing,
-    };
     const evidenceReporter = new ControlPlaneVerificationEvidenceReporter({
       controlPlaneUrl: config.controlPlaneUrl,
       attemptId: config.attemptId,
@@ -848,11 +876,6 @@ export async function runExecutionAttempt(
       withAuthorization: async (operation) => await fencing.withAuthorization(operation),
     }, fetcher);
     const headReporter = new ControlPlaneExecutionHeadReporter(reporterContext, fetcher);
-    const failureReporter = new ControlPlaneExecutionFailureReporter(
-      reporterContext,
-      fetcher,
-      { now },
-    );
     if (context.baseRebase !== undefined) {
       const rebase = context.baseRebase;
       await materializeSourceBranch(config, rebase.sourceBranch, rebase.sourceHeadSha);

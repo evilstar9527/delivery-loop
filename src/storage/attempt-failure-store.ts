@@ -7,6 +7,7 @@ import {
   retryScopeMode,
   retryScopeDigest,
   shouldRetry,
+  type AttemptFailureBlockerReason,
   type AttemptFailureReportV1,
 } from '../domain/attempt-failure.js';
 import { canonicalSha256 } from '../domain/digest.js';
@@ -87,7 +88,7 @@ interface FailureProjectionRow {
   occurred_at: string;
   run_state: string;
   blocker_id: string | null;
-  blocker_reason: 'repeated_fingerprint' | 'attempt_limit' | null;
+  blocker_reason: AttemptFailureBlockerReason | null;
   repair_id: string | null;
   repair_attempt_id: string | null;
   repair_ordinal: number | null;
@@ -111,7 +112,7 @@ export interface AttemptFailureResult {
   retryAllowed: boolean;
   blocker?: {
     id: string;
-    reason: 'repeated_fingerprint' | 'attempt_limit';
+    reason: AttemptFailureBlockerReason;
   };
   verificationFailure?: {
     sourceSuiteId: string;
@@ -212,8 +213,14 @@ export class AttemptFailureStore {
       previous?.fingerprint_digest === fingerprintDigest
         ? previous.consecutive_fingerprint_count + 1
         : 1;
+    const externalDependency =
+      report.failureCode === 'tool_unavailable' &&
+      report.failureSite === 'external_reconciliation' &&
+      report.neededHumanInput === 'resolve_external_dependency';
     const blockerReason =
-      consecutiveFingerprintCount >= REPEATED_FAILURE_LIMIT
+      externalDependency
+        ? 'external_dependency' as const
+        : consecutiveFingerprintCount >= REPEATED_FAILURE_LIMIT
         ? 'repeated_fingerprint' as const
         : attemptCount >= DEFAULT_MAX_ATTEMPTS
           ? 'attempt_limit' as const
@@ -943,7 +950,7 @@ export class AttemptFailureStore {
     failureId: string,
     scopeDigest: string,
     fingerprintDigest: string,
-    expectedBlockerReason: 'repeated_fingerprint' | 'attempt_limit' | null,
+    expectedBlockerReason: AttemptFailureBlockerReason | null,
     expectedRepair: RepairIdentity | null,
     verificationFact: VerificationFailureFact | null,
     repairCreated: boolean,

@@ -21,14 +21,24 @@ interface FailureBody {
     | 'invalid_agent_output'
     | 'tool_unavailable'
     | 'verification_nonzero_exit';
-  failureSite: 'agent_output' | 'tool_logs_search' | 'full_verification';
+  failureSite:
+    | 'agent_output'
+    | 'tool_logs_search'
+    | 'full_verification'
+    | 'external_reconciliation';
   attemptedPaths: Array<
-    'repository_inspection' | 'log_query' | 'code_change' | 'targeted_test' | 'full_verification'
+    | 'repository_inspection'
+    | 'log_query'
+    | 'code_change'
+    | 'targeted_test'
+    | 'full_verification'
+    | 'external_reconciliation'
   >;
   neededHumanInput:
     | 'clarify_requirement'
     | 'grant_context_access'
-    | 'manual_investigation';
+    | 'manual_investigation'
+    | 'resolve_external_dependency';
   occurredAt: string;
   expectedVersion: number;
   leaseGeneration: number;
@@ -191,9 +201,12 @@ beforeEach(async () => {
     env.DB_CONTROL.prepare('DELETE FROM run_blockers'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_failure_paths'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_failures'),
+    env.DB_CONTROL.prepare('DELETE FROM outbox'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_progress'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_items'),
+    env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
-    env.DB_CONTROL.prepare('DELETE FROM outbox'),
     env.DB_CONTROL.prepare('DELETE FROM runs'),
     env.DB_CONTROL.prepare('DELETE FROM tasks'),
   ]);
@@ -358,6 +371,78 @@ describe('bounded Attempt failure policy and blocker projection', () => {
       attemptCount: 3,
       consecutiveFingerprintCount: 1,
       blocker: { reason: 'attempt_limit' },
+    });
+  });
+
+  it('blocks the first execution credential dependency failure without a blind retry', async () => {
+    const attempt = await seedAttempt(1, {
+      mode: 'implement',
+      planId: PLAN_ID,
+      planVersion: 1,
+      planItemId: PLAN_ITEM_ID,
+    });
+    await seedActiveImplementationPlan(attempt.attemptId);
+
+    const response = await reportFailure(
+      attempt.attemptId,
+      attempt.token,
+      failureBody(1, {
+        failureCode: 'tool_unavailable',
+        failureSite: 'external_reconciliation',
+        attemptedPaths: ['external_reconciliation'],
+        neededHumanInput: 'resolve_external_dependency',
+      }),
+    );
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({
+      accepted: true,
+      blocked: true,
+      retryAllowed: false,
+      attemptCount: 1,
+      consecutiveFingerprintCount: 1,
+      blocker: { reason: 'external_dependency' },
+    });
+    expect(
+      await env.DB_CONTROL.prepare('SELECT state, version FROM runs WHERE run_id = ?')
+        .bind(RUN_ID)
+        .first(),
+    ).toEqual({ state: 'blocked', version: 2 });
+    expect(
+      await env.DB_CONTROL.prepare(
+        `SELECT status FROM plan_item_progress WHERE plan_id = ? AND item_id = ?`,
+      ).bind(PLAN_ID, PLAN_ITEM_ID).first(),
+    ).toEqual({ status: 'blocked' });
+    expect(
+      await env.DB_CONTROL.prepare(
+        `SELECT COUNT(*) AS count FROM outbox
+         WHERE run_id = ? AND kind = 'execution_dispatch'`,
+      ).bind(RUN_ID).first(),
+    ).toEqual({ count: 0 });
+    expect(await taskStatus()).toMatchObject({
+      run: {
+        state: 'blocked',
+        blocker: {
+          reason: 'external_dependency',
+          attemptCount: 1,
+          consecutiveFingerprintCount: 1,
+          attemptedPaths: [{
+            attemptId: attempt.attemptId,
+            ordinal: 1,
+            failureClass: 'tool_error',
+            failureCode: 'tool_unavailable',
+            failureSite: 'external_reconciliation',
+            paths: [{
+              code: 'external_reconciliation',
+              label: 'Reconciled an external platform fact',
+            }],
+          }],
+          neededHumanInput: {
+            code: 'resolve_external_dependency',
+            prompt: 'Resolve the external dependency and confirm when retry is safe.',
+          },
+        },
+      },
     });
   });
 

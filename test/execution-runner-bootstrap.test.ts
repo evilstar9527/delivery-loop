@@ -787,6 +787,136 @@ describe('production execution Runner bootstrap', () => {
     expect(await canonicalSha256(WRITE_TOKEN)).not.toBe(manifestDigest);
   });
 
+  it('reports a bounded external dependency when the repo_write credential is unavailable', async () => {
+    const fixture = await repository();
+    const runnerTemp = join(fixture.root, 'runner-temp-credential-failure');
+    await mkdir(runnerTemp, { mode: 0o700 });
+    const taskDigest = await taskRevisionDigest(task());
+    const environment: NodeJS.ProcessEnv = {
+      DELIVERY_SCHEMA_VERSION: '1',
+      DELIVERY_RUN_ID: RUN_ID,
+      DELIVERY_ATTEMPT_ID: ATTEMPT_ID,
+      DELIVERY_TASK_DIGEST: taskDigest,
+      DELIVERY_BASE_SHA: fixture.checkoutSha,
+      DELIVERY_CHECKOUT_SHA: fixture.checkoutSha,
+      DELIVERY_ATTEMPT_MODE: 'implement',
+      DELIVERY_PLAN_VERSION: '1',
+      DELIVERY_PLAN_ITEM_ID: ITEM_ID,
+      DELIVERY_CONTROL_PLANE_URL: 'https://control.delivery.test',
+      ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.actions.test/token?job=credential-failure',
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'CANARY_ACTIONS_RUNTIME_TOKEN_CREDENTIAL_FAILURE',
+      GITHUB_WORKSPACE: fixture.path,
+      RUNNER_TEMP: runnerTemp,
+      GITHUB_REPOSITORY: REPOSITORY,
+    };
+    const attemptToken = 'CANARY_EXECUTION_CREDENTIAL_FAILURE_ATTEMPT_TOKEN';
+    const generation = 5;
+    const version = 12;
+    let credentialRequests = 0;
+    let agentCalls = 0;
+    let reportedFailure: Record<string, unknown> | undefined;
+    const upstreamCanary = 'CANARY_GITHUB_CREDENTIAL_RESPONSE_MUST_NOT_ESCAPE';
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('https://oidc.actions.test/token')) {
+        return Response.json({ value: OIDC_TOKEN });
+      }
+      if (url.endsWith('/exchange')) {
+        return Response.json({
+          attemptToken,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          attemptVersion: version,
+          leaseGeneration: generation,
+          grant: {
+            toolBridgeToken: 'CANARY_EXECUTION_CREDENTIAL_FAILURE_TOOL_TOKEN',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            scopes: [...EXECUTION_TOOL_ACTIONS],
+          },
+        });
+      }
+      expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${attemptToken}`);
+      if (url.endsWith('/context')) {
+        return Response.json({
+          schemaVersion: '1',
+          attempt: {
+            id: ATTEMPT_ID,
+            runId: RUN_ID,
+            taskId: TASK_ID,
+            mode: 'implement',
+            version,
+            leaseGeneration: generation,
+            baseSha: fixture.checkoutSha,
+            checkoutSha: fixture.checkoutSha,
+            repository: REPOSITORY,
+            baseBranch: 'main',
+            planId: PLAN_ID,
+            planVersion: 1,
+            planItemId: ITEM_ID,
+            targetBranch: repositoryAttemptBranch(TASK_ID, ATTEMPT_ID),
+            targetBranchMode: 'new',
+          },
+          task: task(),
+          item: {
+            id: ITEM_ID,
+            kind: 'change',
+            title: 'Apply the approved change',
+            objective: 'Apply and verify the approved bounded change.',
+            required: true,
+            doneWhen: ['The trusted verification commands pass on the bot head.'],
+            commandRefs: ['test:unit', 'verify:all'],
+            evidenceKinds: ['commit', 'test'],
+            effects: ['repo_read', 'repo_write'],
+          },
+        });
+      }
+      if (url.endsWith('/github/write-token')) {
+        credentialRequests += 1;
+        expect(JSON.parse(String(init?.body))).toEqual({
+          expectedVersion: version,
+          leaseGeneration: generation,
+        });
+        return new Response(upstreamCanary, { status: 503 });
+      }
+      if (url.endsWith('/events')) {
+        reportedFailure = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json({ accepted: true }, {
+          status: 202,
+          headers: { 'cache-control': 'no-store' },
+        });
+      }
+      throw new Error(`unexpected fake URL: ${url}`);
+    };
+
+    await expect(runExecutionAttempt({
+      environment,
+      fetch: fetchImplementation,
+      heartbeatIntervalMs: 60_000,
+      agent: {
+        apply: async () => {
+          agentCalls += 1;
+          return { schemaVersion: '1', action: 'apply_fix' };
+        },
+      },
+      now: () => new Date('2026-08-05T08:00:00.000Z'),
+    })).rejects.toThrow('repo_write credential dependency is unavailable');
+
+    expect(credentialRequests).toBe(1);
+    expect(agentCalls).toBe(0);
+    expect(reportedFailure).toMatchObject({
+      schemaVersion: '1',
+      type: 'attempt_failed',
+      sequence: 1,
+      failureCode: 'tool_unavailable',
+      failureSite: 'external_reconciliation',
+      attemptedPaths: ['external_reconciliation'],
+      neededHumanInput: 'resolve_external_dependency',
+      expectedVersion: version,
+      leaseGeneration: generation,
+    });
+    expect(JSON.stringify(reportedFailure)).not.toContain(upstreamCanary);
+    expect(await readdir(runnerTemp)).toEqual([]);
+  });
+
   it('turns only a real nonzero targeted result into the fixed terminal failure event', async () => {
     const fixture = await repository();
     const runnerTemp = join(fixture.root, 'runner-temp-failure');
