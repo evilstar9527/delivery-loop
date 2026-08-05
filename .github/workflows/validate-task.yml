@@ -7,6 +7,14 @@ on:
         description: TaskEnvelope v1 JSON (contract validation only)
         required: true
         type: string
+      expected_task_id:
+        description: Exact Task ID for a read-only state projection
+        required: true
+        type: string
+      expected_run_id:
+        description: Exact Run ID for a read-only state projection
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -25,3 +33,58 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Validate without printing the task body
         run: pnpm validate:task
+      - name: Read exact safe Task and Plan projections
+        env:
+          DELIVERY_EXPECTED_TASK_ID: ${{ inputs.expected_task_id }}
+          DELIVERY_EXPECTED_RUN_ID: ${{ inputs.expected_run_id }}
+          DELIVERY_CONTROL_PLANE_ORIGIN: https://delivery-loop-control-plane.eve55265.workers.dev
+          DELIVERY_TASK_INTAKE_TOKEN: ${{ secrets.TASK_INTAKE_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$DELIVERY_EXPECTED_TASK_ID" =~ ^task_[a-f0-9]{56}$ ]]
+          [[ "$DELIVERY_EXPECTED_RUN_ID" =~ ^run_[a-f0-9]{56}$ ]]
+          test "${DELIVERY_EXPECTED_TASK_ID#task_}" = "${DELIVERY_EXPECTED_RUN_ID#run_}"
+          test -n "$DELIVERY_TASK_INTAKE_TOKEN"
+
+          task_response="$RUNNER_TEMP/task-safe.json"
+          plan_response="$RUNNER_TEMP/plan-safe.json"
+          task_status="$(curl --silent --show-error --max-time 20 \
+            --output "$task_response" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header 'Accept: application/json' \
+            "$DELIVERY_CONTROL_PLANE_ORIGIN/v1/tasks/$DELIVERY_EXPECTED_TASK_ID")"
+          plan_status="$(curl --silent --show-error --max-time 20 \
+            --output "$plan_response" --write-out '%{http_code}' \
+            --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
+            --header 'Accept: application/json' \
+            "$DELIVERY_CONTROL_PLANE_ORIGIN/v1/runs/$DELIVERY_EXPECTED_RUN_ID/plan")"
+          test "$task_status" = 200
+          test "$plan_status" = 200
+
+          jq -ce --arg task_id "$DELIVERY_EXPECTED_TASK_ID" --arg run_id "$DELIVERY_EXPECTED_RUN_ID" '
+            select(.task.id == $task_id and .run.id == $run_id)
+            | {
+                task: {
+                  id: .task.id,
+                  source: .task.source,
+                  target: .task.target,
+                  intent: {kind: .task.intent.kind}
+                },
+                run: .run
+              }
+          ' "$task_response"
+          jq -ce --arg run_id "$DELIVERY_EXPECTED_RUN_ID" '
+            select(.run.id == $run_id)
+            | {
+                run: .run,
+                plan: .plan,
+                items: [.items[] | {
+                  id, kind, required, status, progressVersion,
+                  effects, commandRefs, evidenceKinds, activeAttemptId
+                }],
+                attempts: [.attempts[] | {
+                  id, mode, status, planItemId, githubRunId,
+                  githubStatus, githubConclusion, version, leaseGeneration
+                }]
+              }
+          ' "$plan_response"
