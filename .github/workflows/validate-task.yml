@@ -50,6 +50,7 @@ jobs:
             --header "Authorization: Bearer $DELIVERY_TASK_INTAKE_TOKEN" \
             --header 'Accept: application/json' \
             "$DELIVERY_CONTROL_PLANE_ORIGIN/v1/tasks/$DELIVERY_EXPECTED_TASK_ID")"
+          jq -n --arg taskStatus "$task_status" '{taskStatus:$taskStatus}'
           test "$task_status" = 404
           jq -e '.error.code == "not_found"' "$task_response" >/dev/null
 
@@ -59,6 +60,7 @@ jobs:
             'repos/evilstar9527/delivery-loop/actions/runs?event=workflow_dispatch&per_page=100' \
             | jq --arg title "$expected_title" \
               '[.[].workflow_runs[] | select(.display_title == $title)] | length')"
+          jq -n --argjson actionCount "$action_count" '{stableAgentActions:$actionCount}'
           test "$action_count" = 0
           jq -n --arg taskId "$DELIVERY_EXPECTED_TASK_ID" \
             --arg expectedAgentTitle "$expected_title" \
