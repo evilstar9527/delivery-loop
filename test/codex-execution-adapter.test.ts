@@ -9,7 +9,7 @@ import {
 } from '../src/agent/codex-execution-adapter.js';
 
 describe('Codex execution adapter', () => {
-  it('uses ephemeral workspace-write with approval never and keeps context content out of prompt', async () => {
+  it('uses ephemeral workspace-write with approval never and embeds bounded untrusted context', async () => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-agent-'));
     const workspace = join(root, 'repo');
     const contextFilePath = join(root, 'context.json');
@@ -17,7 +17,7 @@ describe('Codex execution adapter', () => {
     await mkdir(workspace, { mode: 0o700 });
     await writeFile(
       contextFilePath,
-      JSON.stringify({ canary: 'CANARY_EXECUTION_CONTEXT_NOT_IN_PROMPT' }),
+      JSON.stringify({ canary: 'CANARY_EXECUTION_CONTEXT_EMBEDDED' }),
       { mode: 0o600 },
     );
     await chmod(contextFilePath, 0o600);
@@ -100,10 +100,54 @@ describe('Codex execution adapter', () => {
     expect(schemaPath).toBeDefined();
     await expect(readFile(schemaPath!, 'utf8')).rejects.toThrow();
     expect(observed?.stdin).toContain(contextFilePath);
-    expect(observed?.stdin).not.toContain('CANARY_EXECUTION_CONTEXT_NOT_IN_PROMPT');
+    expect(observed?.stdin).toContain('BEGIN_UNTRUSTED_EXECUTION_CONTEXT_JSON');
+    expect(observed?.stdin).toContain('CANARY_EXECUTION_CONTEXT_EMBEDDED');
+    expect(observed?.stdin).toContain('END_UNTRUSTED_EXECUTION_CONTEXT_JSON');
+    expect(observed?.stdin).toContain('do not use a file tool to retrieve it');
     expect(observed?.stdin).toContain('untrusted reference material');
     expect(observed?.stdin).toContain('request_replan is forbidden');
     expect(await readFile(join(workspace, 'fixed.txt'), 'utf8')).toBe('fixed\n');
+  });
+
+  it('rejects oversized or changed execution context before accepting a decision', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-context-proof-'));
+    const workspace = join(root, 'repo');
+    const contextFilePath = join(root, 'context.json');
+    const outputFilePath = join(root, 'output.txt');
+    await mkdir(workspace, { mode: 0o700 });
+    await writeFile(outputFilePath, '', { mode: 0o600 });
+    let calls = 0;
+    const adapter = new CodexExecutionAdapter({
+      execute: async () => {
+        calls += 1;
+        await writeFile(contextFilePath, JSON.stringify({ changed: true }), { mode: 0o600 });
+        await writeFile(outputFilePath, JSON.stringify({
+          schemaVersion: '1',
+          action: 'apply_fix',
+        }));
+        return { exitCode: 0 };
+      },
+    });
+    const input = {
+      attemptId: 'attempt-execution-context-proof',
+      workspacePath: workspace,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: 60_000,
+      allowPlanRevision: false,
+    } as const;
+
+    await writeFile(
+      contextFilePath,
+      JSON.stringify({ content: 'x'.repeat(256 * 1_024) }),
+      { mode: 0o600 },
+    );
+    await expect(adapter.apply(input)).rejects.toThrow('execution Agent context proof is invalid');
+    expect(calls).toBe(0);
+
+    await writeFile(contextFilePath, JSON.stringify({ stable: true }), { mode: 0o600 });
+    await expect(adapter.apply(input)).rejects.toThrow('execution Agent context proof is invalid');
+    expect(calls).toBe(1);
   });
 
   it.each([
