@@ -129,6 +129,7 @@ type Attempt = {
   repository: string;
   workflowRef: string;
   githubRunId?: string;
+  githubHeadSha?: string;
   githubStatus?: 'requested' | 'queued' | 'waiting' | 'in_progress' | 'completed';
   githubConclusion?: string;
   githubObservedAt?: string;
@@ -767,7 +768,7 @@ type RetryRunAccepted = {
 Phase 1/4 exchange 约束：
 
 - Runner 把 GitHub OIDC JWT 放在 `Authorization: Bearer`，不写 JSON body、日志或 artifact；控制面从 GitHub JWKS 仅接受 `RS256`，issuer 固定为 `https://token.actions.githubusercontent.com`，audience 默认 `delivery-loop-control-plane`；
-- `repository`、`job_workflow_ref ?? workflow_ref`、`sha`、`run_id` 必须与 D1 Attempt 的 dispatcher/webhook 可信绑定完全一致；Attempt 只允许 `analysis/implement/review_fix + starting/running + active lease`，未绑定 GitHub run ID时fail-closed，`deploy`仍使用独立Phase 5凭证路径；
+- `repository`、`job_workflow_ref ?? workflow_ref`、`sha`、`run_id` 必须与 D1 Attempt 的可信绑定完全一致。其中`sha`只匹配dispatcher从Actions run列表观察并与run ID原子冻结的`githubHeadSha`，不能匹配caller输入或Plan的`baseSha`；`baseSha`继续只表示Agent checkout/代码证据真源，两者可以不同。Attempt 只允许 `analysis/implement/review_fix + starting/running + active lease`，未同时绑定GitHub run ID与合法run head时fail-closed，`deploy`仍使用独立Phase 5凭证路径；
 - 同一 `attempt + leaseGeneration` 只允许一次交换。一次响应生成互不相同的 opaque `attemptToken` 与 `grant.toolBridgeToken`；OIDC JWT 和两个 token 均只保存 SHA-256 digest，D1 还约束两个 digest 不可相同；
 - 两个 token 共用 `expiresAt = min(now + 5 分钟, attempt lease expiry)`，响应 `Cache-Control: no-store`。20 路相同交换只能一个请求获得明文 credential pair，其余返回 conflict；
 - `attemptToken` 只用于 context/heartbeat/Plan/checkpoint/artifact/event/complete；`toolBridgeToken` 只用于本控制面的 `/tools/call` PEP。run token 不能调用工具，tool token 不能读取 Task/context或推进 Attempt；上游 tool-bridge 的 internal/Admin Secret 永不返回 Runner；

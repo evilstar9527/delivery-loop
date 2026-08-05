@@ -92,6 +92,7 @@ describe('GitHub test rollback adapters', () => {
             display_title: 'delivery-loop/rollback/rollback-test-adapter',
             path: '.github/workflows/delivery-test-rollback.yml',
             head_branch: 'main',
+            head_sha: SHA,
           }],
         });
       }
@@ -121,7 +122,11 @@ describe('GitHub test rollback adapters', () => {
         ref_sha: SHA,
         control_plane_url: 'https://control.example.test',
       },
-    })).resolves.toEqual({ disposition: 'created', githubRunId: '9010' });
+    })).resolves.toEqual({
+      disposition: 'created',
+      githubRunId: '9010',
+      githubHeadSha: SHA,
+    });
     await expect(client.getRollbackWorkflowRun('example/repo', '9010')).resolves.toMatchObject({
       repository: 'example/repo',
       githubRunId: '9010',

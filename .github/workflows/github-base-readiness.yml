@@ -191,8 +191,10 @@ jobs:
             --write-out '%{http_code}')"
           test "$status" = 200 || test "$status" = 201
           jq -e '
-            .status == "accepted"
-            and (.approvalId | test("^approval_[A-Za-z0-9_-]+$"))
-            and (.lineageId | test("^approval_lineage_[A-Za-z0-9_-]+$"))
+            select(
+              .status == "accepted"
+              and (.approvalId | test("^approval_[A-Za-z0-9_-]+$"))
+              and (.lineageId | test("^approval_lineage_[A-Za-z0-9_-]+$"))
+            )
             | {status, approvalId, lineageId, created}
           ' "$response_file"

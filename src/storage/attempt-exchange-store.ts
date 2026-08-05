@@ -26,10 +26,10 @@ interface ExchangeAttemptRow {
   attempt_id: string;
   mode: string;
   status: string;
-  base_sha: string;
   repository: string | null;
   workflow_ref: string | null;
   github_run_id: string | null;
+  github_head_sha: string | null;
   version: number;
   lease_generation: number;
   lease_expires_at: string | null;
@@ -67,8 +67,8 @@ export class AttemptExchangeStore {
   ): Promise<AttemptExchangeResult> {
     const attempt = await this.db
       .prepare(
-        `SELECT attempt_id, mode, status, base_sha, repository, workflow_ref,
-                github_run_id, version, lease_generation, lease_expires_at
+        `SELECT attempt_id, mode, status, repository, workflow_ref,
+                github_run_id, github_head_sha, version, lease_generation, lease_expires_at
          FROM attempts WHERE attempt_id = ?`,
       )
       .bind(attemptId)
@@ -78,9 +78,10 @@ export class AttemptExchangeStore {
       attempt.repository === null ||
       attempt.workflow_ref === null ||
       attempt.github_run_id === null ||
+      attempt.github_head_sha === null ||
       claims.repository !== attempt.repository ||
       claims.workflowRef !== attempt.workflow_ref ||
-      claims.sha !== attempt.base_sha ||
+      claims.sha !== attempt.github_head_sha ||
       claims.runId !== attempt.github_run_id
     ) {
       throw new AttemptExchangeError('attempt_binding_mismatch');

@@ -11,6 +11,7 @@ const AUDIENCE = 'delivery-loop-control-plane';
 const REPOSITORY = 'example/delivery-target';
 const WORKFLOW_REF = `${REPOSITORY}/.github/workflows/delivery-agent.yml@refs/heads/main`;
 const BASE_SHA = 'e'.repeat(40);
+const GITHUB_HEAD_SHA = 'd'.repeat(40);
 const GITHUB_RUN_ID = '987654321';
 const ATTEMPT_ID = 'attempt-github-oidc';
 const RUN_ID = 'run-github-oidc';
@@ -41,7 +42,7 @@ async function signOidcToken(
   return await new SignJWT({
     repository: REPOSITORY,
     workflow_ref: WORKFLOW_REF,
-    sha: BASE_SHA,
+    sha: GITHUB_HEAD_SHA,
     run_id: GITHUB_RUN_ID,
     event_name: 'workflow_dispatch',
     ...overrides,
@@ -91,9 +92,9 @@ async function seedBoundAttempt(args: { expiredLease?: boolean } = {}): Promise<
     env.DB_CONTROL.prepare(
       `INSERT INTO attempts (
          attempt_id, run_id, ordinal, mode, status, base_sha, repository,
-         workflow_ref, github_run_id, version, lease_generation,
+         workflow_ref, github_run_id, github_head_sha, version, lease_generation,
          lease_token_digest, lease_expires_at, heartbeat_at, created_at, updated_at
-       ) VALUES (?, ?, 1, 'analysis', 'running', ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?)`,
+       ) VALUES (?, ?, 1, 'analysis', 'running', ?, ?, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?)`,
     ).bind(
       ATTEMPT_ID,
       RUN_ID,
@@ -101,6 +102,7 @@ async function seedBoundAttempt(args: { expiredLease?: boolean } = {}): Promise<
       REPOSITORY,
       WORKFLOW_REF,
       GITHUB_RUN_ID,
+      GITHUB_HEAD_SHA,
       `sha256:${'b'.repeat(64)}`,
       leaseExpiresAt,
       timestamp,
@@ -212,6 +214,20 @@ describe('POST /v1/attempts/:id/exchange', () => {
     const replay = await exchange(oidcToken);
     expect(replay.status).toBe(409);
     expect(await replay.json()).toMatchObject({ code: 'conflict', retryable: false });
+  });
+
+  it('binds OIDC to the observed workflow run head independently of the checkout base', async () => {
+    expect(GITHUB_HEAD_SHA).not.toBe(BASE_SHA);
+
+    const checkoutBaseClaim = await exchange(await signOidcToken({ sha: BASE_SHA }));
+    expect(checkoutBaseClaim.status).toBe(403);
+    expect(await checkoutBaseClaim.json()).toMatchObject({
+      code: 'policy_denied',
+      retryable: false,
+    });
+
+    const workflowRunHeadClaim = await exchange(await signOidcToken());
+    expect(workflowRunHeadClaim.status).toBe(200);
   });
 
   it('issues one credential pair under concurrency and caps both TTLs at the Attempt lease', async () => {

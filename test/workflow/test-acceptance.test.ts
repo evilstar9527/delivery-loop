@@ -250,7 +250,11 @@ async function scheduleAndDispatch(): Promise<{
           control_plane_url: BASE_URL,
         },
       });
-      return { disposition: 'created', githubRunId: '9004' };
+      return {
+        disposition: 'created',
+        githubRunId: '9004',
+        githubHeadSha: HEAD_SHA,
+      };
     },
   }, {
     allowedRepositories: ['example/repo'],
@@ -396,6 +400,7 @@ describe('post-deployment acceptance control-plane contract', () => {
     const ensureDispatch = vi.fn(async () => ({
       disposition: 'created' as const,
       githubRunId: '9004',
+      githubHeadSha: HEAD_SHA,
     }));
     const processor = new TestAcceptanceOutboxProcessor(env.DB_CONTROL, {
       ensureDispatch,

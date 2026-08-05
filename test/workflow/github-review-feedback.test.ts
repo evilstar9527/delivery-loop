@@ -74,7 +74,11 @@ class FakeDispatch implements GitHubDispatchEffects {
 
   async ensureDispatch(request: GitHubDispatchRequest) {
     this.requests.push(request);
-    return { disposition: 'created' as const, githubRunId: '70042' };
+    return {
+      disposition: 'created' as const,
+      githubRunId: '70042',
+      githubHeadSha: BASE_SHA,
+    };
   }
 }
 

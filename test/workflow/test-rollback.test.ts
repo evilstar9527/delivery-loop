@@ -353,7 +353,11 @@ async function scheduleAndDispatch(
         control_plane_url: BASE_URL,
       },
     });
-    return { disposition: 'created' as const, githubRunId: '9010' };
+    return {
+      disposition: 'created' as const,
+      githubRunId: '9010',
+      githubHeadSha: HEAD_SHA,
+    };
   });
   const processor = new TestRollbackOutboxProcessor(env.DB_CONTROL, {
     ensureDispatch,
@@ -576,6 +580,7 @@ describe('automatic test rollback durable contract', () => {
     const ensureDispatch = vi.fn(async () => ({
       disposition: 'created' as const,
       githubRunId: '9010',
+      githubHeadSha: HEAD_SHA,
     }));
     const processor = new TestRollbackOutboxProcessor(env.DB_CONTROL, { ensureDispatch }, {
       allowedRepositories: ['example/repo'],

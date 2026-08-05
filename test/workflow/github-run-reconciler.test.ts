@@ -14,6 +14,7 @@ const ATTEMPT_ID = 'attempt-github-reconciler';
 const GITHUB_RUN_ID = '123456789';
 const REPOSITORY = 'example/delivery-target';
 const BASE_SHA = 'd'.repeat(40);
+const GITHUB_HEAD_SHA = 'c'.repeat(40);
 const WORKFLOW_PATH = '.github/workflows/delivery-agent.yml';
 
 function runFact(overrides: Partial<GitHubWorkflowRunFact> = {}): GitHubWorkflowRunFact {
@@ -23,7 +24,7 @@ function runFact(overrides: Partial<GitHubWorkflowRunFact> = {}): GitHubWorkflow
     event: 'workflow_dispatch',
     status: 'completed',
     conclusion: 'success',
-    headSha: BASE_SHA,
+    headSha: GITHUB_HEAD_SHA,
     headBranch: 'main',
     workflowPath: `${WORKFLOW_PATH}@refs/heads/main`,
     displayTitle: `delivery-loop/${ATTEMPT_ID}`,
@@ -70,9 +71,9 @@ async function seedAttempt(): Promise<void> {
     env.DB_CONTROL.prepare(
       `INSERT INTO attempts (
          attempt_id, run_id, ordinal, mode, status, base_sha, repository,
-         workflow_ref, github_run_id, github_status, github_observed_at,
+         workflow_ref, github_run_id, github_head_sha, github_status, github_observed_at,
          version, lease_generation, created_at, updated_at
-       ) VALUES (?, ?, 1, 'analysis', 'running', ?, ?, ?, ?, 'in_progress', ?, 9, 2, ?, ?)`,
+       ) VALUES (?, ?, 1, 'analysis', 'running', ?, ?, ?, ?, ?, 'in_progress', ?, 9, 2, ?, ?)`,
     ).bind(
       ATTEMPT_ID,
       RUN_ID,
@@ -80,6 +81,7 @@ async function seedAttempt(): Promise<void> {
       REPOSITORY,
       `${REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
       GITHUB_RUN_ID,
+      GITHUB_HEAD_SHA,
       now,
       now,
       now,
@@ -154,7 +156,7 @@ describe('GitHub App workflow run reconciliation', () => {
   });
 
   it('ignores API facts that fail the same trusted binding or are older than webhook facts', async () => {
-    const wrong = new FakeRunClient(runFact({ headSha: 'e'.repeat(40) }));
+    const wrong = new FakeRunClient(runFact({ headSha: BASE_SHA }));
     expect(await new GitHubRunReconciler(env.DB_CONTROL, wrong).reconcileAttempt(ATTEMPT_ID)).toBe(
       'ignored',
     );
@@ -216,7 +218,7 @@ describe('GitHub App workflow run reconciliation', () => {
             event: 'workflow_dispatch',
             status: 'completed',
             conclusion: 'success',
-            head_sha: BASE_SHA,
+            head_sha: GITHUB_HEAD_SHA,
             head_branch: 'main',
             path: `${WORKFLOW_PATH}@refs/heads/main`,
             display_title: `delivery-loop/${ATTEMPT_ID}`,
@@ -248,7 +250,7 @@ describe('GitHub App workflow run reconciliation', () => {
             event: 'workflow_dispatch',
             status: 'completed',
             conclusion: 'success',
-            head_sha: BASE_SHA,
+            head_sha: GITHUB_HEAD_SHA,
             head_branch: 'main',
             path: `${WORKFLOW_PATH}@refs/heads/main`,
             display_title: `delivery-loop/${ATTEMPT_ID}`,

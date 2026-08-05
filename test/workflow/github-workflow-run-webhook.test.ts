@@ -10,6 +10,7 @@ const ATTEMPT_ID = 'attempt-github-webhook';
 const GITHUB_RUN_ID = 987_654_321;
 const REPOSITORY = 'example/delivery-target';
 const BASE_SHA = 'b'.repeat(40);
+const GITHUB_HEAD_SHA = 'a'.repeat(40);
 const WORKFLOW_PATH = '.github/workflows/delivery-agent.yml';
 const PAYLOAD_CANARY = 'CANARY_GITHUB_PAYLOAD_MUST_NOT_PERSIST';
 
@@ -36,7 +37,7 @@ function workflowRunPayload(options: {
       event: 'workflow_dispatch',
       status,
       conclusion: options.conclusion === undefined ? (status === 'completed' ? 'success' : null) : options.conclusion,
-      head_sha: options.headSha ?? BASE_SHA,
+      head_sha: options.headSha ?? GITHUB_HEAD_SHA,
       head_branch: options.headBranch ?? 'main',
       path: options.path ?? `${WORKFLOW_PATH}@refs/heads/main`,
       display_title: options.displayTitle ?? `delivery-loop/${ATTEMPT_ID}`,
@@ -107,9 +108,9 @@ async function seedAttempt(): Promise<void> {
     env.DB_CONTROL.prepare(
       `INSERT INTO attempts (
          attempt_id, run_id, ordinal, mode, status, base_sha, repository,
-         workflow_ref, github_run_id, github_status, github_observed_at,
+         workflow_ref, github_run_id, github_head_sha, github_status, github_observed_at,
          version, lease_generation, created_at, updated_at
-       ) VALUES (?, ?, 1, 'analysis', 'running', ?, ?, ?, ?, 'requested', ?, 7, 1, ?, ?)`,
+       ) VALUES (?, ?, 1, 'analysis', 'running', ?, ?, ?, ?, ?, 'requested', ?, 7, 1, ?, ?)`,
     ).bind(
       ATTEMPT_ID,
       RUN_ID,
@@ -117,6 +118,7 @@ async function seedAttempt(): Promise<void> {
       REPOSITORY,
       `${REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
       String(GITHUB_RUN_ID),
+      GITHUB_HEAD_SHA,
       now,
       now,
       now,
@@ -238,7 +240,7 @@ describe('GitHub workflow_run webhook external facts', () => {
     const mismatches = [
       workflowRunPayload({ repository: 'attacker/other-repo' }),
       workflowRunPayload({ path: '.github/workflows/other.yml@refs/heads/main' }),
-      workflowRunPayload({ headSha: 'c'.repeat(40) }),
+      workflowRunPayload({ headSha: BASE_SHA }),
       workflowRunPayload({ displayTitle: 'delivery-loop/other-attempt' }),
       workflowRunPayload({ githubRunId: GITHUB_RUN_ID + 1 }),
       workflowRunPayload({ runAttempt: 2 }),
