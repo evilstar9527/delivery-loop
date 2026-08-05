@@ -8,6 +8,7 @@ import {
   type ExecutionPlanValidationContext,
   type ExecutionPlanValidationIssueCode,
 } from '../src/domain/plan.js';
+import { deriveAnalysisPlanPolicy } from '../src/domain/analysis-plan-policy.js';
 
 const BASE_SHA = 'a'.repeat(40);
 
@@ -20,6 +21,7 @@ const CONTEXT: ExecutionPlanValidationContext = {
   allowedCommandRefs: ['test:unit', 'verify:all'],
   verificationCommandRefs: ['verify:all'],
   allowedEffects: ['repo_read', 'repo_write'],
+  requiresRepositoryChange: false,
 };
 
 function planBody(): ExecutionPlanBodyV1 {
@@ -113,6 +115,24 @@ async function expectIssue(
 }
 
 describe('ExecutionPlan v1 validation', () => {
+  it('derives writable requirement, read-only requirement, and writable bug policy without prose heuristics', () => {
+    expect(deriveAnalysisPlanPolicy('requirement', true)).toEqual({
+      allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write'],
+      allowedCommandRefs: [
+        'policy:inspect', 'policy:diagnose', 'test:unit', 'verify:all',
+      ],
+      verificationCommandRefs: ['verify:all'],
+      requiresRepositoryChange: true,
+    });
+    expect(deriveAnalysisPlanPolicy('requirement', false)).toMatchObject({
+      allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic'],
+      requiresRepositoryChange: false,
+    });
+    expect(deriveAnalysisPlanPolicy('bug', true)).toMatchObject({
+      allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write'],
+      requiresRepositoryChange: false,
+    });
+  });
   it('accepts a complete proposal and returns its canonical digest unchanged', async () => {
     const input = await proposal();
     const result = await validateExecutionPlanProposal(input, CONTEXT);
@@ -138,6 +158,56 @@ describe('ExecutionPlan v1 validation', () => {
           evidenceKinds: ['commit', 'test'],
         },
         effects: ['repo_write'],
+        dependsOn: [],
+        required: true,
+      }];
+    });
+
+    await expect(validateExecutionPlanProposal(input, {
+      ...CONTEXT,
+      requiresRepositoryChange: true,
+    })).resolves.toEqual(input);
+  });
+
+  it('rejects the revision-15 investigation-only shape when trusted context requires a repository change', async () => {
+    const input = await proposal((body) => {
+      body.items = [{
+        id: 'inspect-source',
+        kind: 'investigation',
+        title: 'Inspect the requested documentation',
+        objective: 'Locate the requested documentation change without implementing it.',
+        acceptanceCriteriaIndexes: [0, 1],
+        doneWhen: ['The current document is described in a diagnostic note.'],
+        verification: {
+          commandRefs: [],
+          evidenceKinds: ['diagnostic', 'plan'],
+        },
+        effects: ['repo_read'],
+        dependsOn: [],
+        required: true,
+      }];
+    });
+
+    await expectIssue(input, 'repository_change_required', {
+      ...CONTEXT,
+      requiresRepositoryChange: true,
+    });
+  });
+
+  it('keeps investigation-only plans valid when trusted context does not require a repository change', async () => {
+    const input = await proposal((body) => {
+      body.items = [{
+        id: 'inspect-source',
+        kind: 'investigation',
+        title: 'Inspect the current behavior',
+        objective: 'Return a source-backed diagnosis without changing the repository.',
+        acceptanceCriteriaIndexes: [0, 1],
+        doneWhen: ['The responsible source path is recorded.'],
+        verification: {
+          commandRefs: [],
+          evidenceKinds: ['diagnostic'],
+        },
+        effects: ['repo_read'],
         dependsOn: [],
         required: true,
       }];

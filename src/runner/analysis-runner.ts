@@ -52,6 +52,7 @@ import {
 } from '../domain/tool-bridge.js';
 import { isSensitiveFieldName, SecretScanner } from '../security/redaction.js';
 import type { CodexModelUsage } from '../domain/quota.js';
+import { deriveAnalysisPlanPolicy } from '../domain/analysis-plan-policy.js';
 
 const OIDC_AUDIENCE = 'delivery-loop-control-plane';
 const HEARTBEAT_INTERVAL_MS = 45_000;
@@ -101,6 +102,8 @@ const ContextResponseSchema = z
         version: z.number().int().positive(),
         allowedEffects: z.array(PlanEffectSchema).max(20),
         allowedCommandRefs: z.array(z.string().min(1).max(200)).max(100),
+        verificationCommandRefs: z.array(z.string().min(1).max(200)).max(100).default([]),
+        requiresRepositoryChange: z.boolean().default(false),
       })
       .strict(),
   })
@@ -1031,8 +1034,41 @@ export async function runAnalysisAttempt(
       expectedVersion: identity.version,
       acceptanceCriteriaCount: context.task.intent.acceptanceCriteria.length,
       allowedCommandRefs: context.planPolicy.allowedCommandRefs,
+      verificationCommandRefs: context.planPolicy.verificationCommandRefs,
       allowedEffects: context.planPolicy.allowedEffects,
+      requiresRepositoryChange: context.planPolicy.requiresRepositoryChange,
     };
+    const trustedPlanPolicy = deriveAnalysisPlanPolicy(
+      context.task.intent.kind,
+      context.task.policy.allowRepositoryWrite,
+    );
+    const isUniqueSubset = (actual: readonly string[], trusted: readonly string[]): boolean =>
+      new Set(actual).size === actual.length && actual.every((value) => trusted.includes(value));
+    if (
+      validation.requiresRepositoryChange !== trustedPlanPolicy.requiresRepositoryChange ||
+      !isUniqueSubset(
+        context.planPolicy.allowedEffects,
+        trustedPlanPolicy.allowedEffects,
+      ) ||
+      !isUniqueSubset(
+        context.planPolicy.allowedCommandRefs,
+        trustedPlanPolicy.allowedCommandRefs,
+      ) ||
+      !isUniqueSubset(
+        context.planPolicy.verificationCommandRefs,
+        trustedPlanPolicy.verificationCommandRefs,
+      ) ||
+      (trustedPlanPolicy.requiresRepositoryChange && (
+        !context.planPolicy.allowedEffects.includes('repo_write') ||
+        !trustedPlanPolicy.allowedCommandRefs
+          .filter((ref) => /^(?:test|verify):/.test(ref))
+          .every((ref) => context.planPolicy.allowedCommandRefs.includes(ref)) ||
+        !trustedPlanPolicy.verificationCommandRefs
+          .every((ref) => context.planPolicy.verificationCommandRefs.includes(ref))
+      ))
+    ) {
+      throw new AnalysisRunnerError('analysis Plan policy does not match trusted Task');
+    }
     const agent =
       options.agent ??
       new CodexAnalysisAdapter({

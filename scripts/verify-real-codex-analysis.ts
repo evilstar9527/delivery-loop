@@ -94,6 +94,7 @@ async function run(): Promise<void> {
       version: 1,
       allowedEffects: ['repo_read'],
       allowedCommandRefs: ['policy:inspect'],
+      requiresRepositoryChange: false,
     },
   };
   await writeFile(
@@ -188,6 +189,7 @@ async function run(): Promise<void> {
         acceptanceCriteriaCount: 1,
         allowedEffects: ['repo_read'],
         allowedCommandRefs: ['policy:inspect'],
+        requiresRepositoryChange: false,
       },
       model,
       onUsage: (value) => { usage = value; },

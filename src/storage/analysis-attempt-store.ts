@@ -25,13 +25,8 @@ import {
 import type { RunnerAuthorization } from './runner-attempt-store.js';
 import { ExecutionPlanStore } from './execution-plan-store.js';
 import { SecretScanner } from '../security/redaction.js';
+import { deriveAnalysisPlanPolicy } from '../domain/analysis-plan-policy.js';
 
-export const ANALYSIS_ALLOWED_EFFECTS = [
-  'repo_read',
-  'logs_read',
-  'database_diagnostic',
-] as const satisfies readonly PlanEffect[];
-export const ANALYSIS_ALLOWED_COMMAND_REFS = ['policy:inspect', 'policy:diagnose'] as const;
 
 type AnalysisAttemptErrorCode =
   | 'attempt_context_mismatch'
@@ -67,7 +62,8 @@ interface AttemptContextRow {
   target_repository: string;
   target_base_branch: string;
   acceptance_criteria_count: number;
-  intent_kind: string;
+  intent_kind: 'requirement' | 'bug';
+  allow_repository_write: number;
 }
 
 export interface AnalysisAttemptContext {
@@ -86,6 +82,8 @@ export interface AnalysisAttemptContext {
     version: number;
     allowedEffects: readonly PlanEffect[];
     allowedCommandRefs: readonly string[];
+    verificationCommandRefs: readonly string[];
+    requiresRepositoryChange: boolean;
   };
 }
 
@@ -105,7 +103,7 @@ async function attemptContextRow(
               attempts.repository, runs.task_id, runs.task_revision, runs.task_digest,
               runs.state AS run_state, tasks.payload_ref, tasks.target_repository,
               tasks.target_base_branch, tasks.acceptance_criteria_count,
-              tasks.intent_kind
+              tasks.intent_kind, tasks.allow_repository_write
        FROM attempts
        JOIN runs ON runs.run_id = attempts.run_id
        JOIN tasks ON tasks.task_id = runs.task_id
@@ -158,12 +156,18 @@ export class AnalysisAttemptContextStore {
       object.customMetadata?.taskDigest !== row.task_digest ||
       task.source.revision !== row.task_revision ||
       `${task.target.owner}/${task.target.repo}` !== row.target_repository ||
-      task.target.baseBranch !== row.target_base_branch
+      task.target.baseBranch !== row.target_base_branch ||
+      task.intent.kind !== row.intent_kind ||
+      Number(task.policy.allowRepositoryWrite) !== row.allow_repository_write
     ) {
       throw new AnalysisAttemptError('task_payload_conflict');
     }
     const version = await nextPlanVersion(this.db, row.run_id);
     const revisionSource = await this.revisionSource(row);
+    const policy = deriveAnalysisPlanPolicy(
+      row.intent_kind,
+      row.allow_repository_write === 1,
+    );
     return {
       schemaVersion: '1',
       attempt: {
@@ -178,8 +182,7 @@ export class AnalysisAttemptContextStore {
       ...(revisionSource === undefined ? {} : { revisionSource }),
       planPolicy: {
         version,
-        allowedEffects: ANALYSIS_ALLOWED_EFFECTS,
-        allowedCommandRefs: ANALYSIS_ALLOWED_COMMAND_REFS,
+        ...policy,
       },
     };
   }
@@ -476,14 +479,17 @@ export class AnalysisPlanProposalStore {
       digest: await computeExecutionPlanDigest(body),
       status: 'proposed',
     };
+    const policy = deriveAnalysisPlanPolicy(
+      row.intent_kind,
+      row.allow_repository_write === 1,
+    );
     const context = {
       runId: row.run_id,
       taskRevision: row.task_revision,
       baseSha: row.base_sha,
       expectedVersion: version,
       acceptanceCriteriaCount: row.acceptance_criteria_count,
-      allowedCommandRefs: ANALYSIS_ALLOWED_COMMAND_REFS,
-      allowedEffects: ANALYSIS_ALLOWED_EFFECTS,
+      ...policy,
     };
     const store = new ExecutionPlanStore(this.db);
     try {

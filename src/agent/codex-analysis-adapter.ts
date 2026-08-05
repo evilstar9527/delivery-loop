@@ -208,7 +208,11 @@ async function readVerifiedAnalysisPromptContext(
   }
 }
 
-function analysisPrompt(contextFilePath: string, contextBlock: string): string {
+function analysisPrompt(
+  contextFilePath: string,
+  contextBlock: string,
+  requiresRepositoryChange: boolean,
+): string {
   return [
     ...trustBoundaryPrompt(contextFilePath, contextBlock),
     'Copy the embedded envelope\'s required top-level contextDigest marker unchanged into the output top-level contextDigest. The trusted Runner verifies it against the nested context before accepting the plan; do not calculate, transform, or guess it.',
@@ -219,6 +223,9 @@ function analysisPrompt(contextFilePath: string, contextBlock: string): string {
     'Use only exact effects and commandRefs listed in planPolicy; an empty commandRefs array is valid, and never propose a change item when repo_write is not allowed.',
     'When repo_write is allowed and a code change is required, prefer one self-verifying required change item with repo_write, at least one test:* commandRef, at least one verify:* commandRef, and both commit and test Evidence; the execution Runner edits, commits, pushes, and runs both command classes in that same item.',
     'If the task explicitly requests a repository change and repo_write is allowed, inspect the relevant current files and return the concrete change item; do not replace it with an investigation-only placeholder.',
+    ...(requiresRepositoryChange
+      ? ['Trusted Task policy requires a repository change. Return one self-verifying required change item with repo_write, test:*, verify:*, and commit/test Evidence; an investigation-only Plan will be rejected by the validator.']
+      : []),
     'Every task acceptance criterion must be covered by its zero-based index on at least one required item.',
   ].join('\n');
 }
@@ -375,7 +382,11 @@ export class CodexAnalysisAdapter {
       paths.workspacePath,
       this.outputSchemaPath,
       paths.outputFilePath,
-      analysisPrompt(paths.contextFilePath, paths.contextBlock),
+      analysisPrompt(
+        paths.contextFilePath,
+        paths.contextBlock,
+        input.validation.requiresRepositoryChange,
+      ),
       paths.deadline,
     );
     let output: z.infer<typeof AnalysisAgentOutputV1Schema>;

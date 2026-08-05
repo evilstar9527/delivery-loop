@@ -60,6 +60,7 @@ function validationContext(): ExecutionPlanValidationContext {
     acceptanceCriteriaCount: 1,
     allowedCommandRefs: ['policy:inspect'],
     allowedEffects: ['repo_read'],
+    requiresRepositoryChange: false,
   };
 }
 
@@ -68,6 +69,16 @@ function diagnosticValidationContext(): ExecutionPlanValidationContext {
     ...validationContext(),
     allowedCommandRefs: ['policy:diagnose'],
     allowedEffects: ['repo_read', 'logs_read'],
+  };
+}
+
+function writableRequirementValidationContext(): ExecutionPlanValidationContext {
+  return {
+    ...validationContext(),
+    allowedCommandRefs: ['policy:inspect', 'test:unit', 'verify:all'],
+    verificationCommandRefs: ['verify:all'],
+    allowedEffects: ['repo_read', 'repo_write'],
+    requiresRepositoryChange: true,
   };
 }
 
@@ -89,6 +100,31 @@ function validContent(): Record<string, unknown> {
           evidenceKinds: ['diagnostic'],
         },
         effects: ['repo_read'],
+        dependsOn: [],
+        required: true,
+      },
+    ],
+  };
+}
+
+function writableRequirementContent(): Record<string, unknown> {
+  return {
+    objective: 'Implement the requested repository change and prove the committed result.',
+    assumptions: ['The checked out commit and delivery policy are trusted inputs.'],
+    evidenceRefs: ['d1://evidence/source-inspection-1'],
+    items: [
+      {
+        id: 'implement-request',
+        kind: 'change',
+        title: 'Implement and verify the request',
+        objective: 'Make the smallest requested change and verify the committed head.',
+        acceptanceCriteriaIndexes: [0],
+        doneWhen: ['The requested change is committed and all trusted verification passes.'],
+        verification: {
+          commandRefs: ['test:unit', 'verify:all'],
+          evidenceKinds: ['commit', 'test'],
+        },
+        effects: ['repo_write'],
         dependsOn: [],
         required: true,
       },
@@ -229,6 +265,50 @@ describe('Codex analysis Agent adapter', () => {
         expect.objectContaining({ code: 'acceptance_criterion_uncovered' }),
       ]),
     });
+  });
+
+  it('announces and enforces the trusted writable-requirement change contract', async () => {
+    const paths = await tempInput();
+    let observed: CommandExecutionRequest | undefined;
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async (request): Promise<CommandExecutionResult> => {
+        observed = request;
+        await writeFile(
+          paths.outputFile,
+          JSON.stringify(agentOutput(writableRequirementContent())),
+        );
+        return { exitCode: 0 };
+      },
+    });
+
+    const plan = await adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-writable-requirement-v1',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-writable-requirement',
+      },
+      validation: writableRequirementValidationContext(),
+    });
+
+    expect(observed?.stdin).toContain('Trusted Task policy requires a repository change');
+    expect(observed?.stdin).toContain('an investigation-only Plan will be rejected');
+    expect(plan.items).toMatchObject([{
+      kind: 'change',
+      effects: ['repo_write'],
+      verification: {
+        commandRefs: ['test:unit', 'verify:all'],
+        evidenceKinds: ['commit', 'test'],
+      },
+      required: true,
+    }]);
   });
 
   it('runs non-interactively in a read-only ephemeral sandbox and injects trusted identity/digest', async () => {

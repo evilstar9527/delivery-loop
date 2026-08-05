@@ -14,6 +14,10 @@ import {
 } from '../src/domain/delivery-policy.js';
 import { testRollbackTargetFromPolicy } from '../src/domain/test-rollback.js';
 import { loadDeliveryPolicyAtCommit } from '../src/runner/delivery-policy-loader.js';
+import {
+  ANALYSIS_PILOT_CHANGE_COMMAND_REFS,
+  ANALYSIS_PILOT_VERIFICATION_COMMAND_REFS,
+} from '../src/domain/analysis-plan-policy.js';
 import { DeliveryCommandRunner } from '../src/runner/delivery-command-runner.js';
 
 const executeFile = promisify(execFile);
@@ -82,6 +86,12 @@ describe('delivery.yaml v1', () => {
       'verify:all',
       'acceptance:smoke',
     ]);
+    expect(ANALYSIS_PILOT_CHANGE_COMMAND_REFS).toEqual(
+      deliveryPolicyCommandRefs(parsed.policy).filter((ref) => /^(?:test|verify):/.test(ref)),
+    );
+    expect(ANALYSIS_PILOT_VERIFICATION_COMMAND_REFS).toEqual(
+      deliveryPolicyCommandRefs(parsed.policy).filter((ref) => ref.startsWith('verify:')),
+    );
     const request = resolveDeliveryCommand(
       parsed.policy,
       'verify:all',

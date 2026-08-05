@@ -104,6 +104,8 @@ export interface ExecutionPlanValidationContext {
   /** Trusted subset that actually performs test/lint/build verification. */
   verificationCommandRefs?: readonly string[];
   allowedEffects: readonly PlanEffect[];
+  /** Trusted Task/policy classification; never derived from Agent-authored Plan text. */
+  requiresRepositoryChange: boolean;
 }
 
 export type ExecutionPlanValidationIssueCode =
@@ -117,6 +119,7 @@ export type ExecutionPlanValidationIssueCode =
   | 'command_ref_not_allowed'
   | 'effect_not_allowed'
   | 'acceptance_criterion_uncovered'
+  | 'repository_change_required'
   | 'verification_required_after_change'
   | 'duplicate_value'
   | 'acceptance_criterion_out_of_range'
@@ -350,6 +353,7 @@ export async function validateExecutionPlanProposal(
       item.verification.evidenceKinds.some((kind) =>
         kind === 'test' || kind === 'lint' || kind === 'build'),
   );
+  let hasRequiredRepositoryChange = false;
   for (const [index, item] of plan.items.entries()) {
     if (item.kind !== 'change' && !item.effects.includes('repo_write')) continue;
     const commandRefs = item.verification.commandRefs ?? [];
@@ -358,9 +362,10 @@ export async function validateExecutionPlanProposal(
       item.required &&
       item.effects.includes('repo_write') &&
       commandRefs.some((ref) => ref.startsWith('test:')) &&
-      commandRefs.some((ref) => verificationCommandRefs.has(ref)) &&
+      commandRefs.some((ref) => ref.startsWith('verify:') && verificationCommandRefs.has(ref)) &&
       item.verification.evidenceKinds.includes('commit') &&
       item.verification.evidenceKinds.includes('test');
+    if (selfVerifying) hasRequiredRepositoryChange = true;
     const downstreamVerification = verifications.some((verification) =>
       dependsTransitivelyOn(verification.id, item.id, dependencies));
     if (!selfVerifying && !downstreamVerification) {
@@ -370,6 +375,13 @@ export async function validateExecutionPlanProposal(
         'every change must verify its committed head or feed a required trusted verification',
       );
     }
+  }
+  if (context.requiresRepositoryChange && !hasRequiredRepositoryChange) {
+    push(
+      'repository_change_required',
+      'items',
+      'trusted task policy requires one self-verifying required repository change',
+    );
   }
 
   for (const [index, item] of plan.items.entries()) {
