@@ -8,6 +8,16 @@ on:
         required: false
         default: ''
         type: string
+      approval_run_id:
+        description: Optional exact Run ID for a repo-write comment observation
+        required: false
+        default: ''
+        type: string
+      approval_comment_id:
+        description: Optional exact GitHub commit comment ID for repo-write approval
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -31,6 +41,31 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
+
+      - name: Validate requested operation
+        env:
+          DELIVERY_DIAGNOSTIC_RUN_ID: ${{ inputs.diagnostic_run_id }}
+          DELIVERY_APPROVAL_RUN_ID: ${{ inputs.approval_run_id }}
+          DELIVERY_APPROVAL_COMMENT_ID: ${{ inputs.approval_comment_id }}
+        run: |
+          set -euo pipefail
+          modes=0
+          if test -z "$DELIVERY_DIAGNOSTIC_RUN_ID" \
+            && test -z "$DELIVERY_APPROVAL_RUN_ID" \
+            && test -z "$DELIVERY_APPROVAL_COMMENT_ID"; then
+            modes=$((modes + 1))
+          fi
+          if test -n "$DELIVERY_DIAGNOSTIC_RUN_ID" \
+            && test -z "$DELIVERY_APPROVAL_RUN_ID" \
+            && test -z "$DELIVERY_APPROVAL_COMMENT_ID"; then
+            modes=$((modes + 1))
+          fi
+          if test -z "$DELIVERY_DIAGNOSTIC_RUN_ID" \
+            && test -n "$DELIVERY_APPROVAL_RUN_ID" \
+            && test -n "$DELIVERY_APPROVAL_COMMENT_ID"; then
+            modes=$((modes + 1))
+          fi
+          test "$modes" = 1
 
       - name: Set up pnpm
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
@@ -82,7 +117,9 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run exactly one GitHub base readiness GET
-        if: inputs.diagnostic_run_id == ''
+        if: >-
+          inputs.diagnostic_run_id == '' && inputs.approval_run_id == '' &&
+          inputs.approval_comment_id == ''
         env:
           DELIVERY_LOOP_GITHUB_BASE_READINESS: '1'
           GITHUB_BASE_READINESS_CONTROL_PLANE_URL: https://delivery-loop-control-plane.eve55265.workers.dev
@@ -92,7 +129,9 @@ jobs:
         run: pnpm run ops:github-base-readiness
 
       - name: Query one exact open workflow-create dead letter
-        if: inputs.diagnostic_run_id != ''
+        if: >-
+          inputs.diagnostic_run_id != '' && inputs.approval_run_id == '' &&
+          inputs.approval_comment_id == ''
         env:
           DELIVERY_DIAGNOSTIC_RUN_ID: ${{ inputs.diagnostic_run_id }}
           DELIVERY_OPERATIONS_TOKEN: ${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}
@@ -123,3 +162,37 @@ jobs:
                 status
               }' \
             "$response_file"
+
+      - name: Observe one exact GitHub repo-write approval comment
+        if: >-
+          inputs.diagnostic_run_id == '' && inputs.approval_run_id != '' &&
+          inputs.approval_comment_id != ''
+        env:
+          DELIVERY_APPROVAL_RUN_ID: ${{ inputs.approval_run_id }}
+          DELIVERY_APPROVAL_COMMENT_ID: ${{ inputs.approval_comment_id }}
+          DELIVERY_OPERATIONS_TOKEN: ${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$DELIVERY_APPROVAL_RUN_ID" =~ ^run_[a-f0-9]{56}$ ]]
+          [[ "$DELIVERY_APPROVAL_COMMENT_ID" =~ ^[1-9][0-9]{0,18}$ ]]
+          request_file="$RUNNER_TEMP/repo-write-approval-request.json"
+          response_file="$RUNNER_TEMP/repo-write-approval-response.json"
+          jq -n --argjson commentId "$DELIVERY_APPROVAL_COMMENT_ID" \
+            '{commentId:$commentId}' > "$request_file"
+          chmod 600 "$request_file"
+          status="$(curl --silent --show-error --max-time 30 \
+            --url "https://delivery-loop-control-plane.eve55265.workers.dev/v1/runs/$DELIVERY_APPROVAL_RUN_ID/github-commit-approvals" \
+            --request POST \
+            --header "Authorization: Bearer $DELIVERY_OPERATIONS_TOKEN" \
+            --header 'Accept: application/json' \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$request_file" \
+            --output "$response_file" \
+            --write-out '%{http_code}')"
+          test "$status" = 200 || test "$status" = 201
+          jq -e '
+            .status == "accepted"
+            and (.approvalId | test("^approval_[A-Za-z0-9_-]+$"))
+            and (.lineageId | test("^approval_lineage_[A-Za-z0-9_-]+$"))
+            | {status, approvalId, lineageId, created}
+          ' "$response_file"
