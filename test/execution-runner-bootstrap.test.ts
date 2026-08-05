@@ -740,10 +740,12 @@ describe('production execution Runner bootstrap', () => {
       throw new Error(`unexpected fake URL: ${url}`);
     };
 
+    let agentActivity: Record<string, unknown> | undefined;
     const result = await runExecutionAttempt({
       environment,
       fetch: fetchImplementation,
       heartbeatIntervalMs: 20,
+      onAgentActivity: (activity) => { agentActivity = activity; },
       agent: {
         apply: async (input) => {
           expect((await stat(input.contextFilePath)).mode & 0o777).toBe(0o600);
@@ -772,6 +774,16 @@ describe('production execution Runner bootstrap', () => {
     expect(verificationRefs).toEqual(['test:unit', 'verify:all']);
     expect(manifestDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(failures).toEqual([]);
+    expect(agentActivity).toEqual({
+      schemaVersion: '1',
+      jsonlEventCount: 1,
+      commandExecutionStartedCount: 0,
+      commandExecutionCompletedCount: 0,
+      fileChangeStartedCount: 0,
+      fileChangeCompletedCount: 0,
+      agentMessageCompletedCount: 1,
+      turnCompletedCount: 0,
+    });
     expect(artifactBody?.content).toBe(`${JSON.stringify({
       type: 'item.completed',
       item: { type: 'agent_message', text: transcriptMarker },

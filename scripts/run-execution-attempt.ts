@@ -1,9 +1,14 @@
 import { runExecutionAttempt } from '../src/runner/execution-runner.js';
 import { ExecutionAttemptError } from '../src/runner/execution-attempt-runner.js';
-import { writeRunnerStructuredLog } from '../src/observability/runner-log.js';
+import {
+  writeRunnerExecutionAgentActivity,
+  writeRunnerStructuredLog,
+} from '../src/observability/runner-log.js';
 
 try {
-  const result = await runExecutionAttempt();
+  const result = await runExecutionAttempt({
+    onAgentActivity: (activity) => { writeRunnerExecutionAgentActivity(activity); },
+  });
   writeRunnerStructuredLog(
     'execution_attempt_result',
     result.status === 'passed'

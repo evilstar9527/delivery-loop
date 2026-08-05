@@ -3,6 +3,10 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { CodexExecutionAdapter, type ExecutionAgent } from '../agent/codex-execution-adapter.js';
+import {
+  CodexExecutionActivityAccumulator,
+  type CodexExecutionActivity,
+} from '../agent/codex-execution-activity.js';
 import { EvidenceKindSchema, PlanEffectSchema } from '../domain/plan.js';
 import { canonicalSha256 } from '../domain/digest.js';
 import { taskRevisionDigest, TaskEnvelopeSchema } from '../domain/task.js';
@@ -206,6 +210,7 @@ export interface RunExecutionAttemptOptions {
   agent?: ExecutionAgent;
   heartbeatIntervalMs?: number;
   now?: () => Date;
+  onAgentActivity?: (activity: CodexExecutionActivity) => void;
 }
 
 export class ExecutionRunnerError extends Error {
@@ -217,6 +222,7 @@ export class ExecutionRunnerError extends Error {
 
 class RawTranscriptBuffer {
   private readonly lines: string[] = [];
+  private readonly activity = new CodexExecutionActivityAccumulator();
   private sizeBytes = 0;
 
   constructor(private readonly runtimeSecrets: Set<string>) {}
@@ -241,12 +247,17 @@ class RawTranscriptBuffer {
     if (this.sizeBytes + sizeBytes > MAX_RAW_TRANSCRIPT_BYTES) {
       throw new ExecutionRunnerError('execution Agent transcript is oversized');
     }
+    this.activity.accept(event);
     this.lines.push(line);
     this.sizeBytes += sizeBytes;
   }
 
   content(): string | null {
     return this.lines.length === 0 ? null : `${this.lines.join('\n')}\n`;
+  }
+
+  activitySummary(): CodexExecutionActivity {
+    return this.activity.result();
   }
 }
 
@@ -961,10 +972,19 @@ export async function runExecutionAttempt(
         ? {}
         : { usesMeteredModel: executionAgent.usesMeteredModel }),
       apply: async (input) => {
-        const decision = await executionAgent.apply({
-          ...input,
-          onTranscriptLine: (line) => { transcript.accept(line); },
-        });
+        let decision;
+        try {
+          decision = await executionAgent.apply({
+            ...input,
+            onTranscriptLine: (line) => { transcript.accept(line); },
+          });
+        } finally {
+          try {
+            options.onAgentActivity?.(transcript.activitySummary());
+          } catch {
+            // Diagnostic logging cannot change the delivery Attempt outcome.
+          }
+        }
         const content = transcript.content();
         if (content === null) {
           if (executionAgent.usesMeteredModel === true) {
