@@ -874,6 +874,7 @@ type ModelUsageRequest = {
 - 预约TTL为2小时。相同reservation ID、Attempt/profile且仍为active reserved时是网络幂等重放；settled、expired、换Attempt/profile一律409，避免相同ID触发第二次真实模型调用。Cron只把过期reserved置expired；
 - Runner以官方`codex exec --json` JSONL中的单个`turn.completed.usage`填四个非负计费整数，cached不得大于input、reasoning不得大于output，total/cost不得超过reservation。锁定的Codex 0.145.0还发送`cache_write_input_tokens`；Runner验证其为非负整数后丢弃，不把它加入价格或D1 schema，其他未知usage字段仍拒绝。控制面使用接收时间和D1 profile价格计算费用，原子写一次`model_usage`并settle reservation；相同usage ID与相同标量可重放，变异内容冲突；
 - `model_usage`每行只含provider/model、run/attempt/tenant/repository/principal lineage、四个token数、整数micro-USD、source digest和时间。JSONL的thread/item/message/reasoning/command/tool/file-change/web-search/plan内容在Runner解析后立即丢弃，raw stdout不返回也不持久化；没有合法usage不得把模型调用记成零费用成功。
+- execution普通edit turn允许一次同Attempt内的有界恢复，但只在首轮Adapter返回固定`decision_invalid/no_tool_activity`且Runner重验exact checkout/clean tree时成立。每轮调用前分别以`canonicalSha256({attemptId, invocation:1|2})`派生reservation ID，每轮结束后立即用对应usage ID结算；首轮成功不预留第二轮，首轮出现部分工具活动或workspace mutation不创建第二reservation。第二轮仍无工具活动时沿原failure协议终结，不创建replacement Attempt或第二Action。
 
 Attempt failure event 约束：
 
