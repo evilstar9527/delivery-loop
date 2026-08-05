@@ -47,24 +47,6 @@ function agentOutput(plan: Record<string, unknown> = validContent()): Record<str
   return { contextDigest: contextDigest(), plan };
 }
 
-function emitContextAccess(
-  request: CommandExecutionRequest,
-  contextFilePath: string,
-  digest: string = contextDigest(),
-): void {
-  request.onStdoutLine?.(JSON.stringify({
-    type: 'item.completed',
-    item: {
-      id: 'item-context-access',
-      type: 'command_execution',
-      command: `node read-context-marker ${contextFilePath}`,
-      aggregated_output: digest,
-      exit_code: 0,
-      status: 'completed',
-    },
-  }));
-}
-
 function validationContext(): ExecutionPlanValidationContext {
   return {
     runId: 'run-codex-analysis',
@@ -308,6 +290,7 @@ describe('Codex analysis Agent adapter', () => {
     expect(observed?.stdin).toContain('self-verifying required change item');
     expect(observed?.stdin).toContain('required top-level contextDigest');
     expect(observed?.stdin).toContain('contextDigest marker');
+    expect(observed?.stdin).not.toContain('execute this exact read-only command');
     expect(observed?.stdin).not.toContain('calculate the SHA-256');
     expect(observed?.stdin).toContain('do not replace it with an investigation-only placeholder');
     expect(observed?.stdin).toContain('repo_write, at least one test:* commandRef');
@@ -339,8 +322,9 @@ describe('Codex analysis Agent adapter', () => {
     expect(plan.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
-  it('requires a completed exact-file command proof for a metered model', async () => {
+  it('accepts a metered model without command events when the context marker is verified', async () => {
     const paths = await tempInput();
+    const usage: unknown[] = [];
     const adapter = new CodexAnalysisAdapter({
       outputSchemaPath: SCHEMA_PATH,
       execute: async (request) => {
@@ -358,22 +342,31 @@ describe('Codex analysis Agent adapter', () => {
       },
     });
 
-    await expect(adapter.start({
+    const plan = await adapter.start({
       workspacePath: paths.workspace,
       contextFilePath: paths.contextFile,
       outputFilePath: paths.outputFile,
       timeoutMs: 60_000,
       identity: {
-        planId: 'plan-context-command-proof',
+        planId: 'plan-context-marker-binding',
         runId: 'run-codex-analysis',
         version: 1,
         taskRevision: 'revision-1',
         baseSha: BASE_SHA,
-        attemptId: 'attempt-context-command-proof',
+        attemptId: 'attempt-context-marker-binding',
       },
       validation: validationContext(),
       model: 'gpt-test-metered',
-    })).rejects.toThrow('Codex analysis context access proof is unavailable');
+      onUsage: (value) => usage.push(value),
+    });
+
+    expect(plan.id).toBe('plan-context-marker-binding');
+    expect(usage).toEqual([{
+      inputTokens: 100,
+      cachedInputTokens: 60,
+      outputTokens: 20,
+      reasoningOutputTokens: 5,
+    }]);
   });
 
   it.each(['missing', 'mismatched', 'extra'] as const)(
@@ -552,7 +545,6 @@ describe('Codex analysis Agent adapter', () => {
       outputSchemaPath: SCHEMA_PATH,
       execute: async (request) => {
         observed = request;
-        emitContextAccess(request, paths.contextFile);
         request.onStdoutLine?.(JSON.stringify({
           type: 'item.completed',
           item: { type: 'agent_message', text: 'CANARY_JSONL_OUTPUT' },
@@ -627,7 +619,6 @@ describe('Codex analysis Agent adapter', () => {
       outputSchemaPath: SCHEMA_PATH,
       execute: async (request) => {
         commands.push(request);
-        if (commands.length === 3) emitContextAccess(request, paths.contextFile);
         request.onStdoutLine?.(JSON.stringify({
           type: 'turn.completed',
           usage: {

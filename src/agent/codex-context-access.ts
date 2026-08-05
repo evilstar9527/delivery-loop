@@ -15,8 +15,10 @@ const CompletedCommandEventSchema = z.object({
 }).strict();
 
 /**
- * Projects Codex JSONL into a single ephemeral proof bit. Command text and
- * output are parsed in memory and immediately discarded.
+ * Parses an optional Codex command observation for diagnostics. Command text
+ * and output are parsed in memory and immediately discarded. This projection
+ * is deliberately not wired into Plan acceptance: models are not required to
+ * choose a shell tool in order to return a valid context-bound Plan.
  */
 export class CodexContextAccessAccumulator {
   private readonly contextFilePath: string;

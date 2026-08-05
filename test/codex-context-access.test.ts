@@ -19,7 +19,7 @@ function commandEvent(overrides: Record<string, unknown> = {}): string {
   });
 }
 
-describe('Codex context access projection', () => {
+describe('optional Codex context command observation', () => {
   it('accepts exactly one completed command bound to the file and marker', () => {
     const proof = new CodexContextAccessAccumulator(CONTEXT_PATH, DIGEST);
     proof.acceptLine(JSON.stringify({
