@@ -38,6 +38,7 @@ import { BaseRebaseRunner } from './base-rebase-runner.js';
 import { DeliveryCommandRunner } from './delivery-command-runner.js';
 import { ControlPlaneProtectedPathApprovalReporter } from './protected-path-approval-reporter.js';
 import { validateExecutionPatchProposal } from './execution-patch-policy.js';
+import { buildExecutionPatchSnapshot } from './execution-patch-snapshot.js';
 import {
   ControlPlaneVerificationEvidenceReporter,
   type VerificationReporterAuthorization,
@@ -753,6 +754,22 @@ export async function runExecutionAttempt(
     throw new ExecutionRunnerError('execution Plan Item is not runnable');
   }
   const policy = await loadDeliveryPolicyAtCommit(config.workspacePath, config.baseSha);
+  const agentContext = options.agent === undefined && context.baseRebase === undefined
+    ? {
+        ...context,
+        repositorySnapshot: await buildExecutionPatchSnapshot({
+          repositoryPath: config.workspacePath,
+          referencedText: [
+            context.item.objective,
+            ...context.item.doneWhen,
+            context.task.intent.description,
+            ...context.task.intent.acceptanceCriteria,
+          ],
+          protectedPaths: policy.policy.protectedPaths,
+          runtimeSecrets: [...runtimeSecrets],
+        }),
+      }
+    : context;
   const temporaryRoot = await mkdtemp(join(config.runnerTempPath, 'delivery-loop-execution-'));
   await chmod(temporaryRoot, 0o700);
   const contextFilePath = join(temporaryRoot, 'context.json');
@@ -902,9 +919,9 @@ export async function runExecutionAttempt(
       fetcher,
       { now },
     );
-    await writeFile(contextFilePath, JSON.stringify(context), { mode: 0o600, flag: 'wx' });
+    await writeFile(contextFilePath, JSON.stringify(agentContext), { mode: 0o600, flag: 'wx' });
     await writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' });
-    if (new SecretScanner({ secrets: [...runtimeSecrets] }).scan(context).length > 0) {
+    if (new SecretScanner({ secrets: [...runtimeSecrets] }).scan(agentContext).length > 0) {
       throw new ExecutionRunnerError('execution context contains runtime credentials');
     }
     let credential: z.infer<typeof CredentialResponseSchema>;
