@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
+import { CodexExecutionAdapterError } from '../src/agent/codex-execution-adapter.js';
 import { canonicalSha256 } from '../src/domain/digest.js';
 import { taskRevisionDigest, type TaskEnvelope } from '../src/domain/task.js';
 import { EXECUTION_TOOL_ACTIONS } from '../src/domain/tool-bridge.js';
@@ -506,7 +507,7 @@ describe('production execution Runner bootstrap', () => {
     expect(await readdir(runnerTemp)).toEqual([]);
   });
 
-  it('binds OIDC/context/credential, rotates heartbeat, pushes one bot head, and reports exact Evidence', async () => {
+  it('recovers one clean zero-tool edit turn with separately settled model calls', async () => {
     const fixture = await repository();
     const runnerTemp = join(fixture.root, 'runner-temp');
     await mkdir(runnerTemp, { mode: 0o700 });
@@ -521,6 +522,7 @@ describe('production execution Runner bootstrap', () => {
       DELIVERY_ATTEMPT_MODE: 'review_fix',
       DELIVERY_PLAN_VERSION: '1',
       DELIVERY_PLAN_ITEM_ID: ITEM_ID,
+      DELIVERY_MODEL_PROFILE_ID: 'profile-execution-recovery',
       DELIVERY_CONTROL_PLANE_URL: 'https://control.delivery.test',
       ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.actions.test/token?job=execution',
       ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'CANARY_ACTIONS_RUNTIME_TOKEN',
@@ -540,6 +542,10 @@ describe('production execution Runner bootstrap', () => {
     const requestBodies: Array<{ url: string; body: string }> = [];
     let artifactBody: Record<string, unknown> | undefined;
     let manifestDigest = '';
+    const reservationIds: string[] = [];
+    const usageReservations: string[] = [];
+    const agentModels: string[] = [];
+    let agentInvocation = 0;
     let releaseAgent!: () => void;
     const heartbeatSeen = new Promise<void>((resolve) => { releaseAgent = resolve; });
 
@@ -627,6 +633,42 @@ describe('production execution Runner bootstrap', () => {
           approvalId: 'approval-execution-bootstrap',
           permissions: { contents: 'write', pullRequests: 'write' },
           created: true,
+        }, { status: 201, headers: { 'cache-control': 'no-store' } });
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/model-reservations`)) {
+        authorized(init);
+        const body = JSON.parse(String(init?.body)) as {
+          reservationId: string;
+          profileId: string;
+        };
+        expect(body.profileId).toBe('profile-execution-recovery');
+        reservationIds.push(body.reservationId);
+        return Response.json({
+          reservationId: body.reservationId,
+          attemptId: ATTEMPT_ID,
+          runId: RUN_ID,
+          provider: 'openai',
+          model: 'gpt-test-metered',
+          reservedTokens: 1_000,
+          reservedCostMicrousd: 1_000,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          overrideId: null,
+          disposition: 'created',
+        }, { status: 201, headers: { 'cache-control': 'no-store' } });
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/model-usage`)) {
+        authorized(init);
+        const body = JSON.parse(String(init?.body)) as {
+          reservationId: string;
+          usageId: string;
+        };
+        usageReservations.push(body.reservationId);
+        return Response.json({
+          usageId: body.usageId,
+          reservationId: body.reservationId,
+          totalTokens: 18,
+          costMicrousd: 10,
+          disposition: 'created',
         }, { status: 201, headers: { 'cache-control': 'no-store' } });
       }
       if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/heartbeat`)) {
@@ -747,10 +789,28 @@ describe('production execution Runner bootstrap', () => {
       heartbeatIntervalMs: 20,
       onAgentActivity: (activity) => { agentActivity = activity; },
       agent: {
+        usesMeteredModel: true,
         apply: async (input) => {
+          agentInvocation += 1;
+          agentModels.push(input.model ?? 'missing');
+          input.onUsage?.({
+            inputTokens: 12,
+            cachedInputTokens: 4,
+            outputTokens: 6,
+            reasoningOutputTokens: 2,
+          });
           expect((await stat(input.contextFilePath)).mode & 0o777).toBe(0o600);
           expect((await stat(input.outputFilePath)).mode & 0o777).toBe(0o600);
           expect(await readFile(input.contextFilePath, 'utf8')).toContain('review_fix');
+          if (agentInvocation === 1) {
+            expect(input.editTurn).toBe(1);
+            input.onTranscriptLine?.(JSON.stringify({
+              type: 'item.completed',
+              item: { type: 'agent_message', text: 'PUBLIC_FIRST_ZERO_TOOL_TURN' },
+            }));
+            throw new CodexExecutionAdapterError('decision_invalid', 'no_tool_activity');
+          }
+          expect(input.editTurn).toBe(2);
           await heartbeatSeen;
           input.onTranscriptLine?.(JSON.stringify({
             type: 'item.completed',
@@ -771,23 +831,34 @@ describe('production execution Runner bootstrap', () => {
       evidenceIds: ['evidence-execution-bootstrap-0', 'evidence-execution-bootstrap-1'],
     });
     expect(heartbeatCount).toBeGreaterThanOrEqual(1);
+    expect(reservationIds).toHaveLength(2);
+    expect(new Set(reservationIds).size).toBe(2);
+    expect(usageReservations).toEqual(reservationIds);
+    expect(agentModels).toEqual(['gpt-test-metered', 'gpt-test-metered']);
     expect(verificationRefs).toEqual(['test:unit', 'verify:all']);
     expect(manifestDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(failures).toEqual([]);
     expect(agentActivity).toEqual({
       schemaVersion: '1',
-      jsonlEventCount: 1,
+      jsonlEventCount: 2,
       commandExecutionStartedCount: 0,
       commandExecutionCompletedCount: 0,
       fileChangeStartedCount: 0,
       fileChangeCompletedCount: 0,
-      agentMessageCompletedCount: 1,
+      agentMessageCompletedCount: 2,
       turnCompletedCount: 0,
     });
-    expect(artifactBody?.content).toBe(`${JSON.stringify({
-      type: 'item.completed',
-      item: { type: 'agent_message', text: transcriptMarker },
-    })}\n`);
+    expect(artifactBody?.content).toBe([
+      JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'agent_message', text: 'PUBLIC_FIRST_ZERO_TOOL_TURN' },
+      }),
+      JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'agent_message', text: transcriptMarker },
+      }),
+      '',
+    ].join('\n'));
     expect(requestBodies.filter(({ url }) => !url.endsWith('/artifacts'))
       .every(({ body }) => !body.includes(transcriptMarker))).toBe(true);
     expect(await readdir(runnerTemp)).toEqual([]);

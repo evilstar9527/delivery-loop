@@ -3,6 +3,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 import { CodexExecutionAdapter, type ExecutionAgent } from '../agent/codex-execution-adapter.js';
+import { BoundedEditRecoveryAgent } from '../agent/bounded-edit-recovery-agent.js';
 import {
   CodexExecutionActivityAccumulator,
   type CodexExecutionActivity,
@@ -754,51 +755,130 @@ export async function runExecutionAttempt(
   const heartbeatController = new AbortController();
   let heartbeatFailure: unknown;
   let heartbeatTask: Promise<void> = Promise.resolve();
-  let modelReservation: z.infer<typeof ModelReservationResponseSchema> | null = null;
-  let measuredUsage: CodexModelUsage | null = null;
+  const modelReservations = new Map<1 | 2, z.infer<typeof ModelReservationResponseSchema>>();
+  const settledModelInvocations = new Set<1 | 2>();
   const executionAgent = options.agent ?? new CodexExecutionAdapter({
     ...(environment.OPENAI_BASE_URL === undefined || environment.OPENAI_BASE_URL === ''
       ? {}
       : { providerBaseUrl: environment.OPENAI_BASE_URL }),
   });
 
+  const reserveModelInvocation = async (
+    invocation: 1 | 2,
+  ): Promise<z.infer<typeof ModelReservationResponseSchema>> => {
+    const existing = modelReservations.get(invocation);
+    if (existing !== undefined) return existing;
+    if (config.modelProfileId === undefined) {
+      throw new ExecutionRunnerError('execution Runner model profile is unavailable');
+    }
+    const reservationDigest = await canonicalSha256({
+      attemptId: config.attemptId,
+      invocation,
+    });
+    const reservationId =
+      `model_reservation_${reservationDigest.slice('sha256:'.length, 'sha256:'.length + 48)}`;
+    const reservation = await fencing.withAuthorization(async (authorization) => {
+      const parsed = ModelReservationResponseSchema.safeParse(await controlPlaneJson(
+        fetcher,
+        config,
+        `/v1/attempts/${config.attemptId}/model-reservations`,
+        authorization.attemptToken,
+        'model quota reservation',
+        [200, 201],
+        {
+          reservationId,
+          profileId: config.modelProfileId,
+          expectedVersion: authorization.expectedVersion,
+          leaseGeneration: authorization.leaseGeneration,
+        },
+      ));
+      const first = modelReservations.get(1);
+      if (
+        !parsed.success ||
+        parsed.data.reservationId !== reservationId ||
+        parsed.data.attemptId !== config.attemptId ||
+        parsed.data.runId !== config.runId ||
+        (first !== undefined && (
+          parsed.data.provider !== first.provider || parsed.data.model !== first.model
+        ))
+      ) throw new ExecutionRunnerError('model quota reservation response is invalid');
+      return parsed.data;
+    });
+    modelReservations.set(invocation, reservation);
+    return reservation;
+  };
+
+  const settleModelInvocation = async (
+    invocation: 1 | 2,
+    usage: CodexModelUsage | null,
+  ): Promise<void> => {
+    const reservation = modelReservations.get(invocation);
+    if (
+      reservation === undefined || usage === null || settledModelInvocations.has(invocation)
+    ) throw new ExecutionRunnerError('execution Agent usage is unavailable');
+    const usageDigest = await canonicalSha256({
+      reservationId: reservation.reservationId,
+      attemptId: config.attemptId,
+    });
+    const usageId = `model_usage_${usageDigest.slice(
+      'sha256:'.length,
+      'sha256:'.length + 54,
+    )}`;
+    await fencing.withAuthorization(async (authorization) => {
+      const parsed = ModelUsageResponseSchema.safeParse(await controlPlaneJson(
+        fetcher,
+        config,
+        `/v1/attempts/${config.attemptId}/model-usage`,
+        authorization.attemptToken,
+        'model usage settlement',
+        [200, 201],
+        {
+          reservationId: reservation.reservationId,
+          usageId,
+          expectedVersion: authorization.expectedVersion,
+          leaseGeneration: authorization.leaseGeneration,
+          ...usage,
+        },
+      ));
+      if (
+        !parsed.success || parsed.data.usageId !== usageId ||
+        parsed.data.reservationId !== reservation.reservationId
+      ) throw new ExecutionRunnerError('model usage settlement response is invalid');
+    });
+    settledModelInvocations.add(invocation);
+  };
+
+  const attemptAgent = executionAgent.usesMeteredModel === true &&
+      context.baseRebase === undefined
+    ? new BoundedEditRecoveryAgent({
+        agent: executionAgent,
+        beforeInvocation: async (invocation) => ({
+          model: (await reserveModelInvocation(invocation)).model,
+        }),
+        afterInvocation: settleModelInvocation,
+        canRecover: async () => {
+          const [head, status] = await Promise.all([
+            executeGitCommand({
+              repositoryPath: config.workspacePath,
+              args: ['rev-parse', '--verify', 'HEAD'],
+            }),
+            executeGitCommand({
+              repositoryPath: config.workspacePath,
+              args: ['status', '--porcelain=v1', '--untracked-files=all'],
+            }),
+          ]);
+          return head.exitCode === 0 && head.stdout.trim() === config.checkoutSha &&
+            status.exitCode === 0 && status.stdout === '';
+        },
+      })
+    : executionAgent;
+
   try {
     if (
       context.baseRebase === undefined &&
-      executionAgent.usesMeteredModel === true
+      attemptAgent.usesMeteredModel === true
     ) {
-      if (config.modelProfileId === undefined) {
-        throw new ExecutionRunnerError('execution Runner model profile is unavailable');
-      }
-      const reservationDigest = await canonicalSha256({
-        attemptId: config.attemptId,
-        invocation: 1,
-      });
-      const reservationId =
-        `model_reservation_${reservationDigest.slice('sha256:'.length, 'sha256:'.length + 48)}`;
-      modelReservation = await fencing.withAuthorization(async (authorization) => {
-        const parsed = ModelReservationResponseSchema.safeParse(await controlPlaneJson(
-          fetcher,
-          config,
-          `/v1/attempts/${config.attemptId}/model-reservations`,
-          authorization.attemptToken,
-          'model quota reservation',
-          [200, 201],
-          {
-            reservationId,
-            profileId: config.modelProfileId,
-            expectedVersion: authorization.expectedVersion,
-            leaseGeneration: authorization.leaseGeneration,
-          },
-        ));
-        if (
-          !parsed.success ||
-          parsed.data.reservationId !== reservationId ||
-          parsed.data.attemptId !== config.attemptId ||
-          parsed.data.runId !== config.runId
-        ) throw new ExecutionRunnerError('model quota reservation response is invalid');
-        return parsed.data;
-      });
+      await reserveModelInvocation(1);
     }
     heartbeatTask = heartbeatLoop(
       fetcher,
@@ -968,16 +1048,19 @@ export async function runExecutionAttempt(
     }
     const transcript = new RawTranscriptBuffer(runtimeSecrets);
     const artifactAgent: ExecutionAgent = {
-      ...(executionAgent.usesMeteredModel === undefined
+      ...(attemptAgent.usesMeteredModel === undefined
         ? {}
-        : { usesMeteredModel: executionAgent.usesMeteredModel }),
+        : { usesMeteredModel: attemptAgent.usesMeteredModel }),
       apply: async (input) => {
         let decision;
+        let failure: unknown;
         try {
-          decision = await executionAgent.apply({
+          decision = await attemptAgent.apply({
             ...input,
             onTranscriptLine: (line) => { transcript.accept(line); },
           });
+        } catch (error) {
+          failure = error;
         } finally {
           try {
             options.onAgentActivity?.(transcript.activitySummary());
@@ -987,11 +1070,15 @@ export async function runExecutionAttempt(
         }
         const content = transcript.content();
         if (content === null) {
-          if (executionAgent.usesMeteredModel === true) {
+          if (attemptAgent.usesMeteredModel === true) {
             throw new ExecutionRunnerError('execution Agent transcript is unavailable');
           }
         } else {
           await persistRawTranscript(fetcher, config, fencing, content);
+        }
+        if (failure !== undefined) throw failure;
+        if (decision === undefined) {
+          throw new ExecutionRunnerError('execution Agent decision is unavailable');
         }
         return decision;
       },
@@ -1025,12 +1112,6 @@ export async function runExecutionAttempt(
         outputFilePath,
         timeoutMs: AGENT_TIMEOUT_MS,
         allowPlanRevision: context.reviewFeedback !== undefined,
-        ...(modelReservation === null
-          ? {}
-          : {
-              model: modelReservation.model,
-              onUsage: (usage: CodexModelUsage) => { measuredUsage = usage; },
-            }),
       },
       ...(context.reviewFeedback === undefined ? {} : {
         planRevisionReporter: new ControlPlanePlanRevisionReporter(reporterContext, fetcher),
@@ -1040,41 +1121,6 @@ export async function runExecutionAttempt(
       failureReporter,
     });
     const result = await runner.run();
-    if (modelReservation !== null) {
-      const usage = measuredUsage as CodexModelUsage | null;
-      if (usage === null) {
-        throw new ExecutionRunnerError('execution Agent usage is unavailable');
-      }
-      const usageDigest = await canonicalSha256({
-        reservationId: modelReservation.reservationId,
-        attemptId: config.attemptId,
-      });
-      const usageId = `model_usage_${usageDigest.slice(
-        'sha256:'.length,
-        'sha256:'.length + 54,
-      )}`;
-      await fencing.withAuthorization(async (authorization) => {
-        const parsed = ModelUsageResponseSchema.safeParse(await controlPlaneJson(
-          fetcher,
-          config,
-          `/v1/attempts/${config.attemptId}/model-usage`,
-          authorization.attemptToken,
-          'model usage settlement',
-          [200, 201],
-          {
-            reservationId: modelReservation!.reservationId,
-            usageId,
-            expectedVersion: authorization.expectedVersion,
-            leaseGeneration: authorization.leaseGeneration,
-            ...usage,
-          },
-        ));
-        if (
-          !parsed.success || parsed.data.usageId !== usageId ||
-          parsed.data.reservationId !== modelReservation!.reservationId
-        ) throw new ExecutionRunnerError('model usage settlement response is invalid');
-      });
-    }
     heartbeatController.abort();
     await heartbeatTask;
     if (result.status === 'passed' && heartbeatFailure !== undefined) {

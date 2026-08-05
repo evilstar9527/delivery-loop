@@ -344,11 +344,14 @@ describe('Codex execution adapter', () => {
       outputFilePath,
       timeoutMs: 60_000,
       allowPlanRevision: false,
+      editTurn: 2,
       model: 'gpt-test',
     })).resolves.toEqual({ schemaVersion: '1', action: 'apply_fix' });
     expect(observed?.args).not.toContain('--output-schema');
     expect(observed?.args).not.toContain('--output-last-message');
     expect(observed?.stdin).toContain('Your final message is not an execution decision');
+    expect(observed?.stdin).toContain('This is the single recovery turn');
+    expect(observed?.stdin).toContain('Your first action must be a repository command');
   });
 
   it('rejects metered apply_fix before commit when no command or file change was observed', async () => {
@@ -394,6 +397,50 @@ describe('Codex execution adapter', () => {
     await expect(rejected).rejects.toMatchObject({
       name: 'CodexExecutionAdapterError',
       kind: 'decision_invalid',
+      reason: 'no_tool_activity',
+      message: 'execution Agent decision is invalid',
+    } satisfies Partial<CodexExecutionAdapterError>);
+  });
+
+  it('classifies started-only tool activity as incomplete and ineligible for recovery', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-incomplete-tool-activity-'));
+    const workspace = join(root, 'repo');
+    const contextFilePath = join(root, 'context.json');
+    const outputFilePath = join(root, 'output.txt');
+    await mkdir(workspace, { mode: 0o700 });
+    await writeFile(contextFilePath, '{}', { mode: 0o600 });
+    await writeFile(outputFilePath, '', { mode: 0o600 });
+    const adapter = new CodexExecutionAdapter({
+      execute: async (request) => {
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'item.started',
+          item: { type: 'command_execution' },
+        }));
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 11,
+            cached_input_tokens: 3,
+            output_tokens: 5,
+            reasoning_output_tokens: 2,
+          },
+        }));
+        return { exitCode: 0 };
+      },
+    });
+
+    await expect(adapter.apply({
+      attemptId: 'attempt-execution-incomplete-tool-activity',
+      workspacePath: workspace,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: 60_000,
+      allowPlanRevision: false,
+      model: 'gpt-test',
+    })).rejects.toMatchObject({
+      name: 'CodexExecutionAdapterError',
+      kind: 'decision_invalid',
+      reason: 'incomplete_tool_activity',
       message: 'execution Agent decision is invalid',
     } satisfies Partial<CodexExecutionAdapterError>);
   });
