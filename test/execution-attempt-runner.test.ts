@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -9,11 +9,12 @@ import { CodexExecutionAdapterError } from '../src/agent/codex-execution-adapter
 import type { VerificationEvidenceReporter } from '../src/runner/verification-execution-runner.js';
 import {
   ExecutionAttemptRunner,
-  type ExecutionAgentAttemptError,
+  type ExecutionAttemptError,
   type ExecutionAttemptFailure,
 } from '../src/runner/execution-attempt-runner.js';
 import {
   GitRepositoryWriter,
+  ProtectedPathApprovalRequired,
   repositoryAttemptBranch,
 } from '../src/runner/git-repository-writer.js';
 
@@ -243,16 +244,173 @@ describe('execution Attempt Runner', () => {
     });
     const rejected = runner.run();
     await expect(rejected).rejects.toMatchObject({
-      name: 'ExecutionAgentAttemptError',
+      name: 'ExecutionAttemptError',
       kind: 'transcript_invalid',
-      message: 'execution Agent failed',
-    } satisfies Partial<ExecutionAgentAttemptError>);
+      message: 'execution Attempt failed',
+    } satisfies Partial<ExecutionAttemptError>);
     expect(failures).toEqual([{
       failureCode: 'invalid_agent_output',
       failureSite: 'agent_output',
       attemptedPaths: ['code_change'],
       neededHumanInput: 'manual_investigation',
     }]);
+  });
+
+  it('reports and classifies a no-change commit boundary without exposing repository errors', async () => {
+    const fixture = await repository();
+    const failures: ExecutionAttemptFailure[] = [];
+    const runner = new ExecutionAttemptRunner({
+      repositoryPath: fixture.path,
+      checkoutSha: fixture.checkoutSha,
+      planVersion: 1,
+      planItemId: 'verify-and-repair',
+      targetedCommandRefs: ['test:unit'],
+      deliveryPolicy: policy,
+      repositoryWriter: writer(fixture.path, fixture.checkoutSha),
+      agent: { apply: async () => ({ schemaVersion: '1', action: 'apply_fix' }) },
+      agentInput: agentInput(fixture.path),
+      headReporter: { record: async () => undefined },
+      evidenceReporter: evidenceReporter(),
+      failureReporter: { report: async (failure) => { failures.push(failure); } },
+    });
+
+    await expect(runner.run()).rejects.toMatchObject({
+      name: 'ExecutionAttemptError',
+      kind: 'repository_commit_failed',
+      message: 'execution Attempt failed',
+    } satisfies Partial<ExecutionAttemptError>);
+    expect(failures).toEqual([{
+      failureCode: 'unknown_failure',
+      failureSite: 'repo_snapshot',
+      attemptedPaths: ['code_change'],
+      neededHumanInput: 'manual_investigation',
+    }]);
+  });
+
+  it('preserves the protected-path pause instead of reporting a terminal commit failure', async () => {
+    const fixture = await repository();
+    const failures: ExecutionAttemptFailure[] = [];
+    const runner = new ExecutionAttemptRunner({
+      repositoryPath: fixture.path,
+      checkoutSha: fixture.checkoutSha,
+      planVersion: 1,
+      planItemId: 'verify-and-repair',
+      targetedCommandRefs: ['test:unit'],
+      deliveryPolicy: policy,
+      repositoryWriter: writer(fixture.path, fixture.checkoutSha),
+      agent: { apply: async () => {
+        await mkdir(join(fixture.path, '.github', 'workflows'), { recursive: true });
+        await writeFile(join(fixture.path, '.github', 'workflows', 'unsafe.yml'), 'name: unsafe\n');
+        return { schemaVersion: '1', action: 'apply_fix' };
+      } },
+      agentInput: agentInput(fixture.path),
+      headReporter: { record: async () => undefined },
+      evidenceReporter: evidenceReporter(),
+      failureReporter: { report: async (failure) => { failures.push(failure); } },
+    });
+
+    await expect(runner.run()).rejects.toBeInstanceOf(ProtectedPathApprovalRequired);
+    expect(failures).toEqual([]);
+  });
+
+  it('keeps the safe stage kind when terminal failure reporting also fails', async () => {
+    const fixture = await repository();
+    const runner = new ExecutionAttemptRunner({
+      repositoryPath: fixture.path,
+      checkoutSha: fixture.checkoutSha,
+      planVersion: 1,
+      planItemId: 'verify-and-repair',
+      targetedCommandRefs: ['test:unit'],
+      deliveryPolicy: policy,
+      repositoryWriter: writer(fixture.path, fixture.checkoutSha),
+      agent: { apply: async () => ({ schemaVersion: '1', action: 'apply_fix' }) },
+      agentInput: agentInput(fixture.path),
+      headReporter: { record: async () => undefined },
+      evidenceReporter: evidenceReporter(),
+      failureReporter: { report: async () => { throw new Error('CANARY_RAW_REPORT_ERROR'); } },
+    });
+
+    const rejected = runner.run();
+    await expect(rejected).rejects.toMatchObject({
+      name: 'ExecutionAttemptError',
+      kind: 'repository_commit_failed',
+      message: 'execution Attempt failed',
+    });
+    await expect(rejected).rejects.not.toThrow(/CANARY_RAW_REPORT_ERROR/);
+  });
+
+  it('reports and classifies push and head boundaries without propagating raw errors', async () => {
+    const fixture = await repository();
+    const failureCases = [
+      {
+        kind: 'repository_push_failed' as const,
+        writer: {
+          prepareBranch: async () => ({ branch: 'agent-safe-branch', baseSha: fixture.checkoutSha }),
+          commitAll: async () => ({
+            branch: 'agent-safe-branch',
+            commitSha: 'a'.repeat(40),
+            authorName: 'Delivery Loop Bot' as const,
+            authorEmail: 'delivery-loop[bot]@users.noreply.github.com' as const,
+          }),
+          push: async () => { throw new Error('CANARY_RAW_PUSH_ERROR'); },
+        },
+        headReporter: { record: async () => undefined },
+        failure: {
+          failureCode: 'tool_unavailable' as const,
+          failureSite: 'external_reconciliation' as const,
+          attemptedPaths: ['code_change', 'external_reconciliation'] as const,
+          neededHumanInput: 'resolve_external_dependency' as const,
+        },
+      },
+      {
+        kind: 'head_report_failed' as const,
+        writer: {
+          prepareBranch: async () => ({ branch: 'agent-safe-branch', baseSha: fixture.checkoutSha }),
+          commitAll: async () => ({
+            branch: 'agent-safe-branch',
+            commitSha: 'a'.repeat(40),
+            authorName: 'Delivery Loop Bot' as const,
+            authorEmail: 'delivery-loop[bot]@users.noreply.github.com' as const,
+          }),
+          push: async () => ({ branch: 'agent-safe-branch', commitSha: 'a'.repeat(40) }),
+        },
+        headReporter: { record: async () => { throw new Error('CANARY_RAW_HEAD_ERROR'); } },
+        failure: {
+          failureCode: 'unknown_failure' as const,
+          failureSite: 'external_reconciliation' as const,
+          attemptedPaths: ['code_change', 'external_reconciliation'] as const,
+          neededHumanInput: 'manual_investigation' as const,
+        },
+      },
+    ];
+    for (const failureCase of failureCases) {
+      const failures: ExecutionAttemptFailure[] = [];
+      const runner = new ExecutionAttemptRunner({
+        repositoryPath: fixture.path,
+        checkoutSha: fixture.checkoutSha,
+        planVersion: 1,
+        planItemId: 'verify-and-repair',
+        targetedCommandRefs: ['test:unit'],
+        deliveryPolicy: policy,
+        repositoryWriter: failureCase.writer,
+        agent: { apply: async () => ({ schemaVersion: '1', action: 'apply_fix' }) },
+        agentInput: agentInput(fixture.path),
+        headReporter: failureCase.headReporter,
+        evidenceReporter: evidenceReporter(),
+        failureReporter: { report: async (failure) => { failures.push(failure); } },
+      });
+      const rejected = runner.run();
+      await expect(rejected).rejects.toMatchObject({
+        name: 'ExecutionAttemptError',
+        kind: failureCase.kind,
+        message: 'execution Attempt failed',
+      });
+      await expect(rejected).rejects.not.toThrow(/CANARY_RAW_(?:PUSH|HEAD)_ERROR/);
+      expect(failures).toEqual([{
+        ...failureCase.failure,
+        attemptedPaths: [...failureCase.failure.attemptedPaths],
+      }]);
+    }
   });
 
   it('requests immutable re-analysis before commit/push/verification when exact review feedback changes the Plan', async () => {

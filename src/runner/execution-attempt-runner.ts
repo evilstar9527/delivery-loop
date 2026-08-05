@@ -12,10 +12,11 @@ import type {
   FailureSite,
   HumanInputCode,
 } from '../domain/attempt-failure.js';
-import type {
-  GitRepositoryWriter,
-  PushedRepositoryBranch,
-  RepositoryCommit,
+import {
+  ProtectedPathApprovalRequired,
+  type GitRepositoryWriter,
+  type PushedRepositoryBranch,
+  type RepositoryCommit,
 } from './git-repository-writer.js';
 import {
   VerificationExecutionRunner,
@@ -33,12 +34,17 @@ export interface ExecutionAttemptFailure {
   neededHumanInput: HumanInputCode;
 }
 
-export type ExecutionAgentAttemptFailureKind = CodexExecutionFailureKind | 'unknown';
+export type ExecutionAttemptFailureKind =
+  | CodexExecutionFailureKind
+  | 'unknown'
+  | 'repository_commit_failed'
+  | 'repository_push_failed'
+  | 'head_report_failed';
 
-export class ExecutionAgentAttemptError extends Error {
-  constructor(readonly kind: ExecutionAgentAttemptFailureKind) {
-    super('execution Agent failed');
-    this.name = 'ExecutionAgentAttemptError';
+export class ExecutionAttemptError extends Error {
+  constructor(readonly kind: ExecutionAttemptFailureKind) {
+    super('execution Attempt failed');
+    this.name = 'ExecutionAttemptError';
   }
 }
 
@@ -173,6 +179,18 @@ export class ExecutionAttemptRunner {
     };
   }
 
+  private async fail(
+    kind: ExecutionAttemptFailureKind,
+    failure: ExecutionAttemptFailure,
+  ): Promise<never> {
+    try {
+      await this.context.failureReporter.report(failure);
+    } catch {
+      // Preserve the already-safe stage classification even if terminal reporting fails.
+    }
+    throw new ExecutionAttemptError(kind);
+  }
+
   async run(): Promise<ExecutionAttemptResult> {
     if (await canonicalSha256(this.context.deliveryPolicy.policy) !== this.context.deliveryPolicy.digest) {
       throw new Error('execution delivery policy binding changed');
@@ -204,17 +222,12 @@ export class ExecutionAttemptRunner {
         : kind === 'process_unavailable' || kind === 'process_timeout' || kind === 'unknown'
           ? 'unknown_failure'
           : 'invalid_agent_output';
-      try {
-        await this.context.failureReporter.report({
-          failureCode,
-          failureSite: 'agent_output',
-          attemptedPaths: ['code_change'],
-          neededHumanInput: 'manual_investigation',
-        });
-      } catch {
-        throw new Error('execution Agent failure report failed');
-      }
-      throw new ExecutionAgentAttemptError(kind);
+      return this.fail(kind, {
+        failureCode,
+        failureSite: 'agent_output',
+        attemptedPaths: ['code_change'],
+        neededHumanInput: 'manual_investigation',
+      });
     }
     if (decision.action === 'request_replan') {
       const reporter = this.context.planRevisionReporter;
@@ -229,22 +242,52 @@ export class ExecutionAttemptRunner {
       ) throw new Error('execution Plan revision response is invalid');
       return { status: 'replanning', ...revision };
     }
-    const commit = await this.context.repositoryWriter.commitAll();
-    if (commit.branch !== prepared.branch || !SHA_PATTERN.test(commit.commitSha)) {
-      throw new Error('execution commit binding changed');
+    let commit: RepositoryCommit;
+    try {
+      commit = await this.context.repositoryWriter.commitAll();
+      if (commit.branch !== prepared.branch || !SHA_PATTERN.test(commit.commitSha)) {
+        throw new Error('invalid commit binding');
+      }
+    } catch (error) {
+      if (error instanceof ProtectedPathApprovalRequired) throw error;
+      return this.fail('repository_commit_failed', {
+        failureCode: 'unknown_failure',
+        failureSite: 'repo_snapshot',
+        attemptedPaths: ['code_change'],
+        neededHumanInput: 'manual_investigation',
+      });
     }
-    const pushed = await this.context.repositoryWriter.push({
-      targetBranch: commit.branch,
-      force: false,
-    });
-    if (pushed.branch !== commit.branch || pushed.commitSha !== commit.commitSha) {
-      throw new Error('execution push binding changed');
+    let pushed: PushedRepositoryBranch;
+    try {
+      pushed = await this.context.repositoryWriter.push({
+        targetBranch: commit.branch,
+        force: false,
+      });
+      if (pushed.branch !== commit.branch || pushed.commitSha !== commit.commitSha) {
+        throw new Error('invalid push binding');
+      }
+    } catch {
+      return this.fail('repository_push_failed', {
+        failureCode: 'tool_unavailable',
+        failureSite: 'external_reconciliation',
+        attemptedPaths: ['code_change', 'external_reconciliation'],
+        neededHumanInput: 'resolve_external_dependency',
+      });
     }
-    await this.context.headReporter.record({
-      parentSha: this.context.checkoutSha,
-      headSha: pushed.commitSha,
-      branch: pushed.branch,
-    });
+    try {
+      await this.context.headReporter.record({
+        parentSha: this.context.checkoutSha,
+        headSha: pushed.commitSha,
+        branch: pushed.branch,
+      });
+    } catch {
+      return this.fail('head_report_failed', {
+        failureCode: 'unknown_failure',
+        failureSite: 'external_reconciliation',
+        attemptedPaths: ['code_change', 'external_reconciliation'],
+        neededHumanInput: 'manual_investigation',
+      });
+    }
 
     const verification = await new VerificationExecutionRunner({
       repositoryPath: this.context.repositoryPath,

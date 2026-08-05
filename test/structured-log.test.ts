@@ -130,7 +130,7 @@ describe('secure structured logging', () => {
         'execution_attempt_result',
         'failed',
         { DELIVERY_ATTEMPT_ID: 'attempt-safe-failure-kind' },
-        'transcript_invalid',
+        'repository_commit_failed',
       );
     } finally {
       write.mockRestore();
@@ -138,7 +138,7 @@ describe('secure structured logging', () => {
     expect(JSON.parse(output[0]!)).toMatchObject({
       event: 'execution_attempt_result',
       outcome: 'failed',
-      failureKind: 'transcript_invalid',
+      failureKind: 'repository_commit_failed',
     });
     expect(() => writeRunnerStructuredLog(
       'analysis_attempt_result',
