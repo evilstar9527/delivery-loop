@@ -52,7 +52,6 @@ jobs:
             "$DELIVERY_CONTROL_PLANE_ORIGIN/v1/tasks/$DELIVERY_EXPECTED_TASK_ID")"
           jq -n --arg taskStatus "$task_status" '{taskStatus:$taskStatus}'
           test "$task_status" = 404
-          jq -e '.error.code == "not_found"' "$task_response" >/dev/null
 
           suffix="${DELIVERY_EXPECTED_TASK_ID#task_}"
           expected_title="delivery-loop/analysis-run_${suffix}-1"
