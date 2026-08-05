@@ -373,7 +373,7 @@ Task Revision
 | `supplemental_context_revisions` | event digest、prior/new Task与new Run、context ref/digest、apply-current及旧Run/Plan/base绑定 | 正文只进私有R2；prior Task只有一个next child；默认new Run queued，显式apply时new Run cancelled且workflow-create settled，并与source fact/PlanRevision begin同batch；snapshot不可UPDATE |
 | `protected_path_change_gates` | run/attempt/plan/item/generation、base/tree/policy/diff digest、计数、status | `(attempt, generation)`唯一；只接受active repo_write上下文；当前状态为`awaiting_approval`时才暂停执行 |
 | `protected_path_change_entries` | gate、position、path/previous path、change type、additions/deletions | 只存安全diff元数据，不存patch、文件内容、Git stderr或Secret |
-| `verification_suites` | run/attempt/plan/item/generation、head SHA、policy digest、targeted/required计数、status | 同Attempt generation/head/policy仅一套；required verification Item与exact命令集合绑定 |
+| `verification_suites` | run/attempt/plan/item/generation、head SHA、policy digest、targeted/required计数、status | 同Attempt generation/head/policy仅一套；required self-verifying change或下游verification Item与exact命令集合绑定 |
 | `verification_suite_commands` | suite、position、targeted/required phase、command ref、result status、Evidence ref | targeted位置全部早于required；只接受first pending且前序全passed；同command唯一 |
 | `attempt_failure_verification_facts` | failure、failed suite/Evidence/head、fact digest | 只有服务端failed suite事实能写；phase/ref/exit形成无正文digest；被引用Evidence/suite/command不可改 |
 | `attempt_repairs` | failure、failed/repair Attempt、Plan/Item、source fact、retry scope/fingerprint | 每个failure最多一个repair；新Attempt从失败head开始但不继承token/credential/branch；repair Attempt全局唯一 |
