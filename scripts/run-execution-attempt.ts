@@ -1,4 +1,5 @@
 import { runExecutionAttempt } from '../src/runner/execution-runner.js';
+import { ExecutionAgentAttemptError } from '../src/runner/execution-attempt-runner.js';
 import { writeRunnerStructuredLog } from '../src/observability/runner-log.js';
 
 try {
@@ -11,7 +12,12 @@ try {
         ? 'replanning'
         : result.status === 'blocked' ? 'blocked' : 'accepted',
   );
-} catch {
-  writeRunnerStructuredLog('execution_attempt_result', 'failed');
+} catch (error) {
+  writeRunnerStructuredLog(
+    'execution_attempt_result',
+    'failed',
+    process.env,
+    error instanceof ExecutionAgentAttemptError ? error.kind : undefined,
+  );
   process.exitCode = 1;
 }

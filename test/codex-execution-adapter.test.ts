@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CommandExecutionRequest } from '../src/agent/command-runtime.js';
-import { CodexExecutionAdapter } from '../src/agent/codex-execution-adapter.js';
+import {
+  CodexExecutionAdapter,
+  type CodexExecutionAdapterError,
+} from '../src/agent/codex-execution-adapter.js';
 
 describe('Codex execution adapter', () => {
   it('uses ephemeral workspace-write with approval never and keeps context content out of prompt', async () => {
@@ -143,7 +146,7 @@ describe('Codex execution adapter', () => {
       outputFilePath: output,
       timeoutMs: 60_000,
       allowPlanRevision: false,
-    })).rejects.toThrow('execution Agent failed with exit code 9');
+    })).rejects.toThrow('execution Agent process failed');
   });
 
   it('accepts a strict request_replan decision only for head-bound review feedback', async () => {
@@ -235,5 +238,33 @@ describe('Codex execution adapter', () => {
       outputTokens: 5,
       reasoningOutputTokens: 2,
     });
+  });
+
+  it('preserves only a fixed safe reason when the JSONL observer rejects stdout', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-transcript-rejected-'));
+    const workspace = join(root, 'repo');
+    const contextFilePath = join(root, 'context.json');
+    const outputFilePath = join(root, 'output.txt');
+    await mkdir(workspace, { mode: 0o700 });
+    await writeFile(contextFilePath, '{}', { mode: 0o600 });
+    await writeFile(outputFilePath, '', { mode: 0o600 });
+    const adapter = new CodexExecutionAdapter({
+      execute: async () => ({ exitCode: 1, stdoutInvalid: true }),
+    });
+
+    const rejected = adapter.apply({
+      attemptId: 'attempt-execution-transcript-rejected',
+      workspacePath: workspace,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: 60_000,
+      allowPlanRevision: false,
+      onTranscriptLine: () => undefined,
+    });
+    await expect(rejected).rejects.toMatchObject({
+      name: 'CodexExecutionAdapterError',
+      kind: 'transcript_invalid',
+      message: 'execution Agent transcript is invalid',
+    } satisfies Partial<CodexExecutionAdapterError>);
   });
 });

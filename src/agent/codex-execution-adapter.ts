@@ -12,6 +12,32 @@ import { normalizeProviderBaseUrl } from './provider-base-url.js';
 
 const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const MAX_DECISION_BYTES = 4 * 1_024;
+export const CODEX_EXECUTION_FAILURE_KINDS = [
+  'process_unavailable',
+  'process_timeout',
+  'process_nonzero_exit',
+  'transcript_invalid',
+  'usage_invalid',
+  'decision_invalid',
+] as const;
+export type CodexExecutionFailureKind = (typeof CODEX_EXECUTION_FAILURE_KINDS)[number];
+
+const FAILURE_MESSAGE: Record<CodexExecutionFailureKind, string> = {
+  process_unavailable: 'execution Agent process is unavailable',
+  process_timeout: 'execution Agent process timed out',
+  process_nonzero_exit: 'execution Agent process failed',
+  transcript_invalid: 'execution Agent transcript is invalid',
+  usage_invalid: 'execution Agent usage is invalid',
+  decision_invalid: 'execution Agent decision is invalid',
+};
+
+export class CodexExecutionAdapterError extends Error {
+  constructor(readonly kind: CodexExecutionFailureKind) {
+    super(FAILURE_MESSAGE[kind]);
+    this.name = 'CodexExecutionAdapterError';
+  }
+}
+
 const EXECUTION_DECISION_SCHEMA = JSON.stringify({
   $schema: 'http://json-schema.org/draft-07/schema#',
   type: 'object',
@@ -191,16 +217,22 @@ export class CodexExecutionAdapter implements ExecutionAgent {
             }),
       });
     } catch {
-      throw new Error('execution Agent could not be started');
+      throw new CodexExecutionAdapterError('process_unavailable');
     } finally {
       await rm(decisionSchemaPath, { force: true });
     }
+    if (result.timedOut === true) {
+      throw new CodexExecutionAdapterError('process_timeout');
+    }
+    if (result.stdoutInvalid === true) {
+      throw new CodexExecutionAdapterError('transcript_invalid');
+    }
     if (result.exitCode !== 0) {
-      throw new Error(`execution Agent failed with exit code ${result.exitCode}`);
+      throw new CodexExecutionAdapterError('process_nonzero_exit');
     }
     if (input.model !== undefined) {
       const measured = usage.result();
-      if (measured === null) throw new Error('execution Agent usage is unavailable');
+      if (measured === null) throw new CodexExecutionAdapterError('usage_invalid');
       input.onUsage?.(measured);
     }
     let decisionText: string;
@@ -208,22 +240,22 @@ export class CodexExecutionAdapter implements ExecutionAgent {
       const verifiedOutput = await privateRegularFile(outputFilePath, 'output');
       decisionText = await readFile(verifiedOutput, 'utf8');
     } catch {
-      throw new Error('execution Agent decision is invalid');
+      throw new CodexExecutionAdapterError('decision_invalid');
     }
     if (new TextEncoder().encode(decisionText).length > MAX_DECISION_BYTES) {
-      throw new Error('execution Agent decision is invalid');
+      throw new CodexExecutionAdapterError('decision_invalid');
     }
     let rawDecision: unknown;
     try {
       rawDecision = JSON.parse(decisionText) as unknown;
     } catch {
-      throw new Error('execution Agent decision is invalid');
+      throw new CodexExecutionAdapterError('decision_invalid');
     }
     const decision = ExecutionAgentDecisionSchema.safeParse(rawDecision);
     if (
       !decision.success ||
       (decision.data.action === 'request_replan' && !input.allowPlanRevision)
-    ) throw new Error('execution Agent decision is invalid');
+    ) throw new CodexExecutionAdapterError('decision_invalid');
     return decision.data;
   }
 }

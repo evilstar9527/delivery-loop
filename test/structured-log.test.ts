@@ -118,4 +118,33 @@ describe('secure structured logging', () => {
     });
     expect(JSON.stringify(record)).not.toContain(LOG_SECRET);
   });
+
+  it('allows only a fixed execution failure kind on failed execution logs', () => {
+    const output: string[] = [];
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
+      output.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write);
+    try {
+      writeRunnerStructuredLog(
+        'execution_attempt_result',
+        'failed',
+        { DELIVERY_ATTEMPT_ID: 'attempt-safe-failure-kind' },
+        'transcript_invalid',
+      );
+    } finally {
+      write.mockRestore();
+    }
+    expect(JSON.parse(output[0]!)).toMatchObject({
+      event: 'execution_attempt_result',
+      outcome: 'failed',
+      failureKind: 'transcript_invalid',
+    });
+    expect(() => writeRunnerStructuredLog(
+      'analysis_attempt_result',
+      'failed',
+      {},
+      'transcript_invalid',
+    )).toThrow('Runner failure kind is invalid');
+  });
 });
