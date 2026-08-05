@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { SecretScanner } from '../src/security/redaction.js';
 import { configuredSecrets } from '../src/security/runtime-secrets.js';
 import { secureStructuredLogSink } from '../src/observability/structured-log.js';
-import { writeRunnerStructuredLog } from '../src/observability/runner-log.js';
+import {
+  writeRunnerExecutionAgentActivity,
+  writeRunnerStructuredLog,
+} from '../src/observability/runner-log.js';
 
 const LOG_SECRET = 'CANARY_STRUCTURED_LOG_SECRET_123456';
 
@@ -146,5 +149,44 @@ describe('secure structured logging', () => {
       {},
       'transcript_invalid',
     )).toThrow('Runner failure kind is invalid');
+  });
+
+  it('logs only fixed execution Agent activity counters', () => {
+    const output: string[] = [];
+    const write = vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: unknown) => {
+      output.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write);
+    try {
+      writeRunnerExecutionAgentActivity({
+        schemaVersion: '1',
+        jsonlEventCount: 9,
+        commandExecutionStartedCount: 2,
+        commandExecutionCompletedCount: 2,
+        fileChangeStartedCount: 1,
+        fileChangeCompletedCount: 1,
+        agentMessageCompletedCount: 2,
+        turnCompletedCount: 1,
+      }, {
+        DELIVERY_ATTEMPT_ID: 'attempt-safe-activity',
+        OPENAI_API_KEY: LOG_SECRET,
+      });
+    } finally {
+      write.mockRestore();
+    }
+    expect(output).toHaveLength(1);
+    const record = JSON.parse(output[0]!) as Record<string, unknown>;
+    expect(record).toMatchObject({
+      event: 'execution_agent_activity',
+      attemptId: 'attempt-safe-activity',
+      jsonlEventCount: 9,
+      commandExecutionCompletedCount: 2,
+      fileChangeCompletedCount: 1,
+    });
+    expect(JSON.stringify(record)).not.toContain(LOG_SECRET);
+    expect(Object.keys(record)).not.toContain('command');
+    expect(Object.keys(record)).not.toContain('output');
+    expect(Object.keys(record)).not.toContain('path');
+    expect(Object.keys(record)).not.toContain('message');
   });
 });

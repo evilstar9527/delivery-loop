@@ -1,4 +1,8 @@
 import { isSensitiveFieldName } from '../security/redaction.js';
+import {
+  CodexExecutionActivitySchema,
+  type CodexExecutionActivity,
+} from '../agent/codex-execution-activity.js';
 import { secureStructuredLogSink } from './structured-log.js';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
@@ -60,6 +64,27 @@ export function writeRunnerStructuredLog(
     event,
     outcome,
     ...(failureKind === undefined ? {} : { failureKind }),
+    ...(ID_PATTERN.test(environment.DELIVERY_ATTEMPT_ID ?? '')
+      ? { attemptId: environment.DELIVERY_ATTEMPT_ID }
+      : {}),
+  });
+}
+
+/** Emits the only permitted execution-Agent activity projection. */
+export function writeRunnerExecutionAgentActivity(
+  activity: CodexExecutionActivity,
+  environment: NodeJS.ProcessEnv = process.env,
+): void {
+  const parsed = CodexExecutionActivitySchema.safeParse(activity);
+  if (!parsed.success) throw new Error('Runner execution Agent activity is invalid');
+  secureStructuredLogSink({
+    component: 'runner',
+    level: 'info',
+    secrets: processSecrets(environment),
+    sink: (record) => process.stdout.write(`${JSON.stringify(record)}\n`),
+  })({
+    ...parsed.data,
+    event: 'execution_agent_activity',
     ...(ID_PATTERN.test(environment.DELIVERY_ATTEMPT_ID ?? '')
       ? { attemptId: environment.DELIVERY_ATTEMPT_ID }
       : {}),
