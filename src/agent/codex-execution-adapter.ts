@@ -42,16 +42,21 @@ export class CodexExecutionAdapterError extends Error {
   }
 }
 
-const EXECUTION_DECISION_SCHEMA = JSON.stringify({
-  $schema: 'http://json-schema.org/draft-07/schema#',
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    schemaVersion: { type: 'string', const: '1' },
-    action: { type: 'string', enum: ['apply_fix', 'request_replan'] },
-  },
-  required: ['schemaVersion', 'action'],
-});
+function executionDecisionSchema(allowPlanRevision: boolean): string {
+  return JSON.stringify({
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      schemaVersion: { type: 'string', const: '1' },
+      action: {
+        type: 'string',
+        enum: allowPlanRevision ? ['apply_fix', 'request_replan'] : ['apply_fix'],
+      },
+    },
+    required: ['schemaVersion', 'action'],
+  });
+}
 
 export const ExecutionAgentDecisionSchema = z.object({
   schemaVersion: z.literal('1'),
@@ -217,7 +222,7 @@ export class CodexExecutionAdapter implements ExecutionAgent {
       dirname(canonicalOutput),
       `${input.attemptId}-decision-schema.json`,
     );
-    await writeFile(decisionSchemaPath, EXECUTION_DECISION_SCHEMA, {
+    await writeFile(decisionSchemaPath, executionDecisionSchema(input.allowPlanRevision), {
       mode: 0o600,
       flag: 'wx',
     });

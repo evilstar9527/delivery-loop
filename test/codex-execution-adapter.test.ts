@@ -34,7 +34,7 @@ describe('Codex execution adapter', () => {
           additionalProperties: false,
           properties: {
             schemaVersion: { type: 'string', const: '1' },
-            action: { type: 'string', enum: ['apply_fix', 'request_replan'] },
+            action: { type: 'string', enum: ['apply_fix'] },
           },
           required: ['schemaVersion', 'action'],
         });
@@ -202,9 +202,15 @@ describe('Codex execution adapter', () => {
     await writeFile(contextFilePath, '{}', { mode: 0o600 });
     await writeFile(outputFilePath, '', { mode: 0o600 });
     let prompt = '';
+    const decisionActions: string[][] = [];
     const adapter = new CodexExecutionAdapter({
       execute: async (request) => {
         prompt = request.stdin;
+        const schemaPath = request.args[request.args.indexOf('--output-schema') + 1];
+        const schema = JSON.parse(await readFile(schemaPath!, 'utf8')) as {
+          properties: { action: { enum: string[] } };
+        };
+        decisionActions.push(schema.properties.action.enum);
         await writeFile(outputFilePath, JSON.stringify({
           schemaVersion: '1',
           action: 'request_replan',
@@ -227,6 +233,10 @@ describe('Codex execution adapter', () => {
     expect(prompt).toContain('request_replan');
     await expect(adapter.apply({ ...input, allowPlanRevision: false }))
       .rejects.toThrow('execution Agent decision is invalid');
+    expect(decisionActions).toEqual([
+      ['apply_fix', 'request_replan'],
+      ['apply_fix'],
+    ]);
   });
 
   it('fans the same bounded Codex JSONL stream to transcript capture and usage accounting', async () => {
