@@ -1326,4 +1326,79 @@ describe('analysis Runner bootstrap', () => {
     expect(JSON.stringify(failureBody)).not.toContain(INITIAL_TOKEN);
     expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
   });
+
+  it('rejects a runtime Secret reflected into control-plane context before Agent start', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-context-secret-'));
+    const environment = await runnerEnvironment(root);
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(environment.GITHUB_WORKSPACE!, { recursive: true });
+    await mkdir(environment.RUNNER_TEMP!, { recursive: true });
+    const reflectedTask: TaskEnvelope = {
+      ...taskEnvelope(),
+      intent: {
+        ...taskEnvelope().intent,
+        description: `Untrusted source reflected ${INITIAL_TOKEN}`,
+      },
+    };
+    environment.DELIVERY_TASK_DIGEST = await taskRevisionDigest(reflectedTask);
+    let agentStarted = false;
+    const fetchImplementation: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oidc.actions.test/token')) {
+        return Response.json({ value: OIDC_TOKEN });
+      }
+      if (url.endsWith('/exchange')) {
+        return Response.json({
+          attemptToken: INITIAL_TOKEN,
+          expiresAt: '2026-07-25T00:05:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: INITIAL_TOOL_TOKEN,
+            expiresAt: '2026-07-25T00:05:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith('/context')) {
+        return Response.json({
+          schemaVersion: '1',
+          attempt: {
+            id: ATTEMPT_ID,
+            runId: RUN_ID,
+            mode: 'analysis',
+            version: 7,
+            leaseGeneration: 3,
+            baseSha: BASE_SHA,
+          },
+          task: reflectedTask,
+          planPolicy: {
+            version: 1,
+            allowedEffects: ['repo_read'],
+            allowedCommandRefs: ['policy:inspect'],
+          },
+        });
+      }
+      throw new Error('unexpected context Secret fake request');
+    };
+
+    const promise = runAnalysisAttempt({
+      environment,
+      fetch: fetchImplementation,
+      agent: {
+        async start() {
+          agentStarted = true;
+          throw new Error('must not start');
+        },
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+    });
+
+    await expect(promise).rejects.toThrow('analysis context contains a runtime Secret');
+    await expect(promise).rejects.not.toThrow(INITIAL_TOKEN);
+    expect(agentStarted).toBe(false);
+    expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
+    expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
+  });
 });

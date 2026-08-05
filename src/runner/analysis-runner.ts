@@ -974,6 +974,9 @@ export async function runAnalysisAttempt(
     ).catch((error: unknown) => {
       heartbeatFailure = error;
     });
+    if (new SecretScanner({ secrets: [...runtimeSecrets] }).scan(context).length > 0) {
+      throw new AnalysisRunnerError('analysis context contains a runtime Secret');
+    }
     await writeFile(
       contextFilePath,
       JSON.stringify(await createAnalysisContextFileV1(context)),
