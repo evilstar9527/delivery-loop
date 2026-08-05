@@ -589,7 +589,7 @@ GitHub review feedback契约：
 
 GitHub base observation契约：
 
-- scheduled reconciler只选择active pre-merge/blocked Run，要求Run base、active Plan base、Task repository/base branch完全一致；merging/deploying/终态不查询GitHub；
+- scheduled reconciler只选择active pre-merge/blocked Run，要求Run base、active Plan base、Task repository/base branch完全一致；merging/deploying/终态不查询GitHub。候选超过单轮上限时，以epoch minute和固定limit计算循环offset，先取有序尾段再从头补齐；`unchanged`不写业务状态也不能让最老一批永久占满扫描窗口；
 - base token与Actions dispatch、PR publication、repo-write token用途隔离，installation request只有目标repository和`permissions:{contents:'read'}`；token仅进入Authorization header；
 - ref响应必须是exact `refs/heads/<baseBranch>`与commit SHA。head未变直接`unchanged`且零D1事实；变化后compare响应必须把old SHA绑定为base commit；只有merge base也等于old、ahead大于0且behind为0才创建Plan source。behind/diverged/identical或异常merge-base改为strict non-fast-forward fact，不得伪装成fast-forward；
 - fast-forward fact只保存repo/branch/before/after/ahead count与ref/compare canonical digests，不保存REST body/token。`github_base_observations`、`plan_revision_source_facts`、revision/Attempt/outbox及旧执行fencing同batch；20路查询可重复外部read，但业务状态只推进一次。
