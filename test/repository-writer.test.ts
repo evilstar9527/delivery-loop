@@ -1,10 +1,11 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 import { parseDeliveryPolicy } from '../src/domain/delivery-policy.js';
+import { patchContentDigest } from '../src/domain/patch-proposal.js';
 import {
   BOT_COMMIT_EMAIL,
   BOT_COMMIT_NAME,
@@ -114,6 +115,109 @@ describe('approved Git repository writer', () => {
       GIT_CONFIG_KEY_0: 'http.extraHeader',
       GIT_CONFIG_VALUE_0: `Authorization: Bearer ${credential().token}`,
     });
+  });
+
+  it('applies only a fully preconditioned bounded text proposal before the bot commit', async () => {
+    const repo = await fixture();
+    const writer = new GitRepositoryWriter({
+      repositoryPath: repo.repository,
+      repository: 'example/delivery-target',
+      taskId: TASK_ID,
+      attemptId: 'attempt-patch-proposal',
+      baseSha: repo.baseSha,
+      baseBranch: 'main',
+      protectedBranches: [],
+      deliveryPolicy: DELIVERY_POLICY,
+      onProtectedPathApprovalRequired: async () => undefined,
+      credential: credential(),
+    });
+    await writer.prepareBranch();
+    await writer.applyPatchProposal({
+      schemaVersion: '1',
+      changes: [
+        {
+          path: 'README.md',
+          baseDigest: await patchContentDigest('base\n'),
+          content: 'base\napproved patch\n',
+        },
+        { path: 'notes.txt', baseDigest: null, content: 'new file\n' },
+      ],
+    });
+    expect(await readFile(join(repo.repository, 'README.md'), 'utf8'))
+      .toBe('base\napproved patch\n');
+    expect(await readFile(join(repo.repository, 'notes.txt'), 'utf8')).toBe('new file\n');
+    expect(await git(repo.repository, 'rev-parse', 'HEAD')).toBe(repo.baseSha);
+    await expect(writer.commitAll()).resolves.toMatchObject({
+      branch: repositoryAttemptBranch(TASK_ID, 'attempt-patch-proposal'),
+    });
+  });
+
+  it('rejects stale, escaping, protected, duplicate, missing-parent, and symlink proposals before writing', async () => {
+    const repo = await fixture();
+    await mkdir(join(repo.repository, 'real-dir'));
+    await symlink('README.md', join(repo.repository, 'linked.txt'));
+    await symlink('real-dir', join(repo.repository, 'dir-link'));
+    await git(repo.repository, 'add', 'linked.txt', 'dir-link');
+    await git(repo.repository, 'commit', '-m', 'add tracked symlink');
+    await git(repo.repository, 'push', 'origin', 'main');
+    const baseSha = await git(repo.repository, 'rev-parse', 'HEAD');
+    const writer = new GitRepositoryWriter({
+      repositoryPath: repo.repository,
+      repository: 'example/delivery-target',
+      taskId: TASK_ID,
+      attemptId: 'attempt-invalid-patch-proposal',
+      baseSha,
+      baseBranch: 'main',
+      protectedBranches: [],
+      deliveryPolicy: DELIVERY_POLICY,
+      onProtectedPathApprovalRequired: async () => undefined,
+      credential: credential(),
+    });
+    await writer.prepareBranch();
+    const proposals = [
+      {
+        schemaVersion: '1' as const,
+        changes: [{ path: 'README.md', baseDigest: `sha256:${'a'.repeat(64)}`, content: 'stale\n' }],
+      },
+      {
+        schemaVersion: '1' as const,
+        changes: [{ path: '../escape.txt', baseDigest: null, content: 'escape\n' }],
+      },
+      {
+        schemaVersion: '1' as const,
+        changes: [{ path: 'delivery.yaml', baseDigest: null, content: 'protected\n' }],
+      },
+      {
+        schemaVersion: '1' as const,
+        changes: [
+          { path: 'same.txt', baseDigest: null, content: 'one\n' },
+          { path: 'same.txt', baseDigest: null, content: 'two\n' },
+        ],
+      },
+      {
+        schemaVersion: '1' as const,
+        changes: [{ path: 'missing/child.txt', baseDigest: null, content: 'missing\n' }],
+      },
+      {
+        schemaVersion: '1' as const,
+        changes: [{ path: 'dir-link/child.txt', baseDigest: null, content: 'followed\n' }],
+      },
+      {
+        schemaVersion: '1' as const,
+        changes: [{
+          path: 'linked.txt',
+          baseDigest: await patchContentDigest('base\n'),
+          content: 'followed\n',
+        }],
+      },
+    ];
+    for (const proposal of proposals) {
+      await expect(writer.applyPatchProposal(proposal))
+        .rejects.toBeInstanceOf(RepositoryWritePolicyError);
+      expect(await readFile(join(repo.repository, 'README.md'), 'utf8')).toBe('base\n');
+      expect(await git(repo.repository, 'status', '--porcelain=v1', '--untracked-files=all'))
+        .toBe('');
+    }
   });
 
   it('rejects main, base, protected, force, and ref-injection pushes before invoking Git', async () => {

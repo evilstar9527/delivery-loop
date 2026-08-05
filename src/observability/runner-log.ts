@@ -13,6 +13,7 @@ const EXECUTION_FAILURE_KINDS = [
   'transcript_invalid',
   'usage_invalid',
   'decision_invalid',
+  'repository_patch_failed',
   'repository_commit_failed',
   'repository_push_failed',
   'head_report_failed',

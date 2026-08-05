@@ -23,6 +23,7 @@ import {
   type VerificationEvidenceReporter,
 } from './verification-execution-runner.js';
 import { DeliveryCommandRunner } from './delivery-command-runner.js';
+import type { PatchProposalV1 } from '../domain/patch-proposal.js';
 
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
@@ -37,6 +38,7 @@ export interface ExecutionAttemptFailure {
 export type ExecutionAttemptFailureKind =
   | CodexExecutionFailureKind
   | 'unknown'
+  | 'repository_patch_failed'
   | 'repository_commit_failed'
   | 'repository_push_failed'
   | 'head_report_failed';
@@ -73,6 +75,7 @@ export interface PlanRevisionReporter {
 
 export interface ExecutionRepositoryWriter {
   prepareBranch(): Promise<{ branch: string; baseSha: string }>;
+  applyPatchProposal?(proposal: PatchProposalV1): Promise<void>;
   commitAll(): Promise<RepositoryCommit>;
   push(input: { targetBranch: string; force: boolean }): Promise<PushedRepositoryBranch>;
 }
@@ -213,7 +216,8 @@ export class ExecutionAttemptRunner {
       decision = await this.context.agent.apply(this.context.agentInput);
       if (
         decision?.schemaVersion !== '1' ||
-        (decision.action !== 'apply_fix' && decision.action !== 'request_replan')
+        (decision.action !== 'apply_fix' && decision.action !== 'request_replan' &&
+          decision.action !== 'apply_patch')
       ) throw new Error('invalid decision');
     } catch (error) {
       const kind = error instanceof CodexExecutionAdapterError ? error.kind : 'unknown';
@@ -241,6 +245,21 @@ export class ExecutionAttemptRunner {
         revision.runVersion <= 0
       ) throw new Error('execution Plan revision response is invalid');
       return { status: 'replanning', ...revision };
+    }
+    if (decision.action === 'apply_patch') {
+      try {
+        if (typeof this.context.repositoryWriter.applyPatchProposal !== 'function') {
+          throw new Error('patch proposal application is unavailable');
+        }
+        await this.context.repositoryWriter.applyPatchProposal(decision.proposal);
+      } catch {
+        return this.fail('repository_patch_failed', {
+          failureCode: 'unknown_failure',
+          failureSite: 'repo_snapshot',
+          attemptedPaths: ['code_change'],
+          neededHumanInput: 'manual_investigation',
+        });
+      }
     }
     let commit: RepositoryCommit;
     try {

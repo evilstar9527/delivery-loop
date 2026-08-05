@@ -1,11 +1,12 @@
 import { execFile } from 'node:child_process';
-import { chmod, mkdtemp, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { CodexExecutionAdapterError } from '../src/agent/codex-execution-adapter.js';
 import { canonicalSha256 } from '../src/domain/digest.js';
+import { patchContentDigest } from '../src/domain/patch-proposal.js';
 import { taskRevisionDigest, type TaskEnvelope } from '../src/domain/task.js';
 import { EXECUTION_TOOL_ACTIONS } from '../src/domain/tool-bridge.js';
 import {
@@ -507,7 +508,7 @@ describe('production execution Runner bootstrap', () => {
     expect(await readdir(runnerTemp)).toEqual([]);
   });
 
-  it('recovers one clean zero-tool edit turn with separately settled model calls', async () => {
+  it('recovers one clean zero-tool edit turn through a separately settled patch proposal', async () => {
     const fixture = await repository();
     const runnerTemp = join(fixture.root, 'runner-temp');
     await mkdir(runnerTemp, { mode: 0o700 });
@@ -811,14 +812,24 @@ describe('production execution Runner bootstrap', () => {
             throw new CodexExecutionAdapterError('decision_invalid', 'no_tool_activity');
           }
           expect(input.editTurn).toBe(2);
+          expect(input.patchProposal).toBe(true);
           await heartbeatSeen;
           input.onTranscriptLine?.(JSON.stringify({
             type: 'item.completed',
             item: { type: 'agent_message', text: transcriptMarker },
           }));
-          await writeFile(join(fixture.path, 'value.txt'), 'fixed\n');
-          await chmod(input.outputFilePath, 0o600);
-          return { schemaVersion: '1', action: 'apply_fix' };
+          return {
+            schemaVersion: '1',
+            action: 'apply_patch',
+            proposal: {
+              schemaVersion: '1',
+              changes: [{
+                path: 'value.txt',
+                baseDigest: await patchContentDigest('broken\n'),
+                content: 'fixed\n',
+              }],
+            },
+          };
         },
       },
       now: () => new Date('2026-07-25T15:01:00.000Z'),
@@ -855,7 +866,7 @@ describe('production execution Runner bootstrap', () => {
       }),
       JSON.stringify({
         type: 'item.completed',
-        item: { type: 'agent_message', text: transcriptMarker },
+        item: { type: 'agent_message', text: '[PATCH_PROPOSAL_OMITTED]' },
       }),
       '',
     ].join('\n'));
