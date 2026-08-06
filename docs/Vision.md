@@ -10,12 +10,12 @@
 
 delivery-loop 是端到端交付的控制面：
 
-1. 从飞书、Meegle、GitHub 或监控事件接收候选任务；
+1. 从飞书或 Meegle 接收原始 PRD 和 BUG 输入，并路由到对应的 GitHub 仓库；
 2. 把自然语言任务规范化为有验收标准、目标仓库和权限策略的 `TaskEnvelope`；
-3. 先启动只读分析 attempt，通过 tool-bridge 按需读取 repo、日志、数据库、K8s 和协作上下文；
+3. 先启动只读分析 attempt：需求分析读取仓库上下文，缺陷分析除仓库上下文外按需通过 tool-bridge 只读读取日志、数据库、K8s 和协作上下文；
 4. 生成版本化 `ExecutionPlan`，每个 DoD Item 同时声明目标、完成判据、验证方式、依赖和 effect；
 5. 经策略校验和必要的人审后，在 GitHub Actions 中启动有界的执行 attempt；
-6. 按 DoD Item 生成分支/PR，进入测试、评审和有界修复循环；
+6. 执行 DoD 计划、创建 PR 并进入评审与修复循环，直到没有 BLOCKER 或 MAJOR 问题；
 7. 在明确闸门后合并和部署；
 8. 以 Cloudflare Workflows 持久编排流程，以 D1 保存业务真相，并把状态、checkpoint、证据和人类操作回写飞书。
 
