@@ -241,6 +241,11 @@ export default {
           secrets: configuredSecrets(env),
         }),
       }).scan(5);
+      // A created Draft PR is an external fact that must be projected before
+      // base drift can move the same Run into re-planning. Running both in the
+      // background batch lets their Run-version CAS race and can permanently
+      // strand the stable API observation as ignored/observation_race.
+      await reconcileGitHubPullRequestsFromEnv(env);
       await Promise.all([
         reconcileWorkflowInstancesFromEnv(env),
         reconcileGitHubRunsFromEnv(env, 1),
@@ -250,7 +255,6 @@ export default {
         reconcileGitHubMergeStatusesFromEnv(env),
         reconcileGitHubProductionDeploymentStatusesFromEnv(env),
         new BaseRebaseAttemptReconciler(env.DB_CONTROL).reconcileBatch(25),
-        reconcileGitHubPullRequestsFromEnv(env),
         reconcileTestDeploymentsFromEnv(env),
         reconcileTestAcceptancesFromEnv(env),
         reconcileTestRollbacksFromEnv(env),
