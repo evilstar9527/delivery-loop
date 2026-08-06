@@ -221,7 +221,11 @@ export default {
         env.TASK_OBJECTS,
         { now: scheduledNow },
       );
-      await executionProgress.reconcileFinalizations(1);
+      const recoveredPreparedPublication =
+        await executionProgress.reconcilePreparedPublications(1);
+      if (recoveredPreparedPublication === 0) {
+        await executionProgress.reconcileFinalizations(1);
+      }
       await executionProgress.reconcileScheduling(5);
       // Only attempts that the following stuck scan could fence are observed
       // synchronously. Both selectors share one scheduled timestamp, threshold

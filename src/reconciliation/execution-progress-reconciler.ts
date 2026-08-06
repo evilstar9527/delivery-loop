@@ -39,6 +39,12 @@ interface FinalizeRow extends RunPlanRow {
   head_sha: string;
 }
 
+interface PreparedPublicationRow {
+  run_id: string;
+  run_version: number;
+  draft_id: string;
+}
+
 export interface ExecutionProgressReconciliationResult {
   activatedRuns: number;
   scheduledAttempts: number;
@@ -122,6 +128,112 @@ export class ExecutionProgressReconciler {
       throw new Error('execution progress reconciliation limit must be between 1 and 100');
     }
     return await this.finalizePullRequests(limit);
+  }
+
+  async reconcilePreparedPublications(limit = 25): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+      throw new Error('execution progress reconciliation limit must be between 1 and 100');
+    }
+    const now = this.now();
+    const candidates = await this.db.prepare(
+      `SELECT drafts.run_id, runs.version AS run_version, drafts.draft_id
+       FROM pull_request_drafts AS drafts
+       JOIN runs ON runs.run_id = drafts.run_id
+       JOIN tasks ON tasks.task_id = drafts.task_id
+       JOIN execution_plans AS plans ON plans.plan_id = drafts.plan_id
+       JOIN attempts ON attempts.attempt_id = drafts.attempt_id
+       WHERE drafts.status = 'prepared'
+         AND NOT EXISTS (
+           SELECT 1 FROM pull_request_publications AS publications
+           WHERE publications.draft_id = drafts.draft_id
+         )
+         AND runs.state = 'verifying'
+         AND runs.version = drafts.run_version
+         AND runs.task_digest = drafts.task_digest
+         AND tasks.task_revision = drafts.task_revision
+         AND tasks.task_digest = drafts.task_digest
+         AND tasks.allow_repository_write = 1
+         AND runs.active_plan_id = drafts.plan_id
+         AND runs.active_plan_version = drafts.plan_version
+         AND runs.active_plan_digest = drafts.plan_digest
+         AND plans.plan_version = drafts.plan_version
+         AND plans.digest = drafts.plan_digest
+         AND plans.base_sha = runs.base_sha
+         AND plans.status = 'active'
+         AND attempts.status = 'completed'
+         AND attempts.mode IN ('implement', 'review_fix')
+         AND attempts.head_sha = drafts.head_sha
+         AND attempts.head_branch = drafts.branch
+         AND drafts.branch = 'agent/' || drafts.task_id || '/' || drafts.attempt_id
+         AND NOT EXISTS (
+           SELECT 1 FROM plan_items
+           JOIN plan_item_progress
+             ON plan_item_progress.plan_id = plan_items.plan_id
+            AND plan_item_progress.item_id = plan_items.item_id
+           WHERE plan_items.plan_id = plans.plan_id
+             AND plan_items.required = 1
+             AND plan_item_progress.status <> 'passed'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM plan_item_progress
+           WHERE plan_item_progress.plan_id = plans.plan_id
+             AND plan_item_progress.protected_path_gate_id IS NOT NULL
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM attempts AS newer
+           WHERE newer.run_id = runs.run_id
+             AND newer.mode IN ('implement', 'review_fix')
+             AND newer.ordinal > attempts.ordinal
+         )
+         AND EXISTS (
+           SELECT 1 FROM plan_item_effects
+           WHERE plan_item_effects.plan_id = plans.plan_id
+             AND plan_item_effects.effect = 'repo_write'
+         )
+         AND EXISTS (
+           SELECT 1 FROM trusted_effect_approvals AS approval
+           WHERE approval.run_id = runs.run_id
+             AND approval.task_revision = drafts.task_revision
+             AND approval.plan_id = drafts.plan_id
+             AND approval.plan_version = drafts.plan_version
+             AND approval.plan_digest = drafts.plan_digest
+             AND approval.base_sha = plans.base_sha
+             AND approval.effect = 'repo_write'
+             AND approval.decision = 'approve'
+             AND approval.expires_at > ?
+             AND NOT EXISTS (
+               SELECT 1 FROM invalidated_approvals
+               WHERE invalidated_approvals.approval_id = approval.approval_id
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM approvals AS rejection
+               WHERE rejection.run_id = approval.run_id
+                 AND rejection.task_revision = approval.task_revision
+                 AND rejection.plan_id = approval.plan_id
+                 AND rejection.plan_version = approval.plan_version
+                 AND rejection.plan_digest = approval.plan_digest
+                 AND rejection.base_sha = approval.base_sha
+                 AND rejection.effect = approval.effect
+                 AND rejection.decision = 'reject'
+                 AND rejection.created_at >= approval.created_at
+             )
+         )
+       ORDER BY drafts.created_at, drafts.draft_id LIMIT ?`,
+    ).bind(now.toISOString(), limit).all<PreparedPublicationRow>();
+    let handled = 0;
+    for (const candidate of candidates.results) {
+      try {
+        await new PullRequestPublicationStore(this.db).schedule({
+          runId: candidate.run_id,
+          expectedRunVersion: candidate.run_version,
+          draftId: candidate.draft_id,
+        }, now);
+        handled += 1;
+      } catch (error) {
+        if (!(error instanceof PullRequestPublicationError)) throw error;
+      }
+    }
+    return handled;
   }
 
   private async activateApprovedRuns(limit: number): Promise<number> {
