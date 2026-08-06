@@ -63,7 +63,7 @@ const DraftPrCaseSchema = z.object({
     version: z.number().int().positive().max(10_000),
     digest: DigestSchema,
     baseSha: ShaSchema,
-    requiredItems: z.array(RequiredItemSchema).min(4).max(100),
+    requiredItems: z.array(RequiredItemSchema).min(1).max(100),
   }).strict(),
   execution: z.object({
     attemptId: IdSchema,
@@ -106,7 +106,6 @@ const DraftPrCaseSchema = z.object({
   pullRequest: GitHubPullRequestEvidenceManifestV1Schema,
 }).strict().superRefine((item, context) => {
   const expectedInput = item.scenario === 'requirement' ? 'prd' : 'user_feedback';
-  const requiredKinds = new Set(item.plan.requiredItems.map((required) => required.kind));
   const changeItems = item.plan.requiredItems.filter((required) => required.kind === 'change');
   const testItem = item.plan.requiredItems.find(
     (required) => required.itemId === item.testSuite.planItemId,
@@ -123,8 +122,6 @@ const DraftPrCaseSchema = z.object({
       item.plan.requiredItems.length ||
     item.plan.requiredItems.some((required, index) =>
       index > 0 && required.itemId <= item.plan.requiredItems[index - 1]!.itemId) ||
-    !['investigation', 'change', 'verification', 'delivery']
-      .every((kind) => requiredKinds.has(kind as typeof item.plan.requiredItems[number]['kind'])) ||
     changeItems.length !== 1 || testItem === undefined || testItem.kind !== 'change' ||
     item.execution.mode !== 'implement' ||
     item.testSuite.planItemId !== changeItems[0]!.itemId ||
