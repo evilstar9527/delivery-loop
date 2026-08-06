@@ -394,6 +394,14 @@ base SHA字段，不能用Task正文或请求参数覆盖该事实。
 Task schema 校验后、计算 identity 或写 D1/R2 前，控制面必须扫描当前 Worker 已配置 Secret 与常见
 credential 形状；命中返回固定 `policy_denied`，响应与 finding 不包含原始值，也不得留下部分业务记录。
 
+试点fresh manual intake的固定Actions operator只接受`workflow_dispatch.task_json`作为不可信输入，但job不得把
+`${{ inputs.task_json }}`映射到step环境。preflight只从GitHub runner提供的`GITHUB_EVENT_PATH`读取最多256 KiB
+event并运行同一Task schema；Environment gate后的唯一effect job再从同一文件解析正文。operator按Task source
+revision派生确定性Task/Run与`analysis-<run>-1`，先要求Task GET恰好404，再用独立`actions:read` token完整分页
+固定`delivery-agent.yml`并要求stable title计数为0，随后最多一次`POST /v1/tasks`。POST使用确定性
+`Idempotency-Key`，只接受202且响应Task/Run必须等于本地派生值；任何已存在事实、不完整分页、重定向、超时、
+非202或响应漂移都固定失败且不重试。stdout只允许Task/Run/Attempt ID、Task revision digest和0/1计数，不含正文。
+
 `GET /v1/operations/github-base/readiness?repository=<owner/repo>&baseBranch=<branch>`是人工
 intake前的只读诊断，不是Task入口。它只接受用途隔离的`OPERATIONS_TOKEN`，query必须恰好各出现一次
 `repository/baseBranch`且拒绝额外字段、重复字段、非法仓库名、`..`或双斜线branch；全部响应
