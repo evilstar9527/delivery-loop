@@ -6,6 +6,7 @@ import { configuredSecrets } from '../security/runtime-secrets.js';
 import {
   GitHubRunReconciler,
   type GitHubBatchReconciliationResult,
+  type GitHubRunReconcilerOptions,
 } from './github-run-reconciler.js';
 
 export interface GitHubActionsRuntime {
@@ -72,14 +73,39 @@ export function githubActionsRuntimeFromEnv(env: Bindings): GitHubActionsRuntime
   };
 }
 
-export function githubRunReconcilerFromEnv(env: Bindings): GitHubRunReconciler | null {
+export function githubRunReconcilerFromEnv(
+  env: Bindings,
+  options: GitHubRunReconcilerOptions = {},
+): GitHubRunReconciler | null {
   const runtime = githubActionsRuntimeFromEnv(env);
-  return runtime === null ? null : new GitHubRunReconciler(env.DB_CONTROL, runtime.client);
+  return runtime === null
+    ? null
+    : new GitHubRunReconciler(env.DB_CONTROL, runtime.client, options);
 }
 
 export async function reconcileGitHubRunsFromEnv(
   env: Bindings,
+  limit = 25,
 ): Promise<GitHubBatchReconciliationResult[]> {
   const reconciler = githubRunReconcilerFromEnv(env);
-  return reconciler === null ? [] : await reconciler.reconcileBatch(25);
+  return reconciler === null ? [] : await reconciler.reconcileBatch(limit);
+}
+
+export async function reconcileAtRiskGitHubRunsFromEnv(
+  env: Bindings,
+  options: {
+    limit?: number;
+    runningThresholdSeconds?: number;
+    now?: () => Date;
+  } = {},
+): Promise<GitHubBatchReconciliationResult[]> {
+  const reconciler = githubRunReconcilerFromEnv(env, {
+    ...(options.now === undefined ? {} : { now: options.now }),
+  });
+  return reconciler === null
+    ? []
+    : await reconciler.reconcileAtRiskBatch(
+        options.limit ?? 5,
+        options.runningThresholdSeconds ?? 90,
+      );
 }

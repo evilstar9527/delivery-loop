@@ -47,6 +47,17 @@ export interface ExecutionProgressReconciliationResult {
   scheduledPublications: number;
 }
 
+export interface ExecutionObservedCompletionResult {
+  verifiedItems: number;
+  preparedDrafts: number;
+  scheduledPublications: number;
+}
+
+export interface ExecutionSchedulingResult {
+  activatedRuns: number;
+  scheduledAttempts: number;
+}
+
 export interface ExecutionProgressReconcilerOptions {
   now?: () => Date;
 }
@@ -73,16 +84,32 @@ export class ExecutionProgressReconciler {
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
       throw new Error('execution progress reconciliation limit must be between 1 and 100');
     }
+    const scheduling = await this.reconcileScheduling(limit);
+    const completed = await this.reconcileObservedCompletions(limit);
+    return {
+      ...scheduling,
+      ...completed,
+    };
+  }
+
+  async reconcileScheduling(limit = 25): Promise<ExecutionSchedulingResult> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+      throw new Error('execution progress reconciliation limit must be between 1 and 100');
+    }
     const activatedRuns = await this.activateApprovedRuns(limit);
     const scheduledAttempts = await this.scheduleInitialAttempts(limit);
+    return { activatedRuns, scheduledAttempts };
+  }
+
+  async reconcileObservedCompletions(
+    limit = 25,
+  ): Promise<ExecutionObservedCompletionResult> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+      throw new Error('execution progress reconciliation limit must be between 1 and 100');
+    }
     const verifiedItems = await this.verifyCompletedAttempts(limit);
     const finalized = await this.finalizePullRequests(limit);
-    return {
-      activatedRuns,
-      scheduledAttempts,
-      verifiedItems,
-      ...finalized,
-    };
+    return { verifiedItems, ...finalized };
   }
 
   private async activateApprovedRuns(limit: number): Promise<number> {

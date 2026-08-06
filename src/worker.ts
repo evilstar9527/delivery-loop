@@ -78,7 +78,10 @@ import {
   type RelayDestination,
   type WorkflowOutboxMessage,
 } from './outbox/workflow-outbox.js';
-import { reconcileGitHubRunsFromEnv } from './reconciliation/github-run-reconciliation-runtime.js';
+import {
+  reconcileAtRiskGitHubRunsFromEnv,
+  reconcileGitHubRunsFromEnv,
+} from './reconciliation/github-run-reconciliation-runtime.js';
 import { reconcileGitHubBasesFromEnv } from './reconciliation/github-base-observation-runtime.js';
 import { reconcileGitHubMergeGatesFromEnv } from './reconciliation/github-merge-gate-runtime.js';
 import { reconcileGitHubMergeStatusesFromEnv } from './reconciliation/github-merge-status-runtime.js';
@@ -170,7 +173,7 @@ app.onError((error, c) => {
 export default {
   fetch: app.fetch,
   scheduled(controller, env, context): void {
-    void controller;
+    const scheduledNow = () => new Date(controller.scheduledTime);
     const githubDispatch = githubDispatchProcessorFromEnv(env);
     const githubPullRequests = githubPullRequestRuntimeFromEnv(env);
     const githubTestDeployments = githubTestDeploymentRuntimeFromEnv(env);
@@ -208,25 +211,37 @@ export default {
         env.DB_CONTROL,
         new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
       ).drain(5);
-      // Relay every remaining durable effect. Observe GitHub completion before
-      // finalizing executions: a successful job stops heartbeats before the
-      // next Cron tick, so fencing first could incorrectly mark it lost.
+      // Relay every remaining durable effect, then spend the first bounded D1
+      // pass activating and scheduling approved work before any GitHub API
+      // scan can consume the Free-plan CPU budget.
       await relay.relay();
-      await reconcileGitHubRunsFromEnv(env);
-      await new ExecutionProgressReconciler(
+      const executionProgress = new ExecutionProgressReconciler(
         env.DB_CONTROL,
         env.TASK_OBJECTS,
-      ).reconcileBatch(5);
+        { now: scheduledNow },
+      );
+      await executionProgress.reconcileScheduling(5);
+      // Only attempts that the following stuck scan could fence are observed
+      // synchronously. Both selectors share one scheduled timestamp, threshold
+      // and limit, so an older candidate cannot be skipped and then marked lost.
+      await reconcileAtRiskGitHubRunsFromEnv(env, {
+        limit: 5,
+        runningThresholdSeconds: 90,
+        now: scheduledNow,
+      });
+      await executionProgress.reconcileObservedCompletions(5);
       // Detect/re-arm after existing outbox and execution progress have had a
       // chance to advance. Re-armed effects remain safe for the next minute.
       await new RunStuckDetector(env.DB_CONTROL, {
+        now: scheduledNow,
         sink: secureStructuredLogSink({
           component: 'run_stuck',
           secrets: configuredSecrets(env),
         }),
-      }).scan(25);
+      }).scan(5);
       await Promise.all([
         reconcileWorkflowInstancesFromEnv(env),
+        reconcileGitHubRunsFromEnv(env, 1),
         new FeishuIngressRelay(env.DB_CONTROL, env.FEISHU_INGRESS_QUEUE).relay(),
         reconcileGitHubBasesFromEnv(env),
         reconcileGitHubMergeGatesFromEnv(env),

@@ -202,6 +202,35 @@ describe('GitHub App workflow run reconciliation', () => {
     expect(await reconciler.reconcileBatch(10)).toEqual([]);
   });
 
+  it('does not spend a GitHub request until an active attempt is eligible for stuck fencing', async () => {
+    const now = new Date('2026-07-25T07:01:00.000Z');
+    const client = new FakeRunClient(runFact());
+    const reconciler = new GitHubRunReconciler(env.DB_CONTROL, client, {
+      now: () => now,
+    });
+
+    expect(await reconciler.reconcileAtRiskBatch(5, 90)).toEqual([]);
+    expect(client.calls).toEqual([]);
+
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET lease_expires_at = ?, heartbeat_at = ?, updated_at = ?
+       WHERE attempt_id = ?`,
+    ).bind(
+      '2026-07-25T07:00:59.000Z',
+      '2026-07-25T06:59:29.000Z',
+      '2026-07-25T06:59:29.000Z',
+      ATTEMPT_ID,
+    ).run();
+
+    expect(await reconciler.reconcileAtRiskBatch(5, 90)).toEqual([
+      { attemptId: ATTEMPT_ID, disposition: 'applied' },
+    ]);
+    expect(client.calls).toEqual([
+      { repository: REPOSITORY, githubRunId: GITHUB_RUN_ID },
+    ]);
+  });
+
   it('uses only a short installation token to read and strictly parse a workflow run', async () => {
     const requests: Array<{ url: string; authorization: string | null }> = [];
     const client = new GitHubActionsApiClient(
