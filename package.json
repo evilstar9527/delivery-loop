@@ -47,6 +47,7 @@
     "e2e:workflow-hibernate": "tsx scripts/verify-workflow-hibernate-evidence.ts",
     "ops:workflow-hibernate-window": "tsx scripts/run-workflow-hibernate-window.ts",
     "ops:github-base-readiness": "tsx scripts/probe-github-base-readiness.ts",
+    "ops:guarded-task-intake": "tsx scripts/run-guarded-task-intake.ts",
     "e2e:github-app-dispatch": "tsx scripts/verify-github-app-dispatch-evidence.ts",
     "e2e:analysis-action": "tsx scripts/verify-analysis-action-evidence.ts",
     "e2e:runner-heartbeat": "tsx scripts/verify-runner-heartbeat-evidence.ts",

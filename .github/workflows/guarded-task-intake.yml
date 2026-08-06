@@ -1,0 +1,79 @@
+name: Guarded task intake
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_json:
+        description: Exact fresh TaskEnvelope v1 JSON
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: phase7-guarded-task-intake
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: >-
+      github.repository == 'evilstar9527/delivery-loop' &&
+      github.ref == 'refs/heads/main' && github.actor == 'evilstar9527' &&
+      github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact trusted main SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 11.5.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: package.json
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Validate Task only from the workflow event file
+        run: pnpm validate:task
+
+  intake:
+    needs: preflight
+    if: >-
+      github.repository == 'evilstar9527/delivery-loop' &&
+      github.ref == 'refs/heads/main' && github.actor == 'evilstar9527' &&
+      github.run_attempt == 1
+    environment: phase1-readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact trusted main SHA
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Set up pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        with:
+          version: 11.5.2
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: package.json
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Guard and create exactly one fresh Task
+        env:
+          DELIVERY_LOOP_GUARDED_TASK_INTAKE: '1'
+          GUARDED_TASK_INTAKE_CONTROL_PLANE_URL: https://delivery-loop-control-plane.eve55265.workers.dev
+          GUARDED_TASK_INTAKE_TASK_TOKEN: ${{ secrets.TASK_INTAKE_TOKEN }}
+          GUARDED_TASK_INTAKE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm run ops:guarded-task-intake
