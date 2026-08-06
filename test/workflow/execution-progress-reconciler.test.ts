@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { taskRevisionDigest, type TaskEnvelope } from '../../src/domain/task.js';
 import { ExecutionProgressReconciler } from
   '../../src/reconciliation/execution-progress-reconciler.js';
+import { PullRequestDraftStore } from '../../src/storage/pull-request-draft-store.js';
 
 const NOW = new Date('2026-08-04T10:00:00.000Z');
 const RUN_ID = 'run-execution-progress';
@@ -611,6 +612,47 @@ describe('execution progress reconciliation', () => {
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM pull_request_drafts WHERE run_id = ?`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM pull_request_publications WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'pull_request'`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+  });
+
+  it('schedules an already prepared Draft without reopening the Task object', async () => {
+    await seed('approve');
+    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
+      now: () => NOW,
+    });
+    await reconciler.reconcileScheduling(25);
+    const attempt = await env.DB_CONTROL.prepare(
+      `SELECT attempt_id FROM attempts WHERE run_id = ? AND mode = 'implement'`,
+    ).bind(RUN_ID).first<{ attempt_id: string }>();
+    if (attempt === null) throw new Error('initial execution Attempt was not scheduled');
+    await simulateSuccessfulAction(attempt.attempt_id);
+
+    await env.TASK_OBJECTS.delete(TASK_OBJECT_KEY);
+    expect(await reconciler.reconcileObservedCompletions(25)).toEqual({
+      verifiedItems: 1,
+      preparedDrafts: 0,
+      scheduledPublications: 0,
+    });
+    const taskDigest = await taskRevisionDigest(TASK);
+    await env.TASK_OBJECTS.put(TASK_OBJECT_KEY, JSON.stringify(TASK), {
+      customMetadata: { taskDigest },
+    });
+    const draft = await new PullRequestDraftStore(env.DB_CONTROL, env.TASK_OBJECTS).prepare({
+      runId: RUN_ID,
+      expectedRunVersion: 4,
+      planVersion: 1,
+      planDigest: PLAN_DIGEST,
+      headSha: HEAD_SHA,
+    }, NOW);
+    expect(draft.created).toBe(true);
+
+    await env.TASK_OBJECTS.delete(TASK_OBJECT_KEY);
+    expect(await reconciler.reconcilePreparedPublications(1)).toBe(1);
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM pull_request_publications WHERE run_id = ?`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });

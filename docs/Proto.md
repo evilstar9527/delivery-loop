@@ -322,7 +322,7 @@ deployment:
 5. Runner/Agent API没有Plan Item status字段，strict schema拒绝夹带`passed/skipped`。Agent complete/failure只是待核对事实，不能直接改变Item进度；`passed`只允许后续控制面Evidence verifier写入。
 6. D1 trigger禁止任何required Item以及所有`investigation/verification` Item进入`skipped`。依赖只能由真实`passed`满足，`skipped`、Agent自报、Attempt completed或旧Plan状态均不解锁下游Item。
 7. lost Attempt恢复不重新领取或跳过Item：progress保持`in_progress`，recovery只在旧Runner/Workflow完成fencing后以CAS替换同Item的`activeAttemptId`。
-8. 每分钟的有界execution reconciler只从D1真源推进主链：exact `repo_write` approval使`awaiting_approval → executing`，随后promote/claim唯一self-verifying change Item；候选`limit`只能在Item shape、依赖、Task policy及当前approval expiry/reject/invalidation全部过滤后生效，历史无可领取Item或审批已失效的`executing` Run不得占满批次并永久饿死较新Run。GitHub `completed/success`与同Attempt/Plan/Item/head的completed suite同时成立后，它为每条`doneWhen`提交完整Evidence mapping。全部required Item经decision变为`passed`后才CAS到`verifying`、准备immutable Draft PR并创建唯一publication/outbox；Cron在新的scheduling或外部scan前必须先调用最多1条的独立finalization入口，使前一轮在`verifying`转换后被CPU fence终止的Run从既有Task/Plan/head/Evidence继续，不重复Attempt或Evidence。任一步的陈旧scan或并发重放均由下层CAS、stable identity和唯一约束吸收。
+8. 每分钟的有界execution reconciler只从D1真源推进主链：exact `repo_write` approval使`awaiting_approval → executing`，随后promote/claim唯一self-verifying change Item；候选`limit`只能在Item shape、依赖、Task policy及当前approval expiry/reject/invalidation全部过滤后生效，历史无可领取Item或审批已失效的`executing` Run不得占满批次并永久饿死较新Run。GitHub `completed/success`与同Attempt/Plan/Item/head的completed suite同时成立后，它为每条`doneWhen`提交完整Evidence mapping。全部required Item经decision变为`passed`后才CAS到`verifying`、准备immutable Draft PR并创建唯一publication/outbox；Cron在新的scheduling或外部scan前先恢复最多1条尚无publication的valid prepared snapshot，直接复用D1 snapshot并由publication store重验exact approval，不重读R2或重渲染正文。只有该恢复数为0时才运行最多1条完整finalization，使尚未prepared的`verifying` Run从既有Task/Plan/head/Evidence继续。任一步的陈旧scan或并发重放均由下层CAS、stable identity和唯一约束吸收，不重复Attempt、Evidence、Draft或publication。
 
 ### 3.4 ExecutionPlan revision
 
@@ -572,7 +572,7 @@ type PullRequestPublication = {
 };
 ```
 
-- scheduler重新核对`verifying` Run/version、prepared draft的Task/active Plan/digest/final head、最新completed implement/review_fix Attempt、required Item状态、protected gate、Task repo-write policy与exact最新`repo_write` approval；过期/reject/旧Plan/head不能创建publication。20路同请求以stable identity、`UNIQUE(draft_id)`和outbox dedupe收敛为一份`pull_request + github_api` intent，不递增Run version。
+- scheduler重新核对`verifying` Run/version、prepared draft的Task/active Plan/digest/final head、最新completed implement/review_fix Attempt、required Item状态、protected gate、Task repo-write policy与exact最新`repo_write` approval；过期/reject/旧Plan/head不能创建publication。prepared snapshot已经包含从R2 Task与verified Evidence确定性生成并扫描过的正文，因此Cron中断恢复只读取D1 selector并调用同一scheduler，不重新读取R2或重渲染正文。20路同请求以stable identity、`UNIQUE(draft_id)`和outbox dedupe收敛为一份`pull_request + github_api` intent，不递增Run version。
 - Queue consumer复用共享pending→delivering→settled lease/fencing；effect前再次核对Run/Plan/draft/head/approval，并检查是否出现更新的reject。GitHub App token按单仓库收窄且只有`pull_requests:write`，不带Actions、contents write、deploy或admin权限；token只在Worker内存和Authorization header中。
 - REST adapter先以`state=all + owner:head branch`查询既有PR。exact same-repo head/base/title/body digest/draft/open/head SHA全部一致才复用；已关闭、正文漂移、多结果或任一binding不符均fail-closed，不能创建第二份。不存在时固定调用`POST /repos/{owner}/{repo}/pulls`，body只有server-derived title、prepared body、exact head/base、`draft:true`、`maintainer_can_modify:false`。
 - POST 201或既有PR查询结果只把publication置`created_unverified`并保存候选number/净化HTTPS URL；它们不能写verified Evidence、不能改变Run。网络/201响应不确定时outbox回pending，下轮先按stable head reconciliation，避免重复POST。
