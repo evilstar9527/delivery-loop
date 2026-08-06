@@ -10,7 +10,8 @@ import { SecretScanner } from '../security/redaction.js';
 
 const MAX_RESPONSE_BYTES = 1 * 1_024 * 1_024;
 const REQUEST_TIMEOUT_MS = 10_000;
-const MAX_ACTION_PAGES = 10;
+const ACTIONS_PER_PAGE = 50;
+const MAX_ACTION_PAGES = 20;
 const TOKEN_PATTERN = /^[^\0\r\n]{8,2000}$/;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const WORKFLOW_PATH = '.github/workflows/delivery-agent.yml';
@@ -136,7 +137,7 @@ function nextGitHubPage(
   if (
     url.origin !== githubOrigin || url.pathname !== current.pathname ||
     url.searchParams.get('event') !== 'workflow_dispatch' ||
-    url.searchParams.get('per_page') !== '100' ||
+    url.searchParams.get('per_page') !== String(ACTIONS_PER_PAGE) ||
     !/^[1-9][0-9]*$/.test(url.searchParams.get('page') ?? '')
   ) fail('action_inventory_invalid', 0);
   return url;
@@ -175,7 +176,7 @@ async function countMatchingActions(
     githubOrigin,
   );
   url.searchParams.set('event', 'workflow_dispatch');
-  url.searchParams.set('per_page', '100');
+  url.searchParams.set('per_page', String(ACTIONS_PER_PAGE));
   let matches = 0;
   let seen = 0;
   let expectedTotal: number | null = null;
