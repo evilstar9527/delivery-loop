@@ -13,6 +13,8 @@ import type { ExecutionPlanValidationContext } from '../src/domain/plan.js';
 import {
   ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
   DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA,
+  DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA,
+  DiagnosticLogSearchRequestV1Schema,
 } from
   '../src/domain/analysis-plan.js';
 
@@ -1162,5 +1164,28 @@ describe('Codex analysis Agent adapter', () => {
       'rootCause',
       'plan',
     ]);
+    expectProviderStrictObjectSchemas(DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA);
+    expect(JSON.stringify(DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA)).not.toContain(
+      'uniqueItems',
+    );
+  });
+
+  it('keeps diagnostic locator uniqueness and ordering at the trusted runtime boundary', () => {
+    const request = {
+      schemaVersion: '1' as const,
+      arguments: { path: 'run_stuck' },
+    };
+    expect(DiagnosticLogSearchRequestV1Schema.safeParse({
+      ...request,
+      locatorKinds: ['path'],
+    }).success).toBe(true);
+    expect(DiagnosticLogSearchRequestV1Schema.safeParse({
+      ...request,
+      locatorKinds: ['path', 'path'],
+    }).success).toBe(false);
+    expect(DiagnosticLogSearchRequestV1Schema.safeParse({
+      ...request,
+      locatorKinds: ['path', 'uid'],
+    }).success).toBe(false);
   });
 });
