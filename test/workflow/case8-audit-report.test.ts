@@ -170,6 +170,49 @@ async function seedCase8Run(): Promise<void> {
       `INSERT INTO approval_source_events (
          source_id, provider, tenant_key, external_event_id, event_digest,
          request_digest, channel, channel_user_id, occurred_at, received_at, created_at
+       ) VALUES ('source_case8_write', 'github', 'example/audit-repo',
+                 'commit-comment-123', ?, ?, 'github:example/audit-repo',
+                 'reviewer', ?, ?, ?)`,
+    ).bind(`sha256:${'1'.repeat(64)}`, `sha256:${'2'.repeat(64)}`, NOW, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO identity_bound_approvals (
+         approval_id, source_id, approver_principal, approver_channel,
+         approver_channel_user_id, pull_request_author_principal,
+         pull_request_author_channel, pull_request_author_login,
+         roles_digest, separation_verified, created_at
+       ) VALUES ('approval_case8_write', 'source_case8_write',
+                 'user:reviewer', 'github:example/audit-repo', 'reviewer',
+                 'anonymous', 'task:example/audit-repo', 'user:requester', ?, 0, ?)`,
+    ).bind(`sha256:${'3'.repeat(64)}`, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO approval_lineages (
+         lineage_id, approval_id, source_id, card_action_receipt_id,
+         provider, tenant_key, external_event_id, external_event_digest,
+         approver_principal, roles_digest, run_id, task_id, task_revision,
+         plan_id, plan_version, plan_digest, base_sha, effect, decision,
+         separation_verified, source_occurred_at, decision_recorded_at,
+         expires_at, created_at
+       ) VALUES ('approval_lineage_case8_write', 'approval_case8_write',
+                 'source_case8_write', NULL, 'github', 'example/audit-repo',
+                 'commit-comment-123', ?, 'user:reviewer', ?, ?, ?, 'revision-7',
+                 ?, 1, ?, ?, 'repo_write', 'approve', 0, ?, ?,
+                 '2026-07-27T14:00:00.000Z', ?)`,
+    ).bind(
+      `sha256:${'1'.repeat(64)}`,
+      `sha256:${'3'.repeat(64)}`,
+      RUN_ID,
+      TASK_ID,
+      PLAN_ID,
+      PLAN_DIGEST,
+      BASE_SHA,
+      NOW,
+      NOW,
+      NOW,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO approval_source_events (
+         source_id, provider, tenant_key, external_event_id, event_digest,
+         request_digest, channel, channel_user_id, occurred_at, received_at, created_at
        ) VALUES ('source_case8_deploy', 'feishu', 'tenant-case8',
                  'event-case8-deploy-approval', ?, ?, 'feishu:tenant-case8',
                  'ou_case8_deploy_reviewer', ?, ?, ?)`,
@@ -681,6 +724,11 @@ describe('Case 8 one-query audit proof', () => {
         secretArtifacts: [],
         identityApprovals: expect.arrayContaining([
           expect.objectContaining({
+            sourceId: 'source_case8_write', outcome: 'accepted',
+            effect: 'repo_write', separationVerified: false,
+            approverPrincipal: 'user:reviewer',
+          }),
+          expect.objectContaining({
             sourceId: 'source_case8_deploy', outcome: 'accepted',
             effect: 'test_deploy', separationVerified: true,
             approverPrincipal: 'user:deployer-approver',
@@ -831,7 +879,7 @@ describe('Case 8 one-query audit proof', () => {
       event: 'case8_audit_report_generated',
       runId: RUN_ID,
       reportDigest: report.reportDigest,
-      sourceEventCount: 2,
+      sourceEventCount: 3,
       contextCategoryCount: 3,
       changeCount: 2,
       approvalCount: 2,
@@ -904,6 +952,67 @@ describe('Case 8 one-query audit proof', () => {
       `UPDATE github_webhook_deliveries SET payload_digest = ?
        WHERE delivery_id = 'delivery_case8_agent'`,
     ).bind(`sha256:${'G'.repeat(64)}`).run();
+    await expect(new Case8AuditReportStore(env.DB_CONTROL).generate(RUN_ID))
+      .rejects.toMatchObject({ code: 'projection_conflict' });
+  });
+
+  it('keeps author separation mandatory for accepted post-PR effects', async () => {
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO approvals (
+           approval_id, run_id, task_revision, plan_id, plan_version, plan_digest,
+           base_sha, effect, actor_id, decision, nonce_digest, expires_at, created_at
+         ) VALUES ('approval_case8_invalid_separation', ?, 'revision-7', ?, 1, ?, ?,
+                   'test_deploy', 'user:unsafe-reviewer', 'approve', ?,
+                   '2026-07-27T14:00:00.000Z', ?)`,
+      ).bind(RUN_ID, PLAN_ID, PLAN_DIGEST, BASE_SHA, `sha256:${'4'.repeat(64)}`, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO approval_source_events (
+           source_id, provider, tenant_key, external_event_id, event_digest,
+           request_digest, channel, channel_user_id, occurred_at, received_at, created_at
+         ) VALUES ('source_case8_invalid_separation', 'feishu', 'tenant-case8',
+                   'event-case8-invalid-separation', ?, ?, 'feishu:tenant-case8',
+                   'ou_case8_unsafe_reviewer', ?, ?, ?)`,
+      ).bind(`sha256:${'5'.repeat(64)}`, `sha256:${'6'.repeat(64)}`, NOW, NOW, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO identity_bound_approvals (
+           approval_id, source_id, approver_principal, approver_channel,
+           approver_channel_user_id, pull_request_author_principal,
+           pull_request_author_channel, pull_request_author_login,
+           roles_digest, separation_verified, created_at
+         ) VALUES ('approval_case8_invalid_separation',
+                   'source_case8_invalid_separation', 'user:unsafe-reviewer',
+                   'feishu:tenant-case8', 'ou_case8_unsafe_reviewer',
+                   'user:delivery-author', 'github:example/audit-repo',
+                   'delivery-author', ?, 0, ?)`,
+      ).bind(`sha256:${'7'.repeat(64)}`, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO approval_lineages (
+           lineage_id, approval_id, source_id, card_action_receipt_id,
+           provider, tenant_key, external_event_id, external_event_digest,
+           approver_principal, roles_digest, run_id, task_id, task_revision,
+           plan_id, plan_version, plan_digest, base_sha, effect, decision,
+           separation_verified, source_occurred_at, decision_recorded_at,
+           expires_at, created_at
+         ) VALUES ('approval_lineage_case8_invalid_separation',
+                   'approval_case8_invalid_separation',
+                   'source_case8_invalid_separation', NULL, 'feishu', 'tenant-case8',
+                   'event-case8-invalid-separation', ?, 'user:unsafe-reviewer', ?,
+                   ?, ?, 'revision-7', ?, 1, ?, ?, 'test_deploy', 'approve', 0,
+                   ?, ?, '2026-07-27T14:00:00.000Z', ?)`,
+      ).bind(
+        `sha256:${'5'.repeat(64)}`,
+        `sha256:${'7'.repeat(64)}`,
+        RUN_ID,
+        TASK_ID,
+        PLAN_ID,
+        PLAN_DIGEST,
+        BASE_SHA,
+        NOW,
+        NOW,
+        NOW,
+      ),
+    ]);
     await expect(new Case8AuditReportStore(env.DB_CONTROL).generate(RUN_ID))
       .rejects.toMatchObject({ code: 'projection_conflict' });
   });

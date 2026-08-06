@@ -1853,7 +1853,10 @@ export class Case8AuditReportStore {
           !safeText(row.approver_principal) || !safeText(row.approver_channel) ||
           !safeText(row.approver_channel_user_id) || !safeText(row.author_principal) ||
           !safeText(row.author_channel) || !safeText(row.author_login, 100) ||
-          !DIGEST_PATTERN.test(row.roles_digest ?? '') || row.separation_verified !== 1 ||
+          !DIGEST_PATTERN.test(row.roles_digest ?? '') ||
+          (row.effect === 'repo_write'
+            ? row.separation_verified !== 0
+            : row.separation_verified !== 1) ||
           !Number.isFinite(Date.parse(row.expires_at ?? '')) ||
           row.channel !== row.approver_channel ||
           row.channel_user_id !== row.approver_channel_user_id ||
