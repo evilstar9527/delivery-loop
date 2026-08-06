@@ -506,8 +506,36 @@ export class ExecutionProgressReconciler {
              AND plan_items.required = 1
              AND plan_item_progress.status <> 'passed'
          )
+         AND EXISTS (
+           SELECT 1 FROM trusted_effect_approvals AS approval
+           WHERE approval.run_id = runs.run_id
+             AND approval.task_revision = runs.task_revision
+             AND approval.plan_id = plans.plan_id
+             AND approval.plan_version = plans.plan_version
+             AND approval.plan_digest = plans.digest
+             AND approval.base_sha = plans.base_sha
+             AND approval.effect = 'repo_write'
+             AND approval.decision = 'approve'
+             AND approval.expires_at > ?
+             AND NOT EXISTS (
+               SELECT 1 FROM invalidated_approvals
+               WHERE invalidated_approvals.approval_id = approval.approval_id
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM approvals AS rejection
+               WHERE rejection.run_id = approval.run_id
+                 AND rejection.task_revision = approval.task_revision
+                 AND rejection.plan_id = approval.plan_id
+                 AND rejection.plan_version = approval.plan_version
+                 AND rejection.plan_digest = approval.plan_digest
+                 AND rejection.base_sha = approval.base_sha
+                 AND rejection.effect = approval.effect
+                 AND rejection.decision = 'reject'
+                 AND rejection.created_at >= approval.created_at
+             )
+         )
        ORDER BY runs.updated_at, runs.run_id LIMIT ?`,
-    ).bind(limit).all<FinalizeRow>();
+    ).bind(now.toISOString(), limit).all<FinalizeRow>();
     let preparedDrafts = 0;
     let scheduledPublications = 0;
     for (const candidate of ready.results) {
