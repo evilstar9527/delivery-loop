@@ -94,6 +94,7 @@ describe('guarded Task intake', () => {
     });
     expect(calls).toHaveLength(3);
     expect(calls.map((call) => call.init.method ?? 'GET')).toEqual(['GET', 'GET', 'POST']);
+    expect(calls[1]?.url.searchParams.get('per_page')).toBe('50');
     expect(calls[2]?.init.body).toBe(JSON.stringify(task));
     const headers = new Headers(calls[2]?.init.headers);
     expect(headers.get('idempotency-key')).toBe(
@@ -121,22 +122,22 @@ describe('guarded Task intake', () => {
       calls += 1;
       const url = new URL(String(input));
       if (url.origin === 'https://control.example.com') return new Response(null, { status: 404 });
-      if (url.searchParams.get('page') === '2') {
+      if (url.searchParams.get('page') === '3') {
         return json({
           total_count: 101,
-          workflow_runs: [
-            ...Array.from({ length: 100 }, (_, index) => ({
-              display_title: index === 0
-                ? `delivery-loop/${analysisAttemptId(ids.runId)}`
-                : `delivery-loop/unrelated-page-2-${index}`,
-            })),
-          ],
+          workflow_runs: [{ display_title: `delivery-loop/${analysisAttemptId(ids.runId)}` }],
         });
       }
+      const currentPage = Number(url.searchParams.get('page') ?? '1');
       const next = new URL(url);
-      next.searchParams.set('page', '2');
+      next.searchParams.set('page', String(currentPage + 1));
       return json(
-        { total_count: 101, workflow_runs: [{ display_title: 'delivery-loop/unrelated' }] },
+        {
+          total_count: 101,
+          workflow_runs: Array.from({ length: 50 }, (_, index) => ({
+            display_title: `delivery-loop/unrelated-page-${currentPage}-${index}`,
+          })),
+        },
         { headers: { link: `<${next}>; rel="next"` } },
       );
     };
@@ -144,7 +145,7 @@ describe('guarded Task intake', () => {
       code: 'action_already_exists',
       taskCreateRequests: 0,
     });
-    expect(calls).toBe(3);
+    expect(calls).toBe(4);
   });
 
   it.each([
