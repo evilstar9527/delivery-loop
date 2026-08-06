@@ -115,12 +115,95 @@ export type DiagnosticLogSearchRequestV1 = z.infer<
 export type DiagnosticTraceRequestV1 = z.infer<typeof DiagnosticTraceRequestV1Schema>;
 export type DiagnosticAnalysisResultV1 = z.infer<typeof DiagnosticAnalysisResultV1Schema>;
 
+const DiagnosticLogSearchAgentOutputV1Schema = z.object({
+  schemaVersion: z.literal('1'),
+  locatorKinds: z.array(z.enum(DIAGNOSTIC_LOCATOR_KINDS)).min(1).max(3),
+  arguments: z.object({
+    uid: z.string().max(500),
+    cid: z.string().max(500),
+    path: z.string().max(500),
+  }).strict(),
+}).strict().superRefine((value, context) => {
+  const selected = new Set(value.locatorKinds);
+  if (
+    selected.size !== value.locatorKinds.length ||
+    value.locatorKinds.some((kind, index) =>
+      index > 0 && DIAGNOSTIC_LOCATOR_KINDS.indexOf(kind) <=
+        DIAGNOSTIC_LOCATOR_KINDS.indexOf(value.locatorKinds[index - 1]!)) ||
+    DIAGNOSTIC_LOCATOR_KINDS.some((kind) =>
+      selected.has(kind) ? !/\S/.test(value.arguments[kind]) : value.arguments[kind] !== '')
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: 'diagnostic locator arguments must match the selected locator kinds',
+    });
+  }
+});
+
+const DiagnosticTraceAgentOutputV1Schema = z.object({
+  schemaVersion: z.literal('1'),
+  arguments: z.object({
+    requestId: z.string().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/),
+  }).strict(),
+}).strict();
+
+const DiagnosticAnalysisAgentOutputV1Schema = z.object({
+  schemaVersion: z.literal('1'),
+  contextDigest: z.string().regex(CONTEXT_DIGEST_PATTERN),
+  rootCause: z.object({
+    summary: nonBlank(2_000),
+    confidence: z.enum(['low', 'medium', 'high']),
+    codeRefs: z.array(z.object({
+      path: z.string().min(1).max(500),
+      line: z.number().int().min(0).max(10_000_000),
+      symbol: z.string().max(300),
+    }).strict()).min(1).max(50),
+  }).strict(),
+  plan: AnalysisPlanContentV1Schema,
+}).strict();
+
+export function parseDiagnosticLogSearchAgentOutput(
+  raw: unknown,
+): DiagnosticLogSearchRequestV1 {
+  const output = DiagnosticLogSearchAgentOutputV1Schema.parse(raw);
+  return DiagnosticLogSearchRequestV1Schema.parse({
+    schemaVersion: output.schemaVersion,
+    locatorKinds: output.locatorKinds,
+    arguments: Object.fromEntries(
+      output.locatorKinds.map((kind) => [kind, output.arguments[kind]]),
+    ),
+  });
+}
+
+export function parseDiagnosticTraceAgentOutput(raw: unknown): DiagnosticTraceRequestV1 {
+  return DiagnosticTraceRequestV1Schema.parse(
+    DiagnosticTraceAgentOutputV1Schema.parse(raw),
+  );
+}
+
+export function parseDiagnosticAnalysisAgentOutput(
+  raw: unknown,
+): DiagnosticAnalysisResultV1 {
+  const output = DiagnosticAnalysisAgentOutputV1Schema.parse(raw);
+  return DiagnosticAnalysisResultV1Schema.parse({
+    ...output,
+    rootCause: {
+      ...output.rootCause,
+      codeRefs: output.rootCause.codeRefs.map((ref) => ({
+        path: ref.path,
+        ...(ref.line === 0 ? {} : { line: ref.line }),
+        ...(ref.symbol === '' ? {} : { symbol: ref.symbol }),
+      })),
+    },
+  });
+}
+
 export const DIAGNOSTIC_EVIDENCE_REF_PATTERN = /^d1:\/\/evidence\/diagnostic_[A-Za-z0-9_-]+$/;
 
 const diagnosticCodeRefJsonSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['path'],
+  required: ['path', 'line', 'symbol'],
   properties: {
     path: {
       type: 'string',
@@ -128,17 +211,20 @@ const diagnosticCodeRefJsonSchema = {
       maxLength: 500,
       pattern: '^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000\\r\\n]{1,500}$',
     },
-    line: { type: 'integer', minimum: 1, maximum: 10_000_000 },
-    symbol: { type: 'string', minLength: 1, maxLength: 300 },
+    line: { type: 'integer', minimum: 0, maximum: 10_000_000 },
+    symbol: { type: 'string', maxLength: 300 },
   },
-  anyOf: [{ required: ['line'] }, { required: ['symbol'] }],
 } as const;
 
 const diagnosticToolArgumentsJsonSchema = {
   type: 'object',
-  maxProperties: 50,
-  propertyNames: { pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$' },
-  additionalProperties: true,
+  additionalProperties: false,
+  required: ['uid', 'cid', 'path'],
+  properties: {
+    uid: { type: 'string', maxLength: 500 },
+    cid: { type: 'string', maxLength: 500 },
+    path: { type: 'string', maxLength: 500 },
+  },
 } as const;
 
 export const DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA = {
@@ -146,7 +232,7 @@ export const DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA = {
   additionalProperties: false,
   required: ['schemaVersion', 'locatorKinds', 'arguments'],
   properties: {
-    schemaVersion: { const: '1' },
+    schemaVersion: { type: 'string', enum: ['1'] },
     locatorKinds: {
       type: 'array',
       minItems: 1,
@@ -162,12 +248,23 @@ export const DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA = {
   additionalProperties: false,
   required: ['schemaVersion', 'arguments'],
   properties: {
-    schemaVersion: { const: '1' },
-    arguments: diagnosticToolArgumentsJsonSchema,
+    schemaVersion: { type: 'string', enum: ['1'] },
+    arguments: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['requestId'],
+      properties: {
+        requestId: {
+          type: 'string', minLength: 1, maxLength: 200,
+          pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$',
+        },
+      },
+    },
   },
 } as const;
 
-// `uniqueItems` is outside the relay's portable structured-output subset.
+// `const`, `uniqueItems`, open objects and optional object properties are outside
+// the relay's portable structured-output subset.
 // Runtime Zod schemas remain the trusted boundary for locator/item uniqueness,
 // non-blank checks, ordering, and cross-field plan validation.
 const analysisPlanContentV1JsonSchema = {
@@ -280,7 +377,7 @@ export const DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA = {
   additionalProperties: false,
   required: ['schemaVersion', 'contextDigest', 'rootCause', 'plan'],
   properties: {
-    schemaVersion: { const: '1' },
+    schemaVersion: { type: 'string', enum: ['1'] },
     contextDigest: { type: 'string', pattern: '^sha256:[a-f0-9]{64}$' },
     rootCause: {
       type: 'object',
