@@ -1264,7 +1264,7 @@ fence前必须验证manifest canonical digest及D1 dump content SHA-256；伪造
 4. `contextReads`：Runner checkout的repository类别，以及metadata-only tool trace按repository/logs/traces/k8s/database聚合的调用/成功/拒绝计数和Attempt ID；不输出tool参数、result、URL或error；
 5. `changes`：commit parent/head/branch/Evidence、protected diff/tree/policy digest与计数、PR body digest/净化链接和merge SHA/actor；不输出patch、PR正文或文件内容；
 6. `checks`：verification suite command/ref/status/policy digest、Item evidence-set digest、GitHub required check digest/status和verified Evidence白名单字段；不输出summary、日志或artifact正文；
-7. `approvals`：lineage ID、exact Task/revision、Plan/base/effect/decision、identity principal、roles digest、separation、source record/event/digest/发生时间、控制面decision记录时间和invalidation状态；legacy/internal approval允许lineage字段为null；不输出nonce/request digest或按钮payload；
+7. `approvals`：lineage ID、exact Task/revision、Plan/base/effect/decision、identity principal、roles digest、separation、source record/event/digest/发生时间、控制面decision记录时间和invalidation状态；PR 创建前的`repo_write` identity approval固定为`separationVerified=false`，已有PR/merge author的高风险effect才要求true；legacy/internal approval允许lineage字段为null；不输出nonce/request digest或按钮payload；
 8. `deployments`：test/production environment、role ref、exact SHA、status、approval/Plan digest、GitHub deployment ID、Evidence和净化链接。
 
 响应另含Task/Run安全身份、Task/全部Plan/Evidence artifact digest及去重后的HTTPS `links`；所有链接移除userinfo/query/fragment。`reportDigest`对不含`generatedAt/queryDurationMs`的完整安全body做canonical SHA-256，因此同一D1状态的20路并发查询digest相同。每次成功读取都直接复用Watt AuditStore的UUID/time/prepare+bind写入骨架，在`case8_audit_report_accesses`写`service:operations + Run + report digest + answer_count=8 + duration`；表不保存报告JSON或链接。structured log也只有Run、report digest、duration和各栏count。
