@@ -14,7 +14,10 @@ import {
   ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
   DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA,
   DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA,
+  DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA,
   DiagnosticLogSearchRequestV1Schema,
+  parseDiagnosticAnalysisAgentOutput,
+  parseDiagnosticLogSearchAgentOutput,
 } from
   '../src/domain/analysis-plan.js';
 
@@ -812,7 +815,7 @@ describe('Codex analysis Agent adapter', () => {
         } else if (commands.length === 2) {
           await writeFile(outputPath, JSON.stringify({
             schemaVersion: '1',
-            arguments: { traceId: 'request-trace-from-log-result' },
+            arguments: { requestId: 'request-trace-from-log-result' },
           }));
         } else {
           await writeFile(outputPath, JSON.stringify({
@@ -821,7 +824,7 @@ describe('Codex analysis Agent adapter', () => {
             rootCause: {
               summary: 'A stale cache branch returns the previous response.',
               confidence: 'high',
-              codeRefs: [{ path: 'src/cache.ts', line: 42 }],
+              codeRefs: [{ path: 'src/cache.ts', line: 42, symbol: '' }],
             },
             plan: diagnosticPlanContent(),
           }));
@@ -915,15 +918,18 @@ describe('Codex analysis Agent adapter', () => {
         invocation += 1;
         const outputPath = request.args[request.args.indexOf('--output-last-message') + 1]!;
         const output = invocation === 1
-          ? { schemaVersion: '1', locatorKinds: ['uid'], arguments: { uid: 'safe-ref' } }
+          ? {
+              schemaVersion: '1', locatorKinds: ['uid'],
+              arguments: { uid: 'safe-ref', cid: '', path: '' },
+            }
           : invocation === 2
-            ? { schemaVersion: '1', arguments: { traceId: 'safe-trace-ref' } }
+            ? { schemaVersion: '1', arguments: { requestId: 'safe-trace-ref' } }
             : {
                 schemaVersion: '1',
                 contextDigest: contextDigest(),
                 rootCause: {
                   summary: 'A source-backed cause.', confidence: 'medium',
-                  codeRefs: [{ path: 'src/cache.ts', symbol: 'readCache' }],
+                  codeRefs: [{ path: 'src/cache.ts', line: 0, symbol: 'readCache' }],
                 },
                 plan: diagnosticPlanContent(['d1://evidence/diagnostic_attacker_selected']),
               };
@@ -1165,9 +1171,18 @@ describe('Codex analysis Agent adapter', () => {
       'plan',
     ]);
     expectProviderStrictObjectSchemas(DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA);
-    expect(JSON.stringify(DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA)).not.toContain(
-      'uniqueItems',
-    );
+    expectProviderStrictObjectSchemas(DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA);
+    expectProviderStrictObjectSchemas(DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA);
+    for (const schema of [
+      DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA,
+      DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA,
+      DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA,
+    ]) {
+      const serialized = JSON.stringify(schema);
+      expect(serialized).not.toContain('uniqueItems');
+      expect(serialized).not.toContain('propertyNames');
+      expect(serialized).not.toContain('"const"');
+    }
   });
 
   it('keeps diagnostic locator uniqueness and ordering at the trusted runtime boundary', () => {
@@ -1187,5 +1202,57 @@ describe('Codex analysis Agent adapter', () => {
       ...request,
       locatorKinds: ['path', 'uid'],
     }).success).toBe(false);
+  });
+
+  it('normalizes closed provider locator sentinels before the tool boundary', () => {
+    expect(parseDiagnosticLogSearchAgentOutput({
+      schemaVersion: '1',
+      locatorKinds: ['uid', 'path'],
+      arguments: { uid: 'user-safe-ref', cid: '', path: 'run_stuck' },
+    })).toEqual({
+      schemaVersion: '1',
+      locatorKinds: ['uid', 'path'],
+      arguments: { uid: 'user-safe-ref', path: 'run_stuck' },
+    });
+    expect(() => parseDiagnosticLogSearchAgentOutput({
+      schemaVersion: '1',
+      locatorKinds: ['path'],
+      arguments: { uid: 'unselected-value', cid: '', path: 'run_stuck' },
+    })).toThrow();
+    expect(() => parseDiagnosticLogSearchAgentOutput({
+      schemaVersion: '1',
+      locatorKinds: ['path'],
+      arguments: { uid: '', cid: '', path: '' },
+    })).toThrow();
+  });
+
+  it('normalizes closed provider code reference sentinels before the domain boundary', () => {
+    const result = parseDiagnosticAnalysisAgentOutput({
+      schemaVersion: '1',
+      contextDigest: contextDigest(),
+      rootCause: {
+        summary: 'A source-backed cause.',
+        confidence: 'high',
+        codeRefs: [
+          { path: 'src/cache.ts', line: 42, symbol: '' },
+          { path: 'src/cache.ts', line: 0, symbol: 'readCache' },
+        ],
+      },
+      plan: diagnosticPlanContent(),
+    });
+    expect(result.rootCause.codeRefs).toEqual([
+      { path: 'src/cache.ts', line: 42 },
+      { path: 'src/cache.ts', symbol: 'readCache' },
+    ]);
+    expect(() => parseDiagnosticAnalysisAgentOutput({
+      schemaVersion: '1',
+      contextDigest: contextDigest(),
+      rootCause: {
+        summary: 'A source-backed cause.',
+        confidence: 'high',
+        codeRefs: [{ path: 'src/cache.ts', line: 0, symbol: '' }],
+      },
+      plan: diagnosticPlanContent(),
+    })).toThrow();
   });
 });
