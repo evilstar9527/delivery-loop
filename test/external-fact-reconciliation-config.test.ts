@@ -24,39 +24,53 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(feishuRuntime).toContain('runtime.messageReconciler.reconcileBatch(25)');
   });
 
-  it('observes GitHub completion before execution finalization and stuck fencing', () => {
+  it('schedules before bounded GitHub observation and observes at-risk completion before fencing', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     const workflowDrain = worker.indexOf(').drain(5);');
     const relay = worker.indexOf('await relay.relay();');
-    const githubRunReconciliation = worker.indexOf(
-      'await reconcileGitHubRunsFromEnv(env);',
+    const executionScheduling = worker.indexOf(
+      'await executionProgress.reconcileScheduling(5);',
       relay,
     );
-    const executionProgress = worker.indexOf(').reconcileBatch(5);', relay);
-    const detectorEnd = worker.indexOf('}).scan(25);');
+    const atRiskGitHubReconciliation = worker.indexOf(
+      'await reconcileAtRiskGitHubRunsFromEnv(env, {',
+      executionScheduling,
+    );
+    const executionFinalization = worker.indexOf(
+      'await executionProgress.reconcileObservedCompletions(5);',
+      atRiskGitHubReconciliation,
+    );
+    const detectorEnd = worker.indexOf('}).scan(5);');
     const concurrentStart = worker.indexOf('await Promise.all([', detectorEnd);
     const concurrentEnd = worker.indexOf(']);', concurrentStart);
     const workflowReconciliation = worker.indexOf(
       'reconcileWorkflowInstancesFromEnv(env),',
       concurrentStart,
     );
+    const backgroundGitHubReconciliation = worker.indexOf(
+      'reconcileGitHubRunsFromEnv(env, 1),',
+      concurrentStart,
+    );
 
     expect(workflowDrain).toBeGreaterThan(-1);
     expect(relay).toBeGreaterThan(-1);
     expect(workflowDrain).toBeLessThan(relay);
-    expect(githubRunReconciliation).toBeGreaterThan(relay);
-    expect(executionProgress).toBeGreaterThan(githubRunReconciliation);
+    expect(executionScheduling).toBeGreaterThan(relay);
+    expect(atRiskGitHubReconciliation).toBeGreaterThan(executionScheduling);
+    expect(executionFinalization).toBeGreaterThan(atRiskGitHubReconciliation);
     expect(detectorEnd).toBeGreaterThan(-1);
-    expect(executionProgress).toBeLessThan(detectorEnd);
+    expect(executionFinalization).toBeLessThan(detectorEnd);
     expect(concurrentStart).toBeGreaterThan(detectorEnd);
     expect(concurrentEnd).toBeGreaterThan(concurrentStart);
     expect(workflowReconciliation).toBeGreaterThan(concurrentStart);
     expect(workflowReconciliation).toBeLessThan(concurrentEnd);
+    expect(backgroundGitHubReconciliation).toBeGreaterThan(concurrentStart);
+    expect(backgroundGitHubReconciliation).toBeLessThan(concurrentEnd);
     expect(worker.slice(workflowDrain, concurrentStart)).not.toContain(
       'reconcileWorkflowInstancesFromEnv(env)',
     );
-    expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain(
-      'reconcileGitHubRunsFromEnv(env)',
+    expect(worker.slice(relay, atRiskGitHubReconciliation)).not.toContain(
+      'reconcileGitHubRunsFromEnv(env',
     );
     expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain('relay.relay()');
   });

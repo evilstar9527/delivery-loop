@@ -26,6 +26,15 @@ interface ReconciliationCandidate {
   github_run_id: string;
 }
 
+interface AtRiskCandidate {
+  attempt_id: string;
+  repository: string | null;
+  github_run_id: string | null;
+  github_external_updated_at: string | null;
+  github_status: string | null;
+  test_acceptance_id: string | null;
+}
+
 export class GitHubRunReconciler {
   private readonly now: () => Date;
 
@@ -94,8 +103,66 @@ export class GitHubRunReconciler {
       )
       .bind(limit)
       .all<ReconciliationCandidate>();
+    return await this.reconcileCandidates(candidates.results);
+  }
+
+  async reconcileAtRiskBatch(
+    limit = 5,
+    runningThresholdSeconds = 90,
+  ): Promise<GitHubBatchReconciliationResult[]> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+      throw new Error('GitHub reconciliation limit must be between 1 and 100');
+    }
+    if (
+      !Number.isSafeInteger(runningThresholdSeconds) ||
+      runningThresholdSeconds < 60 || runningThresholdSeconds > 604800
+    ) {
+      throw new Error('GitHub at-risk threshold must be between 60 and 604800 seconds');
+    }
+    const now = this.now();
+    if (!Number.isFinite(now.getTime())) {
+      throw new Error('GitHub reconciliation time is invalid');
+    }
+    const nowIso = now.toISOString();
+    const heartbeatCutoff = new Date(
+      now.getTime() - runningThresholdSeconds * 1_000,
+    ).toISOString();
+    const candidates = await this.db.prepare(
+      `SELECT attempts.attempt_id, attempts.repository, attempts.github_run_id,
+              attempts.github_external_updated_at, attempts.github_status,
+              test_acceptances.attempt_id AS test_acceptance_id
+       FROM attempts JOIN runs ON runs.run_id = attempts.run_id
+       LEFT JOIN test_acceptances ON test_acceptances.attempt_id = attempts.attempt_id
+       WHERE attempts.status IN ('starting', 'running')
+         AND attempts.result_event_id IS NULL
+         AND attempts.lease_expires_at IS NOT NULL
+         AND runs.state IN (
+           'triaging', 'awaiting_approval', 'planning', 'executing',
+           'verifying', 'awaiting_review', 'deploying'
+         )
+         AND (
+           attempts.lease_expires_at <= ?
+           OR COALESCE(attempts.heartbeat_at, attempts.updated_at) <= ?
+         )
+       ORDER BY COALESCE(attempts.heartbeat_at, attempts.updated_at), attempts.attempt_id
+       LIMIT ?`,
+    ).bind(nowIso, heartbeatCutoff, limit).all<AtRiskCandidate>();
+    const reconcilable = candidates.results.filter((candidate) =>
+      candidate.repository !== null && candidate.github_run_id !== null &&
+      candidate.test_acceptance_id === null &&
+      (
+        candidate.github_external_updated_at === null || candidate.github_status === null ||
+        candidate.github_status !== 'completed'
+      )
+    ) as ReconciliationCandidate[];
+    return await this.reconcileCandidates(reconcilable);
+  }
+
+  private async reconcileCandidates(
+    candidates: ReconciliationCandidate[],
+  ): Promise<GitHubBatchReconciliationResult[]> {
     const results: GitHubBatchReconciliationResult[] = [];
-    for (const candidate of candidates.results) {
+    for (const candidate of candidates) {
       try {
         const disposition = await this.reconcileAttempt(candidate.attempt_id);
         if (disposition !== 'not_found') {
