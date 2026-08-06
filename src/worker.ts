@@ -211,15 +211,17 @@ export default {
         env.DB_CONTROL,
         new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
       ).drain(5);
-      // Relay every remaining durable effect, then spend the first bounded D1
-      // pass activating and scheduling approved work before any GitHub API
-      // scan can consume the Free-plan CPU budget.
+      // Relay every remaining durable effect, then first resume one already
+      // verified Run whose Draft/publication preparation may have been cut off
+      // by a previous Free-plan CPU fence. Only after that durable close-out
+      // do we activate and schedule new work or scan GitHub external facts.
       await relay.relay();
       const executionProgress = new ExecutionProgressReconciler(
         env.DB_CONTROL,
         env.TASK_OBJECTS,
         { now: scheduledNow },
       );
+      await executionProgress.reconcileFinalizations(1);
       await executionProgress.reconcileScheduling(5);
       // Only attempts that the following stuck scan could fence are observed
       // synchronously. Both selectors share one scheduled timestamp, threshold
