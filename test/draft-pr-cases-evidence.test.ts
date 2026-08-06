@@ -68,22 +68,6 @@ async function buildCase(
         `commit_evidence_${tag}`, `test_targeted_${tag}`, `test_required_${tag}`,
       ],
     },
-    {
-      itemId: `deliver_${tag}`, kind: 'delivery', verificationId: `verify_deliver_${tag}`,
-      headSha, evidenceSetDigest: digest(20 + index),
-      evidenceIds: [`pr_evidence_${tag}`],
-    },
-    {
-      itemId: `investigate_${tag}`, kind: 'investigation',
-      verificationId: `verify_investigate_${tag}`,
-      headSha: baseSha, evidenceSetDigest: digest(30 + index),
-      evidenceIds: [`diagnostic_evidence_${tag}`],
-    },
-    {
-      itemId: `verify_${tag}`, kind: 'verification', verificationId: `verify_tests_${tag}`,
-      headSha, evidenceSetDigest: digest(40 + index),
-      evidenceIds: [`test_targeted_${tag}`, `test_required_${tag}`],
-    },
   ];
   const commands = [
     { position: 0, phase: 'targeted', commandRef: 'test:targeted',
@@ -144,8 +128,7 @@ async function buildCase(
   const itemRows = requiredItems.map((required, position) => ({
     id: required.itemId, kind: required.kind, required: true, status: 'passed',
     progressVersion: required.kind === 'change' ? 3 : 2,
-    acceptanceCriteriaIndexes: position === 2 ? [0] :
-      position === 3 ? [1] : [],
+    acceptanceCriteriaIndexes: position === 0 ? [0, 1] : [],
     commandRefs: required.kind === 'change'
       ? commands.map((command) => command.commandRef)
       : [],
@@ -448,6 +431,35 @@ describe('requirement and bug Draft PR external evidence', () => {
         value.manifest.cases[1],
       ],
     }).success).toBe(false);
+    expect(DraftPrCasesEvidenceManifestV1Schema.safeParse({
+      ...value.manifest,
+      cases: [
+        {
+          ...value.manifest.cases[0],
+          plan: { ...value.manifest.cases[0].plan, requiredItems: [] },
+        },
+        value.manifest.cases[1],
+      ],
+    }).success).toBe(false);
+    expect(DraftPrCasesEvidenceManifestV1Schema.safeParse({
+      ...value.manifest,
+      cases: [
+        {
+          ...value.manifest.cases[0],
+          plan: {
+            ...value.manifest.cases[0].plan,
+            requiredItems: [
+              ...value.manifest.cases[0].plan.requiredItems,
+              {
+                ...value.manifest.cases[0].plan.requiredItems[0],
+                itemId: 'change_requirement_second',
+              },
+            ],
+          },
+        },
+        value.manifest.cases[1],
+      ],
+    }).success).toBe(false);
   });
 
   it('cross-checks both Tasks, Plans, commits, tests, Actions, diffs and current Draft PRs',
@@ -466,10 +478,10 @@ describe('requirement and bug Draft PR external evidence', () => {
   it('rejects missing required coverage and commit/test lineage drift', async () => {
     const value = await fixture();
     const plan = value.responses.get(value.manifest.cases[0].runId)!.plan;
-    (plan.items as Array<Record<string, unknown>>)[2]!.acceptanceCriteriaIndexes = [];
+    (plan.items as Array<Record<string, unknown>>)[0]!.acceptanceCriteriaIndexes = [];
     await expect(verifyDraftPrCasesEvidence(value.manifest, options(value)))
       .rejects.toMatchObject({ code: 'plan_projection_mismatch' });
-    (plan.items as Array<Record<string, unknown>>)[2]!.acceptanceCriteriaIndexes = [0];
+    (plan.items as Array<Record<string, unknown>>)[0]!.acceptanceCriteriaIndexes = [0, 1];
     const audit = value.responses.get(value.manifest.cases[0].runId)!.audit;
     const answers = audit.answers as Record<string, unknown>;
     const changes = answers.changes as Array<Record<string, unknown>>;

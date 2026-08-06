@@ -19,8 +19,8 @@ fake GitHub、local workerd、Wrangler dry-run、manifest 自报或默认 exit 2
 
 1. `GET /v1/tasks/:taskId`：Task digest、source revision、`requirement|bug` intent、验收标准数量、
    active Run/Plan。
-2. `GET /v1/runs/:runId/plan`：全部 required investigation/change/verification/delivery Item、
-   acceptance coverage、passed verification decision，以及唯一 change Item 上的`repo_write`、
+2. `GET /v1/runs/:runId/plan`：全部实际 required Item、acceptance coverage、passed verification
+   decision，以及唯一 change Item 上的`repo_write`、
    targeted/required command、Execution Attempt 和 test Evidence。
 3. `GET /v1/runs/:runId/audit`：重算 Case 8 report digest，并核对Task写策略、latest exact飞书
    mapped-human `approve(repo_write)`及外部lineage、Attempt的`claimedProgressVersion`、同Attempt/Plan/Item/approval/repository的
@@ -41,9 +41,10 @@ Case 8 或 GitHub live fact。
   [`draft-pr-cases-evidence-v1.example.json`](../schemas/draft-pr-cases-evidence-v1.example.json)。
 - requirement 固定为 `scenario=requirement,inputClass=prd`，bug 固定为
   `scenario=bug,inputClass=user_feedback`，顺序不可交换。
-- 每条 Plan 至少包含并通过 investigation、change、verification、delivery 四类 required Item；
-  全部 acceptance criteria index 必须被 required Item 覆盖。E2E-3固定只有一个required change
-  Item，initial `implement` Attempt必须从Plan base领取该Item；review-fix属于E2E-4，不在此冒充首次交付。
+- 每条 Plan 至少包含并通过一个 required Item，并固定恰好一个 required change Item；小改动允许
+  由该 change Item 自验证，不强制制造空的 investigation/verification/delivery Item。Plan 中实际存在
+  的全部 required Item都必须通过，且合计覆盖全部 acceptance criteria index。initial `implement`
+  Attempt必须从Plan base领取该change Item；review-fix属于E2E-4，不在此冒充首次交付。
 - Case 8的`claimedProgressVersion`是Attempt创建时冻结的ready progress version；它只证明控制面从
   ready Item领取，不是Agent自报状态。write credential必须只限manifest repository，并与PR
   publication复用同一latest exact approval。approval必须覆盖Attempt领取至publication；credential
