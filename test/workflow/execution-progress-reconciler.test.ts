@@ -242,6 +242,133 @@ async function seedOlderUnschedulableRuns(count: number): Promise<void> {
   }
 }
 
+async function seedOlderExpiredFinalizationBlocker(): Promise<void> {
+  const createdAt = new Date(NOW.getTime() - 60 * 60_000).toISOString();
+  const expiredAt = new Date(NOW.getTime() - 1).toISOString();
+  const taskDigest = await taskRevisionDigest(TASK);
+  const taskId = 'task-expired-finalization';
+  const runId = 'run-expired-finalization';
+  const analysisAttemptId = 'attempt-analysis-expired-finalization';
+  const implementAttemptId = 'attempt-implement-expired-finalization';
+  const planId = 'plan-expired-finalization';
+  const planDigest = `sha256:${'f'.repeat(64)}`;
+  const headSha = 'd'.repeat(40);
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO tasks (
+         task_id, source_system, tenant_key, source_task_key, task_revision,
+         task_digest, payload_ref, actor_type, actor_id, target_repository,
+         target_base_branch, target_environment, intent_kind, title, priority,
+         acceptance_criteria_count, allow_repository_write, allow_test_deploy,
+         allow_production_deploy, require_human_approval, created_at, updated_at
+       ) VALUES (?, 'manual', 'execution-progress', 'expired-finalization', 'revision-1',
+                 ?, ?, 'user', 'requester', 'example/delivery-target', 'main', 'none',
+                 'bug', 'Expired finalization blocker', 'p2', 1, 1, 0, 0, 1, ?, ?)`,
+    ).bind(taskId, taskDigest, `r2://${TASK_OBJECT_KEY}`, createdAt, createdAt),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO runs (
+         run_id, task_id, task_revision, task_digest, base_sha,
+         workflow_instance_id, state, version, active_plan_id,
+         active_plan_version, active_plan_digest, created_at, updated_at
+       ) VALUES (?, ?, 'revision-1', ?, ?, ?, 'verifying', 4, ?, 1, ?, ?, ?)`,
+    ).bind(
+      runId,
+      taskId,
+      taskDigest,
+      BASE_SHA,
+      runId,
+      planId,
+      planDigest,
+      createdAt,
+      createdAt,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+         workflow_ref, version, lease_generation, created_at, updated_at
+       ) VALUES (?, ?, 1, 'analysis', 'completed', ?, 'example/delivery-target',
+                 'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                 1, 0, ?, ?)`,
+    ).bind(analysisAttemptId, runId, BASE_SHA, createdAt, createdAt),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO execution_plans (
+         plan_id, run_id, plan_version, task_revision, base_sha, digest, status,
+         created_by_attempt_id, objective, created_at, updated_at
+       ) VALUES (?, ?, 1, 'revision-1', ?, ?, 'active', ?,
+                 'Historical verified Plan with an expired approval.', ?, ?)`,
+    ).bind(planId, runId, BASE_SHA, planDigest, analysisAttemptId, createdAt, createdAt),
+  ]);
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+         workflow_ref, head_branch, head_sha, version, lease_generation,
+         created_at, updated_at
+       ) VALUES (?, ?, 2, 'implement', 'completed', ?, 'example/delivery-target',
+                 'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                 ?, ?, 3, 1, ?, ?)`,
+    ).bind(
+      implementAttemptId,
+      runId,
+      BASE_SHA,
+      `agent/${taskId}/${implementAttemptId}`,
+      headSha,
+      createdAt,
+      createdAt,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO plan_items (plan_id, item_id, kind, title, objective, required, position)
+       VALUES (?, 'change', 'change', 'Expired completed change',
+               'A historical completed change that must not starve newer work.', 1, 0)`,
+    ).bind(planId),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO plan_item_progress (plan_id, item_id, status, version, updated_at)
+       VALUES (?, 'change', 'passed', 3, ?)`,
+    ).bind(planId, createdAt),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO plan_item_effects (plan_id, item_id, effect)
+       VALUES (?, 'change', 'repo_write')`,
+    ).bind(planId),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO evidence (
+         evidence_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+         kind, status, sha, summary, verification_status, observed_at, created_at
+       ) VALUES ('evidence-expired-finalization', ?, ?, ?, 1, 'change', 'commit',
+                 'passed', ?, 'Historical bot commit.', 'verified', ?, ?)`,
+    ).bind(runId, implementAttemptId, planId, headSha, createdAt, createdAt),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_head_updates (
+         update_id, evidence_id, run_id, attempt_id, plan_id, plan_version,
+         plan_item_id, lease_generation, parent_sha, head_sha, branch, created_at
+       ) VALUES ('head-update-expired-finalization', 'evidence-expired-finalization',
+                 ?, ?, ?, 1, 'change', 1, ?, ?, ?, ?)`,
+    ).bind(
+      runId,
+      implementAttemptId,
+      planId,
+      BASE_SHA,
+      headSha,
+      `agent/${taskId}/${implementAttemptId}`,
+      createdAt,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO approvals (
+         approval_id, run_id, task_revision, plan_id, plan_version, plan_digest,
+         base_sha, effect, actor_id, decision, nonce_digest, expires_at, created_at
+       ) VALUES ('approval-expired-finalization', ?, 'revision-1', ?, 1, ?, ?,
+                 'repo_write', 'human-reviewer', 'approve', ?, ?, ?)`,
+    ).bind(
+      runId,
+      planId,
+      planDigest,
+      BASE_SHA,
+      `sha256:${'9'.repeat(64)}`,
+      expiredAt,
+      createdAt,
+    ),
+  ]);
+}
+
 async function simulateSuccessfulAction(attemptId: string): Promise<void> {
   const expiredLease = new Date(NOW.getTime() - 60_000).toISOString();
   await env.DB_CONTROL.batch([
@@ -490,5 +617,42 @@ describe('execution progress reconciliation', () => {
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'pull_request'`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
+  });
+
+  it('does not let an older expired approval starve a recoverable finalization', async () => {
+    await seed('approve');
+    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
+      now: () => NOW,
+    });
+    await reconciler.reconcileScheduling(25);
+    const attempt = await env.DB_CONTROL.prepare(
+      `SELECT attempt_id FROM attempts WHERE run_id = ? AND mode = 'implement'`,
+    ).bind(RUN_ID).first<{ attempt_id: string }>();
+    if (attempt === null) throw new Error('initial execution Attempt was not scheduled');
+    await simulateSuccessfulAction(attempt.attempt_id);
+
+    await env.TASK_OBJECTS.delete(TASK_OBJECT_KEY);
+    expect(await reconciler.reconcileObservedCompletions(25)).toEqual({
+      verifiedItems: 1,
+      preparedDrafts: 0,
+      scheduledPublications: 0,
+    });
+    const taskDigest = await taskRevisionDigest(TASK);
+    await env.TASK_OBJECTS.put(TASK_OBJECT_KEY, JSON.stringify(TASK), {
+      customMetadata: { taskDigest },
+    });
+    await seedOlderExpiredFinalizationBlocker();
+
+    expect(await reconciler.reconcileFinalizations(1)).toEqual({
+      preparedDrafts: 1,
+      scheduledPublications: 1,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM pull_request_publications WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM pull_request_publications
+       WHERE run_id = 'run-expired-finalization'`,
+    ).first()).toEqual({ count: 0 });
   });
 });
