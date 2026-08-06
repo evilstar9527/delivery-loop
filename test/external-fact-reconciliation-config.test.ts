@@ -24,10 +24,14 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(feishuRuntime).toContain('runtime.messageReconciler.reconcileBatch(25)');
   });
 
-  it('direct-drains durable Workflow effects before Queue relay and background recovery', () => {
+  it('observes GitHub completion before execution finalization and stuck fencing', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     const workflowDrain = worker.indexOf(').drain(5);');
     const relay = worker.indexOf('await relay.relay();');
+    const githubRunReconciliation = worker.indexOf(
+      'await reconcileGitHubRunsFromEnv(env);',
+      relay,
+    );
     const executionProgress = worker.indexOf(').reconcileBatch(5);', relay);
     const detectorEnd = worker.indexOf('}).scan(25);');
     const concurrentStart = worker.indexOf('await Promise.all([', detectorEnd);
@@ -40,7 +44,8 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(workflowDrain).toBeGreaterThan(-1);
     expect(relay).toBeGreaterThan(-1);
     expect(workflowDrain).toBeLessThan(relay);
-    expect(executionProgress).toBeGreaterThan(relay);
+    expect(githubRunReconciliation).toBeGreaterThan(relay);
+    expect(executionProgress).toBeGreaterThan(githubRunReconciliation);
     expect(detectorEnd).toBeGreaterThan(-1);
     expect(executionProgress).toBeLessThan(detectorEnd);
     expect(concurrentStart).toBeGreaterThan(detectorEnd);
@@ -49,6 +54,9 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(workflowReconciliation).toBeLessThan(concurrentEnd);
     expect(worker.slice(workflowDrain, concurrentStart)).not.toContain(
       'reconcileWorkflowInstancesFromEnv(env)',
+    );
+    expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain(
+      'reconcileGitHubRunsFromEnv(env)',
     );
     expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain('relay.relay()');
   });

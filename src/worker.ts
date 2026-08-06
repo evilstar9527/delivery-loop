@@ -208,9 +208,11 @@ export default {
         env.DB_CONTROL,
         new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
       ).drain(5);
-      // Relay every remaining durable effect, then advance a bounded number of
-      // approved executions before background inventory reconciliation.
+      // Relay every remaining durable effect. Observe GitHub completion before
+      // finalizing executions: a successful job stops heartbeats before the
+      // next Cron tick, so fencing first could incorrectly mark it lost.
       await relay.relay();
+      await reconcileGitHubRunsFromEnv(env);
       await new ExecutionProgressReconciler(
         env.DB_CONTROL,
         env.TASK_OBJECTS,
@@ -226,7 +228,6 @@ export default {
       await Promise.all([
         reconcileWorkflowInstancesFromEnv(env),
         new FeishuIngressRelay(env.DB_CONTROL, env.FEISHU_INGRESS_QUEUE).relay(),
-        reconcileGitHubRunsFromEnv(env),
         reconcileGitHubBasesFromEnv(env),
         reconcileGitHubMergeGatesFromEnv(env),
         reconcileGitHubMergeStatusesFromEnv(env),
