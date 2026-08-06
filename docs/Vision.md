@@ -10,12 +10,12 @@
 
 delivery-loop 是端到端交付的控制面：
 
-1. 从飞书、Meegle、GitHub 或监控事件接收候选任务；
+1. 从飞书、Meegle、GitHub 或监控事件接收候选任务；将原始飞书或 Meegle PRD、BUG 输入路由到对应的 GitHub 目标仓库；
 2. 把自然语言任务规范化为有验收标准、目标仓库和权限策略的 `TaskEnvelope`；
 3. 先启动只读分析 attempt，通过 tool-bridge 按需读取 repo、日志、数据库、K8s 和协作上下文；
 4. 生成版本化 `ExecutionPlan`，每个 DoD Item 同时声明目标、完成判据、验证方式、依赖和 effect；
 5. 经策略校验和必要的人审后，在 GitHub Actions 中启动有界的执行 attempt；
-6. 按 DoD Item 生成分支/PR，进入测试、评审和有界修复循环；
+6. 按 DoD Item 生成分支/PR，执行计划并进入测试、评审和修复循环，直到不存在 BLOCKER 或 MAJOR 问题；
 7. 在明确闸门后合并和部署；
 8. 以 Cloudflare Workflows 持久编排流程，以 D1 保存业务真相，并把状态、checkpoint、证据和人类操作回写飞书。
 
@@ -35,11 +35,11 @@ delivery-loop 是端到端交付的控制面：
 
 ### Case 1：人工发起需求
 
-用户在飞书/Meegle 选择目标仓库并确认验收标准，控制面创建唯一任务。重复点击或事件重放不会创建第二个有效运行。
+用户提交原始飞书或 Meegle PRD，系统结合需求中指定的目标仓库路由到对应 GitHub 仓库，并在该仓库上下文中分析需求、确认验收标准，控制面创建唯一任务。重复点击或事件重放不会创建第二个有效运行。
 
 ### Case 2：缺陷发现与证据化分诊
 
-监控或人工上报缺陷后，Agent 通过 tool-bridge 只读查询日志、trace、数据库和 K8s，产出根因假设、引用证据、影响面和版本化执行计划；没有足够证据时进入 `blocked`，而不是猜测修改。
+原始飞书或 Meegle BUG 输入路由到对应 GitHub 仓库后，Agent 在该仓库上下文中分析缺陷；监控或人工上报缺陷时，可通过 tool-bridge 只读查询日志、trace、数据库和 K8s，产出根因假设、引用证据、影响面和版本化执行计划；没有足够证据时进入 `blocked`，而不是猜测修改。
 
 缺陷分诊的根因引用不是Agent自由填写的字符串。控制面只接受同一active analysis Attempt中成功的`logs/search + traces/get` metadata，把locator值与脱敏根因分别摘要化后形成verified diagnostic Evidence；Plan声明`logs_read`时必须引用该Evidence。原始uid/cid/path、日志、trace和tool结果不进入D1安全投影，真实语义仍由Reviewer对原始平台事实与exact代码SHA核对。
 
@@ -49,7 +49,7 @@ delivery-loop 是端到端交付的控制面：
 
 ### Case 4：评审修复循环
 
-PR review 或飞书补充信息触发新 attempt。新 Runner 能恢复原分支、任务、已完成步骤和失败证据，只修复未完成项，不从零重复探索。
+PR review 或飞书补充信息触发新 attempt。新 Runner 能恢复原分支、任务、已完成步骤和失败证据，只修复未完成项，不从零重复探索；发现 BLOCKER 或 MAJOR 问题时持续修复并重新评审，直至不再存在 BLOCKER 或 MAJOR 问题。
 
 ### Case 5：合并和部署
 
