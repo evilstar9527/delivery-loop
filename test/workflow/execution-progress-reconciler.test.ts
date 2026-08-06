@@ -450,4 +450,45 @@ describe('execution progress reconciliation', () => {
       `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'pull_request'`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
   });
+
+  it('resumes Draft PR finalization after verification survived an interrupted preparation', async () => {
+    await seed('approve');
+    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
+      now: () => NOW,
+    });
+    await reconciler.reconcileScheduling(25);
+    const attempt = await env.DB_CONTROL.prepare(
+      `SELECT attempt_id FROM attempts WHERE run_id = ? AND mode = 'implement'`,
+    ).bind(RUN_ID).first<{ attempt_id: string }>();
+    if (attempt === null) throw new Error('initial execution Attempt was not scheduled');
+    await simulateSuccessfulAction(attempt.attempt_id);
+
+    await env.TASK_OBJECTS.delete(TASK_OBJECT_KEY);
+    expect(await reconciler.reconcileObservedCompletions(25)).toEqual({
+      verifiedItems: 1,
+      preparedDrafts: 0,
+      scheduledPublications: 0,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT state, version FROM runs WHERE run_id = ?',
+    ).bind(RUN_ID).first()).toEqual({ state: 'verifying', version: 4 });
+
+    const taskDigest = await taskRevisionDigest(TASK);
+    await env.TASK_OBJECTS.put(TASK_OBJECT_KEY, JSON.stringify(TASK), {
+      customMetadata: { taskDigest },
+    });
+    expect(await reconciler.reconcileFinalizations(1)).toEqual({
+      preparedDrafts: 1,
+      scheduledPublications: 1,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM pull_request_drafts WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM pull_request_publications WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'pull_request'`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+  });
 });

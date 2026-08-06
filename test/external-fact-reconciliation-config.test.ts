@@ -24,10 +24,14 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(feishuRuntime).toContain('runtime.messageReconciler.reconcileBatch(25)');
   });
 
-  it('schedules before bounded GitHub observation and observes at-risk completion before fencing', () => {
+  it('finalizes passed work before scheduling and observes at-risk completion before fencing', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     const workflowDrain = worker.indexOf(').drain(5);');
     const relay = worker.indexOf('await relay.relay();');
+    const priorityFinalization = worker.indexOf(
+      'await executionProgress.reconcileFinalizations(1);',
+      relay,
+    );
     const executionScheduling = worker.indexOf(
       'await executionProgress.reconcileScheduling(5);',
       relay,
@@ -55,6 +59,8 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(workflowDrain).toBeGreaterThan(-1);
     expect(relay).toBeGreaterThan(-1);
     expect(workflowDrain).toBeLessThan(relay);
+    expect(priorityFinalization).toBeGreaterThan(relay);
+    expect(priorityFinalization).toBeLessThan(executionScheduling);
     expect(executionScheduling).toBeGreaterThan(relay);
     expect(atRiskGitHubReconciliation).toBeGreaterThan(executionScheduling);
     expect(executionFinalization).toBeGreaterThan(atRiskGitHubReconciliation);

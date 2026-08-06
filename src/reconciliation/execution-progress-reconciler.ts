@@ -58,6 +58,11 @@ export interface ExecutionSchedulingResult {
   scheduledAttempts: number;
 }
 
+export interface ExecutionFinalizationResult {
+  preparedDrafts: number;
+  scheduledPublications: number;
+}
+
 export interface ExecutionProgressReconcilerOptions {
   now?: () => Date;
 }
@@ -108,8 +113,15 @@ export class ExecutionProgressReconciler {
       throw new Error('execution progress reconciliation limit must be between 1 and 100');
     }
     const verifiedItems = await this.verifyCompletedAttempts(limit);
-    const finalized = await this.finalizePullRequests(limit);
+    const finalized = await this.reconcileFinalizations(limit);
     return { verifiedItems, ...finalized };
+  }
+
+  async reconcileFinalizations(limit = 25): Promise<ExecutionFinalizationResult> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+      throw new Error('execution progress reconciliation limit must be between 1 and 100');
+    }
+    return await this.finalizePullRequests(limit);
   }
 
   private async activateApprovedRuns(limit: number): Promise<number> {
