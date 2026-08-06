@@ -398,7 +398,8 @@ credential 形状；命中返回固定 `policy_denied`，响应与 finding 不�
 `${{ inputs.task_json }}`映射到step环境。preflight只从GitHub runner提供的`GITHUB_EVENT_PATH`读取最多256 KiB
 event并运行同一Task schema；Environment gate后的唯一effect job再从同一文件解析正文。operator按Task source
 revision派生确定性Task/Run与`analysis-<run>-1`，先要求Task GET恰好404，再用独立`actions:read` token以
-`per_page=50`、最多20页完整分页
+`per_page=50`、最多20页完整分页；不跟随GitHub可能把owner/repo改写为numeric repository的`Link` URL，
+只使用每页稳定`total_count`和本地固定endpoint单调递增`page`
 固定`delivery-agent.yml`并要求stable title计数为0，随后最多一次`POST /v1/tasks`。POST使用确定性
 `Idempotency-Key`，只接受202且响应Task/Run必须等于本地派生值；任何已存在事实、不完整分页、重定向、超时、
 非202或响应漂移都固定失败且不重试。stdout只允许Task/Run/Attempt ID、Task revision digest和0/1计数，不含正文。

@@ -129,8 +129,14 @@ describe('guarded Task intake', () => {
         });
       }
       const currentPage = Number(url.searchParams.get('page') ?? '1');
-      const next = new URL(url);
-      next.searchParams.set('page', String(currentPage + 1));
+      const canonicalNext = new URL(
+        `/repositories/1314460432/actions/workflows/` +
+          `.github%2Fworkflows%2Fdelivery-agent.yml/runs`,
+        'https://api.github.com',
+      );
+      canonicalNext.searchParams.set('event', 'workflow_dispatch');
+      canonicalNext.searchParams.set('per_page', '50');
+      canonicalNext.searchParams.set('page', String(currentPage + 1));
       return json(
         {
           total_count: 101,
@@ -138,7 +144,7 @@ describe('guarded Task intake', () => {
             display_title: `delivery-loop/unrelated-page-${currentPage}-${index}`,
           })),
         },
-        { headers: { link: `<${next}>; rel="next"` } },
+        { headers: { link: `<${canonicalNext}>; rel="next"` } },
       );
     };
     await expect(runGuardedTaskIntake(options(fetcher))).rejects.toMatchObject({
@@ -177,15 +183,28 @@ describe('guarded Task intake', () => {
     });
   });
 
-  it('rejects an incomplete Action page even when GitHub omits the next link', async () => {
-    const fetcher: typeof fetch = async (input) => {
+  it('derives the next page locally when GitHub omits its canonical link', async () => {
+    const ids = await taskRevisionIds(task);
+    const pages: string[] = [];
+    const fetcher: typeof fetch = async (input, init = {}) => {
       const url = new URL(String(input));
-      if (url.origin === 'https://control.example.com') return new Response(null, { status: 404 });
-      return json({ total_count: 2, workflow_runs: [{ display_title: 'delivery-loop/one' }] });
+      if (url.origin === 'https://api.github.com') {
+        pages.push(url.searchParams.get('page') ?? '1');
+        return json({
+          total_count: 51,
+          workflow_runs: url.searchParams.get('page') === '2'
+            ? [{ display_title: 'delivery-loop/page-2' }]
+            : Array.from({ length: 50 }, (_, index) => ({
+              display_title: `delivery-loop/page-1-${index}`,
+            })),
+        });
+      }
+      if ((init.method ?? 'GET') === 'POST') {
+        return json({ accepted: true, taskId: ids.taskId, runId: ids.runId }, { status: 202 });
+      }
+      return new Response(null, { status: 404 });
     };
-    await expect(runGuardedTaskIntake(options(fetcher))).rejects.toMatchObject({
-      code: 'action_inventory_invalid',
-      taskCreateRequests: 0,
-    });
+    await expect(runGuardedTaskIntake(options(fetcher))).resolves.toMatchObject({ accepted: true });
+    expect(pages).toEqual(['1', '2']);
   });
 });

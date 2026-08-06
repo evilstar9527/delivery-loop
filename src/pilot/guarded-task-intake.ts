@@ -121,28 +121,6 @@ function discardBody(response: Response): void {
   try { void response.body?.cancel().catch(() => undefined); } catch { /* fixed rejection */ }
 }
 
-function nextGitHubPage(
-  current: URL,
-  response: Response,
-  githubOrigin: string,
-): URL | null {
-  const link = response.headers.get('link');
-  if (link === null) return null;
-  const next = link.split(',').map((part) => part.trim()).find((part) => part.endsWith('rel="next"'));
-  if (next === undefined) return null;
-  const match = /^<([^>]+)>;\s*rel="next"$/.exec(next);
-  if (match?.[1] === undefined) fail('action_inventory_invalid', 0);
-  let url: URL;
-  try { url = new URL(match[1]); } catch { fail('action_inventory_invalid', 0); }
-  if (
-    url.origin !== githubOrigin || url.pathname !== current.pathname ||
-    url.searchParams.get('event') !== 'workflow_dispatch' ||
-    url.searchParams.get('per_page') !== String(ACTIONS_PER_PAGE) ||
-    !/^[1-9][0-9]*$/.test(url.searchParams.get('page') ?? '')
-  ) fail('action_inventory_invalid', 0);
-  return url;
-}
-
 function scanner(options: GuardedTaskIntakeOptions): SecretScanner {
   return new SecretScanner({ secrets: [options.taskToken, options.githubToken] });
 }
@@ -170,7 +148,7 @@ async function countMatchingActions(
 ): Promise<number> {
   const fetcher = options.fetch ?? globalThis.fetch;
   const [owner, repository] = options.repository.split('/');
-  let url = new URL(
+  const url = new URL(
     `/repos/${encodeURIComponent(owner!)}/${encodeURIComponent(repository!)}` +
       `/actions/workflows/${encodeURIComponent(WORKFLOW_PATH)}/runs`,
     githubOrigin,
@@ -209,6 +187,9 @@ async function countMatchingActions(
     }
     if (expectedTotal === null) expectedTotal = body.total_count as number;
     if (body.total_count !== expectedTotal) fail('action_inventory_invalid', 0);
+    if (body.workflow_runs.length > ACTIONS_PER_PAGE) {
+      fail('action_inventory_invalid', 0);
+    }
     for (const value of body.workflow_runs) {
       const run = record(value);
       if (run === null || typeof run.display_title !== 'string') {
@@ -217,12 +198,12 @@ async function countMatchingActions(
       if (run.display_title === `delivery-loop/${attemptId}`) matches += 1;
       seen += 1;
     }
-    const next = nextGitHubPage(url, response, githubOrigin);
-    if (next === null) {
-      if (seen !== expectedTotal) fail('action_inventory_invalid', 0);
-      return matches;
+    if (seen > expectedTotal) fail('action_inventory_invalid', 0);
+    if (seen === expectedTotal) return matches;
+    if (body.workflow_runs.length !== ACTIONS_PER_PAGE) {
+      fail('action_inventory_invalid', 0);
     }
-    url = next;
+    url.searchParams.set('page', String(page + 1));
   }
   fail('action_inventory_invalid', 0);
 }
