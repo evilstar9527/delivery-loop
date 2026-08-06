@@ -34,6 +34,8 @@ export function deriveAnalysisPlanPolicy(
     verificationCommandRefs: allowRepositoryWrite
       ? ANALYSIS_PILOT_VERIFICATION_COMMAND_REFS
       : [],
-    requiresRepositoryChange: intentKind === 'requirement' && allowRepositoryWrite,
+    // A writable intake is an execution request regardless of whether it began
+    // as a PRD or a bug report. Read-only bug intake remains investigation-only.
+    requiresRepositoryChange: allowRepositoryWrite,
   };
 }

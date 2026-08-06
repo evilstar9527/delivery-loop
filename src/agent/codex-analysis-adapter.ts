@@ -235,7 +235,7 @@ function diagnosticLogPrompt(contextFilePath: string, contextBlock: string): str
     ...trustBoundaryPrompt(contextFilePath, contextBlock),
     'Return exactly one bounded logs/search request matching the supplied output schema.',
     'You may choose locator kinds and arguments only. The trusted Runner fixes the tool path, scope, effect, token, maximum rounds, and transport.',
-    'Use only uid, cid, or request path locator kinds actually present in the task context. Do not request arbitrary SQL, shell, writes, credentials, or additional tools.',
+    'Use only uid, cid, or path locator kinds actually present in the task context. A path may be an HTTP request path or a trusted platform component path explicitly named by the task. Do not request arbitrary SQL, shell, writes, credentials, or additional tools.',
   ].join('\n');
 }
 

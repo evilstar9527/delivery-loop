@@ -130,7 +130,7 @@ describe('ExecutionPlan v1 validation', () => {
     });
     expect(deriveAnalysisPlanPolicy('bug', true)).toMatchObject({
       allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write'],
-      requiresRepositoryChange: false,
+      requiresRepositoryChange: true,
     });
   });
   it('accepts a complete proposal and returns its canonical digest unchanged', async () => {

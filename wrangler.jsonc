@@ -40,6 +40,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "services": [
+    {
+      "binding": "TOOL_BRIDGE",
+      "service": "delivery-loop-tool-bridge"
+    }
+  ],
   "r2_buckets": [
     {
       "binding": "TASK_OBJECTS",

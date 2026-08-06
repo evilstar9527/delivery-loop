@@ -33,6 +33,9 @@ export default defineConfig({
       remoteBindings: false,
       wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
+        serviceBindings: {
+          TOOL_BRIDGE: async () => new Response(null, { status: 502 }),
+        },
         outboundService: async (request: Request) => {
           const url = new URL(request.url);
           if (url.origin !== 'https://github-fetch-through.test') {

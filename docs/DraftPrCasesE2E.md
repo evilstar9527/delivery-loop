@@ -41,6 +41,12 @@ Case 8 或 GitHub live fact。
   [`draft-pr-cases-evidence-v1.example.json`](../schemas/draft-pr-cases-evidence-v1.example.json)。
 - requirement 固定为 `scenario=requirement,inputClass=prd`，bug 固定为
   `scenario=bug,inputClass=user_feedback`，顺序不可交换。
+- 两条case都必须由typed Task policy显式设置`allowRepositoryWrite=true`；这使requirement与bug都必须
+  生成self-verifying change。只读bug仍只允许调查，不能用用户正文中的“请修复”绕过policy。
+- bug analysis使用真实`logs/search → traces/get`时，当前Cloudflare试点只接受Task已有的
+  `uid/cid/path`。`path`可以是HTTP路径或明确的平台component path；后者由adapter固定映射到
+  persisted log的component字段，再用返回的request ID查询同一invocation。该入口不能替代SLS或
+  database provider，空结果、截断或provider漂移都不能伪造root-cause Evidence。
 - 每条 Plan 至少包含并通过一个 required Item，并固定恰好一个 required change Item；小改动允许
   由该 change Item 自验证，不强制制造空的 investigation/verification/delivery Item。Plan 中实际存在
   的全部 required Item都必须通过，且合计覆盖全部 acceptance criteria index。initial `implement`
