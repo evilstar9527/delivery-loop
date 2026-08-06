@@ -151,7 +151,6 @@ export const DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA = {
       type: 'array',
       minItems: 1,
       maxItems: 3,
-      uniqueItems: true,
       items: { enum: DIAGNOSTIC_LOCATOR_KINDS },
     },
     arguments: diagnosticToolArgumentsJsonSchema,
@@ -169,8 +168,8 @@ export const DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA = {
 } as const;
 
 // `uniqueItems` is outside the relay's portable structured-output subset.
-// AnalysisPlanContentV1Schema remains the trusted boundary for uniqueness,
-// non-blank checks, and cross-field plan validation.
+// Runtime Zod schemas remain the trusted boundary for locator/item uniqueness,
+// non-blank checks, ordering, and cross-field plan validation.
 const analysisPlanContentV1JsonSchema = {
   type: 'object',
   additionalProperties: false,
