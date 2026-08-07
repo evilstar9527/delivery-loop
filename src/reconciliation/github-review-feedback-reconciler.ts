@@ -480,23 +480,70 @@ export class GitHubReviewApprovalRecoveryReconciler {
            AND plans.status = 'active' AND plans.base_sha = runs.base_sha
            AND progress.status = 'ready' AND progress.active_attempt_id IS NULL
            AND progress.protected_path_gate_id IS NULL
-           AND failed.mode = 'review_fix' AND failed.status = 'failed'
+           AND failed.mode = 'review_fix'
            AND failed.plan_item_id = recovery.plan_item_id
            AND failed.head_sha IS NOT NULL
-           AND EXISTS (
-             SELECT 1 FROM attempt_failures
-             WHERE attempt_failures.attempt_id = failed.attempt_id
-               AND attempt_failures.failure_class = 'tool_error'
-               AND attempt_failures.failure_code = 'tool_unavailable'
-               AND attempt_failures.failure_site = 'external_reconciliation'
-               AND attempt_failures.needed_human_input = 'resolve_external_dependency'
-           )
-           AND EXISTS (
-             SELECT 1 FROM run_blockers
-             WHERE run_blockers.run_id = recovery.run_id
-               AND run_blockers.reason = 'external_dependency'
-               AND run_blockers.resolved_at IS NOT NULL
-               AND run_blockers.resolution_code = 'repo_write_reapproved'
+           AND (
+             (
+               recovery.source_kind = 'failed_dependency'
+               AND failed.status = 'failed'
+               AND EXISTS (
+                 SELECT 1 FROM attempt_failures
+                 WHERE attempt_failures.attempt_id = failed.attempt_id
+                   AND attempt_failures.failure_class = 'tool_error'
+                   AND attempt_failures.failure_code = 'tool_unavailable'
+                   AND attempt_failures.failure_site = 'external_reconciliation'
+                   AND attempt_failures.needed_human_input = 'resolve_external_dependency'
+               )
+               AND EXISTS (
+                 SELECT 1 FROM run_blockers
+                 WHERE run_blockers.run_id = recovery.run_id
+                   AND run_blockers.reason = 'external_dependency'
+                   AND run_blockers.resolved_at IS NOT NULL
+                   AND run_blockers.resolution_code = 'repo_write_reapproved'
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM github_write_credentials
+                 WHERE github_write_credentials.attempt_id = failed.attempt_id
+               )
+             )
+             OR
+             (
+               recovery.source_kind = 'lost_pre_effect'
+               AND failed.status = 'lost'
+               AND failed.github_status = 'completed'
+               AND failed.github_conclusion IS NOT NULL
+               AND failed.github_conclusion <> 'success'
+               AND EXISTS (
+                 SELECT 1 FROM review_approval_recoveries AS prior_recovery
+                 WHERE prior_recovery.replacement_attempt_id = failed.attempt_id
+                   AND prior_recovery.root_review_attempt_id =
+                       recovery.root_review_attempt_id
+               )
+               AND (
+                 SELECT COUNT(*) FROM github_write_credentials
+                 WHERE github_write_credentials.attempt_id = failed.attempt_id
+               ) = 1
+               AND EXISTS (
+                 SELECT 1 FROM github_write_credentials
+                 WHERE github_write_credentials.attempt_id = failed.attempt_id
+                   AND github_write_credentials.status IN ('revoked', 'expired')
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM attempt_failures
+                 WHERE attempt_failures.attempt_id = failed.attempt_id
+               )
+               AND EXISTS (
+                 SELECT 1 FROM run_stuck_incidents AS incident
+                 WHERE incident.run_id = recovery.run_id
+                   AND incident.attempt_id = failed.attempt_id
+                   AND incident.state_kind = 'running'
+                   AND incident.observed_run_state = 'executing'
+                   AND incident.action = 'fence_lost_attempt'
+                   AND incident.status = 'resolved'
+                   AND incident.resolution_code = 'attempt_fenced'
+               )
+             )
            )
            AND EXISTS (
              SELECT 1 FROM outbox AS cancel
@@ -525,10 +572,6 @@ export class GitHubReviewApprovalRecoveryReconciler {
                AND rejection.created_at >= approval.created_at
            )
            AND NOT EXISTS (
-             SELECT 1 FROM github_write_credentials
-             WHERE github_write_credentials.attempt_id = failed.attempt_id
-           )
-           AND NOT EXISTS (
              SELECT 1 FROM attempt_head_updates
              WHERE attempt_head_updates.attempt_id = failed.attempt_id
            )
@@ -552,12 +595,12 @@ export class GitHubReviewApprovalRecoveryReconciler {
         `INSERT INTO review_approval_recoveries (
            recovery_id, recovery_approval_id, run_id, plan_id, plan_version,
            plan_item_id, failed_attempt_id, root_review_attempt_id, approval_id,
-           replacement_attempt_id, created_at
+           replacement_attempt_id, created_at, source_kind
          )
          SELECT ?, recovery.recovery_approval_id, recovery.run_id, recovery.plan_id,
                 recovery.plan_version, recovery.plan_item_id,
                 recovery.failed_attempt_id, recovery.root_review_attempt_id,
-                recovery.approval_id, replacement.attempt_id, ?
+                recovery.approval_id, replacement.attempt_id, ?, recovery.source_kind
          FROM review_approval_recovery_approvals AS recovery
          JOIN attempts AS replacement
            ON replacement.attempt_id = ?
