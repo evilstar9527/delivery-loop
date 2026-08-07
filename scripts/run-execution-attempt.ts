@@ -1,4 +1,7 @@
-import { runExecutionAttempt } from '../src/runner/execution-runner.js';
+import {
+  ExecutionRunnerError,
+  runExecutionAttempt,
+} from '../src/runner/execution-runner.js';
 import { ExecutionAttemptError } from '../src/runner/execution-attempt-runner.js';
 import {
   writeRunnerExecutionAgentActivity,
@@ -22,7 +25,9 @@ try {
     'execution_attempt_result',
     'failed',
     process.env,
-    error instanceof ExecutionAttemptError ? error.kind : undefined,
+    error instanceof ExecutionAttemptError || error instanceof ExecutionRunnerError
+      ? error.kind
+      : undefined,
   );
   process.exitCode = 1;
 }

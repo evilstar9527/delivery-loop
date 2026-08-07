@@ -27,6 +27,12 @@ const EXECUTION_FAILURE_KINDS = [
   'repository_commit_failed',
   'repository_push_failed',
   'head_report_failed',
+  'checkout_invalid',
+  'oidc_exchange_failed',
+  'context_invalid',
+  'policy_invalid',
+  'quota_unavailable',
+  'credential_unavailable',
   'unknown',
 ] as const;
 export type RunnerExecutionFailureKind = (typeof EXECUTION_FAILURE_KINDS)[number];

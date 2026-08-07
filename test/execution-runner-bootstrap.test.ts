@@ -600,7 +600,7 @@ describe('production execution Runner bootstrap', () => {
             id: ITEM_ID,
             kind: 'verification',
             title: 'Repair and verify',
-            objective: 'Apply the smallest fix and rerun trusted verification.',
+            objective: 'Apply the smallest fix to value.txt and rerun trusted verification.',
             required: true,
             doneWhen: ['Targeted and required verification pass on the bot head.'],
             commandRefs: ['test:unit', 'verify:all'],
