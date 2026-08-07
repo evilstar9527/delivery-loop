@@ -254,6 +254,15 @@ export class ExecutionProgressReconciler {
            WHERE plan_item_effects.plan_id = plans.plan_id
              AND plan_item_effects.effect = 'repo_write'
          )
+         AND NOT EXISTS (
+           SELECT 1 FROM review_approval_recovery_approvals AS recovery
+           WHERE recovery.run_id = runs.run_id
+             AND NOT EXISTS (
+               SELECT 1 FROM review_approval_recoveries
+               WHERE review_approval_recoveries.recovery_approval_id =
+                     recovery.recovery_approval_id
+             )
+         )
        ORDER BY runs.updated_at, runs.run_id LIMIT ?`,
     ).bind(limit).all<{ run_id: string; run_version: number }>();
     let activated = 0;

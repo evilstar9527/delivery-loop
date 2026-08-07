@@ -40,6 +40,12 @@ export interface GitHubReviewFeedbackRecoveryResult {
   created: boolean;
 }
 
+export interface GitHubReviewApprovalRecoveryResult {
+  recoveryApprovalId: string;
+  replacementAttemptId: string;
+  created: boolean;
+}
+
 interface CandidateRow {
   repository: string;
   github_pr_number: number;
@@ -397,6 +403,265 @@ export class GitHubReviewFeedbackRecoveryReconciler {
         results.push(await this.recoverAttempt(row.attempt_id));
       } catch {
         // A lost Attempt may still be waiting for credential revocation.
+      }
+    }
+    return results;
+  }
+}
+
+/** Resumes one approval-expired review fix without entering initial scheduling. */
+export class GitHubReviewApprovalRecoveryReconciler {
+  constructor(
+    private readonly db: D1Database,
+    private readonly now: () => Date = () => new Date(),
+  ) {}
+
+  async recover(recoveryApprovalId: string): Promise<GitHubReviewApprovalRecoveryResult> {
+    if (!ID_PATTERN.test(recoveryApprovalId)) {
+      throw new Error('GitHub review approval recovery request is invalid');
+    }
+    const identity = await canonicalSha256({
+      source: 'review_approval_recovery',
+      recoveryApprovalId,
+    });
+    const suffix = identity.slice('sha256:'.length, 'sha256:'.length + 48);
+    const replacementAttemptId = `attempt_review_approval_recovery_${suffix}`;
+    const recoveryId = `review_approval_recovery_${suffix}`;
+    const outboxId = `dispatch_review_approval_recovery_${suffix}`;
+    const nowIso = this.now().toISOString();
+    const results = await this.db.batch([
+      this.db.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, plan_id, plan_version, plan_item_id,
+           claimed_progress_version, head_branch, head_sha,
+           recovered_from_attempt_id, version, lease_generation, created_at, updated_at
+         )
+         SELECT ?, failed.run_id,
+                (SELECT COALESCE(MAX(existing.ordinal), 0) + 1
+                 FROM attempts AS existing WHERE existing.run_id = failed.run_id),
+                'review_fix', 'pending', failed.base_sha, failed.repository,
+                failed.workflow_ref, failed.plan_id, failed.plan_version,
+                failed.plan_item_id, progress.version, NULL, failed.head_sha,
+                recovery.root_review_attempt_id, 0, 0, ?, ?
+         FROM review_approval_recovery_approvals AS recovery
+         JOIN attempts AS failed ON failed.attempt_id = recovery.failed_attempt_id
+         JOIN runs ON runs.run_id = recovery.run_id AND runs.run_id = failed.run_id
+         JOIN execution_plans AS plans
+           ON plans.plan_id = recovery.plan_id AND plans.plan_id = failed.plan_id
+         JOIN plan_item_progress AS progress
+           ON progress.plan_id = recovery.plan_id
+          AND progress.item_id = recovery.plan_item_id
+         JOIN trusted_effect_approvals AS approval
+           ON approval.approval_id = recovery.approval_id
+          AND approval.run_id = recovery.run_id
+          AND approval.plan_id = recovery.plan_id
+          AND approval.plan_version = recovery.plan_version
+          AND approval.plan_digest = plans.digest
+          AND approval.base_sha = runs.base_sha
+          AND approval.effect = 'repo_write'
+          AND approval.decision = 'approve'
+          AND approval.expires_at > ?
+         JOIN review_feedback_attempts AS review_lineage
+           ON review_lineage.review_attempt_id = recovery.root_review_attempt_id
+         JOIN github_review_feedbacks AS feedback
+           ON feedback.feedback_id = review_lineage.feedback_id
+          AND feedback.run_id = recovery.run_id
+          AND feedback.plan_id = recovery.plan_id
+          AND feedback.plan_version = recovery.plan_version
+          AND feedback.plan_item_id = recovery.plan_item_id
+          AND feedback.source_head_sha = failed.head_sha
+         WHERE recovery.recovery_approval_id = ?
+           AND recovery.plan_version = failed.plan_version
+           AND runs.state = 'awaiting_approval'
+           AND runs.active_plan_id = recovery.plan_id
+           AND runs.active_plan_version = recovery.plan_version
+           AND runs.active_plan_digest = plans.digest
+           AND plans.status = 'active' AND plans.base_sha = runs.base_sha
+           AND progress.status = 'ready' AND progress.active_attempt_id IS NULL
+           AND progress.protected_path_gate_id IS NULL
+           AND failed.mode = 'review_fix' AND failed.status = 'failed'
+           AND failed.plan_item_id = recovery.plan_item_id
+           AND failed.head_sha IS NOT NULL
+           AND EXISTS (
+             SELECT 1 FROM attempt_failures
+             WHERE attempt_failures.attempt_id = failed.attempt_id
+               AND attempt_failures.failure_class = 'tool_error'
+               AND attempt_failures.failure_code = 'tool_unavailable'
+               AND attempt_failures.failure_site = 'external_reconciliation'
+               AND attempt_failures.needed_human_input = 'resolve_external_dependency'
+           )
+           AND EXISTS (
+             SELECT 1 FROM run_blockers
+             WHERE run_blockers.run_id = recovery.run_id
+               AND run_blockers.reason = 'external_dependency'
+               AND run_blockers.resolved_at IS NOT NULL
+               AND run_blockers.resolution_code = 'repo_write_reapproved'
+           )
+           AND EXISTS (
+             SELECT 1 FROM outbox AS cancel
+             WHERE cancel.run_id = recovery.run_id
+               AND cancel.kind = 'workflow_cancel'
+               AND cancel.delivery_state = 'settled'
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM run_blockers
+             WHERE run_blockers.run_id = recovery.run_id
+               AND run_blockers.resolved_at IS NULL
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM invalidated_approvals
+             WHERE invalidated_approvals.approval_id = approval.approval_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM approvals AS rejection
+             WHERE rejection.run_id = approval.run_id
+               AND rejection.plan_id = approval.plan_id
+               AND rejection.plan_version = approval.plan_version
+               AND rejection.plan_digest = approval.plan_digest
+               AND rejection.base_sha = approval.base_sha
+               AND rejection.effect = approval.effect
+               AND rejection.decision = 'reject'
+               AND rejection.created_at >= approval.created_at
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM github_write_credentials
+             WHERE github_write_credentials.attempt_id = failed.attempt_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM attempt_head_updates
+             WHERE attempt_head_updates.attempt_id = failed.attempt_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM verification_suites
+             WHERE verification_suites.attempt_id = failed.attempt_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM evidence
+             WHERE evidence.attempt_id = failed.attempt_id
+               AND evidence.kind IN ('commit', 'test')
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM review_approval_recoveries
+             WHERE review_approval_recoveries.recovery_approval_id =
+                   recovery.recovery_approval_id
+           )
+         ON CONFLICT DO NOTHING`,
+      ).bind(replacementAttemptId, nowIso, nowIso, nowIso, recoveryApprovalId),
+      this.db.prepare(
+        `INSERT INTO review_approval_recoveries (
+           recovery_id, recovery_approval_id, run_id, plan_id, plan_version,
+           plan_item_id, failed_attempt_id, root_review_attempt_id, approval_id,
+           replacement_attempt_id, created_at
+         )
+         SELECT ?, recovery.recovery_approval_id, recovery.run_id, recovery.plan_id,
+                recovery.plan_version, recovery.plan_item_id,
+                recovery.failed_attempt_id, recovery.root_review_attempt_id,
+                recovery.approval_id, replacement.attempt_id, ?
+         FROM review_approval_recovery_approvals AS recovery
+         JOIN attempts AS replacement
+           ON replacement.attempt_id = ?
+          AND replacement.run_id = recovery.run_id
+          AND replacement.plan_id = recovery.plan_id
+          AND replacement.plan_version = recovery.plan_version
+          AND replacement.plan_item_id = recovery.plan_item_id
+          AND replacement.recovered_from_attempt_id = recovery.root_review_attempt_id
+          AND replacement.mode = 'review_fix' AND replacement.status = 'pending'
+         WHERE recovery.recovery_approval_id = ?
+         ON CONFLICT DO NOTHING`,
+      ).bind(recoveryId, nowIso, replacementAttemptId, recoveryApprovalId),
+      this.db.prepare(
+        `UPDATE plan_item_progress
+         SET status = 'in_progress', active_attempt_id = ?,
+             version = version + 1, updated_at = ?
+         WHERE status = 'ready' AND active_attempt_id IS NULL
+           AND EXISTS (
+             SELECT 1 FROM review_approval_recoveries
+             WHERE recovery_id = ?
+               AND plan_id = plan_item_progress.plan_id
+               AND plan_item_id = plan_item_progress.item_id
+               AND replacement_attempt_id = ?
+           )`,
+      ).bind(replacementAttemptId, nowIso, recoveryId, replacementAttemptId),
+      this.db.prepare(
+        `UPDATE runs SET state = 'executing', version = version + 1, updated_at = ?
+         WHERE state = 'awaiting_approval'
+           AND EXISTS (
+             SELECT 1 FROM review_approval_recoveries
+             JOIN plan_item_progress
+               ON plan_item_progress.plan_id = review_approval_recoveries.plan_id
+              AND plan_item_progress.item_id = review_approval_recoveries.plan_item_id
+             WHERE review_approval_recoveries.recovery_id = ?
+               AND review_approval_recoveries.run_id = runs.run_id
+               AND review_approval_recoveries.replacement_attempt_id = ?
+               AND plan_item_progress.status = 'in_progress'
+               AND plan_item_progress.active_attempt_id = ?
+           )`,
+      ).bind(nowIso, recoveryId, replacementAttemptId, replacementAttemptId),
+      this.db.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         )
+         SELECT ?, recovery.run_id, 'execution_dispatch', 'github_actions',
+                ?, ?, 'pending', ?, ?
+         FROM review_approval_recoveries AS recovery
+         JOIN runs ON runs.run_id = recovery.run_id
+         JOIN plan_item_progress AS progress
+           ON progress.plan_id = recovery.plan_id
+          AND progress.item_id = recovery.plan_item_id
+         WHERE recovery.recovery_id = ?
+           AND recovery.replacement_attempt_id = ?
+           AND runs.state = 'executing'
+           AND progress.status = 'in_progress'
+           AND progress.active_attempt_id = recovery.replacement_attempt_id
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        outboxId,
+        `d1://attempts/${replacementAttemptId}`,
+        `execution-review-approval-recovery:${recoveryApprovalId}`,
+        nowIso,
+        nowIso,
+        recoveryId,
+        replacementAttemptId,
+      ),
+    ]);
+    const persisted = await this.db.prepare(
+      `SELECT replacement_attempt_id FROM review_approval_recoveries
+       WHERE recovery_approval_id = ?`,
+    ).bind(recoveryApprovalId).first<{ replacement_attempt_id: string }>();
+    if (persisted === null || persisted.replacement_attempt_id !== replacementAttemptId) {
+      throw new Error('GitHub review approval recovery is unavailable');
+    }
+    return {
+      recoveryApprovalId,
+      replacementAttemptId,
+      created: results[1]?.meta.changes === 1,
+    };
+  }
+
+  async reconcileBatch(limit = 5): Promise<GitHubReviewApprovalRecoveryResult[]> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 25) {
+      throw new Error('GitHub review approval recovery limit is invalid');
+    }
+    const rows = await this.db.prepare(
+      `SELECT recovery.recovery_approval_id
+       FROM review_approval_recovery_approvals AS recovery
+       JOIN runs ON runs.run_id = recovery.run_id
+       WHERE runs.state = 'awaiting_approval'
+         AND NOT EXISTS (
+           SELECT 1 FROM review_approval_recoveries
+           WHERE review_approval_recoveries.recovery_approval_id =
+                 recovery.recovery_approval_id
+         )
+       ORDER BY recovery.created_at, recovery.recovery_approval_id LIMIT ?`,
+    ).bind(limit).all<{ recovery_approval_id: string }>();
+    const results: GitHubReviewApprovalRecoveryResult[] = [];
+    for (const row of rows.results) {
+      try {
+        results.push(await this.recover(row.recovery_approval_id));
+      } catch {
+        // The approval may have expired or another reconciler may have won.
       }
     }
     return results;
