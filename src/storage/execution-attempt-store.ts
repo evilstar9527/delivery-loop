@@ -435,7 +435,9 @@ export class ExecutionAttemptContextStore {
        FROM review_feedback_attempts
        JOIN github_review_feedbacks
          ON github_review_feedbacks.feedback_id = review_feedback_attempts.feedback_id
-       WHERE review_feedback_attempts.review_attempt_id = ?
+       JOIN attempts AS requested_attempt ON requested_attempt.attempt_id = ?
+       WHERE review_feedback_attempts.review_attempt_id =
+             COALESCE(requested_attempt.recovered_from_attempt_id, requested_attempt.attempt_id)
          AND github_review_feedbacks.run_id = ?
          AND github_review_feedbacks.plan_id = ?
          AND github_review_feedbacks.plan_version = ?

@@ -863,6 +863,16 @@ export {
   type GitHubMergeObservationTokenProvider,
 } from './reconciliation/github-merge-gate-reconciler.js';
 export {
+  GitHubReviewFeedbackReconciler,
+  GitHubReviewFeedbackRecoveryReconciler,
+  type GitHubReviewFeedbackBatchResult,
+  type GitHubReviewFeedbackExternalFactClient,
+  type GitHubReviewFeedbackObservationRequest,
+  type GitHubReviewFeedbackReconcilerOptions,
+  type GitHubReviewFeedbackReconciliationResult,
+  type GitHubReviewFeedbackRecoveryResult,
+} from './reconciliation/github-review-feedback-reconciler.js';
+export {
   MergeGateError,
   MergeGateStore,
   type MergeGateErrorCode,

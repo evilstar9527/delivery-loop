@@ -603,6 +603,39 @@ describe('GitHub App installation token provider', () => {
     expect(requestCount).toBe(1);
   });
 
+  it('issues a review-observation token with only pull request read permission', async () => {
+    const keys = await generateKeyPair('RS256', { extractable: true });
+    const privateKeyPem = await exportPKCS8(keys.privateKey);
+    let requestCount = 0;
+    const provider = new GitHubAppInstallationTokenProvider({
+      appId: '7890',
+      installationId: '123456',
+      privateKeyPem,
+      allowedRepositories: ['example/delivery-target'],
+      apiBaseUrl: 'https://api.github.test',
+      fetch: async (input, init) => {
+        requestCount += 1;
+        await expect(requestJson(input, init)).resolves.toEqual({
+          repositories: ['delivery-target'],
+          permissions: { pull_requests: 'read' },
+        });
+        return Response.json({
+          token: 'CANARY_REVIEW_OBSERVATION_INSTALLATION_TOKEN',
+          expires_at: '2026-07-25T13:00:00.000Z',
+        }, { status: 201 });
+      },
+      now: () => new Date('2026-07-25T12:00:00.000Z'),
+    });
+
+    await expect(provider.getReviewObservationToken('example/delivery-target')).resolves.toBe(
+      'CANARY_REVIEW_OBSERVATION_INSTALLATION_TOKEN',
+    );
+    await expect(provider.getReviewObservationToken('example/delivery-target')).resolves.toBe(
+      'CANARY_REVIEW_OBSERVATION_INSTALLATION_TOKEN',
+    );
+    expect(requestCount).toBe(1);
+  });
+
   it('issues and caches a deployment-only token without Actions, contents, or PR permission', async () => {
     const keys = await generateKeyPair('RS256', { extractable: true });
     const privateKeyPem = await exportPKCS8(keys.privateKey);

@@ -84,6 +84,10 @@ import {
 } from './reconciliation/github-run-reconciliation-runtime.js';
 import { reconcileGitHubBasesFromEnv } from './reconciliation/github-base-observation-runtime.js';
 import { reconcileGitHubMergeGatesFromEnv } from './reconciliation/github-merge-gate-runtime.js';
+import {
+  reconcileGitHubReviewFeedbacksFromEnv,
+  recoverLostGitHubReviewFeedbacksFromEnv,
+} from './reconciliation/github-review-feedback-runtime.js';
 import { reconcileGitHubMergeStatusesFromEnv } from './reconciliation/github-merge-status-runtime.js';
 import { reconcileGitHubProductionDeploymentStatusesFromEnv } from './reconciliation/github-production-deployment-status-runtime.js';
 import { BaseRebaseAttemptReconciler } from './reconciliation/base-rebase-attempt-reconciler.js';
@@ -254,6 +258,10 @@ export default {
       // background batch lets their Run-version CAS race and can permanently
       // strand the stable API observation as ignored/observation_race.
       await reconcileGitHubPullRequestsFromEnv(env);
+      // Recover missed review webhooks before merge/base readers can race the
+      // same pull_request_open Run-version transition.
+      await reconcileGitHubReviewFeedbacksFromEnv(env);
+      await recoverLostGitHubReviewFeedbacksFromEnv(env);
       await Promise.all([
         reconcileWorkflowInstancesFromEnv(env),
         reconcileGitHubRunsFromEnv(env, 1),

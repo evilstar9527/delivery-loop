@@ -213,6 +213,8 @@ export class GitHubAppInstallationTokenProvider implements
   private readonly baseObservationPending = new Map<string, Promise<string>>();
   private readonly mergeObservationCache = new Map<string, CachedToken>();
   private readonly mergeObservationPending = new Map<string, Promise<string>>();
+  private readonly reviewObservationCache = new Map<string, CachedToken>();
+  private readonly reviewObservationPending = new Map<string, Promise<string>>();
   private readonly deploymentCache = new Map<string, CachedToken>();
   private readonly deploymentPending = new Map<string, Promise<string>>();
   private readonly deploymentObservationCache = new Map<string, CachedToken>();
@@ -340,6 +342,25 @@ export class GitHubAppInstallationTokenProvider implements
       return credential.token;
     }).finally(() => this.mergeObservationPending.delete(repository));
     this.mergeObservationPending.set(repository, request);
+    return await request;
+  }
+
+  async getReviewObservationToken(repository: string): Promise<string> {
+    this.assertAllowedRepository(repository);
+    const now = this.now().getTime();
+    const cached = this.reviewObservationCache.get(repository);
+    if (cached !== undefined && cached.expiresAt - TOKEN_REFRESH_SKEW_MS > now) {
+      return cached.token;
+    }
+    const inFlight = this.reviewObservationPending.get(repository);
+    if (inFlight !== undefined) return await inFlight;
+    const request = this.requestCredential(repository, {
+      pull_requests: 'read',
+    }).then((credential) => {
+      this.reviewObservationCache.set(repository, credential);
+      return credential.token;
+    }).finally(() => this.reviewObservationPending.delete(repository));
+    this.reviewObservationPending.set(repository, request);
     return await request;
   }
 

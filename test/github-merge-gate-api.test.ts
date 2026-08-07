@@ -65,6 +65,74 @@ function response(url: string, options: { pending?: boolean; newBase?: boolean }
 }
 
 describe('GitHub merge gate API client', () => {
+  it('derives only the latest current-head changes-requested review for recovery', async () => {
+    const client = new GitHubMergeGateApiClient({
+      getMergeObservationToken: async () => 'review-read-token',
+    }, {
+      apiBaseUrl: 'https://api.github.test',
+      fetch: async (input) => {
+        const url = String(input);
+        if (url.endsWith('/pulls/7')) {
+          return Response.json({
+            state: 'open',
+            head: { ref: 'agent/task/attempt', sha: HEAD_SHA,
+              repo: { full_name: REPOSITORY } },
+            base: { ref: 'main', repo: { full_name: REPOSITORY } },
+          });
+        }
+        if (url.endsWith('/pulls/7/reviews?per_page=100')) {
+          return Response.json([
+            {
+              id: 9000,
+              user: { login: 'human-reviewer' },
+              state: 'CHANGES_REQUESTED',
+              commit_id: HEAD_SHA,
+              body: 'Old feedback.',
+              html_url: 'https://github.test/example/delivery-target/pull/7#pullrequestreview-9000',
+              submitted_at: '2026-07-26T02:58:00.000Z',
+            },
+            {
+              id: 9001,
+              user: { login: 'human-reviewer' },
+              state: 'CHANGES_REQUESTED',
+              commit_id: HEAD_SHA,
+              body: 'Add focused digest tests.',
+              html_url: 'https://github.test/example/delivery-target/pull/7#pullrequestreview-9001',
+              submitted_at: '2026-07-26T02:59:00.000Z',
+            },
+            {
+              id: 9002,
+              user: { login: 'stale-reviewer' },
+              state: 'CHANGES_REQUESTED',
+              commit_id: 'd'.repeat(40),
+              body: 'Stale feedback.',
+              html_url: 'https://github.test/example/delivery-target/pull/7#pullrequestreview-9002',
+              submitted_at: '2026-07-26T03:00:00.000Z',
+            },
+          ]);
+        }
+        throw new Error(`unexpected fake GitHub URL: ${url}`);
+      },
+    });
+    await expect(client.observeReviewFeedback({
+      repository: REPOSITORY,
+      number: 7,
+      headBranch: 'agent/task/attempt',
+      baseBranch: 'main',
+    })).resolves.toEqual([{
+      repository: REPOSITORY,
+      number: 7,
+      reviewId: '9001',
+      body: 'Add focused digest tests.',
+      bodyDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/),
+      sourceHeadSha: HEAD_SHA,
+      branch: 'agent/task/attempt',
+      baseBranch: 'main',
+      url: 'https://github.test/example/delivery-target/pull/7',
+      submittedAt: '2026-07-26T02:59:00.000Z',
+    }]);
+  });
+
   it('derives an exact passing fact from PR, base, rules, checks, statuses, and reviews', async () => {
     const calls: Array<{ url: string; authorization: string | null }> = [];
     const client = new GitHubMergeGateApiClient({

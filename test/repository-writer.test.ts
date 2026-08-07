@@ -264,6 +264,7 @@ describe('approved Git repository writer', () => {
       [TASK_ID, 'attempt/../../main'],
       ['task with spaces', ATTEMPT_ID],
       ['main', '--force'],
+      ['a'.repeat(201), ATTEMPT_ID],
     ];
     for (const [taskId, attemptId] of invalidIdentities) {
       expect(() => repositoryAttemptBranch(taskId, attemptId)).toThrow(

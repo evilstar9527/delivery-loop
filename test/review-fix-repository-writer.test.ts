@@ -12,7 +12,7 @@ import {
 
 const executeFile = promisify(execFile);
 const TASK_ID = 'task-review-fix';
-const ATTEMPT_ID = 'attempt-current-review';
+const ATTEMPT_ID = `attempt_review_${'b'.repeat(52)}`;
 const PRIOR_ATTEMPT_ID = 'attempt-pr-head';
 const PR_BRANCH = `agent/${TASK_ID}/${PRIOR_ATTEMPT_ID}`;
 const DELIVERY_POLICY = await parseDeliveryPolicy(`
