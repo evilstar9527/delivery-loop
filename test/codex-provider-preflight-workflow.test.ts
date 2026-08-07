@@ -103,7 +103,10 @@ describe('Codex provider preflight workflow', () => {
       'utf8',
     );
     expect(adapterSource).toContain(
-      'Use only repository-relative code paths backed by the embedded diagnostic context or repository inspection; never use an HTTP request path, an absolute path, or a parent traversal path.',
+      'The embedded sourceSnapshot was selected from the exact tracked checkout by the trusted Runner. Every codeRef must use an exact sourceSnapshot path and either its exact positive line or a symbol that appears in that same excerpt; use both when known.',
+    );
+    expect(adapterSource).toContain(
+      'Never use an HTTP request path, an absolute path, a parent traversal path, or a repository location absent from sourceSnapshot.',
     );
     expect(analysisScript).toContain('diagnosticUsages.length !== 4');
     expect(analysisScript).toContain('failureKind: error.kind');

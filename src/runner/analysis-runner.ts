@@ -1100,6 +1100,7 @@ export async function runAnalysisAttempt(
       options.agent ??
       new CodexAnalysisAdapter({
         outputSchemaPath: analysisOutputSchemaPath,
+        runtimeSecrets: [...runtimeSecrets],
         ...(environment.OPENAI_BASE_URL === undefined || environment.OPENAI_BASE_URL === ''
           ? {}
           : { providerBaseUrl: environment.OPENAI_BASE_URL }),
