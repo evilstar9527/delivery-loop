@@ -39,7 +39,10 @@ const BODY_CANARY = 'CANARY_PRIVATE_USER_FEEDBACK';
 const REVISION_CANARY = 'CANARY_DIGEST_VERIFIED_SUPPLEMENTAL_CONTEXT';
 const SCHEMA_PATH = resolve('schemas/analysis-plan-content-v1.schema.json');
 
-function taskEnvelope(kind: 'requirement' | 'bug' = 'requirement'): TaskEnvelope {
+function taskEnvelope(
+  kind: 'requirement' | 'bug' = 'requirement',
+  allowRepositoryWrite = false,
+): TaskEnvelope {
   return {
     schemaVersion: '1',
     eventId: 'event-analysis-bootstrap',
@@ -65,7 +68,7 @@ function taskEnvelope(kind: 'requirement' | 'bug' = 'requirement'): TaskEnvelope
       priority: 'p1',
     },
     policy: {
-      allowRepositoryWrite: false,
+      allowRepositoryWrite,
       allowTestDeploy: false,
       allowProductionDeploy: false,
       requireHumanApproval: true,
@@ -91,6 +94,31 @@ function diagnosticPlanContent(evidenceRefs: string[] = []): Record<string, unkn
           evidenceKinds: ['diagnostic'],
         },
         effects: ['repo_read', 'logs_read'],
+        dependsOn: [],
+        required: true,
+      },
+    ],
+  };
+}
+
+function unboundWritableDiagnosticPlanContent(): Record<string, unknown> {
+  return {
+    objective: 'Repair the traced request failure and prove the committed result.',
+    assumptions: ['The bounded diagnostic results are untrusted reference material.'],
+    evidenceRefs: [],
+    items: [
+      {
+        id: 'repair-request-path',
+        kind: 'change',
+        title: 'Repair and verify the request path',
+        objective: 'Make the smallest source change that fixes the traced failure.',
+        acceptanceCriteriaIndexes: [0],
+        doneWhen: ['The failure is fixed in one commit and trusted verification passes.'],
+        verification: {
+          commandRefs: ['test:unit', 'verify:all'],
+          evidenceKinds: ['commit', 'test'],
+        },
+        effects: ['repo_read', 'repo_write'],
         dependsOn: [],
         required: true,
       },
@@ -1025,6 +1053,9 @@ describe('analysis Runner bootstrap', () => {
         failureCode: 'invalid_agent_output',
         failureSite: 'agent_output',
       },
+      writable: false,
+      missingDiagnosticBinding: false,
+      expectedClassification: undefined,
     },
     {
       name: 'a repository workspace mutation',
@@ -1034,6 +1065,24 @@ describe('analysis Runner bootstrap', () => {
         failureCode: 'workspace_changed',
         failureSite: 'repo_snapshot',
       },
+      writable: false,
+      missingDiagnosticBinding: false,
+      expectedClassification: undefined,
+    },
+    {
+      name: 'a writable bug Plan missing its diagnostic binding',
+      evidenceRefs: [],
+      snapshots: ['clean'],
+      expectedFailure: {
+        failureCode: 'invalid_agent_output',
+        failureSite: 'agent_output',
+      },
+      writable: true,
+      missingDiagnosticBinding: true,
+      expectedClassification: {
+        kind: 'plan_validation_failed',
+        stage: 'diagnostic_plan',
+      } as const,
     },
   ])('does not persist Evidence or Plan after $name', async (testCase) => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-diagnostic-prewrite-'));
@@ -1041,7 +1090,7 @@ describe('analysis Runner bootstrap', () => {
     const { mkdir } = await import('node:fs/promises');
     await mkdir(environment.GITHUB_WORKSPACE!, { recursive: true });
     await mkdir(environment.RUNNER_TEMP!, { recursive: true });
-    const bugTask = taskEnvelope('bug');
+    const bugTask = taskEnvelope('bug', testCase.writable);
     environment.DELIVERY_TASK_DIGEST = await taskRevisionDigest(bugTask);
     let evidenceOrPlanSubmitted = false;
     let failureBody: unknown;
@@ -1073,8 +1122,14 @@ describe('analysis Runner bootstrap', () => {
           task: bugTask,
           planPolicy: {
             version: 1,
-            allowedEffects: ['repo_read', 'logs_read'],
-            allowedCommandRefs: ['policy:diagnose'],
+            allowedEffects: testCase.writable
+              ? ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write']
+              : ['repo_read', 'logs_read'],
+            allowedCommandRefs: testCase.writable
+              ? ['policy:inspect', 'policy:diagnose', 'test:unit', 'verify:all']
+              : ['policy:diagnose'],
+            verificationCommandRefs: testCase.writable ? ['verify:all'] : [],
+            requiresRepositoryChange: testCase.writable,
           },
         });
       }
@@ -1118,7 +1173,12 @@ describe('analysis Runner bootstrap', () => {
           confidence: 'high',
           codeRefs: [{ path: 'src/cache.ts', line: 42 }],
         });
-        return await proposedPlan(input, diagnosticPlanContent(testCase.evidenceRefs));
+        return await proposedPlan(
+          input,
+          testCase.missingDiagnosticBinding
+            ? unboundWritableDiagnosticPlanContent()
+            : diagnosticPlanContent(testCase.evidenceRefs),
+        );
       },
     };
     const snapshots = [...testCase.snapshots];
@@ -1129,7 +1189,14 @@ describe('analysis Runner bootstrap', () => {
       heartbeatIntervalMs: 60_000,
       snapshotWorkspace: async () => snapshots.shift() ?? 'unexpected',
     });
-    await expect(promise).rejects.toThrow();
+    if (testCase.expectedClassification === undefined) {
+      await expect(promise).rejects.toThrow();
+    } else {
+      await expect(promise).rejects.toMatchObject({
+        name: 'AnalysisRunnerError',
+        analysisFailure: testCase.expectedClassification,
+      } satisfies Partial<AnalysisRunnerError>);
+    }
     expect(evidenceOrPlanSubmitted).toBe(false);
     expect(failureBody).toMatchObject(testCase.expectedFailure);
     expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);

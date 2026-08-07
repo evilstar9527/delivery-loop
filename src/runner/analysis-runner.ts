@@ -582,6 +582,18 @@ function invalidDiagnosticMediation(attemptedPaths: AttemptedPath[]): AnalysisRu
   });
 }
 
+function invalidDiagnosticPlanShape(): AnalysisRunnerError {
+  return new AnalysisRunnerError('analysis diagnostic Plan binding is invalid', {
+    failureCode: 'invalid_agent_output',
+    failureSite: 'agent_output',
+    attemptedPaths: ['repository_inspection', 'log_query', 'trace_query'],
+    neededHumanInput: 'manual_investigation',
+  }, {
+    kind: 'plan_validation_failed',
+    stage: 'diagnostic_plan',
+  });
+}
+
 function diagnosticToolFailure(
   toolPath: 'logs/search' | 'traces/get',
   failureCode: 'tool_unavailable' | 'tool_policy_denied',
@@ -818,7 +830,7 @@ async function bindDiagnosticEvidence(
         item.verification.evidenceKinds.includes('diagnostic'),
     )
   ) {
-    throw invalidDiagnosticMediation(['repository_inspection', 'log_query', 'trace_query']);
+    throw invalidDiagnosticPlanShape();
   }
   const body = {
     schemaVersion: '1' as const,
@@ -1221,7 +1233,7 @@ export async function runAnalysisAttempt(
             item.verification.evidenceKinds.includes('diagnostic'),
         )
       ) {
-        throw invalidDiagnosticMediation(['repository_inspection', 'log_query', 'trace_query']);
+        throw invalidDiagnosticPlanShape();
       }
     }
     const afterSnapshot = await snapshotWorkspace(config.workspacePath);

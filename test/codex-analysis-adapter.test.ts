@@ -178,10 +178,10 @@ function writableDiagnosticPlanContent(): Record<string, unknown> {
         doneWhen: ['The traced failure is fixed in one commit and all trusted verification passes.'],
         verification: {
           commandRefs: ['test:unit', 'verify:all'],
-          evidenceKinds: ['diagnostic', 'commit', 'test'],
+          evidenceKinds: ['commit', 'test'],
           externalFacts: [],
         },
-        effects: ['repo_read', 'logs_read', 'repo_write'],
+        effects: ['repo_read', 'repo_write'],
         dependsOn: [],
         required: true,
       },
@@ -1005,6 +1005,7 @@ describe('Codex analysis Agent adapter', () => {
 
     expect(commands).toHaveLength(4);
     expect(commands[3]?.stdin).toContain('Trusted Task policy requires a repository change.');
+    expect(commands[3]?.stdin).toContain('effects must include logs_read');
     expect(plan.items).toHaveLength(1);
     expect(plan.items[0]).toMatchObject({
       kind: 'change',
