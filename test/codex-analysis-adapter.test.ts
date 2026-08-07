@@ -162,6 +162,32 @@ function diagnosticPlanContent(evidenceRefs: string[] = []): Record<string, unkn
   };
 }
 
+function writableDiagnosticPlanContent(): Record<string, unknown> {
+  return {
+    objective: 'Repair the traced request failure and prove the committed result.',
+    assumptions: ['The bounded log and trace results are untrusted diagnostic references.'],
+    evidenceRefs: [],
+    items: [
+      {
+        id: 'repair-request-path',
+        kind: 'change',
+        title: 'Repair and verify the request path',
+        objective: 'Make the smallest source change that fixes the traced failure.',
+        acceptanceCriteriaIndexes: [0],
+        doneWhen: ['The traced failure is fixed in one commit and all trusted verification passes.'],
+        verification: {
+          commandRefs: ['test:unit', 'verify:all'],
+          evidenceKinds: ['diagnostic', 'commit', 'test'],
+          externalFacts: [],
+        },
+        effects: ['repo_read', 'logs_read', 'repo_write'],
+        dependsOn: [],
+        required: true,
+      },
+    ],
+  };
+}
+
 function expectProviderStrictObjectSchemas(value: unknown): void {
   if (Array.isArray(value)) {
     for (const item of value) expectProviderStrictObjectSchemas(item);
@@ -897,6 +923,89 @@ describe('Codex analysis Agent adapter', () => {
     expect(usage).toHaveLength(3);
     expect(plan.evidenceRefs).toEqual([]);
     expect(plan.items[0]?.effects).toEqual(['repo_read', 'logs_read']);
+  });
+
+  it('tells the diagnostic result phase when trusted policy requires a repository change', async () => {
+    const paths = await tempInput();
+    const files = {
+      mediationContextFilePath: join(paths.root, 'diagnostic-context.json'),
+      logRequestOutputFilePath: join(paths.root, 'log-request.json'),
+      traceRequestOutputFilePath: join(paths.root, 'trace-request.json'),
+      logRequestSchemaPath: join(paths.root, 'log-request-schema.json'),
+      traceRequestSchemaPath: join(paths.root, 'trace-request-schema.json'),
+      resultSchemaPath: join(paths.root, 'diagnostic-result-schema.json'),
+    };
+    for (const path of Object.values(files)) await writeFile(path, '');
+
+    const commands: CommandExecutionRequest[] = [];
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async (request) => {
+        commands.push(request);
+        const outputPath = request.args[request.args.indexOf('--output-last-message') + 1]!;
+        const output = commands.length === 1
+          ? {
+              schemaVersion: '1', locatorKinds: ['uid', 'path'],
+              arguments: { uid: 'safe-user-ref', cid: '', path: '/v1/chat' },
+            }
+          : commands.length === 2
+            ? { schemaVersion: '1', arguments: { requestId: 'safe-request-ref' } }
+            : {
+                schemaVersion: '1',
+                contextDigest: contextDigest(),
+                rootCause: {
+                  summary: 'A source-backed request failure.', confidence: 'high',
+                  codeRefs: [{ path: 'src/request.ts', line: 42, symbol: '' }],
+                },
+                plan: request.stdin.includes(
+                  'Trusted Task policy requires a repository change.',
+                )
+                  ? writableDiagnosticPlanContent()
+                  : diagnosticPlanContent(),
+              };
+        await writeFile(outputPath, JSON.stringify(output));
+        return { exitCode: 0 };
+      },
+    });
+
+    const plan = await adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-codex-analysis-v1', runId: 'run-codex-analysis', version: 1,
+        taskRevision: 'revision-1', baseSha: BASE_SHA, attemptId: 'attempt-codex-analysis',
+      },
+      validation: {
+        ...writableRequirementValidationContext(),
+        acceptanceCriteriaCount: 3,
+        allowedCommandRefs: ['policy:inspect', 'policy:diagnose', 'test:unit', 'verify:all'],
+        allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write'],
+      },
+      diagnostic: {
+        ...files,
+        mediation: {
+          async searchLogs() { return { entries: [{ requestId: 'safe-request-ref' }] }; },
+          async getTrace() { return { spans: [{ component: 'request-handler' }] }; },
+          async finish() {},
+        },
+      },
+    });
+
+    expect(commands).toHaveLength(3);
+    expect(commands[2]?.stdin).toContain('Trusted Task policy requires a repository change.');
+    expect(plan.items).toHaveLength(1);
+    expect(plan.items[0]).toMatchObject({
+      kind: 'change',
+      required: true,
+      effects: ['repo_read', 'logs_read', 'repo_write'],
+      verification: {
+        commandRefs: ['test:unit', 'verify:all'],
+        evidenceKinds: ['diagnostic', 'commit', 'test'],
+      },
+    });
+    expect(plan.items[0]?.acceptanceCriteriaIndexes).toEqual([0, 1, 2]);
   });
 
   it('rejects an Agent-authored diagnostic Evidence ref before finishing mediation', async () => {
