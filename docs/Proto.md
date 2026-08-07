@@ -599,8 +599,11 @@ GitHub review feedback契约：
 - projector再把repository/PR number/base/head branch绑定verified publication，并以该branch最新immutable `attempt_head_updates`的head作为控制面当前事实。review commit不是当前head时只写reference-only ignored delivery，不写R2、不创建Attempt；同delivery换raw digest冲突，同review ID改写body/head/branch冲突；
 - feedback body是不可信数据。命中Worker配置Secret或credential形状时返回固定403，响应不回显，D1/R2/Attempt均零写入。通过后完整规范化payload写私有`TASK_OBJECTS/review-feedback/...`；D1 `github_review_feedbacks`只保存R2 ref/body digest、review ID、head/branch、安全URL/time及Plan lineage，没有自由文本body列；
 - exact review以一个D1 batch把Run从`pull_request_open/version`依合法边推进`awaiting_review/version+1 → executing/version+2`，把原`passed` Item以新progress version重开为`in_progress`，创建唯一pending `review_fix` Attempt、`review_feedback_attempts` lineage和`execution_dispatch` outbox。旧verification decision/Evidence保持不可变；20路同review收敛为一次applied与其余duplicate；
+- scheduled API compensation只扫描`pull_request_open + verified publication`，使用用途隔离的单仓库`pull_requests:read` token重新绑定open PR的repository/base/head branch和当前head SHA，再从最多99条非分页review中按reviewer选当前head最新状态。只有最新状态仍为`CHANGES_REQUESTED`且body/URL/time合法时，才以稳定API delivery identity调用同一feedback projector；API与webhook并发仍由同一review ID、Run/Plan/Item CAS和唯一Attempt/outbox收敛；
 - feedback同时冻结完成上述迁移后的expected replan Run version；任何其他Run迁移都会使该review decision stale，不能由endpoint重新读取“新当前版本”绕过fence；
 - review Attempt的checkout SHA等于reviewed head，`head_branch`在commit前仍为null，但受信target是lineage中的原PR branch。它不伪造`attempt_repairs`或测试失败；review feedback与verification repair必须恰好存在一种。
+- Git writer的Task/Attempt identity边界与控制面统一为1～200个受限字符，并继续对最终派生branch执行240字符Git-safe校验；因此稳定`attempt_review_<52 hex>` identity可更新原PR branch，但超长Task+Attempt组合仍在任何Git effect前拒绝。
+- pre-effect review recovery只接受`lost + github completed/non-success`的direct review Attempt，要求active Plan/Item仍绑定该Attempt、source head不变、write credential无issuing/active/revoking状态，并且不存在head update、verification suite、attempt failure或既有replacement。单一D1 batch创建带`recovered_from_attempt_id`的pending `review_fix`、切换Item activeAttempt并写新dedupe dispatch；dispatcher和context通过该一跳引用读取原immutable review lineage，旧Attempt和feedback不UPDATE/DELETE。
 
 GitHub base observation契约：
 

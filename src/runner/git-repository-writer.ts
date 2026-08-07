@@ -21,7 +21,7 @@ import {
 
 export type { ProtectedPathChangeReportV1 } from '../domain/protected-path-change.js';
 
-const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
 const MAX_GIT_OUTPUT_BYTES = 64 * 1_024;
 const GIT_TIMEOUT_MS = 30_000;
@@ -277,6 +277,7 @@ export class GitRepositoryWriter {
     const branchMode = context.targetBranchMode ?? 'new';
     const branch = context.targetBranch ?? derivedBranch;
     if (
+      !safeBranchName(derivedBranch) ||
       (branchMode === 'new' && branch !== derivedBranch) ||
       (branchMode === 'existing_fast_forward' && (
         branch === derivedBranch ||

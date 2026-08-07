@@ -620,7 +620,8 @@ export class GitHubDispatchOutboxProcessor {
          LEFT JOIN attempt_repairs
            ON attempt_repairs.repair_attempt_id = attempts.attempt_id
          LEFT JOIN review_feedback_attempts
-           ON review_feedback_attempts.review_attempt_id = attempts.attempt_id
+           ON review_feedback_attempts.review_attempt_id =
+              COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
          LEFT JOIN base_rebase_attempts
            ON base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
          WHERE attempts.attempt_id = ? AND attempts.run_id = ?`,
@@ -786,7 +787,8 @@ export class GitHubDispatchOutboxProcessor {
                          FROM review_feedback_attempts
                          JOIN github_review_feedbacks
                            ON github_review_feedbacks.feedback_id = review_feedback_attempts.feedback_id
-                         WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
+                         WHERE review_feedback_attempts.review_attempt_id =
+                               COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
                            AND github_review_feedbacks.run_id = attempts.run_id
                            AND github_review_feedbacks.plan_id = attempts.plan_id
                            AND github_review_feedbacks.plan_version = attempts.plan_version

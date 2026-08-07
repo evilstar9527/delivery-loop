@@ -10,6 +10,11 @@ import {
   type GitHubDispatchEffects,
   type GitHubDispatchRequest,
 } from '../../src/outbox/github-dispatcher.js';
+import {
+  GitHubReviewFeedbackReconciler,
+  GitHubReviewFeedbackRecoveryReconciler,
+  type GitHubReviewFeedbackExternalFactClient,
+} from '../../src/reconciliation/github-review-feedback-reconciler.js';
 import { ExecutionAttemptContextStore } from '../../src/storage/execution-attempt-store.js';
 import { AnalysisAttemptContextStore } from '../../src/storage/analysis-attempt-store.js';
 import { ExecutionHeadStore } from '../../src/storage/execution-head-store.js';
@@ -79,6 +84,36 @@ class FakeDispatch implements GitHubDispatchEffects {
       githubRunId: '70042',
       githubHeadSha: BASE_SHA,
     };
+  }
+}
+
+class FakeReviewFeedbackClient implements GitHubReviewFeedbackExternalFactClient {
+  readonly requests: Array<{
+    repository: string;
+    number: number;
+    headBranch: string;
+    baseBranch: string;
+  }> = [];
+
+  async observeReviewFeedback(request: {
+    repository: string;
+    number: number;
+    headBranch: string;
+    baseBranch: string;
+  }) {
+    this.requests.push(request);
+    return [{
+      repository: request.repository,
+      number: request.number,
+      reviewId: '9001',
+      body: REVIEW_BODY,
+      bodyDigest: await canonicalSha256(REVIEW_BODY),
+      sourceHeadSha: HEAD_SHA,
+      branch: request.headBranch,
+      baseBranch: request.baseBranch,
+      url: 'https://github.com/example/delivery-target/pull/42',
+      submittedAt: '2026-07-25T18:01:00.000Z',
+    }];
   }
 }
 
@@ -432,6 +467,129 @@ beforeEach(async () => {
 });
 
 describe('head-bound GitHub review feedback', () => {
+  it('replaces one lost pre-effect review Attempt and preserves same-PR feedback lineage', async () => {
+    const response = await sendReview(reviewPayload());
+    expect(response.status).toBe(202);
+    const lost = await env.DB_CONTROL.prepare(
+      'SELECT review_attempt_id AS attempt_id FROM review_feedback_attempts',
+    ).first<{ attempt_id: string }>();
+    if (lost === null) throw new Error('review Attempt fixture was not created');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'lost', github_status = 'completed', github_conclusion = 'failure',
+           version = version + 1, lease_generation = lease_generation + 1, updated_at = ?
+       WHERE attempt_id = ?`,
+    ).bind(NOW, lost.attempt_id).run();
+
+    const recovery = new GitHubReviewFeedbackRecoveryReconciler(
+      env.DB_CONTROL,
+      () => new Date(NOW),
+    );
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => recovery.recoverAttempt(lost.attempt_id)),
+    );
+    expect(results.some((result) => result.created)).toBe(true);
+    expect(new Set(results.map((result) => result.replacementAttemptId)).size).toBe(1);
+    const replacementAttemptId = results[0]!.replacementAttemptId;
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT mode, status, head_sha, recovered_from_attempt_id
+       FROM attempts WHERE attempt_id = ?`,
+    ).bind(replacementAttemptId).first()).toEqual({
+      mode: 'review_fix',
+      status: 'pending',
+      head_sha: HEAD_SHA,
+      recovered_from_attempt_id: lost.attempt_id,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT active_attempt_id, status, version FROM plan_item_progress
+       WHERE plan_id = ? AND item_id = ?`,
+    ).bind(PLAN_ID, ITEM_ID).first()).toEqual({
+      active_attempt_id: replacementAttemptId,
+      status: 'in_progress',
+      version: 5,
+    });
+
+    const outbox = await env.DB_CONTROL.prepare(
+      `SELECT outbox_id FROM outbox
+       WHERE payload_ref = ? AND kind = 'execution_dispatch'`,
+    ).bind(`d1://attempts/${replacementAttemptId}`).first<{ outbox_id: string }>();
+    const effects = new FakeDispatch();
+    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
+      allowedRepositories: ['example/delivery-target'],
+      controlPlaneUrl: 'https://control.delivery.test',
+      now: () => new Date(NOW),
+    }).deliver(outbox!.outbox_id)).toBe('settled');
+    expect(effects.requests).toHaveLength(1);
+    expect(effects.requests[0]!.inputs).toMatchObject({
+      mode: 'review_fix',
+      checkout_sha: HEAD_SHA,
+      plan_item_id: ITEM_ID,
+    });
+
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'running', lease_expires_at = '2099-01-01T00:00:00.000Z'
+       WHERE attempt_id = ?`,
+    ).bind(replacementAttemptId).run();
+    const context = await new ExecutionAttemptContextStore(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+    ).get({
+      attemptId: replacementAttemptId,
+      runId: RUN_ID,
+      mode: 'review_fix',
+      status: 'running',
+      version: 1,
+      leaseGeneration: 1,
+      leaseExpiresAt: '2099-01-01T00:00:00.000Z',
+      scopes: [...EXECUTION_TOOL_ACTIONS],
+    });
+    expect(context.attempt).toMatchObject({
+      id: replacementAttemptId,
+      checkoutSha: HEAD_SHA,
+      targetBranch: BRANCH,
+      targetBranchMode: 'existing_fast_forward',
+    });
+    expect(context.reviewFeedback).toMatchObject({
+      reviewId: '9001',
+      sourceHeadSha: HEAD_SHA,
+      branch: BRANCH,
+    });
+  });
+
+  it('recovers one missed exact-head webhook from bounded GitHub API facts', async () => {
+    const client = new FakeReviewFeedbackClient();
+    const reconciler = new GitHubReviewFeedbackReconciler(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+      client,
+      { now: () => new Date(NOW) },
+    );
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => reconciler.reconcileRun(RUN_ID)),
+    );
+    expect(results.some((result) => result.disposition === 'applied')).toBe(true);
+    expect(results.every((result) =>
+      result.disposition === 'applied' || result.disposition === 'duplicate')).toBe(true);
+    expect(client.requests).toHaveLength(20);
+    expect(client.requests[0]).toEqual({
+      repository: 'example/delivery-target',
+      number: 42,
+      headBranch: BRANCH,
+      baseBranch: 'main',
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts
+       WHERE run_id = ? AND mode = 'review_fix'`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox
+       WHERE kind = 'execution_dispatch' AND delivery_state = 'pending'`,
+    ).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT state, version FROM runs WHERE run_id = ?',
+    ).bind(RUN_ID).first()).toEqual({ state: 'executing', version: 11 });
+  });
+
   it('converges 20 signed deliveries to one same-PR review_fix Attempt and exposes only digest-verified untrusted context', async () => {
     const payload = reviewPayload();
     const responses = await Promise.all(Array.from({ length: 20 }, (_, index) =>

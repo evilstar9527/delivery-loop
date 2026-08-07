@@ -10,6 +10,10 @@ import {
   MergeGateStore,
   type MergeGateEvaluationResult,
 } from '../storage/merge-gate-store.js';
+import type { GitHubReviewFeedbackFact } from '../storage/github-review-feedback-store.js';
+import type {
+  GitHubReviewFeedbackObservationRequest,
+} from './github-review-feedback-reconciler.js';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -28,6 +32,7 @@ const MERGE_STATES = new Set([
 
 export interface GitHubMergeObservationTokenProvider {
   getMergeObservationToken(repository: string): Promise<string>;
+  getReviewObservationToken?(repository: string): Promise<string>;
 }
 
 export interface GitHubMergeGateApiClientOptions {
@@ -146,6 +151,20 @@ function safePositiveInteger(value: unknown): number | null {
 function safeText(value: unknown, maximum = 255): string | null {
   return typeof value === 'string' && value.length > 0 && value.length <= maximum &&
     !/[\0\r\n]/.test(value) ? value : null;
+}
+
+function sanitizedHttpsUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') return null;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
 }
 
 async function responseJson(response: Response, operation: string): Promise<unknown> {
@@ -334,6 +353,106 @@ export class GitHubMergeGateApiClient implements GitHubMergeGateExternalFactClie
       reviewsDigest,
       externalUpdatedAt: new Date(externalUpdatedAt).toISOString(),
     });
+  }
+
+  /** Read-only compensation source for a missed exact-head review webhook. */
+  async observeReviewFeedback(
+    request: GitHubReviewFeedbackObservationRequest,
+  ): Promise<GitHubReviewFeedbackFact[]> {
+    if (
+      !REPOSITORY_PATTERN.test(request.repository) ||
+      !Number.isSafeInteger(request.number) || request.number <= 0 ||
+      !safeBranch(request.headBranch) || !safeBranch(request.baseBranch)
+    ) throw new Error('GitHub review feedback request is invalid');
+    const token = await (this.tokenProvider.getReviewObservationToken?.(request.repository) ??
+      this.tokenProvider.getMergeObservationToken(request.repository));
+    if (token.length < 1 || token.length > 2_000 || /[\0\r\n]/.test(token)) {
+      throw new Error('GitHub review feedback token is unavailable');
+    }
+    const headers = {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${token}`,
+      'user-agent': GITHUB_API_USER_AGENT,
+      'x-github-api-version': '2022-11-28',
+    };
+    const repositoryUrl = `${this.apiBaseUrl}/repos/${request.repository}`;
+    const pullRequest = object(await this.getJson(
+      `${repositoryUrl}/pulls/${request.number}`,
+      headers,
+      'GitHub review feedback PR query',
+    ));
+    const head = object(pullRequest?.head);
+    const base = object(pullRequest?.base);
+    const headSha = head?.sha;
+    if (
+      pullRequest?.state !== 'open' ||
+      head?.ref !== request.headBranch || base?.ref !== request.baseBranch ||
+      object(head?.repo)?.full_name !== request.repository ||
+      object(base?.repo)?.full_name !== request.repository ||
+      typeof headSha !== 'string' || !SHA_PATTERN.test(headSha)
+    ) throw new Error('GitHub review feedback PR response is invalid');
+
+    const rawReviews = await this.getJson(
+      `${repositoryUrl}/pulls/${request.number}/reviews?per_page=100`,
+      headers,
+      'GitHub review feedback reviews query',
+    );
+    if (!Array.isArray(rawReviews) || rawReviews.length >= 100) {
+      throw new Error('GitHub review feedback reviews response is invalid');
+    }
+    const latest = new Map<string, {
+      fact: GitHubReviewFeedbackFact;
+      state: string;
+    }>();
+    for (const raw of rawReviews) {
+      const row = object(raw);
+      const idRaw = row?.id;
+      const reviewId = typeof idRaw === 'number' && Number.isSafeInteger(idRaw) && idRaw > 0
+        ? String(idRaw)
+        : typeof idRaw === 'string' && /^[0-9]+$/.test(idRaw) ? idRaw : null;
+      const login = safeText(object(row?.user)?.login, 100);
+      const state = row?.state;
+      const commitId = row?.commit_id;
+      const submittedAt = row?.submitted_at;
+      const body = row?.body;
+      const url = sanitizedHttpsUrl(row?.html_url);
+      if (
+        reviewId === null || login === null ||
+        (state !== 'APPROVED' && state !== 'CHANGES_REQUESTED' &&
+          state !== 'COMMENTED' && state !== 'DISMISSED') ||
+        typeof commitId !== 'string' || !SHA_PATTERN.test(commitId) ||
+        typeof submittedAt !== 'string' || !Number.isFinite(Date.parse(submittedAt)) ||
+        (state === 'CHANGES_REQUESTED' && (
+          typeof body !== 'string' || body.trim().length === 0 ||
+          new TextEncoder().encode(body).length > 65_536 ||
+          url === null
+        ))
+      ) throw new Error('GitHub review feedback reviews response is invalid');
+      if (commitId !== headSha) continue;
+      const normalizedSubmittedAt = new Date(submittedAt).toISOString();
+      const fact: GitHubReviewFeedbackFact = {
+        repository: request.repository,
+        number: request.number,
+        reviewId,
+        body: typeof body === 'string' ? body : '',
+        bodyDigest: await canonicalSha256(typeof body === 'string' ? body : ''),
+        sourceHeadSha: headSha,
+        branch: request.headBranch,
+        baseBranch: request.baseBranch,
+        url: url ?? 'https://github.com/',
+        submittedAt: normalizedSubmittedAt,
+      };
+      const current = latest.get(login);
+      if (
+        current === undefined || fact.submittedAt > current.fact.submittedAt ||
+        (fact.submittedAt === current.fact.submittedAt && fact.reviewId > current.fact.reviewId)
+      ) latest.set(login, { fact, state });
+    }
+    return [...latest.values()]
+      .filter((entry) => entry.state === 'CHANGES_REQUESTED')
+      .map((entry) => entry.fact)
+      .sort((left, right) => left.submittedAt.localeCompare(right.submittedAt) ||
+        left.reviewId.localeCompare(right.reviewId));
   }
 
   /** Read-only actor fact for identity-bound approval evidence; no write scope or mutation. */
