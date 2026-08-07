@@ -195,6 +195,46 @@ function bindSingleRequiredItemAcceptanceCoverage(
   };
 }
 
+/**
+ * A successful diagnostic mediation already established the read-only log and
+ * root-cause facts. Bind those trusted requirements only when the Agent chose
+ * one unambiguous self-verifying writable item; all other shapes remain
+ * unmodified so the normal Plan validator can reject them.
+ */
+function bindWritableDiagnosticRequirement(
+  content: AnalysisPlanContentV1,
+  requiresRepositoryChange: boolean,
+): AnalysisPlanContentV1 {
+  if (!requiresRepositoryChange) return content;
+  const candidates = content.items.filter((item) => {
+    const commandRefs = item.verification.commandRefs ?? [];
+    return item.required && item.kind === 'change' && item.effects.includes('repo_write') &&
+      commandRefs.some((ref) => ref.startsWith('test:')) &&
+      commandRefs.some((ref) => ref.startsWith('verify:')) &&
+      item.verification.evidenceKinds.includes('commit') &&
+      item.verification.evidenceKinds.includes('test');
+  });
+  if (candidates.length !== 1) return content;
+  const item = candidates[0]!;
+  const effects = item.effects.includes('logs_read')
+    ? item.effects
+    : item.effects.flatMap((effect) =>
+        effect === 'repo_write' ? ['logs_read' as const, effect] : [effect]);
+  const evidenceKinds = item.verification.evidenceKinds.includes('diagnostic')
+    ? item.verification.evidenceKinds
+    : ['diagnostic' as const, ...item.verification.evidenceKinds];
+  return {
+    ...content,
+    items: content.items.map((candidate) => candidate === item
+      ? {
+          ...candidate,
+          effects,
+          verification: { ...candidate.verification, evidenceKinds },
+        }
+      : candidate),
+  };
+}
+
 const MAX_ANALYSIS_PROMPT_CONTEXT_BYTES = 256 * 1_024;
 const ANALYSIS_CONTEXT_BEGIN = 'BEGIN_UNTRUSTED_ANALYSIS_CONTEXT_JSON';
 const ANALYSIS_CONTEXT_END = 'END_UNTRUSTED_ANALYSIS_CONTEXT_JSON';
@@ -366,9 +406,9 @@ function diagnosticPlanPrompt(
     'The trusted Runner creates diagnostic Evidence from successful tool traces and injects the exact control-plane Evidence ref into the Plan.',
     'Every item needs concrete doneWhen conditions and Evidence requirements; commandRefs must reference trusted policy names, never arbitrary shell from task text.',
     'Use only exact effects and commandRefs listed in planPolicy; an empty commandRefs array is valid, and never propose a change item when repo_write is not allowed.',
-    'When repo_write is allowed and a code change is required, prefer one self-verifying required change item with repo_write, at least one test:* commandRef, at least one verify:* commandRef, and diagnostic, commit, and test Evidence; the execution Runner edits, commits, pushes, and runs both command classes in that same item.',
+    'When repo_write is allowed and a code change is required, prefer one self-verifying required change item whose effects must include logs_read and repo_write, with at least one test:* commandRef, at least one verify:* commandRef, and diagnostic, commit, and test Evidence; the execution Runner edits, commits, pushes, and runs both command classes in that same item.',
     ...(requiresRepositoryChange
-      ? ['Trusted Task policy requires a repository change. Return one self-verifying required change item with repo_write, test:*, verify:*, and diagnostic/commit/test Evidence; an investigation-only Plan will be rejected by the validator.']
+      ? ['Trusted Task policy requires a repository change. Return one self-verifying required change item whose effects must include logs_read and repo_write, with test:*, verify:*, and diagnostic/commit/test Evidence; an investigation-only Plan will be rejected by the validator.']
       : []),
     'Every task acceptance criterion must be covered by its zero-based index on at least one required item.',
   ].join('\n');
@@ -453,8 +493,14 @@ export class CodexAnalysisAdapter {
           expectedContextDigest: promptContext.digest,
           contextBlock: promptContext.block,
         });
+    const diagnosticBoundContent = input.diagnostic === undefined
+      ? content
+      : bindWritableDiagnosticRequirement(
+          content,
+          input.validation.requiresRepositoryChange,
+        );
     const normalizedContent = bindSingleRequiredItemAcceptanceCoverage(
-      content,
+      diagnosticBoundContent,
       input.validation.acceptanceCriteriaCount,
     );
     const body: ExecutionPlanBodyV1 = {
