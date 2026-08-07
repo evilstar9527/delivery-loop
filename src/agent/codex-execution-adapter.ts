@@ -259,7 +259,7 @@ function prompt(
     'Do not reveal credentials or claim tests/external facts. The trusted Runner will run all targeted and required verification after your edit.',
     ...(patchProposalRequired ? [] : [
       'Immediately use repository tools in this turn: inspect the relevant file with a command, then apply the required source edit with a file-change tool.',
-      'For a metered execution, completion is machine-rejected unless Codex JSONL contains at least one completed command_execution and one completed file_change event from this turn.',
+      'For a metered execution, completion is machine-rejected unless Codex JSONL contains at least one completed file_change event from this turn; command_execution remains diagnostic and is not an authority boundary.',
     ]),
     ...(patchProposalRequired ? [
       'Your final message must be exactly one JSON object with schemaVersion "1", action "apply_patch", and proposal {schemaVersion:"1",changes:[{path,baseDigest,content}]}, with no Markdown or additional keys.',
@@ -444,10 +444,7 @@ export class CodexExecutionAdapter implements ExecutionAgent {
     }
     if (!structuredDecisionRequired) {
       const observed = activity.result();
-      if (
-        observed.commandExecutionCompletedCount < 1 ||
-        observed.fileChangeCompletedCount < 1
-      ) {
+      if (observed.fileChangeCompletedCount < 1) {
         throw new CodexExecutionAdapterError(
           'decision_invalid',
           missingToolActivityReason(observed),
@@ -482,10 +479,7 @@ export class CodexExecutionAdapter implements ExecutionAgent {
     if (decision.data.action === 'apply_patch') return decision.data;
     if (input.model !== undefined && decision.data.action === 'apply_fix') {
       const observed = activity.result();
-      if (
-        observed.commandExecutionCompletedCount < 1 ||
-        observed.fileChangeCompletedCount < 1
-      ) {
+      if (observed.fileChangeCompletedCount < 1) {
         throw new CodexExecutionAdapterError(
           'decision_invalid',
           missingToolActivityReason(observed),

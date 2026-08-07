@@ -106,8 +106,8 @@ describe('Codex execution adapter', () => {
     expect(observed?.stdin).toContain('do not use a file tool to retrieve it');
     expect(observed?.stdin).toContain('untrusted reference material');
     expect(observed?.stdin).toContain('request_replan is forbidden');
-    expect(observed?.stdin).toContain('at least one completed command_execution');
-    expect(observed?.stdin).toContain('one completed file_change');
+    expect(observed?.stdin).toContain('at least one completed file_change');
+    expect(observed?.stdin).toContain('command_execution remains diagnostic');
     expect(await readFile(join(workspace, 'fixed.txt'), 'utf8')).toBe('fixed\n');
   });
 
@@ -241,6 +241,48 @@ describe('Codex execution adapter', () => {
     ]);
   });
 
+  it('accepts a review fix with a completed file change and no command event', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-review-file-change-'));
+    const workspace = join(root, 'repo');
+    const contextFilePath = join(root, 'context.json');
+    const outputFilePath = join(root, 'output.txt');
+    await mkdir(workspace, { mode: 0o700 });
+    await writeFile(contextFilePath, '{}', { mode: 0o600 });
+    await writeFile(outputFilePath, '', { mode: 0o600 });
+    const adapter = new CodexExecutionAdapter({
+      execute: async (request) => {
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'file_change', status: 'completed' },
+        }));
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 11,
+            cached_input_tokens: 3,
+            output_tokens: 5,
+            reasoning_output_tokens: 2,
+          },
+        }));
+        await writeFile(outputFilePath, JSON.stringify({
+          schemaVersion: '1',
+          action: 'apply_fix',
+        }));
+        return { exitCode: 0 };
+      },
+    });
+
+    await expect(adapter.apply({
+      attemptId: 'attempt-review-file-change',
+      workspacePath: workspace,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: 60_000,
+      allowPlanRevision: true,
+      model: 'gpt-test',
+    })).resolves.toEqual({ schemaVersion: '1', action: 'apply_fix' });
+  });
+
   it('fans the same bounded Codex JSONL stream to transcript capture and usage accounting', async () => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-transcript-'));
     const workspace = join(root, 'repo');
@@ -304,7 +346,7 @@ describe('Codex execution adapter', () => {
     });
   });
 
-  it('runs metered implement as an edit turn and derives apply_fix from real tool activity', async () => {
+  it('accepts a metered edit turn with a completed file change and no command event', async () => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-edit-turn-'));
     const workspace = join(root, 'repo');
     const contextFilePath = join(root, 'context.json');
@@ -316,10 +358,6 @@ describe('Codex execution adapter', () => {
     const adapter = new CodexExecutionAdapter({
       execute: async (request) => {
         observed = request;
-        request.onStdoutLine?.(JSON.stringify({
-          type: 'item.completed',
-          item: { type: 'command_execution', status: 'completed', exit_code: 0 },
-        }));
         request.onStdoutLine?.(JSON.stringify({
           type: 'item.completed',
           item: { type: 'file_change', status: 'completed' },
