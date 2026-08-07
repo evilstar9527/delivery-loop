@@ -435,7 +435,10 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     adapter.includes("'--output-schema'") && adapter.includes("'--output-last-message'") &&
     adapter.includes('diagnostic.mediation.searchLogs(logRequest)') &&
     adapter.includes('diagnostic.mediation.getTrace(traceRequest)') &&
-    adapter.includes('diagnostic.mediation.finish(diagnosticResult.rootCause)') &&
+    adapter.includes('diagnostic.mediation.finish(rootCauseResult.rootCause)') &&
+    adapter.includes("'diagnostic_root_cause'") &&
+    adapter.includes("'diagnostic_plan'") &&
+    adapter.includes('this.outputSchemaPath,') &&
     usage.includes("type: z.literal('turn.completed')") &&
     usage.includes('Agent messages, reasoning, command output, tool arguments, and thread IDs') &&
     commandRuntime.includes('const MAX_STDERR_BYTES = 8_192') &&

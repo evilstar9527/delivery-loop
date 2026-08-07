@@ -51,7 +51,7 @@ canonicalSha256({ sourceSha, codexVersion, files })
 1. 完成单仓库GitHub App安装、credential issuance审计和固定workflow准备；
 2. 通过正常`POST /v1/tasks`提交一份真实但不含Secret的用户反馈或PRD，保留Task/Run ID；
 3. 让D1 outbox正常触发唯一analysis Action。不得手工伪造Attempt、Plan或Case 8行；
-4. 确认Action调用锁定版本Codex并成功完成；requirement/PRD可以只出现repository context。user-feedback bug必须同时出现同Attempt成功的logs、repository和traces聚合，并有三个独立model usage；其他按需context也必须在Case 8中表现为成功只读聚合；
+4. 确认Action调用锁定版本Codex并成功完成；requirement/PRD可以只出现repository context。user-feedback bug必须同时出现同Attempt成功的logs、repository和traces聚合，并有四个独立model usage；其他按需context也必须在Case 8中表现为成功只读聚合；
 5. 在仓库外生成manifest，可参考`schemas/analysis-action-evidence-v1.example.json`的形状。不得把Task正文、Plan objective/Item正文、Evidence ref原值、tool参数/result、workflow/source正文、raw API响应、token或Secret写入manifest；
 6. 分别准备control-plane query token、operations token、App JWT、未按repository二次narrowing的installation audit token，以及manifest外的受审Runner contract digest。
 
