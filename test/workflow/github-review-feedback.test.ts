@@ -556,6 +556,105 @@ describe('head-bound GitHub review feedback', () => {
     });
   });
 
+  it('restores only an exactly fenced blocked review Run after cancellation settles', async () => {
+    expect((await sendReview(reviewPayload())).status).toBe(202);
+    const lost = await env.DB_CONTROL.prepare(
+      'SELECT review_attempt_id AS attempt_id FROM review_feedback_attempts',
+    ).first<{ attempt_id: string }>();
+    if (lost === null) throw new Error('review Attempt fixture was not created');
+    const run = await env.DB_CONTROL.prepare(
+      'SELECT version FROM runs WHERE run_id = ?',
+    ).bind(RUN_ID).first<{ version: number }>();
+    if (run === null) throw new Error('review Run fixture was not created');
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET status = 'lost', github_status = 'completed', github_conclusion = 'failure',
+             version = version + 1, lease_generation = lease_generation + 1, updated_at = ?
+         WHERE attempt_id = ?`,
+      ).bind(NOW, lost.attempt_id),
+      env.DB_CONTROL.prepare(
+        `UPDATE runs SET state = 'blocked', version = version + 1, updated_at = ?
+         WHERE run_id = ? AND version = ?`,
+      ).bind(NOW, RUN_ID, run.version),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO run_stuck_incidents (
+           incident_id, run_id, state_kind, observed_run_state, run_version,
+           attempt_id, threshold_seconds, action, status, detected_at,
+           recovery_requested_at, resolved_at, resolution_code
+         ) VALUES (?, ?, 'running', 'executing', ?, ?, 90, 'fence_lost_attempt',
+                   'resolved', ?, ?, ?, 'attempt_fenced')`,
+      ).bind(`incident-${lost.attempt_id}`, RUN_ID, run.version, lost.attempt_id, NOW, NOW, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         ) VALUES (?, ?, 'workflow_cancel', 'cloudflare_workflows', ?, ?,
+                   'settled', ?, ?)`,
+      ).bind(
+        `workflow-cancel-${RUN_ID}`,
+        RUN_ID,
+        `d1://runs/${RUN_ID}`,
+        `workflow-cancel:${RUN_ID}`,
+        NOW,
+        NOW,
+      ),
+    ]);
+
+    const recovery = new GitHubReviewFeedbackRecoveryReconciler(
+      env.DB_CONTROL,
+      () => new Date(NOW),
+    );
+    const results = await recovery.reconcileBatch();
+    expect(results).toHaveLength(1);
+    expect(results[0]!.created).toBe(true);
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT state, version FROM runs WHERE run_id = ?',
+    ).bind(RUN_ID).first()).toEqual({
+      state: 'executing',
+      version: run.version + 2,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, recovered_from_attempt_id FROM attempts
+       WHERE recovered_from_attempt_id = ?`,
+    ).bind(lost.attempt_id).first()).toEqual({
+      status: 'pending',
+      recovered_from_attempt_id: lost.attempt_id,
+    });
+  });
+
+  it('rejects a blocked review Run without an exact settled fencing lineage', async () => {
+    expect((await sendReview(reviewPayload())).status).toBe(202);
+    const lost = await env.DB_CONTROL.prepare(
+      'SELECT review_attempt_id AS attempt_id FROM review_feedback_attempts',
+    ).first<{ attempt_id: string }>();
+    if (lost === null) throw new Error('review Attempt fixture was not created');
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET status = 'lost', github_status = 'completed', github_conclusion = 'failure',
+             version = version + 1, lease_generation = lease_generation + 1, updated_at = ?
+         WHERE attempt_id = ?`,
+      ).bind(NOW, lost.attempt_id),
+      env.DB_CONTROL.prepare(
+        `UPDATE runs SET state = 'blocked', version = version + 1, updated_at = ?
+         WHERE run_id = ?`,
+      ).bind(NOW, RUN_ID),
+    ]);
+
+    const recovery = new GitHubReviewFeedbackRecoveryReconciler(
+      env.DB_CONTROL,
+      () => new Date(NOW),
+    );
+    expect(await recovery.reconcileBatch()).toEqual([]);
+    await expect(recovery.recoverAttempt(lost.attempt_id)).rejects.toThrow(
+      'GitHub review feedback recovery is unavailable',
+    );
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM attempts WHERE recovered_from_attempt_id = ?',
+    ).bind(lost.attempt_id).first()).toEqual({ count: 0 });
+  });
+
   it('recovers one missed exact-head webhook from bounded GitHub API facts', async () => {
     const client = new FakeReviewFeedbackClient();
     const reconciler = new GitHubReviewFeedbackReconciler(
