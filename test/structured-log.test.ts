@@ -179,6 +179,14 @@ describe('secure structured logging', () => {
         'structured_output_invalid',
         'diagnostic_result',
       );
+      writeRunnerStructuredLog(
+        'analysis_attempt_result',
+        'failed',
+        { DELIVERY_ATTEMPT_ID: 'attempt-safe-provider-failure' },
+        'process_nonzero_exit',
+        'diagnostic_result',
+        'provider_output_schema_rejected',
+      );
     } finally {
       write.mockRestore();
     }
@@ -189,6 +197,13 @@ describe('secure structured logging', () => {
       failureStage: 'diagnostic_result',
     });
     expect(output[0]).not.toContain(LOG_SECRET);
+    expect(JSON.parse(output[1]!)).toMatchObject({
+      event: 'analysis_attempt_result',
+      outcome: 'failed',
+      failureKind: 'process_nonzero_exit',
+      failureStage: 'diagnostic_result',
+      providerFailureCode: 'provider_output_schema_rejected',
+    });
     expect(() => writeRunnerStructuredLog(
       'analysis_attempt_result',
       'failed',
@@ -196,6 +211,14 @@ describe('secure structured logging', () => {
       'structured_output_invalid',
       'repository_commit' as never,
     )).toThrow('Runner failure classification is invalid');
+    expect(() => writeRunnerStructuredLog(
+      'analysis_attempt_result',
+      'failed',
+      {},
+      'structured_output_invalid',
+      'diagnostic_result',
+      'provider_process_failed',
+    )).toThrow('Runner provider failure classification is invalid');
   });
 
   it('logs only fixed execution Agent activity counters', () => {

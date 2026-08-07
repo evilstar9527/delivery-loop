@@ -6,17 +6,17 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import {
   CodexAnalysisAdapter,
+  CodexAnalysisAdapterError,
   executeCommand,
 } from '../src/agent/codex-analysis-adapter.js';
 import {
-  classifyProviderProcessFailure,
+  classifyAnalysisProviderProcessFailure,
 } from '../src/agent/provider-preflight-failure.js';
 import {
   ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
   AnalysisAgentOutputV1Schema,
   createAnalysisContextFileV1,
 } from '../src/domain/analysis-plan.js';
-import { ExecutionPlanValidationError } from '../src/domain/plan.js';
 import type { CodexModelUsage } from '../src/domain/quota.js';
 
 const executeFile = promisify(execFile);
@@ -134,21 +134,9 @@ async function run(): Promise<void> {
             }),
       });
       if (result.exitCode !== 0) {
-        const sample = result.stderr ?? '';
         processFailureCode = stdoutObserverFailed
           ? 'jsonl_usage_rejected'
-          : /uniqueItems/i.test(sample)
-          ? 'provider_schema_unique_items_rejected'
-          : /(?:minLength|maxLength|minItems|maxItems|minimum|maximum)/i.test(sample)
-            ? 'provider_schema_bounds_rejected'
-            : /\brequired\b/i.test(sample)
-              ? 'provider_schema_required_rejected'
-              : /(?:json[_ -]schema|\bschema\b|response[_ -]?format)/i.test(sample)
-                ? 'provider_output_schema_rejected'
-                : /(?:status(?: code)?|http(?:\/\d(?:\.\d)?)?|response)[^\d]{0,12}400\b|\b400 bad request\b/i
-                    .test(sample)
-                  ? 'provider_invalid_request'
-                  : classifyProviderProcessFailure(sample);
+          : classifyAnalysisProviderProcessFailure(result.stderr);
       } else {
         try {
           const raw = JSON.parse(await readFile(outputFilePath, 'utf8')) as unknown;
@@ -222,30 +210,17 @@ try {
   await run();
 } catch (error) {
   const message = error instanceof Error ? error.message : '';
-  const validationCodes = error instanceof ExecutionPlanValidationError
-    ? [...new Set(error.issues.map((issue) => issue.code))].sort().join('_')
-    : '';
-  const code = validationCodes !== ''
-    ? `plan_validation_${validationCodes}`
+  const code = error instanceof CodexAnalysisAdapterError
+    ? error.kind === 'process_nonzero_exit'
+      ? error.providerFailureCode ?? 'provider_process_failed'
+      : error.kind
     : message === 'workspace_precondition_failed'
     ? 'workspace_precondition_failed'
     : message === 'analysis_contract_failed'
       ? 'analysis_contract_failed'
-    : message === 'Codex analysis process timed out'
-      ? 'provider_timeout'
-    : message === 'Codex analysis process could not be started'
-        ? 'provider_process_start_failed'
-    : /^Codex analysis process failed with exit code [0-9]+$/.test(message)
-          ? processFailureCode ?? 'provider_process_failed'
-          : message === 'Codex analysis usage is unavailable'
-            ? 'usage_unavailable'
-            : message === 'Codex analysis output is invalid'
-              ? `structured_output_invalid_${structuredOutputIssueCode ?? 'unknown'}`
-            : message === 'Codex analysis context proof is invalid'
-              ? 'context_proof_invalid'
-              : message.startsWith('ExecutionPlan validation failed with ')
-                ? 'plan_validation_failed'
-                : 'analysis_adapter_failed';
+      : processFailureCode ?? (structuredOutputIssueCode === undefined
+        ? 'analysis_adapter_failed'
+        : `structured_output_invalid_${structuredOutputIssueCode}`);
   console.error(`real-codex-analysis: FAIL ${code}`);
   process.exitCode = 1;
 }

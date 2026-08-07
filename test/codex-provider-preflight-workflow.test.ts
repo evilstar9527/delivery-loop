@@ -75,8 +75,10 @@ describe('Codex provider preflight workflow', () => {
     );
     expect(analysisScript).toContain("const contextFilePath = join(contextRoot, 'context.json')");
     expect(analysisScript).toContain('await rm(contextRoot, { recursive: true, force: true })');
-    expect(analysisScript).toContain("message === 'Codex analysis process timed out'");
-    expect(analysisScript).toContain("? 'provider_timeout'");
+    expect(analysisScript).toContain('error instanceof CodexAnalysisAdapterError');
+    expect(analysisScript).toContain("error.kind === 'process_nonzero_exit'");
+    expect(analysisScript).toContain("error.providerFailureCode ?? 'provider_process_failed'");
+    expect(analysisScript).toContain('classifyAnalysisProviderProcessFailure(result.stderr)');
     expect(analysisScript).not.toContain('context_access_proof_unavailable');
     expect(analysisScript).not.toContain("const contextFilePath = join(root, 'context.json')");
   });

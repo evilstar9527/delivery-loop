@@ -56,6 +56,8 @@ import {
 import { isSensitiveFieldName, SecretScanner } from '../security/redaction.js';
 import type { CodexModelUsage } from '../domain/quota.js';
 import { deriveAnalysisPlanPolicy } from '../domain/analysis-plan-policy.js';
+import type { AnalysisProviderProcessFailureCode } from
+  '../agent/provider-preflight-failure.js';
 
 const OIDC_AUDIENCE = 'delivery-loop-control-plane';
 const HEARTBEAT_INTERVAL_MS = 45_000;
@@ -222,6 +224,7 @@ export interface AnalysisRunnerFailure {
 export interface AnalysisFailureClassification {
   kind: CodexAnalysisFailureKind;
   stage: CodexAnalysisFailureStage;
+  providerFailureCode?: AnalysisProviderProcessFailureCode;
 }
 
 export class AnalysisRunnerError extends Error {
@@ -1134,7 +1137,13 @@ export async function runAnalysisAttempt(
         attemptedPaths: ['repository_inspection'],
         neededHumanInput: 'manual_investigation',
       }, error instanceof CodexAnalysisAdapterError
-        ? { kind: error.kind, stage: error.stage }
+        ? {
+            kind: error.kind,
+            stage: error.stage,
+            ...(error.providerFailureCode === undefined
+              ? {}
+              : { providerFailureCode: error.providerFailureCode }),
+          }
         : undefined);
     }
     heartbeatController.abort();

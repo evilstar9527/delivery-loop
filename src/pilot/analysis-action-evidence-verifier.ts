@@ -399,9 +399,11 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     entrypoint.includes('error instanceof AnalysisRunnerError') &&
     entrypoint.includes('classification?.kind') &&
     entrypoint.includes('classification?.stage') &&
+    entrypoint.includes('classification?.providerFailureCode') &&
     runner.includes('new CodexAnalysisAdapter({') &&
     runner.includes('error instanceof CodexAnalysisAdapterError') &&
-    runner.includes('{ kind: error.kind, stage: error.stage }') &&
+    runner.includes('kind: error.kind') && runner.includes('stage: error.stage') &&
+    runner.includes('providerFailureCode: error.providerFailureCode') &&
     runner.includes('/context`') && runner.includes('/plan`') &&
     runner.includes("this.callTool('logs/search'") &&
     runner.includes("this.callTool('traces/get'") &&
@@ -416,6 +418,7 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     adapter.includes('approval_policy="never"') &&
     adapter.includes('CODEX_ANALYSIS_FAILURE_KINDS') &&
     adapter.includes('CODEX_ANALYSIS_FAILURE_STAGES') &&
+    adapter.includes('classifyAnalysisProviderProcessFailure(result.stderr)') &&
     adapter.includes("this.name = 'CodexAnalysisAdapterError'") &&
     adapter.includes("'--output-schema'") && adapter.includes("'--output-last-message'") &&
     adapter.includes('diagnostic.mediation.searchLogs(logRequest)') &&

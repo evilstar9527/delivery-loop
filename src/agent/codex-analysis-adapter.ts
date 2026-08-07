@@ -34,6 +34,10 @@ import {
   type CodexRelayReasoningEffort,
 } from './codex-provider-profile.js';
 import { normalizeProviderBaseUrl } from './provider-base-url.js';
+import {
+  classifyAnalysisProviderProcessFailure,
+  type AnalysisProviderProcessFailureCode,
+} from './provider-preflight-failure.js';
 import type { z } from 'zod';
 
 export {
@@ -138,7 +142,11 @@ export class CodexAnalysisAdapterError extends Error {
   constructor(
     readonly kind: CodexAnalysisFailureKind,
     readonly stage: CodexAnalysisFailureStage,
+    readonly providerFailureCode?: AnalysisProviderProcessFailureCode,
   ) {
+    if (
+      (kind === 'process_nonzero_exit') !== (providerFailureCode !== undefined)
+    ) throw new Error('Codex analysis failure classification is invalid');
     super(analysisFailureMessage(kind, stage));
     this.name = 'CodexAnalysisAdapterError';
   }
@@ -693,8 +701,15 @@ export class CodexAnalysisAdapter {
     if (result.timedOut === true) {
       throw new CodexAnalysisAdapterError('process_timeout', stage);
     }
+    if (result.stdoutInvalid === true) {
+      throw new CodexAnalysisAdapterError('usage_invalid', stage);
+    }
     if (result.exitCode !== 0) {
-      throw new CodexAnalysisAdapterError('process_nonzero_exit', stage);
+      throw new CodexAnalysisAdapterError(
+        'process_nonzero_exit',
+        stage,
+        classifyAnalysisProviderProcessFailure(result.stderr),
+      );
     }
     if (input.model !== undefined) {
       const measured = usage.result();

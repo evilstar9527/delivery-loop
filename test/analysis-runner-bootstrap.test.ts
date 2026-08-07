@@ -258,8 +258,9 @@ describe('analysis Runner bootstrap', () => {
       agent: {
         start: async () => {
           throw new CodexAnalysisAdapterError(
-            'structured_output_invalid',
+            'process_nonzero_exit',
             'diagnostic_result',
+            'provider_output_schema_rejected',
           );
         },
       },
@@ -269,8 +270,9 @@ describe('analysis Runner bootstrap', () => {
     await expect(promise).rejects.toMatchObject({
       name: 'AnalysisRunnerError',
       analysisFailure: {
-        kind: 'structured_output_invalid',
+        kind: 'process_nonzero_exit',
         stage: 'diagnostic_result',
+        providerFailureCode: 'provider_output_schema_rejected',
       },
     } satisfies Partial<AnalysisRunnerError>);
     expect(failureBody).toMatchObject({

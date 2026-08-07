@@ -17,6 +17,7 @@ try {
     process.env,
     classification?.kind,
     classification?.stage,
+    classification?.providerFailureCode,
   );
   process.exitCode = 1;
 }

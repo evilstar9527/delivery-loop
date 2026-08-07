@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES,
+  classifyAnalysisProviderProcessFailure,
   classifyProviderProcessFailure,
   PROVIDER_PROCESS_FAILURE_CODES,
 } from '../src/agent/provider-preflight-failure.js';
@@ -59,5 +61,17 @@ describe('provider preflight failure classification', () => {
     expect(code).toBe('provider_process_failed');
     expect(code).not.toContain('relay');
     expect(code).not.toContain('secret');
+  });
+
+  it.each([
+    ['unsupported keyword uniqueItems', 'provider_schema_unique_items_rejected'],
+    ['schema minimum is not supported', 'provider_schema_bounds_rejected'],
+    ['schema required property is invalid', 'provider_schema_required_rejected'],
+    ['invalid response_format JSON schema', 'provider_output_schema_rejected'],
+    ['request failed with status 400 Bad Request', 'provider_invalid_request'],
+    ['upstream returned 503 Service Unavailable', 'provider_upstream_unavailable'],
+  ] as const)('maps analysis provider stderr %s to %s', (stderr, expected) => {
+    expect(classifyAnalysisProviderProcessFailure(stderr)).toBe(expected);
+    expect(ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES).toContain(expected);
   });
 });

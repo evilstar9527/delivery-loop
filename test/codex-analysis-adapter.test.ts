@@ -1187,6 +1187,7 @@ describe('Codex analysis Agent adapter', () => {
       name: 'CodexAnalysisAdapterError',
       kind: 'process_nonzero_exit',
       stage: 'single_pass',
+      providerFailureCode: 'provider_process_failed',
     } satisfies Partial<CodexAnalysisAdapterError>);
     await expect(promise).rejects.not.toThrow('CANARY_SECRET_FROM_CLI_STDERR');
   });
