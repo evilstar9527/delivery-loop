@@ -34,3 +34,8 @@ export async function sha256Bytes(bytes: BufferSource): Promise<string> {
   );
   return `sha256:${hex}`;
 }
+
+/** Returns whether a digest uses the canonical lowercase SHA-256 representation. */
+export function isCanonicalSha256Digest(value: string): boolean {
+  return /^sha256:[0-9a-f]{64}$/.test(value);
+}
