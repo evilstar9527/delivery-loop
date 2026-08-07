@@ -206,19 +206,42 @@ export class AnalysisAttemptContextStore {
         AND source.run_id = revision.run_id
         AND source.source_kind = revision.source_kind
         AND source.source_digest = revision.source_digest
-       WHERE revision.analysis_attempt_id = ? AND revision.run_id = ?
+       WHERE (
+         (revision.analysis_attempt_id = ? AND NOT EXISTS (
+           SELECT 1 FROM plan_revision_analysis_retries AS retry
+           WHERE retry.revision_id = revision.revision_id
+         )) OR EXISTS (
+           SELECT 1 FROM plan_revision_analysis_retries AS retry
+           WHERE retry.revision_id = revision.revision_id
+             AND retry.retry_attempt_id = ?
+             AND NOT EXISTS (
+               SELECT 1 FROM plan_revision_analysis_retries AS later
+               WHERE later.revision_id = retry.revision_id
+                 AND later.retry_sequence > retry.retry_sequence
+             )
+         )
+       ) AND revision.run_id = ?
          AND revision.status = 'analyzing'
        UNION ALL
        SELECT context_ref AS source_ref, 'supplemental_context' AS source_kind,
               context_digest AS source_digest
        FROM supplemental_context_revisions
        WHERE new_run_id = ? AND apply_to_current_run = 0`,
-    ).bind(row.attempt_id, row.run_id, row.run_id).all<RevisionSourceFactRow>();
+    ).bind(row.attempt_id, row.attempt_id, row.run_id, row.run_id).all<RevisionSourceFactRow>();
     if (!facts.success || facts.results.length > 1) {
       throw new AnalysisAttemptError('revision_source_conflict');
     }
     const fact = facts.results[0];
-    if (fact === undefined) return undefined;
+    if (fact === undefined) {
+      const activeRevision = await this.db.prepare(
+        `SELECT 1 AS present FROM plan_revisions
+         WHERE run_id = ? AND status = 'analyzing' LIMIT 1`,
+      ).bind(row.run_id).first<{ present: number }>();
+      if (activeRevision !== null) {
+        throw new AnalysisAttemptError('revision_source_conflict');
+      }
+      return undefined;
+    }
     switch (fact.source_kind) {
       case 'review_feedback':
         return await this.reviewRevisionSource(row, fact);
@@ -600,8 +623,22 @@ async function trustedCarriedDiagnosticEvidenceRef(
   const revisions = await db.prepare(
     `SELECT source_kind
      FROM plan_revisions
-     WHERE analysis_attempt_id = ? AND run_id = ? AND status = 'analyzing'`,
-  ).bind(row.attempt_id, row.run_id).all<{ source_kind: string }>();
+     WHERE (
+       (analysis_attempt_id = ? AND NOT EXISTS (
+         SELECT 1 FROM plan_revision_analysis_retries AS retry
+         WHERE retry.revision_id = plan_revisions.revision_id
+       )) OR EXISTS (
+         SELECT 1 FROM plan_revision_analysis_retries AS retry
+         WHERE retry.revision_id = plan_revisions.revision_id
+           AND retry.retry_attempt_id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM plan_revision_analysis_retries AS later
+             WHERE later.revision_id = retry.revision_id
+               AND later.retry_sequence > retry.retry_sequence
+           )
+       )
+     ) AND run_id = ? AND status = 'analyzing'`,
+  ).bind(row.attempt_id, row.attempt_id, row.run_id).all<{ source_kind: string }>();
   if (!revisions.success || revisions.results.length > 1) {
     throw new AnalysisAttemptError('revision_source_conflict');
   }
@@ -653,14 +690,28 @@ async function trustedCarriedDiagnosticEvidenceRef(
      LEFT JOIN diagnostic_evidence_trace_sources AS trace_sources
        ON trace_sources.evidence_id = binding.evidence_id
      LEFT JOIN tool_call_traces AS traces ON traces.trace_id = trace_sources.trace_id
-     WHERE revision.analysis_attempt_id = ? AND revision.run_id = ?
+     WHERE (
+       (revision.analysis_attempt_id = ? AND NOT EXISTS (
+         SELECT 1 FROM plan_revision_analysis_retries AS retry
+         WHERE retry.revision_id = revision.revision_id
+       )) OR EXISTS (
+         SELECT 1 FROM plan_revision_analysis_retries AS retry
+         WHERE retry.revision_id = revision.revision_id
+           AND retry.retry_attempt_id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM plan_revision_analysis_retries AS later
+             WHERE later.revision_id = retry.revision_id
+               AND later.retry_sequence > retry.retry_sequence
+           )
+       )
+     ) AND revision.run_id = ?
        AND revision.status = 'analyzing' AND revision.source_kind = 'base_update'
      GROUP BY refs.evidence_ref, binding.evidence_id, binding.run_id,
               binding.attempt_id, prior.created_by_attempt_id, evidence.run_id,
               evidence.attempt_id, evidence.kind, evidence.status,
               evidence.verification_status
      ORDER BY refs.evidence_ref`,
-  ).bind(row.attempt_id, row.run_id).all<CarriedDiagnosticEvidenceRow>();
+  ).bind(row.attempt_id, row.attempt_id, row.run_id).all<CarriedDiagnosticEvidenceRow>();
   if (!result.success || result.results.length !== 1) {
     throw new AnalysisAttemptError('revision_source_conflict');
   }

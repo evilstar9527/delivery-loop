@@ -1846,7 +1846,13 @@ export class TaskQueryStore {
     const row = await this.db.prepare(
       `SELECT revision_id, prior_plan_id, prior_plan_version, prior_plan_digest,
               prior_base_sha, source_kind, source_digest, requested_base_sha,
-              analysis_attempt_id, new_plan_id, new_plan_version, new_plan_digest,
+              COALESCE(
+                (SELECT retry_attempt_id FROM plan_revision_analysis_retries
+                 WHERE revision_id = plan_revisions.revision_id
+                 ORDER BY retry_sequence DESC LIMIT 1),
+                analysis_attempt_id
+              ) AS analysis_attempt_id,
+              new_plan_id, new_plan_version, new_plan_digest,
               body_changed, base_changed, effects_changed, status,
               created_at, activated_at, updated_at
        FROM plan_revisions

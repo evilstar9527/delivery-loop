@@ -27,6 +27,10 @@ describe('periodic external-fact reconciliation wiring', () => {
   it('finalizes passed work before scheduling and observes at-risk completion before fencing', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     const workflowDrain = worker.indexOf(').drain(5);');
+    const planRevisionAnalysisRecovery = worker.indexOf(
+      'await new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {',
+      workflowDrain,
+    );
     const relay = worker.indexOf('await relay.relay();');
     const priorityFinalization = worker.indexOf(
       'await executionProgress.reconcileFinalizations(1);',
@@ -65,6 +69,8 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
 
     expect(workflowDrain).toBeGreaterThan(-1);
+    expect(planRevisionAnalysisRecovery).toBeGreaterThan(workflowDrain);
+    expect(planRevisionAnalysisRecovery).toBeLessThan(relay);
     expect(relay).toBeGreaterThan(-1);
     expect(workflowDrain).toBeLessThan(relay);
     expect(preparedPublicationRecovery).toBeGreaterThan(relay);

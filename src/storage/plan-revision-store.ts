@@ -1556,7 +1556,7 @@ export class PlanRevisionStore {
               plan_revisions.prior_plan_id, plan_revisions.prior_plan_version,
               plan_revisions.prior_plan_digest, plan_revisions.prior_base_sha,
               plan_revisions.requested_base_sha,
-              plan_revisions.analysis_attempt_id,
+              analysis.attempt_id AS analysis_attempt_id,
               runs.run_id, runs.state AS run_state, runs.version AS run_version,
               runs.base_sha AS run_base_sha, runs.active_plan_id,
               runs.active_plan_version, runs.active_plan_digest,
@@ -1572,7 +1572,13 @@ export class PlanRevisionStore {
        JOIN runs ON runs.run_id = plan_revisions.run_id
        JOIN execution_plans AS prior ON prior.plan_id = plan_revisions.prior_plan_id
        JOIN attempts AS analysis
-         ON analysis.attempt_id = plan_revisions.analysis_attempt_id
+         ON analysis.attempt_id = COALESCE(
+           (SELECT retry.retry_attempt_id
+            FROM plan_revision_analysis_retries AS retry
+            WHERE retry.revision_id = plan_revisions.revision_id
+            ORDER BY retry.retry_sequence DESC LIMIT 1),
+           plan_revisions.analysis_attempt_id
+         )
        JOIN execution_plans AS replacement
          ON replacement.plan_id = ? AND replacement.run_id = plan_revisions.run_id
        WHERE plan_revisions.revision_id = ?`,

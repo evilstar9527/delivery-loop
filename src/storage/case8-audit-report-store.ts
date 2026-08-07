@@ -1517,7 +1517,14 @@ export class Case8AuditReportStore {
               revisions.status AS revision_status,
               revisions.source_kind, revisions.source_digest,
               source.observed_at AS source_observed_at,
-              revisions.requested_base_sha, revisions.analysis_attempt_id,
+              revisions.requested_base_sha,
+              COALESCE(
+                (SELECT retry.retry_attempt_id
+                 FROM plan_revision_analysis_retries AS retry
+                 WHERE retry.revision_id = revisions.revision_id
+                 ORDER BY retry.retry_sequence DESC LIMIT 1),
+                revisions.analysis_attempt_id
+              ) AS analysis_attempt_id,
               revisions.prior_plan_id, revisions.prior_plan_version,
               revisions.prior_plan_digest,
               prior.base_sha AS prior_plan_base_sha,
