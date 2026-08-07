@@ -78,6 +78,7 @@ export interface AnalysisAttemptContext {
   };
   task: TaskEnvelope;
   revisionSource?: AnalysisRevisionSource;
+  carriedDiagnosticEvidenceRef?: string;
   planPolicy: {
     version: number;
     allowedEffects: readonly PlanEffect[];
@@ -164,6 +165,10 @@ export class AnalysisAttemptContextStore {
     }
     const version = await nextPlanVersion(this.db, row.run_id);
     const revisionSource = await this.revisionSource(row);
+    const carriedDiagnosticEvidenceRef = await trustedCarriedDiagnosticEvidenceRef(
+      this.db,
+      row,
+    );
     const policy = deriveAnalysisPlanPolicy(
       row.intent_kind,
       row.allow_repository_write === 1,
@@ -180,6 +185,9 @@ export class AnalysisAttemptContextStore {
       },
       task,
       ...(revisionSource === undefined ? {} : { revisionSource }),
+      ...(carriedDiagnosticEvidenceRef === undefined
+        ? {}
+        : { carriedDiagnosticEvidenceRef }),
       planPolicy: {
         version,
         ...policy,
@@ -512,6 +520,22 @@ export class AnalysisPlanProposalStore {
     row: AttemptContextRow,
     content: AnalysisPlanContentV1,
   ): Promise<void> {
+    const carriedDiagnosticEvidenceRef = await trustedCarriedDiagnosticEvidenceRef(
+      this.db,
+      row,
+    );
+    const diagnosticReferences = content.evidenceRefs.filter((reference) =>
+      reference.startsWith('d1://evidence/diagnostic_'));
+    if (carriedDiagnosticEvidenceRef !== undefined) {
+      if (
+        diagnosticReferences.length !== 1 ||
+        diagnosticReferences[0] !== carriedDiagnosticEvidenceRef ||
+        !content.items.some((item) =>
+          item.effects.includes('logs_read') &&
+          item.verification.evidenceKinds.includes('diagnostic'))
+      ) throw new AnalysisAttemptError('plan_evidence_conflict');
+      return;
+    }
     const needsDiagnosticEvidence = row.intent_kind === 'bug' && content.items.some(
       (item) => item.effects.includes('logs_read'),
     );
@@ -551,6 +575,110 @@ export class AnalysisPlanProposalStore {
       result.results.some((evidence) => evidence.logs_count < 1 || evidence.traces_count < 1)
     ) throw new AnalysisAttemptError('plan_evidence_conflict');
   }
+}
+
+interface CarriedDiagnosticEvidenceRow {
+  evidence_ref: string;
+  evidence_id: string | null;
+  binding_run_id: string | null;
+  binding_attempt_id: string | null;
+  prior_attempt_id: string;
+  evidence_run_id: string | null;
+  evidence_attempt_id: string | null;
+  evidence_kind: string | null;
+  evidence_status: string | null;
+  verification_status: string | null;
+  logs_count: number;
+  traces_count: number;
+}
+
+async function trustedCarriedDiagnosticEvidenceRef(
+  db: D1Database,
+  row: AttemptContextRow,
+): Promise<string | undefined> {
+  if (row.intent_kind !== 'bug' || row.allow_repository_write !== 1) return undefined;
+  const revisions = await db.prepare(
+    `SELECT source_kind
+     FROM plan_revisions
+     WHERE analysis_attempt_id = ? AND run_id = ? AND status = 'analyzing'`,
+  ).bind(row.attempt_id, row.run_id).all<{ source_kind: string }>();
+  if (!revisions.success || revisions.results.length > 1) {
+    throw new AnalysisAttemptError('revision_source_conflict');
+  }
+  const revision = revisions.results[0];
+  if (revision === undefined || revision.source_kind !== 'base_update') return undefined;
+
+  const result = await db.prepare(
+    `SELECT refs.evidence_ref,
+            binding.evidence_id,
+            binding.run_id AS binding_run_id,
+            binding.attempt_id AS binding_attempt_id,
+            prior.created_by_attempt_id AS prior_attempt_id,
+            evidence.run_id AS evidence_run_id,
+            evidence.attempt_id AS evidence_attempt_id,
+            evidence.kind AS evidence_kind,
+            evidence.status AS evidence_status,
+            evidence.verification_status,
+            SUM(CASE WHEN traces.tool_path = 'logs/search'
+                           AND traces.effect = 'read'
+                           AND traces.result_category = 'success'
+                           AND traces.run_id = binding.run_id
+                           AND traces.attempt_id = binding.attempt_id
+                     THEN 1 ELSE 0 END) AS logs_count,
+            SUM(CASE WHEN traces.tool_path = 'traces/get'
+                           AND traces.effect = 'read'
+                           AND traces.result_category = 'success'
+                           AND traces.run_id = binding.run_id
+                           AND traces.attempt_id = binding.attempt_id
+                     THEN 1 ELSE 0 END) AS traces_count
+     FROM plan_revisions AS revision
+     JOIN plan_revision_source_facts AS source
+       ON source.source_ref = revision.source_ref
+      AND source.run_id = revision.run_id
+      AND source.source_kind = revision.source_kind
+      AND source.source_digest = revision.source_digest
+      AND source.prior_plan_id = revision.prior_plan_id
+     JOIN execution_plans AS prior
+       ON prior.plan_id = revision.prior_plan_id
+      AND prior.run_id = revision.run_id
+      AND prior.plan_version = revision.prior_plan_version
+      AND prior.digest = revision.prior_plan_digest
+      AND prior.base_sha = revision.prior_base_sha
+     JOIN execution_plan_evidence_refs AS refs
+       ON refs.plan_id = prior.plan_id
+      AND refs.evidence_ref GLOB 'd1://evidence/diagnostic_*'
+     LEFT JOIN diagnostic_evidence_bindings AS binding
+       ON refs.evidence_ref = 'd1://evidence/' || binding.evidence_id
+     LEFT JOIN evidence ON evidence.evidence_id = binding.evidence_id
+     LEFT JOIN diagnostic_evidence_trace_sources AS trace_sources
+       ON trace_sources.evidence_id = binding.evidence_id
+     LEFT JOIN tool_call_traces AS traces ON traces.trace_id = trace_sources.trace_id
+     WHERE revision.analysis_attempt_id = ? AND revision.run_id = ?
+       AND revision.status = 'analyzing' AND revision.source_kind = 'base_update'
+     GROUP BY refs.evidence_ref, binding.evidence_id, binding.run_id,
+              binding.attempt_id, prior.created_by_attempt_id, evidence.run_id,
+              evidence.attempt_id, evidence.kind, evidence.status,
+              evidence.verification_status
+     ORDER BY refs.evidence_ref`,
+  ).bind(row.attempt_id, row.run_id).all<CarriedDiagnosticEvidenceRow>();
+  if (!result.success || result.results.length !== 1) {
+    throw new AnalysisAttemptError('revision_source_conflict');
+  }
+  const evidence = result.results[0]!;
+  if (
+    evidence.evidence_id === null ||
+    evidence.evidence_ref !== `d1://evidence/${evidence.evidence_id}` ||
+    evidence.binding_run_id !== row.run_id ||
+    evidence.evidence_run_id !== row.run_id ||
+    evidence.binding_attempt_id !== evidence.prior_attempt_id ||
+    evidence.evidence_attempt_id !== evidence.prior_attempt_id ||
+    evidence.evidence_kind !== 'diagnostic' ||
+    evidence.evidence_status !== 'passed' ||
+    evidence.verification_status !== 'verified' ||
+    evidence.logs_count < 1 ||
+    evidence.traces_count < 1
+  ) throw new AnalysisAttemptError('revision_source_conflict');
+  return evidence.evidence_ref;
 }
 
 async function planBody(

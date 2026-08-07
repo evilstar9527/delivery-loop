@@ -10,7 +10,10 @@ import {
   type GitHubBaseExternalFactClient,
   type GitHubBaseObservationResult,
 } from '../../src/reconciliation/github-base-observation-reconciler.js';
-import { AnalysisAttemptContextStore } from '../../src/storage/analysis-attempt-store.js';
+import {
+  AnalysisAttemptContextStore,
+  AnalysisPlanProposalStore,
+} from '../../src/storage/analysis-attempt-store.js';
 import { TaskQueryStore } from '../../src/storage/task-query-store.js';
 
 const RUN_ID = 'run-github-base-observation';
@@ -25,8 +28,9 @@ const PLAN_DIGEST = `sha256:${'c'.repeat(64)}`;
 const REFERENCE_DIGEST = `sha256:${'d'.repeat(64)}`;
 const COMPARISON_DIGEST = `sha256:${'e'.repeat(64)}`;
 const NOW = '2026-07-25T23:00:00.000Z';
+const DIAGNOSTIC_EVIDENCE_REF = 'd1://evidence/diagnostic_github_base_prior';
 
-function taskEnvelope(): TaskEnvelope {
+function taskEnvelope(kind: 'requirement' | 'bug' = 'requirement'): TaskEnvelope {
   return {
     schemaVersion: '1',
     eventId: 'event-github-base-observation',
@@ -45,7 +49,7 @@ function taskEnvelope(): TaskEnvelope {
       environment: 'test',
     },
     intent: {
-      kind: 'requirement',
+      kind,
       title: 'Replan when the trusted base advances',
       description: 'Observe a pure fast-forward before replacing the active Plan.',
       acceptanceCriteria: ['The replacement Plan binds the observed base head.'],
@@ -127,6 +131,10 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM approvals'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
+    env.DB_CONTROL.prepare('DELETE FROM diagnostic_evidence_trace_sources'),
+    env.DB_CONTROL.prepare('DELETE FROM diagnostic_evidence_bindings'),
+    env.DB_CONTROL.prepare('DELETE FROM tool_call_traces'),
+    env.DB_CONTROL.prepare('DELETE FROM evidence'),
     env.DB_CONTROL.prepare('DELETE FROM plan_item_external_facts'),
     env.DB_CONTROL.prepare('DELETE FROM plan_item_evidence_kinds'),
     env.DB_CONTROL.prepare('DELETE FROM plan_item_command_refs'),
@@ -147,6 +155,107 @@ async function reset(): Promise<void> {
   if (objects.objects.length > 0) {
     await env.TASK_OBJECTS.delete(objects.objects.map((object) => object.key));
   }
+}
+
+async function makeTaskWritableBug(): Promise<void> {
+  const task = taskEnvelope('bug');
+  const taskDigest = await taskRevisionDigest(task);
+  const payloadKey = 'tasks/github-base-observation.json';
+  await env.TASK_OBJECTS.put(payloadKey, JSON.stringify(task), {
+    httpMetadata: { contentType: 'application/json; charset=utf-8' },
+    customMetadata: { taskDigest },
+  });
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `UPDATE tasks SET task_digest = ?, intent_kind = 'bug' WHERE task_id = ?`,
+    ).bind(taskDigest, TASK_ID),
+    env.DB_CONTROL.prepare(
+      `UPDATE runs SET task_digest = ? WHERE run_id = ?`,
+    ).bind(taskDigest, RUN_ID),
+  ]);
+}
+
+async function seedPriorDiagnosticEvidence(suffix = ''): Promise<string> {
+  const evidenceId = `diagnostic_github_base_prior${suffix}`;
+  const evidenceRef = `d1://evidence/${evidenceId}`;
+  const logsTraceId = `tooltrace_github_base_logs${suffix}`;
+  const requestTraceId = `tooltrace_github_base_request${suffix}`;
+  const evidenceDigest = `sha256:${(suffix === '' ? '7' : '8').repeat(64)}`;
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO tool_call_traces (
+         trace_id, run_id, attempt_id, tool_path, action, effect,
+         duration_ms, result_category, occurred_at
+       ) VALUES (?, ?, ?, 'logs/search', 'logs:read', 'read', 20, 'success', ?)`,
+    ).bind(logsTraceId, RUN_ID, ANALYSIS_ATTEMPT_ID, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO tool_call_traces (
+         trace_id, run_id, attempt_id, tool_path, action, effect,
+         duration_ms, result_category, occurred_at
+       ) VALUES (?, ?, ?, 'traces/get', 'trace:read', 'read', 15, 'success', ?)`,
+    ).bind(requestTraceId, RUN_ID, ANALYSIS_ATTEMPT_ID, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO evidence (
+         evidence_id, run_id, attempt_id, kind, status, artifact_digest,
+         summary, verification_status, observed_at, created_at
+       ) VALUES (?, ?, ?, 'diagnostic', 'passed', ?,
+                 'Sanitized prior diagnostic root cause.', 'verified', ?, ?)`,
+    ).bind(evidenceId, RUN_ID, ANALYSIS_ATTEMPT_ID, evidenceDigest, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO diagnostic_evidence_bindings (
+         evidence_id, run_id, attempt_id, locator_kinds_json, locator_digest,
+         root_cause_digest, evidence_digest, created_at
+       ) VALUES (?, ?, ?, '["uid"]', ?, ?, ?, ?)`,
+    ).bind(
+      evidenceId,
+      RUN_ID,
+      ANALYSIS_ATTEMPT_ID,
+      `sha256:${'9'.repeat(64)}`,
+      `sha256:${'a'.repeat(64)}`,
+      evidenceDigest,
+      NOW,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO diagnostic_evidence_trace_sources (evidence_id, position, trace_id)
+       VALUES (?, 0, ?)`,
+    ).bind(evidenceId, logsTraceId),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO diagnostic_evidence_trace_sources (evidence_id, position, trace_id)
+       VALUES (?, 1, ?)`,
+    ).bind(evidenceId, requestTraceId),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO execution_plan_evidence_refs (plan_id, position, evidence_ref)
+       VALUES (?, (SELECT COUNT(*) FROM execution_plan_evidence_refs WHERE plan_id = ?), ?)`,
+    ).bind(PLAN_ID, PLAN_ID, evidenceRef),
+  ]);
+  return evidenceRef;
+}
+
+async function runningRevisionAuthorization(): Promise<Parameters<AnalysisAttemptContextStore['get']>[0]> {
+  const revision = await env.DB_CONTROL.prepare(
+    'SELECT analysis_attempt_id FROM plan_revisions',
+  ).first<{ analysis_attempt_id: string }>();
+  if (revision === null) throw new Error('missing base re-analysis Attempt');
+  await env.DB_CONTROL.prepare(
+    `UPDATE attempts SET status = 'running', version = 1, lease_generation = 1,
+                         lease_token_digest = ?, lease_expires_at = ?, updated_at = ?
+     WHERE attempt_id = ? AND status = 'pending'`,
+  ).bind(
+    `sha256:${'9'.repeat(64)}`,
+    '2099-01-01T00:00:00.000Z',
+    NOW,
+    revision.analysis_attempt_id,
+  ).run();
+  return {
+    attemptId: revision.analysis_attempt_id,
+    runId: RUN_ID,
+    mode: 'analysis',
+    status: 'running',
+    version: 1,
+    leaseGeneration: 1,
+    leaseExpiresAt: '2099-01-01T00:00:00.000Z',
+    scopes: ['repo:read'],
+  };
 }
 
 async function seed(): Promise<void> {
@@ -421,6 +530,8 @@ describe('trusted GitHub base SHA resolution', () => {
 
 describe('GitHub base observation reconciliation', () => {
   it('converges 20 fast-forward observations to one immutable source fact and re-analysis', async () => {
+    await makeTaskWritableBug();
+    expect(await seedPriorDiagnosticEvidence()).toBe(DIAGNOSTIC_EVIDENCE_REF);
     const client = new FakeBaseClient(fastForwardResult());
     const reconciler = new GitHubBaseObservationReconciler(env.DB_CONTROL, client, {
       now: () => new Date(NOW),
@@ -479,38 +590,76 @@ describe('GitHub base observation reconciliation', () => {
       `SELECT COUNT(*) AS count FROM attempts
        WHERE mode = 'analysis' AND status = 'pending'`,
     ).first()).toEqual({ count: 1 });
-    const revision = await env.DB_CONTROL.prepare(
-      'SELECT analysis_attempt_id FROM plan_revisions',
-    ).first<{ analysis_attempt_id: string }>();
-    if (revision === null) throw new Error('missing base re-analysis Attempt');
-    await env.DB_CONTROL.prepare(
-      `UPDATE attempts SET status = 'running', version = 1, lease_generation = 1,
-                           lease_token_digest = ?, lease_expires_at = ?, updated_at = ?
-       WHERE attempt_id = ? AND status = 'pending'`,
-    ).bind(
-      `sha256:${'9'.repeat(64)}`,
-      '2099-01-01T00:00:00.000Z',
-      NOW,
-      revision.analysis_attempt_id,
-    ).run();
+    const authorization = await runningRevisionAuthorization();
     const revisionContext = await new AnalysisAttemptContextStore(
       env.DB_CONTROL,
       env.TASK_OBJECTS,
-    ).get({
-      attemptId: revision.analysis_attempt_id,
-      runId: RUN_ID,
-      mode: 'analysis',
-      status: 'running',
-      version: 1,
-      leaseGeneration: 1,
-      leaseExpiresAt: '2099-01-01T00:00:00.000Z',
-      scopes: ['repo:read'],
-    });
+    ).get(authorization);
     expect(revisionContext.revisionSource).toEqual({
       schemaVersion: '1',
       kind: 'base_update',
       digest: sourceDigest,
       data: fact.fact,
+    });
+    expect(revisionContext.carriedDiagnosticEvidenceRef).toBe(
+      DIAGNOSTIC_EVIDENCE_REF,
+    );
+    const proposalStore = new AnalysisPlanProposalStore(env.DB_CONTROL);
+    const replacementContent = {
+      objective: 'Repair the bug on the newly observed base and verify the committed result.',
+      assumptions: ['The prior verified diagnostic remains the trusted root-cause authority.'],
+      evidenceRefs: [DIAGNOSTIC_EVIDENCE_REF],
+      items: [{
+        id: 'repair-on-new-base',
+        kind: 'change',
+        title: 'Repair and verify on the new base',
+        objective: 'Inspect the advanced base and apply the smallest compatible repair.',
+        acceptanceCriteriaIndexes: [0],
+        doneWhen: ['The carried root cause is repaired and trusted verification passes.'],
+        verification: {
+          commandRefs: ['test:unit', 'verify:all'],
+          evidenceKinds: ['diagnostic', 'commit', 'test'],
+        },
+        effects: ['logs_read', 'repo_write'],
+        dependsOn: [],
+        required: true,
+      }],
+    };
+    await expect(proposalStore.save(
+      authorization,
+      {
+        ...replacementContent,
+        evidenceRefs: ['d1://evidence/diagnostic_agent_selected'],
+      },
+      NOW,
+    )).rejects.toMatchObject({ code: 'plan_evidence_conflict' });
+    await expect(proposalStore.save(
+      authorization,
+      {
+        ...replacementContent,
+        evidenceRefs: [],
+        items: replacementContent.items.map((item) => ({
+          ...item,
+          effects: ['repo_write'],
+          verification: {
+            commandRefs: ['test:unit', 'verify:all'],
+            evidenceKinds: ['commit', 'test'],
+          },
+        })),
+      },
+      NOW,
+    )).rejects.toMatchObject({ code: 'plan_evidence_conflict' });
+    const replacement = await proposalStore.save(
+      authorization,
+      replacementContent,
+      NOW,
+    );
+    expect(replacement.plan).toMatchObject({
+      runId: RUN_ID,
+      version: 2,
+      baseSha: AFTER_SHA,
+      evidenceRefs: [DIAGNOSTIC_EVIDENCE_REF],
+      status: 'validated',
     });
     expect(await env.DB_CONTROL.prepare(
       'SELECT state, version, base_sha FROM runs WHERE run_id = ?',
@@ -535,6 +684,33 @@ describe('GitHub base observation reconciliation', () => {
     ).bind('f'.repeat(40), observationId).run()).rejects.toThrow(
       'github_base_observation_is_immutable',
     );
+  });
+
+  it('fails closed when writable BUG base replanning has missing or multiple prior diagnostic refs', async () => {
+    const contextStore = new AnalysisAttemptContextStore(env.DB_CONTROL, env.TASK_OBJECTS);
+    await makeTaskWritableBug();
+    await new GitHubBaseObservationReconciler(
+      env.DB_CONTROL,
+      new FakeBaseClient(fastForwardResult()),
+      { now: () => new Date(NOW) },
+    ).reconcileRun(RUN_ID);
+    await expect(contextStore.get(await runningRevisionAuthorization())).rejects.toMatchObject({
+      code: 'revision_source_conflict',
+    });
+
+    await reset();
+    await seed();
+    await makeTaskWritableBug();
+    await seedPriorDiagnosticEvidence();
+    await seedPriorDiagnosticEvidence('_duplicate');
+    await new GitHubBaseObservationReconciler(
+      env.DB_CONTROL,
+      new FakeBaseClient(fastForwardResult()),
+      { now: () => new Date(NOW) },
+    ).reconcileRun(RUN_ID);
+    await expect(contextStore.get(await runningRevisionAuthorization())).rejects.toMatchObject({
+      code: 'revision_source_conflict',
+    });
   });
 
   it('blocks a non-fast-forward history with one immutable human-action projection', async () => {

@@ -829,6 +829,191 @@ describe('analysis Runner bootstrap', () => {
     expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
   });
 
+  it.each([
+    { name: 'binds the trusted ref', agentEvidenceRefs: [] as string[], succeeds: true },
+    {
+      name: 'rejects an Agent-authored diagnostic ref',
+      agentEvidenceRefs: ['d1://evidence/diagnostic_prior_verified'],
+      succeeds: false,
+    },
+  ])('$name during a base-only writable BUG replan', async (testCase) => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-carried-diagnostic-'));
+    const environment = await runnerEnvironment(root);
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(environment.GITHUB_WORKSPACE!, { recursive: true });
+    await mkdir(environment.RUNNER_TEMP!, { recursive: true });
+    const bugTask = taskEnvelope('bug', true);
+    environment.DELIVERY_TASK_DIGEST = await taskRevisionDigest(bugTask);
+    const evidenceRef = 'd1://evidence/diagnostic_prior_verified';
+    const expectedContent = {
+      ...unboundWritableDiagnosticPlanContent(),
+      evidenceRefs: [evidenceRef],
+      items: [{
+        ...(unboundWritableDiagnosticPlanContent().items as Array<Record<string, unknown>>)[0],
+        effects: ['repo_read', 'logs_read', 'repo_write'],
+        verification: {
+          commandRefs: ['test:unit', 'verify:all'],
+          evidenceKinds: ['diagnostic', 'commit', 'test'],
+        },
+      }],
+    };
+    const expectedPlan = await responsePlan(expectedContent);
+    let reservationCount = 0;
+    let usageCount = 0;
+    let planBody: unknown;
+    let diagnosticRequestObserved = false;
+
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const authorization = new Headers(init?.headers).get('authorization');
+      if (url.startsWith('https://oidc.actions.test/token')) {
+        return Response.json({ value: OIDC_TOKEN });
+      }
+      if (url.endsWith('/exchange')) {
+        return Response.json({
+          attemptToken: INITIAL_TOKEN,
+          expiresAt: '2026-07-25T00:05:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: INITIAL_TOOL_TOKEN,
+            expiresAt: '2026-07-25T00:05:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith('/context')) {
+        return Response.json({
+          schemaVersion: '1',
+          attempt: {
+            id: ATTEMPT_ID, runId: RUN_ID, mode: 'analysis', version: 7,
+            leaseGeneration: 3, baseSha: BASE_SHA,
+          },
+          task: bugTask,
+          revisionSource: {
+            schemaVersion: '1',
+            kind: 'base_update',
+            digest: `sha256:${'8'.repeat(64)}`,
+            data: {
+              schemaVersion: '1',
+              repository: 'example/delivery-target',
+              baseBranch: 'main',
+              beforeSha: 'b'.repeat(40),
+              afterSha: BASE_SHA,
+              relationship: 'ahead',
+              aheadBy: 1,
+              referenceDigest: `sha256:${'6'.repeat(64)}`,
+              comparisonDigest: `sha256:${'7'.repeat(64)}`,
+            },
+          },
+          carriedDiagnosticEvidenceRef: evidenceRef,
+          planPolicy: {
+            version: 1,
+            allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write'],
+            allowedCommandRefs: ['policy:inspect', 'policy:diagnose', 'test:unit', 'verify:all'],
+            verificationCommandRefs: ['verify:all'],
+            requiresRepositoryChange: true,
+          },
+        });
+      }
+      if (url.endsWith('/model-reservations')) {
+        reservationCount += 1;
+        const body = JSON.parse(String(init?.body)) as { reservationId: string };
+        return Response.json({
+          reservationId: body.reservationId,
+          attemptId: ATTEMPT_ID,
+          runId: RUN_ID,
+          provider: 'openai',
+          model: 'gpt-test-metered',
+          reservedTokens: 1_000,
+          reservedCostMicrousd: 1_000,
+          expiresAt: '2026-07-25T00:10:00.000Z',
+          overrideId: null,
+          disposition: 'created',
+        }, { status: 201 });
+      }
+      if (url.endsWith('/model-usage')) {
+        usageCount += 1;
+        const body = JSON.parse(String(init?.body)) as {
+          reservationId: string;
+          usageId: string;
+        };
+        return Response.json({
+          usageId: body.usageId,
+          reservationId: body.reservationId,
+          totalTokens: 120,
+          costMicrousd: 42,
+          disposition: 'created',
+        }, { status: 201 });
+      }
+      if (url.endsWith('/tools/call') || url.endsWith('/diagnostic-evidence')) {
+        diagnosticRequestObserved = true;
+        throw new Error('base-only replan must not repeat diagnostic mediation');
+      }
+      if (url.endsWith('/plan')) {
+        expect(authorization).toBe(`Bearer ${INITIAL_TOKEN}`);
+        planBody = JSON.parse(String(init?.body)) as unknown;
+        return Response.json({
+          planId: expectedPlan.planId,
+          version: 1,
+          digest: expectedPlan.digest,
+          status: 'validated',
+          payloadRef: expectedPlan.payloadRef,
+        }, { status: 201 });
+      }
+      if (url.endsWith('/complete')) {
+        return Response.json(
+          { accepted: true, signalId: 'signal-carried-diagnostic', outboxId: 'outbox-carried' },
+          { status: 202 },
+        );
+      }
+      if (url.endsWith('/events')) {
+        return Response.json({ accepted: true }, { status: 202 });
+      }
+      throw new Error(`unexpected carried diagnostic fake request: ${url}`);
+    };
+
+    const result = runAnalysisAttempt({
+      environment,
+      fetch: fetchImplementation,
+      agent: {
+        usesMeteredModel: true,
+        async start(input) {
+          expect(input.diagnostic).toBeUndefined();
+          expect(await readFile(input.contextFilePath, 'utf8')).not.toContain(evidenceRef);
+          input.onUsage?.({
+            inputTokens: 100,
+            cachedInputTokens: 60,
+            outputTokens: 20,
+            reasoningOutputTokens: 5,
+          });
+          return await proposedPlan(input, {
+            ...unboundWritableDiagnosticPlanContent(),
+            evidenceRefs: testCase.agentEvidenceRefs,
+          });
+        },
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+    });
+
+    if (testCase.succeeds) {
+      await expect(result).resolves.toEqual({
+        planId: expectedPlan.planId,
+        version: 1,
+        digest: expectedPlan.digest,
+        payloadRef: expectedPlan.payloadRef,
+      });
+    } else {
+      await expect(result).rejects.toThrow();
+    }
+    expect(reservationCount).toBe(1);
+    expect(usageCount).toBe(1);
+    expect(diagnosticRequestObserved).toBe(false);
+    expect(planBody).toEqual(testCase.succeeds ? expectedContent : undefined);
+    expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
+  });
+
   it('rejects a Secret-bearing log result before trace, Evidence, or Plan submission', async () => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-diagnostic-secret-'));
     const environment = await runnerEnvironment(root);
