@@ -132,6 +132,7 @@ interface CandidateRow {
   recovery_root_attempt_id: string | null;
   recovery_plan_item_id: string | null;
   recovery_blocker_id: string | null;
+  recovery_source_kind: 'failed_dependency' | 'lost_pre_effect' | null;
 }
 
 interface AcceptedRow {
@@ -422,7 +423,9 @@ export class IdentityBoundApprovalStore {
       candidate.recovery_failed_attempt_id !== null &&
       candidate.recovery_root_attempt_id !== null &&
       candidate.recovery_plan_item_id !== null &&
-      candidate.recovery_blocker_id !== null
+      candidate.recovery_source_kind !== null &&
+      (candidate.recovery_source_kind === 'lost_pre_effect' ||
+        candidate.recovery_blocker_id !== null)
     ) {
       const recoveryApprovalId = `review_recovery_approval_${this.suffix(
         await canonicalSha256({
@@ -435,11 +438,13 @@ export class IdentityBoundApprovalStore {
         this.db.prepare(
           `INSERT INTO review_approval_recovery_approvals (
              recovery_approval_id, run_id, plan_id, plan_version, plan_item_id,
-             failed_attempt_id, root_review_attempt_id, approval_id, created_at
+             failed_attempt_id, root_review_attempt_id, approval_id, created_at,
+             source_kind
            )
            SELECT ?, recovery.run_id, recovery.plan_id, recovery.plan_version,
                   recovery.plan_item_id, recovery.failed_attempt_id,
-                  recovery.root_review_attempt_id, approvals.approval_id, ?
+                  recovery.root_review_attempt_id, approvals.approval_id, ?,
+                  recovery.source_kind
            FROM review_approval_recovery_candidates AS recovery
            JOIN approvals ON approvals.approval_id = ?
             AND approvals.run_id = recovery.run_id
@@ -452,7 +457,11 @@ export class IdentityBoundApprovalStore {
              AND recovery.plan_item_id = ?
              AND recovery.failed_attempt_id = ?
              AND recovery.root_review_attempt_id = ?
-             AND recovery.blocker_id = ?
+             AND recovery.source_kind = ?
+             AND (
+               (recovery.source_kind = 'lost_pre_effect' AND recovery.blocker_id IS NULL)
+               OR recovery.blocker_id = ?
+             )
            ON CONFLICT DO NOTHING`,
         ).bind(
           recoveryApprovalId,
@@ -465,6 +474,7 @@ export class IdentityBoundApprovalStore {
           candidate.recovery_plan_item_id,
           candidate.recovery_failed_attempt_id,
           candidate.recovery_root_attempt_id,
+          candidate.recovery_source_kind,
           candidate.recovery_blocker_id,
         ),
         this.db.prepare(
@@ -475,6 +485,7 @@ export class IdentityBoundApprovalStore {
                SELECT 1 FROM review_approval_recovery_approvals
                WHERE recovery_approval_id = ? AND run_id = run_blockers.run_id
                  AND failed_attempt_id = ? AND approval_id = ?
+                 AND source_kind = 'failed_dependency'
              )`,
         ).bind(
           now.toISOString(),
@@ -486,11 +497,15 @@ export class IdentityBoundApprovalStore {
         ),
         this.db.prepare(
           `UPDATE execution_plans SET status = 'active', updated_at = ?
-           WHERE plan_id = ? AND run_id = ? AND plan_version = ? AND status = 'blocked'
+           WHERE plan_id = ? AND run_id = ? AND plan_version = ?
              AND EXISTS (
                SELECT 1 FROM review_approval_recovery_approvals
                WHERE recovery_approval_id = ? AND plan_id = execution_plans.plan_id
                  AND failed_attempt_id = ? AND approval_id = ?
+                 AND (
+                   (source_kind = 'failed_dependency' AND execution_plans.status = 'blocked')
+                   OR (source_kind = 'lost_pre_effect' AND execution_plans.status = 'active')
+                 )
              )
              AND NOT EXISTS (
                SELECT 1 FROM run_blockers
@@ -509,7 +524,7 @@ export class IdentityBoundApprovalStore {
           `UPDATE plan_item_progress
            SET status = 'ready', active_attempt_id = NULL,
                version = version + 1, updated_at = ?
-           WHERE plan_id = ? AND item_id = ? AND status = 'blocked'
+           WHERE plan_id = ? AND item_id = ?
              AND active_attempt_id = ?
              AND EXISTS (
                SELECT 1 FROM review_approval_recovery_approvals
@@ -518,6 +533,10 @@ export class IdentityBoundApprovalStore {
                  AND plan_item_id = plan_item_progress.item_id
                  AND failed_attempt_id = plan_item_progress.active_attempt_id
                  AND approval_id = ?
+                 AND (
+                   (source_kind = 'failed_dependency' AND plan_item_progress.status = 'blocked')
+                   OR (source_kind = 'lost_pre_effect' AND plan_item_progress.status = 'in_progress')
+                 )
              )
              AND EXISTS (
                SELECT 1 FROM execution_plans
@@ -683,6 +702,7 @@ export class IdentityBoundApprovalStore {
                 recovery.root_review_attempt_id AS recovery_root_attempt_id,
                 recovery.plan_item_id AS recovery_plan_item_id,
                 recovery.blocker_id AS recovery_blocker_id,
+                recovery.source_kind AS recovery_source_kind,
                 EXISTS (
                   SELECT 1 FROM plan_item_effects
                   WHERE plan_item_effects.plan_id = plans.plan_id
@@ -712,8 +732,11 @@ export class IdentityBoundApprovalStore {
                   )
               ))
              OR
-             (runs.state = 'blocked' AND plans.status = 'blocked'
-              AND recovery.failed_attempt_id IS NOT NULL)
+             (runs.state = 'blocked' AND recovery.failed_attempt_id IS NOT NULL
+              AND (
+                (recovery.source_kind = 'failed_dependency' AND plans.status = 'blocked')
+                OR (recovery.source_kind = 'lost_pre_effect' AND plans.status = 'active')
+              ))
            )
            AND plans.base_sha = runs.base_sha
            AND EXISTS (
@@ -752,6 +775,7 @@ export class IdentityBoundApprovalStore {
               NULL AS recovery_root_attempt_id,
               NULL AS recovery_plan_item_id,
               NULL AS recovery_blocker_id,
+              NULL AS recovery_source_kind,
               EXISTS (
                 SELECT 1 FROM plan_item_effects
                 WHERE plan_item_effects.plan_id = plans.plan_id

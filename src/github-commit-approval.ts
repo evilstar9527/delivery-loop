@@ -329,8 +329,11 @@ export class GitHubCommitApprovalService {
                 )
             ))
            OR
-           (runs.state = 'blocked' AND plans.status = 'blocked'
-            AND recovery.failed_attempt_id IS NOT NULL)
+           (runs.state = 'blocked' AND recovery.failed_attempt_id IS NOT NULL
+            AND (
+              (recovery.source_kind = 'failed_dependency' AND plans.status = 'blocked')
+              OR (recovery.source_kind = 'lost_pre_effect' AND plans.status = 'active')
+            ))
          )
          AND plans.base_sha = runs.base_sha
          AND plans.plan_version = runs.active_plan_version

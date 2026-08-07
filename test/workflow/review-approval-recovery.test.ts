@@ -302,6 +302,74 @@ async function seedBlockedReviewCredentialFailure(): Promise<void> {
   ]);
 }
 
+async function convertToLostPreEffectReplacement(
+  credentialStatus: 'active' | 'revoked' = 'revoked',
+): Promise<void> {
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO review_approval_recovery_approvals (
+         recovery_approval_id, run_id, plan_id, plan_version, plan_item_id,
+         failed_attempt_id, root_review_attempt_id, approval_id, created_at
+       ) VALUES ('prior-review-recovery-approval', ?, ?, 1, ?, ?, ?,
+                 'approval-review-recovery-old', ?)`,
+    ).bind(RUN_ID, PLAN_ID, ITEM_ID, ROOT_ATTEMPT_ID, ROOT_ATTEMPT_ID, NOW),
+    env.DB_CONTROL.prepare('DELETE FROM run_blockers WHERE run_id = ?').bind(RUN_ID),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_failures WHERE attempt_id = ?')
+      .bind(FAILED_ATTEMPT_ID),
+    env.DB_CONTROL.prepare(
+      `UPDATE execution_plans SET status = 'active', updated_at = ? WHERE plan_id = ?`,
+    ).bind(NOW, PLAN_ID),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO review_approval_recoveries (
+         recovery_id, recovery_approval_id, run_id, plan_id, plan_version,
+         plan_item_id, failed_attempt_id, root_review_attempt_id, approval_id,
+         replacement_attempt_id, created_at
+       ) VALUES ('prior-review-recovery', 'prior-review-recovery-approval', ?, ?, 1,
+                 ?, ?, ?, 'approval-review-recovery-old', ?, ?)`,
+    ).bind(
+      RUN_ID, PLAN_ID, ITEM_ID, ROOT_ATTEMPT_ID, ROOT_ATTEMPT_ID, FAILED_ATTEMPT_ID, NOW,
+    ),
+    env.DB_CONTROL.prepare(
+      `UPDATE plan_item_progress
+       SET status = 'in_progress', version = version + 1, updated_at = ?
+       WHERE plan_id = ? AND item_id = ? AND active_attempt_id = ?`,
+    ).bind(NOW, PLAN_ID, ITEM_ID, FAILED_ATTEMPT_ID),
+    env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'lost', github_status = 'completed', github_conclusion = 'failure',
+           version = version + 1, lease_generation = lease_generation + 1, updated_at = ?
+       WHERE attempt_id = ?`,
+    ).bind(NOW, FAILED_ATTEMPT_ID),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO github_write_credentials (
+         credential_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+         approval_id, repository, lease_generation, status, revoked_at,
+         authorization_expires_at, created_at, updated_at
+       ) VALUES ('credential-review-recovery-terminal', ?, ?, ?, 1, ?,
+                 'approval-review-recovery-old', ?, 3, ?, ?, ?, ?, ?)`,
+    ).bind(
+      RUN_ID,
+      FAILED_ATTEMPT_ID,
+      PLAN_ID,
+      ITEM_ID,
+      REPOSITORY,
+      credentialStatus,
+      credentialStatus === 'revoked' ? NOW : null,
+      credentialStatus === 'active' ? '2099-01-01T00:00:00.000Z' : NOW,
+      NOW,
+      NOW,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO run_stuck_incidents (
+         incident_id, run_id, state_kind, observed_run_state, run_version,
+         attempt_id, threshold_seconds, action, status, detected_at,
+         recovery_requested_at, resolved_at, resolution_code
+       ) VALUES ('incident-review-recovery-lost', ?, 'running', 'executing', 9,
+                 ?, 90, 'fence_lost_attempt', 'resolved', ?, ?, ?, 'attempt_fenced')`,
+    ).bind(RUN_ID, FAILED_ATTEMPT_ID, NOW, NOW, NOW),
+  ]);
+}
+
 function commentFact(body: string, commentId = 219): GitHubCommitApprovalFact {
   return {
     schemaVersion: '1',
@@ -410,6 +478,128 @@ describe('review repo-write approval recovery', () => {
       `SELECT COUNT(*) AS count FROM outbox WHERE kind = 'execution_dispatch'
        AND payload_ref = ?`,
     ).bind(`d1://attempts/${lineage?.replacement_attempt_id}`).first()).toEqual({ count: 1 });
+  });
+
+  it('reapproves one fenced lost replacement after its credential is revoked pre-effect', async () => {
+    await convertToLostPreEffectReplacement();
+
+    const client = new FakeCommentClient();
+    const service = new GitHubCommitApprovalService(
+      env.DB_CONTROL,
+      client,
+      () => new Date(NOW),
+    );
+    const template = await service.template(RUN_ID);
+    expect(template.commentBody).toBe(githubCommitApprovalBody({
+      runId: RUN_ID,
+      runVersion: 10,
+      planId: PLAN_ID,
+      planVersion: 1,
+      planDigest: PLAN_DIGEST,
+      baseSha: BASE_SHA,
+    }));
+    client.fact = commentFact(template.commentBody, 220);
+
+    const decisions = await Promise.all(
+      Array.from({ length: 20 }, async () => await service.approve(RUN_ID, 220)),
+    );
+    expect(decisions.filter((decision) => decision.created)).toHaveLength(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state, version FROM runs WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ state: 'awaiting_approval', version: 11 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status FROM execution_plans WHERE plan_id = ?`,
+    ).bind(PLAN_ID).first()).toEqual({ status: 'active' });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, active_attempt_id, version FROM plan_item_progress
+       WHERE plan_id = ? AND item_id = ?`,
+    ).bind(PLAN_ID, ITEM_ID).first()).toEqual({
+      status: 'ready', active_attempt_id: null, version: 8,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT source_kind, failed_attempt_id, root_review_attempt_id
+       FROM review_approval_recovery_approvals
+       WHERE run_id = ? AND failed_attempt_id = ?`,
+    ).bind(RUN_ID, FAILED_ATTEMPT_ID).first()).toEqual({
+      source_kind: 'lost_pre_effect',
+      failed_attempt_id: FAILED_ATTEMPT_ID,
+      root_review_attempt_id: ROOT_ATTEMPT_ID,
+    });
+
+    const recovery = new GitHubReviewApprovalRecoveryReconciler(
+      env.DB_CONTROL,
+      () => new Date(NOW),
+    );
+    const recovered = await Promise.all(
+      Array.from({ length: 20 }, async () => await recovery.reconcileBatch()),
+    );
+    expect(recovered.flat().filter((result) => result.created)).toHaveLength(1);
+    const lineage = await env.DB_CONTROL.prepare(
+      `SELECT source_kind, failed_attempt_id, root_review_attempt_id, replacement_attempt_id
+       FROM review_approval_recoveries WHERE run_id = ? AND failed_attempt_id = ?`,
+    ).bind(RUN_ID, FAILED_ATTEMPT_ID).first<{
+      source_kind: string;
+      failed_attempt_id: string;
+      root_review_attempt_id: string;
+      replacement_attempt_id: string;
+    }>();
+    expect(lineage).toMatchObject({
+      source_kind: 'lost_pre_effect',
+      failed_attempt_id: FAILED_ATTEMPT_ID,
+      root_review_attempt_id: ROOT_ATTEMPT_ID,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, recovered_from_attempt_id FROM attempts WHERE attempt_id = ?`,
+    ).bind(lineage?.replacement_attempt_id).first()).toEqual({
+      status: 'pending',
+      recovered_from_attempt_id: ROOT_ATTEMPT_ID,
+    });
+  });
+
+  it.each([
+    'active_credential',
+    'verification',
+    'cancel_unsettled',
+    'incident_missing',
+  ] as const)('rejects unsafe lost replacement recovery evidence: %s', async (kind) => {
+    await convertToLostPreEffectReplacement(
+      kind === 'active_credential' ? 'active' : 'revoked',
+    );
+    if (kind === 'verification') {
+      await env.DB_CONTROL.prepare(
+        `INSERT INTO verification_suites (
+           suite_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+           lease_generation, head_sha, delivery_policy_digest,
+           targeted_command_count, required_command_count, status, created_at, updated_at
+         ) VALUES ('suite-lost-review-recovery', ?, ?, ?, 1, ?, 3, ?, ?, 1, 1,
+                   'failed', ?, ?)`,
+      ).bind(
+        RUN_ID, FAILED_ATTEMPT_ID, PLAN_ID, ITEM_ID, HEAD_SHA,
+        `sha256:${'4'.repeat(64)}`, NOW, NOW,
+      ).run();
+    }
+    if (kind === 'cancel_unsettled') {
+      await env.DB_CONTROL.prepare(
+        `UPDATE outbox SET delivery_state = 'pending'
+         WHERE outbox_id = 'workflow-cancel-review-recovery'`,
+      ).run();
+    }
+    if (kind === 'incident_missing') {
+      await env.DB_CONTROL.prepare(
+        `DELETE FROM run_stuck_incidents
+         WHERE incident_id = 'incident-review-recovery-lost'`,
+      ).run();
+    }
+    const service = new GitHubCommitApprovalService(
+      env.DB_CONTROL,
+      new FakeCommentClient(),
+      () => new Date(NOW),
+    );
+    await expect(service.template(RUN_ID)).rejects.toMatchObject({ code: 'state_conflict' });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM review_approval_recovery_approvals
+       WHERE failed_attempt_id = ?`,
+    ).bind(FAILED_ATTEMPT_ID).first()).toEqual({ count: 0 });
   });
 
   it.each([
