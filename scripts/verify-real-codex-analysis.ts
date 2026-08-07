@@ -26,7 +26,7 @@ const executeFile = promisify(execFile);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 let processFailureCode: string | undefined;
 let stdoutObserverFailed = false;
-let structuredOutputIssueCode: string | undefined;
+let structuredOutputInvalid = false;
 
 async function git(args: string[], cwd = projectRoot): Promise<string> {
   const result = await executeFile('git', args, {
@@ -153,14 +153,9 @@ async function run(): Promise<void> {
         try {
           const raw = JSON.parse(await readFile(outputFilePath, 'utf8')) as unknown;
           const parsed = AnalysisAgentOutputV1Schema.safeParse(raw);
-          if (!parsed.success) {
-            structuredOutputIssueCode = [...new Set(parsed.error.issues.map((issue) => {
-              const path = issue.path.map((part) => typeof part === 'number' ? '*' : part).join('.');
-              return `${path}_${issue.code}`;
-            }))].sort().join('__');
-          }
+          if (!parsed.success) structuredOutputInvalid = true;
         } catch {
-          structuredOutputIssueCode = 'json_parse_failed';
+          structuredOutputInvalid = true;
         }
       }
       return result;
@@ -323,18 +318,26 @@ async function run(): Promise<void> {
 try {
   await run();
 } catch (error) {
-  const message = error instanceof Error ? error.message : '';
-  const code = error instanceof CodexAnalysisAdapterError
-    ? error.kind === 'process_nonzero_exit'
-      ? error.providerFailureCode ?? 'provider_process_failed'
-      : error.kind
-    : message === 'workspace_precondition_failed'
-    ? 'workspace_precondition_failed'
-    : message === 'analysis_contract_failed'
-      ? 'analysis_contract_failed'
-      : processFailureCode ?? (structuredOutputIssueCode === undefined
-        ? 'analysis_adapter_failed'
-        : `structured_output_invalid_${structuredOutputIssueCode}`);
-  console.error(`real-codex-analysis: FAIL ${code}`);
+  let failure: Record<string, string>;
+  if (error instanceof CodexAnalysisAdapterError) {
+    failure = {
+      failureKind: error.kind,
+      failureStage: error.stage,
+      ...(error.kind === 'process_nonzero_exit'
+        ? { providerFailureCode: error.providerFailureCode ?? 'provider_process_failed' }
+        : {}),
+    };
+  } else {
+    const message = error instanceof Error ? error.message : '';
+    const failureCode = message === 'workspace_precondition_failed'
+      ? 'workspace_precondition_failed'
+      : message === 'analysis_contract_failed'
+        ? 'analysis_contract_failed'
+        : processFailureCode ?? (structuredOutputInvalid
+          ? 'structured_output_invalid'
+          : 'analysis_adapter_failed');
+    failure = { failureCode };
+  }
+  console.error(`real-codex-analysis: FAIL ${JSON.stringify(failure)}`);
   process.exitCode = 1;
 }
