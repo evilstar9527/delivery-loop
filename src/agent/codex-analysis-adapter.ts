@@ -35,6 +35,7 @@ import {
 } from './codex-provider-profile.js';
 import { normalizeProviderBaseUrl } from './provider-base-url.js';
 import {
+  AnalysisProviderJsonlFailureProjector,
   classifyAnalysisProviderProcessFailure,
   type AnalysisProviderProcessFailureCode,
 } from './provider-preflight-failure.js';
@@ -654,6 +655,7 @@ export class CodexAnalysisAdapter {
       throw new CodexAnalysisAdapterError('process_timeout', stage);
     }
     const usage = new CodexUsageAccumulator();
+    const providerFailure = new AnalysisProviderJsonlFailureProjector();
     let result: CommandExecutionResult;
     try {
       result = await this.execute({
@@ -692,6 +694,7 @@ export class CodexAnalysisAdapter {
           : {
               onStdoutLine: (line: string) => {
                 usage.acceptLine(line);
+                providerFailure.acceptLine(line);
               },
             }),
       });
@@ -705,10 +708,14 @@ export class CodexAnalysisAdapter {
       throw new CodexAnalysisAdapterError('usage_invalid', stage);
     }
     if (result.exitCode !== 0) {
+      const stderrCode = classifyAnalysisProviderProcessFailure(result.stderr);
+      const jsonlCode = providerFailure.result();
       throw new CodexAnalysisAdapterError(
         'process_nonzero_exit',
         stage,
-        classifyAnalysisProviderProcessFailure(result.stderr),
+        jsonlCode !== null && jsonlCode !== 'provider_process_failed'
+          ? jsonlCode
+          : stderrCode,
       );
     }
     if (input.model !== undefined) {

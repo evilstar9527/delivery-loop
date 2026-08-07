@@ -11,6 +11,7 @@ import { canonicalSha256 } from '../src/domain/digest.js';
 import type { GitHubAppDispatchEvidenceManifestV1 } from
   '../src/domain/github-app-dispatch-evidence.js';
 import {
+  ANALYSIS_RUNNER_TRANSITIVE_CONTRACT_PATHS,
   AnalysisActionEvidenceVerificationError,
   verifyAnalysisActionEvidence,
 } from '../src/pilot/analysis-action-evidence-verifier.js';
@@ -45,7 +46,7 @@ const WORKFLOW_SOURCE = readFileSync(
   'utf8',
 );
 const SOURCE_CONTENT: ReadonlyMap<string, string> = new Map(
-  ANALYSIS_RUNNER_CONTRACT_PATHS.map((path) => [
+  [...ANALYSIS_RUNNER_CONTRACT_PATHS, ...ANALYSIS_RUNNER_TRANSITIVE_CONTRACT_PATHS].map((path) => [
     path,
     readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'),
   ]),
@@ -93,6 +94,7 @@ type Drift =
   | 'context_write'
   | 'context_denied'
   | 'runner'
+  | 'provider'
   | 'job'
   | 'oversize';
 
@@ -439,16 +441,19 @@ function fakeFetch(input: Manifest, drift: Drift = 'none'): typeof fetch {
         });
       }
       const file = input.runner.files.find((entry) => entry.path === path);
-      if (file === undefined) return new Response(null, { status: 404 });
-      const source = SOURCE_CONTENT.get(path)!;
+      const source = SOURCE_CONTENT.get(path);
+      if (source === undefined) return new Response(null, { status: 404 });
       return json({
         type: 'file',
         path,
-        sha: file.blobSha,
+        sha: file?.blobSha ?? '9'.repeat(40),
         encoding: 'base64',
         content: Buffer.from(
           drift === 'runner' && path === 'src/runner/analysis-runner.ts'
-            ? `${source}\n// drift` : source,
+            ? `${source}\n// drift`
+            : drift === 'provider' && path === 'src/agent/provider-preflight-failure.ts'
+              ? source.replace('this.code = candidate', 'this.code = null')
+              : source,
         ).toString('base64'),
       });
     }
@@ -532,6 +537,11 @@ describe('real read-only analysis Action external evidence', () => {
     const sourceDrift = await manifest();
     await expect(verifyAnalysisActionEvidence(sourceDrift, options(sourceDrift, 'runner')))
       .rejects.toMatchObject({ code: 'runner_contract_mismatch' });
+    const providerDrift = await manifest();
+    await expect(verifyAnalysisActionEvidence(
+      providerDrift,
+      options(providerDrift, 'provider'),
+    )).rejects.toMatchObject({ code: 'runner_contract_mismatch' });
     const unreviewed = await manifest();
     await expect(verifyAnalysisActionEvidence(unreviewed, {
       ...options(unreviewed),

@@ -19,6 +19,12 @@ const MAX_RESPONSE_BYTES = 1 * 1_024 * 1_024;
 const MAX_SOURCE_BYTES = 768 * 1_024;
 const ITEM_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 
+export const ANALYSIS_RUNNER_TRANSITIVE_CONTRACT_PATHS = [
+  'src/agent/codex-usage.ts',
+  'src/agent/command-runtime.ts',
+  'src/agent/provider-preflight-failure.ts',
+] as const;
+
 const CONTEXT_ACTIONS = {
   repository: 'repo:read',
   logs: 'logs:read',
@@ -366,6 +372,9 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
   const entrypoint = sources.get('scripts/run-analysis-attempt.ts') ?? '';
   const runner = sources.get('src/runner/analysis-runner.ts') ?? '';
   const adapter = sources.get('src/agent/codex-analysis-adapter.ts') ?? '';
+  const usage = sources.get('src/agent/codex-usage.ts') ?? '';
+  const commandRuntime = sources.get('src/agent/command-runtime.ts') ?? '';
+  const providerFailure = sources.get('src/agent/provider-preflight-failure.ts') ?? '';
   const schemaSource = sources.get('schemas/analysis-plan-content-v1.schema.json') ?? '';
   const packageSource = sources.get('package.json') ?? '';
   const lockSource = sources.get('pnpm-lock.yaml') ?? '';
@@ -419,11 +428,25 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     adapter.includes('CODEX_ANALYSIS_FAILURE_KINDS') &&
     adapter.includes('CODEX_ANALYSIS_FAILURE_STAGES') &&
     adapter.includes('classifyAnalysisProviderProcessFailure(result.stderr)') &&
+    adapter.includes('new AnalysisProviderJsonlFailureProjector()') &&
+    adapter.includes('providerFailure.acceptLine(line)') &&
+    adapter.includes("jsonlCode !== 'provider_process_failed'") &&
     adapter.includes("this.name = 'CodexAnalysisAdapterError'") &&
     adapter.includes("'--output-schema'") && adapter.includes("'--output-last-message'") &&
     adapter.includes('diagnostic.mediation.searchLogs(logRequest)') &&
     adapter.includes('diagnostic.mediation.getTrace(traceRequest)') &&
-    adapter.includes('diagnostic.mediation.finish(diagnosticResult.rootCause)');
+    adapter.includes('diagnostic.mediation.finish(diagnosticResult.rootCause)') &&
+    usage.includes("type: z.literal('turn.completed')") &&
+    usage.includes('Agent messages, reasoning, command output, tool arguments, and thread IDs') &&
+    commandRuntime.includes('const MAX_STDERR_BYTES = 8_192') &&
+    commandRuntime.includes('new SensitiveDataRedactor({ secrets: environmentSecrets })') &&
+    commandRuntime.includes('stderr: redactor.redactText(stderr)') &&
+    providerFailure.includes('class AnalysisProviderJsonlFailureProjector') &&
+    providerFailure.includes("event.type === 'turn.failed'") &&
+    providerFailure.includes("event.type === 'error'") &&
+    providerFailure.includes('classifyAnalysisProviderProcessFailure(message)') &&
+    providerFailure.includes('this.code = candidate') &&
+    providerFailure.includes('this.observedFailure ? GENERIC_PROVIDER_PROCESS_FAILURE : null');
 }
 
 async function verifyRunnerContract(
@@ -453,6 +476,22 @@ async function verifyRunnerContract(
       throw new AnalysisActionEvidenceVerificationError('runner_contract_mismatch');
     }
     sources.set(file.path, source);
+  }
+  for (const path of ANALYSIS_RUNNER_TRANSITIVE_CONTRACT_PATHS) {
+    const contentPath = path.split('/').map(encodeURIComponent).join('/');
+    const raw = record(await getJson(
+      fetcher,
+      `${githubOrigin}/repos/${repository}/contents/${contentPath}?` +
+        `ref=${encodeURIComponent(manifest.runner.sourceSha)}`,
+      token,
+      'github',
+    ));
+    if (
+      raw === null || raw.type !== 'file' || raw.path !== path ||
+      typeof raw.sha !== 'string' || !/^[a-f0-9]{40}$/.test(raw.sha) ||
+      raw.encoding !== 'base64'
+    ) throw new AnalysisActionEvidenceVerificationError('runner_contract_mismatch');
+    sources.set(path, decodeSource(raw.content));
   }
   const contractDigest = await canonicalSha256({
     sourceSha: manifest.runner.sourceSha,

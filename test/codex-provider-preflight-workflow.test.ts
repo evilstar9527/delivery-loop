@@ -79,6 +79,12 @@ describe('Codex provider preflight workflow', () => {
     expect(analysisScript).toContain("error.kind === 'process_nonzero_exit'");
     expect(analysisScript).toContain("error.providerFailureCode ?? 'provider_process_failed'");
     expect(analysisScript).toContain('classifyAnalysisProviderProcessFailure(result.stderr)');
+    expect(analysisScript).toContain('DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA');
+    expect(analysisScript).toContain("const diagnosticResultSchemaPath = join(root, 'diagnostic-result-schema.json')");
+    expect(analysisScript).toContain('diagnostic: {');
+    expect(analysisScript).toContain('async searchLogs(');
+    expect(analysisScript).toContain('async getTrace(');
+    expect(analysisScript).toContain('diagnosticUsages.length !== 3');
     expect(analysisScript).not.toContain('context_access_proof_unavailable');
     expect(analysisScript).not.toContain("const contextFilePath = join(root, 'context.json')");
   });
