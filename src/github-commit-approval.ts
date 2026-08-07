@@ -63,6 +63,8 @@ interface CandidateRow {
   plan_id: string;
   plan_version: number;
   plan_digest: string;
+  recovery_failed_attempt_id: string | null;
+  recovery_root_attempt_id: string | null;
 }
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -301,13 +303,36 @@ export class GitHubCommitApprovalService {
       `SELECT runs.run_id, runs.version AS run_version, runs.base_sha,
               tasks.task_id, runs.task_revision,
               tasks.target_repository AS repository,
-              plans.plan_id, plans.plan_version, plans.digest AS plan_digest
+              plans.plan_id, plans.plan_version, plans.digest AS plan_digest,
+              recovery.failed_attempt_id AS recovery_failed_attempt_id,
+              recovery.root_review_attempt_id AS recovery_root_attempt_id
        FROM runs
        JOIN tasks ON tasks.task_id = runs.task_id
        JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
-       WHERE runs.run_id = ? AND runs.state = 'awaiting_approval'
+       LEFT JOIN review_approval_recovery_candidates AS recovery
+         ON recovery.run_id = runs.run_id
+        AND recovery.run_version = runs.version
+        AND recovery.plan_id = plans.plan_id
+        AND recovery.plan_version = plans.plan_version
+       WHERE runs.run_id = ?
          AND runs.base_sha IS NOT NULL AND tasks.allow_repository_write = 1
-         AND plans.status = 'active' AND plans.base_sha = runs.base_sha
+         AND (
+           (runs.state = 'awaiting_approval' AND plans.status = 'active'
+            AND recovery.failed_attempt_id IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM review_approval_recovery_approvals AS pending_recovery
+              WHERE pending_recovery.run_id = runs.run_id
+                AND NOT EXISTS (
+                  SELECT 1 FROM review_approval_recoveries
+                  WHERE review_approval_recoveries.recovery_approval_id =
+                        pending_recovery.recovery_approval_id
+                )
+            ))
+           OR
+           (runs.state = 'blocked' AND plans.status = 'blocked'
+            AND recovery.failed_attempt_id IS NOT NULL)
+         )
+         AND plans.base_sha = runs.base_sha
          AND plans.plan_version = runs.active_plan_version
          AND plans.digest = runs.active_plan_digest
          AND EXISTS (

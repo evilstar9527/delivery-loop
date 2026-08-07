@@ -86,6 +86,7 @@ import { reconcileGitHubBasesFromEnv } from './reconciliation/github-base-observ
 import { reconcileGitHubMergeGatesFromEnv } from './reconciliation/github-merge-gate-runtime.js';
 import {
   reconcileGitHubReviewFeedbacksFromEnv,
+  recoverApprovedGitHubReviewFeedbacksFromEnv,
   recoverLostGitHubReviewFeedbacksFromEnv,
 } from './reconciliation/github-review-feedback-runtime.js';
 import { reconcileGitHubMergeStatusesFromEnv } from './reconciliation/github-merge-status-runtime.js';
@@ -221,6 +222,9 @@ export default {
       // bounded D1-only recovery must run before external scans can consume the
       // Free-plan CPU budget; the new dispatch remains durable for relay.
       await recoverLostGitHubReviewFeedbacksFromEnv(env);
+      // A fresh OWNER approval resumes only its immutable failed-review
+      // lineage. Generic initial scheduling explicitly excludes this Run.
+      await recoverApprovedGitHubReviewFeedbacksFromEnv(env);
       const executionProgress = new ExecutionProgressReconciler(
         env.DB_CONTROL,
         env.TASK_OBJECTS,
