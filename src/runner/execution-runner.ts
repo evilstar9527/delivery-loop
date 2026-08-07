@@ -38,7 +38,11 @@ import { BaseRebaseRunner } from './base-rebase-runner.js';
 import { DeliveryCommandRunner } from './delivery-command-runner.js';
 import { ControlPlaneProtectedPathApprovalReporter } from './protected-path-approval-reporter.js';
 import { validateExecutionPatchProposal } from './execution-patch-policy.js';
-import { buildExecutionPatchSnapshot } from './execution-patch-snapshot.js';
+import {
+  buildExecutionPatchSnapshot,
+  ExecutionPatchSnapshotError,
+  type ExecutionPatchSnapshotV1,
+} from './execution-patch-snapshot.js';
 import {
   ControlPlaneVerificationEvidenceReporter,
   type VerificationReporterAuthorization,
@@ -220,8 +224,20 @@ export interface RunExecutionAttemptOptions {
   onAgentActivity?: (activity: CodexExecutionActivity) => void;
 }
 
+export type ExecutionRunnerFailureKind =
+  | 'checkout_invalid'
+  | 'oidc_exchange_failed'
+  | 'context_invalid'
+  | 'policy_invalid'
+  | 'quota_unavailable'
+  | 'credential_unavailable'
+  | 'unknown';
+
 export class ExecutionRunnerError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly kind: ExecutionRunnerFailureKind = 'unknown',
+  ) {
     super(message);
     this.name = 'ExecutionRunnerError';
   }
@@ -619,7 +635,10 @@ async function assertCheckout(config: RunnerConfiguration): Promise<void> {
     status.exitCode !== 0 ||
     status.stdout !== ''
   ) {
-    throw new ExecutionRunnerError('execution checkout does not match dispatch');
+    throw new ExecutionRunnerError(
+      'execution checkout does not match dispatch',
+      'checkout_invalid',
+    );
   }
 }
 
@@ -665,8 +684,17 @@ export async function runExecutionAttempt(
     throw new ExecutionRunnerError('execution heartbeat interval is invalid');
   }
   await assertCheckout(config);
-  const oidc = await oidcToken(fetcher, config);
-  const exchanged = await exchange(fetcher, config, oidc);
+  let oidc: string;
+  let exchanged: z.infer<typeof ExchangeResponseSchema>;
+  try {
+    oidc = await oidcToken(fetcher, config);
+    exchanged = await exchange(fetcher, config, oidc);
+  } catch {
+    throw new ExecutionRunnerError(
+      'execution identity exchange failed',
+      'oidc_exchange_failed',
+    );
+  }
   const runtimeSecrets = new Set<string>([
     oidc,
     exchanged.attemptToken,
@@ -684,18 +712,23 @@ export async function runExecutionAttempt(
     exchanged.leaseGeneration,
     runtimeSecrets,
   );
-  const rawContext = await fencing.withAuthorization(async (authorization) =>
-    await controlPlaneJson(
-      fetcher,
-      config,
-      `/v1/attempts/${config.attemptId}/context`,
-      authorization.attemptToken,
-      'execution context',
-      [200],
-    ));
+  let rawContext: unknown;
+  try {
+    rawContext = await fencing.withAuthorization(async (authorization) =>
+      await controlPlaneJson(
+        fetcher,
+        config,
+        `/v1/attempts/${config.attemptId}/context`,
+        authorization.attemptToken,
+        'execution context',
+        [200],
+      ));
+  } catch {
+    throw new ExecutionRunnerError('execution context is unavailable', 'context_invalid');
+  }
   const parsedContext = ContextResponseSchema.safeParse(rawContext);
   if (!parsedContext.success) {
-    throw new ExecutionRunnerError('execution context response is invalid');
+    throw new ExecutionRunnerError('execution context response is invalid', 'context_invalid');
   }
   const context = parsedContext.data;
   const derivedAttemptBranch = `agent/${context.attempt.taskId}/${config.attemptId}`;
@@ -743,7 +776,10 @@ export async function runExecutionAttempt(
     )) ||
     await taskRevisionDigest(context.task) !== config.taskDigest
   ) {
-    throw new ExecutionRunnerError('execution context identity does not match dispatch');
+    throw new ExecutionRunnerError(
+      'execution context identity does not match dispatch',
+      'context_invalid',
+    );
   }
   const targetedCommandRefs = context.item.commandRefs.filter((ref) => ref.startsWith('test:'));
   if (
@@ -751,13 +787,18 @@ export async function runExecutionAttempt(
     !context.item.effects.includes('repo_write') ||
     !context.item.evidenceKinds.includes('test')
   ) {
-    throw new ExecutionRunnerError('execution Plan Item is not runnable');
+    throw new ExecutionRunnerError('execution Plan Item is not runnable', 'context_invalid');
   }
-  const policy = await loadDeliveryPolicyAtCommit(config.workspacePath, config.baseSha);
-  const agentContext = options.agent === undefined && context.baseRebase === undefined
-    ? {
-        ...context,
-        repositorySnapshot: await buildExecutionPatchSnapshot({
+  let policy: Awaited<ReturnType<typeof loadDeliveryPolicyAtCommit>>;
+  try {
+    policy = await loadDeliveryPolicyAtCommit(config.workspacePath, config.baseSha);
+  } catch {
+    throw new ExecutionRunnerError('execution delivery policy is unavailable', 'policy_invalid');
+  }
+  let repositorySnapshot: ExecutionPatchSnapshotV1 | undefined;
+  if (context.baseRebase === undefined) {
+    try {
+      repositorySnapshot = await buildExecutionPatchSnapshot({
           repositoryPath: config.workspacePath,
           referencedText: [
             context.item.objective,
@@ -767,9 +808,17 @@ export async function runExecutionAttempt(
           ],
           protectedPaths: policy.policy.protectedPaths,
           runtimeSecrets: [...runtimeSecrets],
-        }),
+      });
+    } catch (error) {
+      if (!(error instanceof ExecutionPatchSnapshotError) || error.kind !== 'no_candidates') {
+        throw error;
       }
-    : context;
+    }
+  }
+  const agentContext = repositorySnapshot === undefined
+    ? context
+    : { ...context, repositorySnapshot };
+  const patchRecoveryAvailable = repositorySnapshot !== undefined;
   const temporaryRoot = await mkdtemp(join(config.runnerTempPath, 'delivery-loop-execution-'));
   await chmod(temporaryRoot, 0o700);
   const contextFilePath = join(temporaryRoot, 'context.json');
@@ -791,7 +840,10 @@ export async function runExecutionAttempt(
     const existing = modelReservations.get(invocation);
     if (existing !== undefined) return existing;
     if (config.modelProfileId === undefined) {
-      throw new ExecutionRunnerError('execution Runner model profile is unavailable');
+      throw new ExecutionRunnerError(
+        'execution Runner model profile is unavailable',
+        'quota_unavailable',
+      );
     }
     const reservationDigest = await canonicalSha256({
       attemptId: config.attemptId,
@@ -823,7 +875,12 @@ export async function runExecutionAttempt(
         (first !== undefined && (
           parsed.data.provider !== first.provider || parsed.data.model !== first.model
         ))
-      ) throw new ExecutionRunnerError('model quota reservation response is invalid');
+      ) {
+        throw new ExecutionRunnerError(
+          'model quota reservation response is invalid',
+          'quota_unavailable',
+        );
+      }
       return parsed.data;
     });
     modelReservations.set(invocation, reservation);
@@ -879,6 +936,7 @@ export async function runExecutionAttempt(
         }),
         afterInvocation: settleModelInvocation,
         canRecover: async () => {
+          if (!patchRecoveryAvailable) return false;
           const [head, status] = await Promise.all([
             executeGitCommand({
               repositoryPath: config.workspacePath,
@@ -968,7 +1026,10 @@ export async function runExecutionAttempt(
       if (!reported) {
         throw new ExecutionRunnerError('repo_write credential dependency report failed');
       }
-      throw new ExecutionRunnerError('repo_write credential dependency is unavailable');
+      throw new ExecutionRunnerError(
+        'repo_write credential dependency is unavailable',
+        'credential_unavailable',
+      );
     }
 
     const protectedPathReporter = async (report: Parameters<
