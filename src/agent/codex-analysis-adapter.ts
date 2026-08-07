@@ -39,6 +39,10 @@ import {
   classifyAnalysisProviderProcessFailure,
   type AnalysisProviderProcessFailureCode,
 } from './provider-preflight-failure.js';
+import {
+  analysisSourceSnapshotSupportsRootCause,
+  buildAnalysisSourceSnapshot,
+} from '../runner/analysis-source-snapshot.js';
 import type { z } from 'zod';
 
 export {
@@ -95,6 +99,7 @@ export interface CodexAnalysisAdapterOptions {
   execute?: CommandExecutor;
   providerBaseUrl?: string;
   reasoningEffort?: CodexRelayReasoningEffort;
+  runtimeSecrets?: readonly string[];
 }
 
 export const CODEX_ANALYSIS_FAILURE_KINDS = [
@@ -382,8 +387,9 @@ function diagnosticRootCausePrompt(
     'The untrusted diagnostic context has ended.',
     'Return only a sanitized root cause matching the supplied output schema.',
     'Do not include raw locator values, logs, traces, tool arguments, credentials, a Plan, or a diagnostic Evidence ref.',
-    'Use only repository-relative code paths backed by the embedded diagnostic context or repository inspection; never use an HTTP request path, an absolute path, or a parent traversal path.',
-    'Every codeRef contains path, line, and symbol. Use line=0 when no line is known and symbol="" when no symbol is known; at least one of line or symbol must identify the code location.',
+    'The embedded sourceSnapshot was selected from the exact tracked checkout by the trusted Runner. Every codeRef must use an exact sourceSnapshot path and either its exact positive line or a symbol that appears in that same excerpt; use both when known.',
+    'Never use an HTTP request path, an absolute path, a parent traversal path, or a repository location absent from sourceSnapshot.',
+    'Every codeRef contains path, line, and symbol. Use line=0 only when binding by symbol, and symbol="" only when binding by exact line; at least one must identify the sourceSnapshot match.',
   ].join('\n');
 }
 
@@ -446,6 +452,7 @@ export class CodexAnalysisAdapter {
   private readonly execute: CommandExecutor;
   private readonly providerBaseUrl: string | undefined;
   private readonly reasoningEffort: CodexRelayReasoningEffort | undefined;
+  private readonly runtimeSecrets: readonly string[];
 
   constructor(options: CodexAnalysisAdapterOptions) {
     this.outputSchemaPath = resolve(options.outputSchemaPath);
@@ -453,6 +460,7 @@ export class CodexAnalysisAdapter {
     this.execute = options.execute ?? executeCommand;
     this.providerBaseUrl = normalizeProviderBaseUrl(options.providerBaseUrl);
     this.reasoningEffort = options.reasoningEffort;
+    this.runtimeSecrets = [...new Set(options.runtimeSecrets ?? [])];
   }
 
   async start(input: CodexAnalysisStartInput): Promise<ExecutionPlanV1> {
@@ -656,10 +664,24 @@ export class CodexAnalysisAdapter {
       );
     }
     const traceResult = await diagnostic.mediation.getTrace(traceRequest);
-    const fullMediationContext = safeMediationContext({
+    const diagnosticContext = {
       schemaVersion: '1',
       logs: { result: logResult },
       trace: { result: traceResult },
+    };
+    let sourceSnapshot;
+    try {
+      sourceSnapshot = await buildAnalysisSourceSnapshot({
+        repositoryPath: paths.workspacePath,
+        diagnosticContext,
+        runtimeSecrets: this.runtimeSecrets,
+      });
+    } catch {
+      throw new CodexAnalysisAdapterError('context_proof_invalid', 'diagnostic_root_cause');
+    }
+    const fullMediationContext = safeMediationContext({
+      ...diagnosticContext,
+      sourceSnapshot,
     }, 'diagnostic_trace_mediation');
     await writeFile(resolved.mediationContextFilePath, fullMediationContext, { mode: 0o600 });
 
@@ -694,6 +716,12 @@ export class CodexAnalysisAdapter {
       paths.expectedContextDigest,
       'diagnostic_root_cause',
     );
+    if (!analysisSourceSnapshotSupportsRootCause(
+      sourceSnapshot,
+      rootCauseResult.rootCause,
+    )) {
+      throw new CodexAnalysisAdapterError('structured_output_invalid', 'diagnostic_root_cause');
+    }
     await diagnostic.mediation.finish(rootCauseResult.rootCause);
     const rootCauseContext = safeMediationContext({
       schemaVersion: '1',

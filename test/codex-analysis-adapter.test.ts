@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import {
   CodexAnalysisAdapter,
@@ -24,6 +26,7 @@ import {
 
 const BASE_SHA = 'c'.repeat(40);
 const SCHEMA_PATH = resolve('schemas/analysis-plan-content-v1.schema.json');
+const exec = promisify(execFile);
 const CONTEXT_PAYLOAD = {
   taskRef: 'r2://tasks/private',
   bodyCanary: 'CANARY_NOT_IN_PROMPT',
@@ -219,7 +222,20 @@ async function tempInput(): Promise<{
   const workspace = join(root, 'repo');
   const contextFile = join(root, 'context.json');
   const outputFile = join(root, 'plan-content.json');
-  await import('node:fs/promises').then(({ mkdir }) => mkdir(workspace));
+  await mkdir(join(workspace, 'src'), { recursive: true });
+  const linePrefix = '\n'.repeat(41);
+  await Promise.all([
+    writeFile(
+      join(workspace, 'src/request.ts'),
+      `${linePrefix}export function handleRequest() { return 'request-handler'; }\n`,
+    ),
+    writeFile(
+      join(workspace, 'src/cache.ts'),
+      `${linePrefix}export function readCache() { return 'stale-cache'; }\n`,
+    ),
+  ]);
+  await exec('git', ['init', '-q'], { cwd: workspace });
+  await exec('git', ['add', '.'], { cwd: workspace });
   await writeFile(
     contextFile,
     JSON.stringify(contextFileEnvelope()),
@@ -920,6 +936,9 @@ describe('Codex analysis Agent adapter', () => {
     expect(commands[2]?.stdin).toContain('BEGIN_UNTRUSTED_DIAGNOSTIC_CONTEXT_JSON');
     expect(commands[2]?.stdin).toContain('request-trace-from-log-result');
     expect(commands[2]?.stdin).toContain('stale-cache');
+    expect(commands[2]?.stdin).toContain('"path":"src/cache.ts"');
+    expect(commands[2]?.stdin).toContain('"line":42');
+    expect(commands[2]?.stdin).toContain('function readCache');
     expect(commands[3]?.stdin).toContain('A stale cache branch returns the previous response.');
     expect(commands[3]?.stdin).not.toContain('request-trace-from-log-result');
     expect(commands[1]?.args.join(' ')).not.toContain('request-trace-from-log-result');
@@ -1076,7 +1095,7 @@ describe('Codex analysis Agent adapter', () => {
         ...files,
         mediation: {
           async searchLogs() { return { traceId: 'safe-trace-ref' }; },
-          async getTrace() { return { spans: [] }; },
+          async getTrace() { return { spans: [{ outcome: 'stale-cache' }] }; },
           async finish() { finished = true; },
         },
       },

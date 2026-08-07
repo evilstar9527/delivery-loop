@@ -23,6 +23,7 @@ export const ANALYSIS_RUNNER_TRANSITIVE_CONTRACT_PATHS = [
   'src/agent/codex-usage.ts',
   'src/agent/command-runtime.ts',
   'src/agent/provider-preflight-failure.ts',
+  'src/runner/analysis-source-snapshot.ts',
 ] as const;
 
 const CONTEXT_ACTIONS = {
@@ -375,6 +376,7 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
   const usage = sources.get('src/agent/codex-usage.ts') ?? '';
   const commandRuntime = sources.get('src/agent/command-runtime.ts') ?? '';
   const providerFailure = sources.get('src/agent/provider-preflight-failure.ts') ?? '';
+  const sourceSnapshot = sources.get('src/runner/analysis-source-snapshot.ts') ?? '';
   const schemaSource = sources.get('schemas/analysis-plan-content-v1.schema.json') ?? '';
   const packageSource = sources.get('package.json') ?? '';
   const lockSource = sources.get('pnpm-lock.yaml') ?? '';
@@ -418,6 +420,7 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     runner.includes("this.callTool('traces/get'") &&
     runner.includes('/diagnostic-evidence`') &&
     runner.includes('diagnosticMediation.agentInterface()') &&
+    runner.includes('runtimeSecrets: [...runtimeSecrets]') &&
     runner.includes('DIAGNOSTIC_EVIDENCE_REF_PATTERN.test(ref)') &&
     runner.includes('const beforeSnapshot = await snapshotWorkspace') &&
     runner.includes('const afterSnapshot = await snapshotWorkspace') &&
@@ -436,6 +439,8 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     adapter.includes('diagnostic.mediation.searchLogs(logRequest)') &&
     adapter.includes('diagnostic.mediation.getTrace(traceRequest)') &&
     adapter.includes('diagnostic.mediation.finish(rootCauseResult.rootCause)') &&
+    adapter.includes('buildAnalysisSourceSnapshot({') &&
+    adapter.includes('analysisSourceSnapshotSupportsRootCause(') &&
     adapter.includes("'diagnostic_root_cause'") &&
     adapter.includes("'diagnostic_plan'") &&
     adapter.includes('this.outputSchemaPath,') &&
@@ -449,7 +454,13 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     providerFailure.includes("event.type === 'error'") &&
     providerFailure.includes('classifyAnalysisProviderProcessFailure(message)') &&
     providerFailure.includes('this.code = candidate') &&
-    providerFailure.includes('this.observedFailure ? GENERIC_PROVIDER_PROCESS_FAILURE : null');
+    providerFailure.includes('this.observedFailure ? GENERIC_PROVIDER_PROCESS_FAILURE : null') &&
+    sourceSnapshot.includes("args: ['ls-files', '-z']") &&
+    sourceSnapshot.includes('MAX_TRACKED_FILES = 2_000') &&
+    sourceSnapshot.includes('MAX_SCANNED_BYTES = 16 * 1_024 * 1_024') &&
+    sourceSnapshot.includes('MAX_SNAPSHOT_BYTES = 12 * 1_024') &&
+    sourceSnapshot.includes('new SecretScanner({ secrets: [...input.runtimeSecrets] })') &&
+    sourceSnapshot.includes('analysisSourceSnapshotSupportsRootCause');
 }
 
 async function verifyRunnerContract(
