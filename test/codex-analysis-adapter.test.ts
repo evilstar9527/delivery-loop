@@ -9,6 +9,7 @@ import {
   type CommandExecutionRequest,
   type CommandExecutionResult,
 } from '../src/agent/codex-analysis-adapter.js';
+import type { CodexAnalysisAdapterError } from '../src/agent/codex-analysis-adapter.js';
 import type { ExecutionPlanValidationContext } from '../src/domain/plan.js';
 import {
   ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
@@ -292,10 +293,10 @@ describe('Codex analysis Agent adapter', () => {
       },
       validation: validationContext(),
     })).rejects.toMatchObject({
-      issues: expect.arrayContaining([
-        expect.objectContaining({ code: 'acceptance_criterion_uncovered' }),
-      ]),
-    });
+      name: 'CodexAnalysisAdapterError',
+      kind: 'plan_validation_failed',
+      stage: 'plan_validation',
+    } satisfies Partial<CodexAnalysisAdapterError>);
   });
 
   it('announces and enforces the trusted writable-requirement change contract', async () => {
@@ -1066,7 +1067,11 @@ describe('Codex analysis Agent adapter', () => {
         },
       },
     });
-    await expect(promise).rejects.toThrow('Codex diagnostic analysis output is invalid');
+    await expect(promise).rejects.toMatchObject({
+      name: 'CodexAnalysisAdapterError',
+      kind: 'structured_output_invalid',
+      stage: 'diagnostic_result',
+    } satisfies Partial<CodexAnalysisAdapterError>);
     expect(finished).toBe(false);
   });
 
@@ -1143,7 +1148,11 @@ describe('Codex analysis Agent adapter', () => {
       },
       validation: validationContext(),
     });
-    await expect(promise).rejects.toThrow('ExecutionPlan validation failed');
+    await expect(promise).rejects.toMatchObject({
+      name: 'CodexAnalysisAdapterError',
+      kind: 'plan_validation_failed',
+      stage: 'plan_validation',
+    } satisfies Partial<CodexAnalysisAdapterError>);
     expect(observed?.stdin).not.toContain(comment);
     expect(observed?.args).toContain('read-only');
     expect(observed?.args.join(' ')).not.toMatch(/workspace-write|danger-full-access|yolo/);
@@ -1174,8 +1183,49 @@ describe('Codex analysis Agent adapter', () => {
       },
       validation: validationContext(),
     });
-    await expect(promise).rejects.toThrow('Codex analysis process failed with exit code 17');
+    await expect(promise).rejects.toMatchObject({
+      name: 'CodexAnalysisAdapterError',
+      kind: 'process_nonzero_exit',
+      stage: 'single_pass',
+    } satisfies Partial<CodexAnalysisAdapterError>);
     await expect(promise).rejects.not.toThrow('CANARY_SECRET_FROM_CLI_STDERR');
+  });
+
+  it.each([
+    {
+      name: 'an unavailable process',
+      expectedKind: 'process_unavailable' as const,
+      execute: async () => { throw new Error('CANARY_RAW_PROCESS_ERROR'); },
+    },
+    {
+      name: 'missing metered usage',
+      expectedKind: 'usage_invalid' as const,
+      execute: async () => ({ exitCode: 0 }),
+    },
+  ])('classifies $name without exposing the underlying error', async (testCase) => {
+    const paths = await tempInput();
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: testCase.execute,
+    });
+    const promise = adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-safe-failure-kind', runId: 'run-codex-analysis', version: 1,
+        taskRevision: 'revision-1', baseSha: BASE_SHA, attemptId: 'attempt-safe-failure-kind',
+      },
+      validation: validationContext(),
+      model: 'gpt-test-metered',
+    });
+    await expect(promise).rejects.toMatchObject({
+      name: 'CodexAnalysisAdapterError',
+      kind: testCase.expectedKind,
+      stage: 'single_pass',
+    } satisfies Partial<CodexAnalysisAdapterError>);
+    await expect(promise).rejects.not.toThrow('CANARY_RAW_PROCESS_ERROR');
   });
 
   it('rejects a timed-out process even when the child reports exit zero', async () => {
@@ -1200,7 +1250,11 @@ describe('Codex analysis Agent adapter', () => {
       },
       validation: validationContext(),
       model: 'gpt-test-metered',
-    })).rejects.toThrow('Codex analysis process timed out');
+    })).rejects.toMatchObject({
+      name: 'CodexAnalysisAdapterError',
+      kind: 'process_timeout',
+      stage: 'single_pass',
+    } satisfies Partial<CodexAnalysisAdapterError>);
   });
 
   it('redacts sensitive command environment values before returning captured stderr', async () => {

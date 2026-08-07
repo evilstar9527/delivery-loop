@@ -4,6 +4,12 @@ import {
   type CodexExecutionActivity,
 } from '../agent/codex-execution-activity.js';
 import { secureStructuredLogSink } from './structured-log.js';
+import {
+  CODEX_ANALYSIS_FAILURE_KINDS,
+  CODEX_ANALYSIS_FAILURE_STAGES,
+  type CodexAnalysisFailureKind,
+  type CodexAnalysisFailureStage,
+} from '../agent/codex-analysis-adapter.js';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const EXECUTION_FAILURE_KINDS = [
@@ -44,15 +50,26 @@ export function writeRunnerStructuredLog(
   event: RunnerLogEvent,
   outcome: 'accepted' | 'passed' | 'failed' | 'blocked' | 'replanning',
   environment: NodeJS.ProcessEnv = process.env,
-  failureKind?: RunnerExecutionFailureKind,
+  failureKind?: RunnerExecutionFailureKind | CodexAnalysisFailureKind,
+  failureStage?: CodexAnalysisFailureStage,
 ): void {
-  if (
-    failureKind !== undefined && (
-      event !== 'execution_attempt_result' ||
-      outcome !== 'failed' ||
-      !EXECUTION_FAILURE_KINDS.includes(failureKind)
-    )
-  ) throw new Error('Runner failure kind is invalid');
+  const validExecutionFailure = event === 'execution_attempt_result' &&
+    outcome === 'failed' && failureStage === undefined &&
+    EXECUTION_FAILURE_KINDS.includes(failureKind as RunnerExecutionFailureKind);
+  const validAnalysisFailure = event === 'analysis_attempt_result' &&
+    outcome === 'failed' &&
+    CODEX_ANALYSIS_FAILURE_KINDS.includes(failureKind as CodexAnalysisFailureKind) &&
+    CODEX_ANALYSIS_FAILURE_STAGES.includes(failureStage as CodexAnalysisFailureStage);
+  if (failureStage !== undefined && failureKind === undefined) {
+    throw new Error('Runner failure classification is invalid');
+  }
+  if (failureKind !== undefined && !validExecutionFailure && !validAnalysisFailure) {
+    throw new Error(
+      event === 'analysis_attempt_result' && failureStage !== undefined
+        ? 'Runner failure classification is invalid'
+        : 'Runner failure kind is invalid',
+    );
+  }
   const failed = outcome === 'failed' || outcome === 'blocked';
   const stream = failed ? process.stderr : process.stdout;
   secureStructuredLogSink({
@@ -65,6 +82,7 @@ export function writeRunnerStructuredLog(
     event,
     outcome,
     ...(failureKind === undefined ? {} : { failureKind }),
+    ...(failureStage === undefined ? {} : { failureStage }),
     ...(ID_PATTERN.test(environment.DELIVERY_ATTEMPT_ID ?? '')
       ? { attemptId: environment.DELIVERY_ATTEMPT_ID }
       : {}),

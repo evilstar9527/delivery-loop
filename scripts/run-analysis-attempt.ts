@@ -1,10 +1,22 @@
-import { runAnalysisAttempt } from '../src/runner/analysis-runner.js';
+import {
+  AnalysisRunnerError,
+  runAnalysisAttempt,
+} from '../src/runner/analysis-runner.js';
 import { writeRunnerStructuredLog } from '../src/observability/runner-log.js';
 
 try {
   await runAnalysisAttempt();
   writeRunnerStructuredLog('analysis_attempt_result', 'accepted');
-} catch {
-  writeRunnerStructuredLog('analysis_attempt_result', 'failed');
+} catch (error) {
+  const classification = error instanceof AnalysisRunnerError
+    ? error.analysisFailure
+    : undefined;
+  writeRunnerStructuredLog(
+    'analysis_attempt_result',
+    'failed',
+    process.env,
+    classification?.kind,
+    classification?.stage,
+  );
   process.exitCode = 1;
 }
