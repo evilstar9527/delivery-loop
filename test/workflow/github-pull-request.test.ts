@@ -420,6 +420,85 @@ describe('GitHub Draft PR publication and external facts', () => {
     ).first()).toEqual({ count: 1 });
   });
 
+  it('skips stale Run snapshots before GitHub API reconciliation without starving the current publication', async () => {
+    const scheduled = await requestPublication({ expectedRunVersion: 8, draftId: DRAFT_ID });
+    expect(scheduled.status).toBe(201);
+    const publication = await scheduled.json() as { publicationId: string; outboxId: string };
+    const digest = await bodyDigest();
+    const exactFact = pullRequestFact(digest);
+    expect(await new GitHubPullRequestOutboxProcessor(
+      env.DB_CONTROL,
+      new FakePullRequestEffects(exactFact),
+      { now: () => new Date(NOW) },
+    ).deliver(publication.outboxId)).toBe('settled');
+
+    const staleBody = '# Delivery Loop Draft PR\n\nStale body.\n';
+    const staleBodyDigest = await canonicalSha256(staleBody);
+    const staleHeadSha = '9'.repeat(40);
+    const staleBranch = `agent/${TASK_ID}/stale-attempt`;
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO evidence (
+           evidence_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+           kind, status, sha, summary, verification_status, observed_at, created_at
+         ) VALUES ('evidence-pr-publication-stale', ?, ?, ?, 2, ?, 'commit',
+                   'passed', ?, 'Stale bot commit head.', 'unverified', ?, ?)`,
+      ).bind(RUN_ID, ATTEMPT_ID, PLAN_ID, ITEM_ID, staleHeadSha, NOW, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_head_updates (
+           update_id, evidence_id, run_id, attempt_id, plan_id, plan_version,
+           plan_item_id, lease_generation, parent_sha, head_sha, branch, created_at
+         ) VALUES ('head-pr-publication-stale', 'evidence-pr-publication-stale',
+                   ?, ?, ?, 2, ?, 3, ?, ?, ?, ?)`,
+      ).bind(RUN_ID, ATTEMPT_ID, PLAN_ID, ITEM_ID, HEAD_SHA, staleHeadSha, staleBranch, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO pull_request_drafts (
+           draft_id, run_id, run_version, task_id, task_revision, task_digest,
+           plan_id, plan_version, plan_digest, attempt_id, head_update_id,
+           head_sha, branch, body, body_digest, status, created_at
+         ) VALUES ('pr_draft_publication_stale', ?, 7, ?, 'revision-4', ?, ?, 2, ?, ?,
+                   'head-pr-publication-stale', ?, ?, ?, ?, 'prepared', ?)`,
+      ).bind(
+        RUN_ID,
+        TASK_ID,
+        TASK_DIGEST,
+        PLAN_ID,
+        PLAN_DIGEST,
+        ATTEMPT_ID,
+        staleHeadSha,
+        staleBranch,
+        staleBody,
+        staleBodyDigest,
+        NOW,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO pull_request_publications (
+           publication_id, run_id, run_version, draft_id, approval_id, repository,
+           base_branch, head_branch, head_sha, title, body_digest, status,
+           github_pr_number, created_at, updated_at
+         ) VALUES ('pr_pub_stale_snapshot', ?, 7, 'pr_draft_publication_stale',
+                   'approval-pr-publication', 'example/delivery-target', 'main', ?, ?,
+                   'Stale publication', ?, 'created_unverified', 41,
+                   '2026-07-25T16:00:00.000Z', '2026-07-25T16:00:00.000Z')`,
+      ).bind(RUN_ID, staleBranch, staleHeadSha, staleBodyDigest),
+    ]);
+
+    const requests: Array<{ number: number }> = [];
+    const reconciler = new GitHubPullRequestReconciler(env.DB_CONTROL, {
+      async getPullRequest(_request, number) {
+        requests.push({ number });
+        return exactFact;
+      },
+    }, { now: () => new Date('2026-07-25T17:02:00.000Z') });
+
+    await expect(reconciler.reconcilePublication('pr_pub_stale_snapshot'))
+      .resolves.toBe('not_found');
+    await expect(reconciler.reconcileBatch(1)).resolves.toEqual([
+      { publicationId: publication.publicationId, disposition: 'applied' },
+    ]);
+    expect(requests).toEqual([{ number: 42 }]);
+  });
+
   it('rechecks the exact approval immediately before the GitHub effect', async () => {
     const scheduled = await requestPublication({
       expectedRunVersion: 8,

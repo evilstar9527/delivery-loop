@@ -348,6 +348,7 @@
 - [x] Draft PR 正文包含来源任务/revision、验收标准逐条状态、变更摘要、风险、测试证据、未完成项和回滚说明。
 - [ ] PR 创建由 GitHub webhook 外部核对；Agent 自报 PR URL 不能直接推进状态。
   - [x] 本地控制面/workerd/REST契约：service-only strict scheduler把exact prepared正文与repo-write approval冻结为唯一publication/outbox；Watt-derived 20路fenced consumer只执行一次same-head Draft PR effect，PR-only App token无contents/Actions权限；create响应仅`created_unverified`，只有HMAC `pull_request opened`或同projector API reconciliation全绑定repo/base/head/title/body digest后写verified PR Evidence并CAS进入`pull_request_open`，Agent URL/number/status无入口。
+  - [x] PR API补偿候选公平性本地契约：batch在应用limit前只选择Run仍为`verifying`且current version精确等于publication冻结version的`created_unverified`记录，按publication ID直查时在GitHub GET前重复同一约束；更老的blocked/replanning/version-drift记录不产生外部调用、不返回结果且不能饿死较新的有效publication。真实revision 3已产生Draft PR #207并暴露旧候选抢占问题；生产发布后的fresh revision仍须完成下方外部事实，历史PR不冒充通过。
   - [x] 真实外部证据验收契约：仓库外strict manifest冻结publication、webhook applied fact和API applied fact；只读verifier通过Case 8的安全`checks.pullRequestObservations`投影，再以GitHub PR API核对open/draft、repository/base/head、body digest、number与URL。`pnpm run e2e:github-pr`沿用Watt-derived 0/1/2、显式opt-in、64 KiB manifest和1 MiB有界响应；不保存PR正文、raw webhook/REST response或token，也不把Agent自报URL当状态入口。
   - [ ] 真实试点GitHub外部事实：App实际创建一份Draft PR，记录PR URL/number与Actions/控制面关联；签名`pull_request opened` webhook（及一次API补偿演练）核对exact head/body后推进Run，重放delivery/outbox不创建第二份PR。
 - [ ] Review comment 绑定 PR head SHA 并创建 `review_fix` attempt；已过时评论不误改新代码。
