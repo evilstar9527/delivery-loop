@@ -277,8 +277,7 @@ export class WorkflowOutboxProcessor {
       case 'workflow_signal':
         return await this.sendSignal(outbox);
       case 'workflow_cancel':
-        await this.cancelRun(outbox);
-        return;
+        return await this.cancelRun(outbox);
       case 'workflow_pause':
         return await this.pauseRun(outbox);
       case 'workflow_replay':
@@ -397,7 +396,9 @@ export class WorkflowOutboxProcessor {
     return resultMatches && planMatches ? null : 'signal_binding_invalid';
   }
 
-  private async cancelRun(outbox: FencedOutboxRecord): Promise<void> {
+  private async cancelRun(
+    outbox: FencedOutboxRecord,
+  ): Promise<OutboxEffectOutcome | void> {
     if (outbox.payloadRef !== `d1://runs/${outbox.runId}`) {
       throw new OutboxEffectError('run_cancel_ref_invalid');
     }
@@ -405,8 +406,9 @@ export class WorkflowOutboxProcessor {
       .prepare('SELECT state FROM runs WHERE run_id = ?')
       .bind(outbox.runId)
       .first<{ state: string }>();
-    if (run === null || (run.state !== 'cancelled' && run.state !== 'blocked')) {
-      throw new OutboxEffectError('run_not_cancelled_or_blocked');
+    if (run === null) throw new OutboxEffectError('run_missing');
+    if (run.state !== 'cancelled' && run.state !== 'blocked') {
+      return { settledCode: 'stale_run_state' };
     }
     await this.effects.terminateRun(outbox.runId);
   }

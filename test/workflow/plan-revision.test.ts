@@ -10,6 +10,8 @@ import {
 import { ExecutionPlanStore } from '../../src/storage/execution-plan-store.js';
 import { PlanRevisionStore } from '../../src/storage/plan-revision-store.js';
 import { TaskQueryStore } from '../../src/storage/task-query-store.js';
+import { PlanRevisionAnalysisReconciler } from
+  '../../src/reconciliation/plan-revision-analysis-reconciler.js';
 
 const RUN_ID = 'run-plan-revision';
 const TASK_ID = 'task-plan-revision';
@@ -26,6 +28,7 @@ const NOW = '2026-07-25T20:00:00.000Z';
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM approval_invalidations'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_revision_analysis_retries'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revisions'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revision_source_facts'),
     env.DB_CONTROL.prepare('DELETE FROM github_write_credentials'),
@@ -315,6 +318,115 @@ beforeEach(async () => {
 });
 
 describe('immutable ExecutionPlan revision', () => {
+  it('creates one current analysis retry for a failed replan and activates its Plan', async () => {
+    const store = new PlanRevisionStore(env.DB_CONTROL);
+    const started = await store.begin({
+      runId: RUN_ID,
+      expectedRunVersion: 10,
+      activePlanVersion: 1,
+      activePlanDigest: OLD_PLAN_DIGEST,
+      sourceKind: 'supplemental_context',
+      sourceRef: 'r2://supplemental-context/context-revision-1.json',
+      sourceDigest: SOURCE_DIGEST,
+      requestedBaseSha: NEW_BASE_SHA,
+    }, new Date(NOW));
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts SET status = 'failed', version = 1, lease_generation = 1,
+                             updated_at = ? WHERE attempt_id = ?`,
+      ).bind(NOW, started.analysisAttemptId),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_failures (
+           failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+           retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+           failure_site, needed_human_input, scope_attempt_count,
+           consecutive_fingerprint_count, revoked_lease_generation,
+           occurred_at, created_at
+         ) SELECT 'failure-plan-revision-analysis', run_id, attempt_id, ordinal,
+                  'event-plan-revision-analysis', 1, ?, ?, 'invalid_output',
+                  'invalid_agent_output', 'agent_output', 'manual_investigation',
+                  1, 1, 1, ?, ?
+           FROM attempts WHERE attempt_id = ?`,
+      ).bind(
+        `sha256:${'6'.repeat(64)}`,
+        `sha256:${'7'.repeat(64)}`,
+        NOW,
+        NOW,
+        started.analysisAttemptId,
+      ),
+    ]);
+
+    const reconciler = () => new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    });
+    const results = await Promise.all(
+      Array.from({ length: 20 }, async () => await reconciler().reconcileBatch(5)),
+    );
+    expect(results.reduce((sum, count) => sum + count, 0)).toBe(1);
+    const retry = await env.DB_CONTROL.prepare(
+      `SELECT retries.retry_attempt_id, retries.retry_sequence,
+              attempts.status, retries.failed_attempt_id,
+              outbox.delivery_state
+       FROM plan_revision_analysis_retries AS retries
+       JOIN attempts ON attempts.attempt_id = retries.retry_attempt_id
+       JOIN outbox ON outbox.payload_ref = 'd1://attempts/' || attempts.attempt_id
+       WHERE retries.revision_id = ?`,
+    ).bind(started.revisionId).first<{
+      retry_attempt_id: string;
+      retry_sequence: number;
+      status: string;
+      failed_attempt_id: string;
+      delivery_state: string;
+    }>();
+    expect(retry).toMatchObject({
+      retry_sequence: 1,
+      status: 'pending',
+      failed_attempt_id: started.analysisAttemptId,
+      delivery_state: 'pending',
+    });
+    if (retry === null) throw new Error('missing analysis retry');
+
+    const body = revisedPlanBody(retry.retry_attempt_id);
+    const proposal: ExecutionPlanV1 = {
+      ...body,
+      digest: await computeExecutionPlanDigest(body),
+      status: 'proposed',
+    };
+    const plan = await new ExecutionPlanStore(env.DB_CONTROL).saveValidatedProposal(
+      proposal,
+      {
+        runId: RUN_ID,
+        taskRevision: 'revision-1',
+        baseSha: NEW_BASE_SHA,
+        expectedVersion: 2,
+        acceptanceCriteriaCount: 1,
+        allowedCommandRefs: ['test:unit', 'verify:all'],
+        verificationCommandRefs: ['test:unit', 'verify:all'],
+        allowedEffects: ['repo_read', 'repo_write', 'test_deploy'],
+        requiresRepositoryChange: false,
+      },
+      NOW,
+    );
+    await expect(store.activate({
+      revisionId: started.revisionId,
+      expectedRunVersion: 11,
+      planId: plan.id,
+      planVersion: plan.version,
+      planDigest: plan.digest,
+    }, new Date(NOW))).resolves.toMatchObject({
+      created: true,
+      planId: NEW_PLAN_ID,
+      planVersion: 2,
+      runVersion: 12,
+    });
+    await expect(env.DB_CONTROL.prepare(
+      `UPDATE plan_revision_analysis_retries SET retry_sequence = 2
+       WHERE revision_id = ?`,
+    ).bind(started.revisionId).run()).rejects.toThrow(
+      'plan_revision_analysis_retry_is_immutable',
+    );
+  });
+
   it('converges re-analysis, invalidates old approval, and atomically activates changed v2', async () => {
     const store = new PlanRevisionStore(env.DB_CONTROL);
     const input = {

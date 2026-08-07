@@ -89,6 +89,7 @@ async function outbox(outboxId: string): Promise<{
 class FakeWorkflowEffects implements WorkflowEffectClient {
   createCalls = 0;
   signalCalls = 0;
+  terminateCalls = 0;
   failCreates = 0;
   failSignals = 0;
 
@@ -101,7 +102,9 @@ class FakeWorkflowEffects implements WorkflowEffectClient {
     return this.createCalls === 1 ? 'created' : 'existing';
   }
 
-  async terminateRun(): Promise<void> {}
+  async terminateRun(): Promise<void> {
+    this.terminateCalls += 1;
+  }
 
   async sendEvent(): Promise<void> {
     this.signalCalls += 1;
@@ -204,6 +207,35 @@ describe('Workflow outbox delivery', () => {
       delivery_state: 'settled',
       attempt_count: 1,
       last_error_code: null,
+    });
+  });
+
+  it('settles a stale workflow cancellation after the Run has resumed planning', async () => {
+    const seeded = await seedRun('stale-cancel');
+    const cancelId = 'workflow-cancel-stale-cancel';
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO outbox (
+         outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+         delivery_state, created_at, updated_at
+       ) VALUES (?, ?, 'workflow_cancel', 'cloudflare_workflows', ?, ?,
+                 'pending', ?, ?)`,
+    ).bind(
+      cancelId,
+      seeded.runId,
+      `d1://runs/${seeded.runId}`,
+      `workflow-cancel:${seeded.runId}`,
+      NOW,
+      NOW,
+    ).run();
+    const effects = new FakeWorkflowEffects();
+    const processor = new WorkflowOutboxProcessor(env.DB_CONTROL, effects);
+
+    expect(await processor.deliver(cancelId)).toBe('settled');
+    expect(effects.terminateCalls).toBe(0);
+    expect(await outbox(cancelId)).toEqual({
+      delivery_state: 'settled',
+      attempt_count: 1,
+      last_error_code: 'stale_run_state',
     });
   });
 

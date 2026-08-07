@@ -88,6 +88,8 @@ import { reconcileGitHubMergeStatusesFromEnv } from './reconciliation/github-mer
 import { reconcileGitHubProductionDeploymentStatusesFromEnv } from './reconciliation/github-production-deployment-status-runtime.js';
 import { BaseRebaseAttemptReconciler } from './reconciliation/base-rebase-attempt-reconciler.js';
 import { ExecutionProgressReconciler } from './reconciliation/execution-progress-reconciler.js';
+import { PlanRevisionAnalysisReconciler } from
+  './reconciliation/plan-revision-analysis-reconciler.js';
 import { revokeRepoWriteCredentialsFromEnv } from './reconciliation/repo-write-credential-runtime.js';
 import { RunStuckDetector } from './reconciliation/run-stuck-detector.js';
 import { reconcileWorkflowInstancesFromEnv } from './reconciliation/workflow-instance-reconciler.js';
@@ -211,6 +213,9 @@ export default {
         env.DB_CONTROL,
         new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
       ).drain(5);
+      await new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
+        now: scheduledNow,
+      }).reconcileBatch(5);
       // Relay every remaining durable effect, then first resume one already
       // verified Run whose Draft/publication preparation may have been cut off
       // by a previous Free-plan CPU fence. Only after that durable close-out

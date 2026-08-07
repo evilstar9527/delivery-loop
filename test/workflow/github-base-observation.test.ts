@@ -14,6 +14,8 @@ import {
   AnalysisAttemptContextStore,
   AnalysisPlanProposalStore,
 } from '../../src/storage/analysis-attempt-store.js';
+import { PlanRevisionAnalysisReconciler } from
+  '../../src/reconciliation/plan-revision-analysis-reconciler.js';
 import { TaskQueryStore } from '../../src/storage/task-query-store.js';
 
 const RUN_ID = 'run-github-base-observation';
@@ -124,6 +126,7 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM base_conflict_approval_invalidations'),
     env.DB_CONTROL.prepare('DELETE FROM github_base_conflicts'),
     env.DB_CONTROL.prepare('DELETE FROM approval_invalidations'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_revision_analysis_retries'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revisions'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revision_source_facts'),
     env.DB_CONTROL.prepare('DELETE FROM github_base_observations'),
@@ -233,7 +236,12 @@ async function seedPriorDiagnosticEvidence(suffix = ''): Promise<string> {
 
 async function runningRevisionAuthorization(): Promise<Parameters<AnalysisAttemptContextStore['get']>[0]> {
   const revision = await env.DB_CONTROL.prepare(
-    'SELECT analysis_attempt_id FROM plan_revisions',
+    `SELECT COALESCE(
+       (SELECT retry_attempt_id FROM plan_revision_analysis_retries
+        WHERE revision_id = plan_revisions.revision_id
+        ORDER BY retry_sequence DESC LIMIT 1),
+       analysis_attempt_id
+     ) AS analysis_attempt_id FROM plan_revisions`,
   ).first<{ analysis_attempt_id: string }>();
   if (revision === null) throw new Error('missing base re-analysis Attempt');
   await env.DB_CONTROL.prepare(
@@ -590,6 +598,61 @@ describe('GitHub base observation reconciliation', () => {
       `SELECT COUNT(*) AS count FROM attempts
        WHERE mode = 'analysis' AND status = 'pending'`,
     ).first()).toEqual({ count: 1 });
+    const initial = await env.DB_CONTROL.prepare(
+      'SELECT analysis_attempt_id FROM plan_revisions',
+    ).first<{ analysis_attempt_id: string }>();
+    if (initial === null) throw new Error('missing initial re-analysis Attempt');
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts SET status = 'failed', version = 1, lease_generation = 1,
+                             updated_at = ? WHERE attempt_id = ?`,
+      ).bind(NOW, initial.analysis_attempt_id),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_failures (
+           failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+           retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+           failure_site, needed_human_input, scope_attempt_count,
+           consecutive_fingerprint_count, revoked_lease_generation,
+           occurred_at, created_at
+         ) SELECT 'failure-github-base-analysis', run_id, attempt_id, ordinal,
+                  'event-github-base-analysis', 1, ?, ?, 'invalid_output',
+                  'invalid_agent_output', 'agent_output', 'manual_investigation',
+                  1, 1, 1, ?, ?
+           FROM attempts WHERE attempt_id = ?`,
+      ).bind(
+        `sha256:${'4'.repeat(64)}`,
+        `sha256:${'5'.repeat(64)}`,
+        NOW,
+        NOW,
+        initial.analysis_attempt_id,
+      ),
+    ]);
+    expect(await new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    }).reconcileBatch(5)).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM plan_revision_analysis_retries',
+    ).first()).toEqual({ count: 1 });
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'running', version = 2, lease_generation = 2
+       WHERE attempt_id = ?`,
+    ).bind(initial.analysis_attempt_id).run();
+    await expect(new AnalysisAttemptContextStore(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+    ).get({
+      attemptId: initial.analysis_attempt_id,
+      runId: RUN_ID,
+      mode: 'analysis',
+      status: 'running',
+      version: 2,
+      leaseGeneration: 2,
+      leaseExpiresAt: '2099-01-01T00:00:00.000Z',
+      scopes: ['repo:read'],
+    })).rejects.toMatchObject({ code: 'revision_source_conflict' });
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'failed' WHERE attempt_id = ?`,
+    ).bind(initial.analysis_attempt_id).run();
     const authorization = await runningRevisionAuthorization();
     const revisionContext = await new AnalysisAttemptContextStore(
       env.DB_CONTROL,
