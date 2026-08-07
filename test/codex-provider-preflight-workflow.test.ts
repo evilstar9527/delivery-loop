@@ -85,6 +85,17 @@ describe('Codex provider preflight workflow', () => {
     expect(analysisScript).toContain('async searchLogs(');
     expect(analysisScript).toContain('async getTrace(');
     expect(analysisScript).toContain('diagnosticUsages.length !== 3');
+    expect(analysisScript).toContain('failureKind: error.kind');
+    expect(analysisScript).toContain('failureStage: error.stage');
+    expect(analysisScript).toContain(
+      "providerFailureCode: error.providerFailureCode ?? 'provider_process_failed'",
+    );
+    expect(analysisScript).toContain(
+      'real-codex-analysis: FAIL ${JSON.stringify(failure)}',
+    );
+    expect(analysisScript).not.toContain('real-codex-analysis: FAIL ${code}');
+    expect(analysisScript).toContain("? 'structured_output_invalid'");
+    expect(analysisScript).not.toContain('parsed.error.issues.map');
     expect(analysisScript).not.toContain('context_access_proof_unavailable');
     expect(analysisScript).not.toContain("const contextFilePath = join(root, 'context.json')");
   });
