@@ -1381,6 +1381,7 @@ describe('Codex analysis Agent adapter', () => {
       'contextDigest',
       'rootCause',
     ]);
+    expect(JSON.stringify(DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA)).not.toContain('(?!');
     expectProviderStrictObjectSchemas(DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA);
     expectProviderStrictObjectSchemas(DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA);
     expectProviderStrictObjectSchemas(DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA);
@@ -1463,5 +1464,16 @@ describe('Codex analysis Agent adapter', () => {
         codeRefs: [{ path: 'src/cache.ts', line: 0, symbol: '' }],
       },
     })).toThrow();
+    for (const path of ['/src/cache.ts', '../src/cache.ts']) {
+      expect(() => parseDiagnosticRootCauseAgentOutput({
+        schemaVersion: '1',
+        contextDigest: contextDigest(),
+        rootCause: {
+          summary: 'A source-backed cause.',
+          confidence: 'high',
+          codeRefs: [{ path, line: 42, symbol: '' }],
+        },
+      })).toThrow();
+    }
   });
 });

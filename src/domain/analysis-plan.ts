@@ -207,7 +207,6 @@ const diagnosticCodeRefJsonSchema = {
       type: 'string',
       minLength: 1,
       maxLength: 500,
-      pattern: '^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000\\r\\n]{1,500}$',
     },
     line: { type: 'integer', minimum: 0, maximum: 10_000_000 },
     symbol: { type: 'string', maxLength: 300 },
@@ -261,8 +260,8 @@ export const DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA = {
   },
 } as const;
 
-// `const`, `uniqueItems`, open objects and optional object properties are outside
-// the relay's portable structured-output subset.
+// `const`, `uniqueItems`, regex lookahead, open objects and optional object
+// properties are outside the relay's portable structured-output subset.
 // Runtime Zod schemas remain the trusted boundary for locator/item uniqueness,
 // non-blank checks, ordering, and cross-field plan validation.
 const analysisPlanContentV1JsonSchema = {
