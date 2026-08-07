@@ -393,9 +393,15 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     lockedCodex?.specifier === codexVersion && lockedCodex.version === codexVersion &&
     Array.isArray(required) && ['objective', 'assumptions', 'evidenceRefs', 'items']
       .every((field) => required.includes(field)) && properties?.evidenceRefs !== undefined &&
-    entrypoint.includes("import { runAnalysisAttempt } from '../src/runner/analysis-runner.js'") &&
+    entrypoint.includes('AnalysisRunnerError,') &&
+    entrypoint.includes('runAnalysisAttempt,') &&
     entrypoint.includes('await runAnalysisAttempt()') &&
+    entrypoint.includes('error instanceof AnalysisRunnerError') &&
+    entrypoint.includes('classification?.kind') &&
+    entrypoint.includes('classification?.stage') &&
     runner.includes('new CodexAnalysisAdapter({') &&
+    runner.includes('error instanceof CodexAnalysisAdapterError') &&
+    runner.includes('{ kind: error.kind, stage: error.stage }') &&
     runner.includes('/context`') && runner.includes('/plan`') &&
     runner.includes("this.callTool('logs/search'") &&
     runner.includes("this.callTool('traces/get'") &&
@@ -408,6 +414,9 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     adapter.includes("'--ephemeral'") && adapter.includes("'--ignore-user-config'") &&
     adapter.includes("'--sandbox'") && adapter.includes("'read-only'") &&
     adapter.includes('approval_policy="never"') &&
+    adapter.includes('CODEX_ANALYSIS_FAILURE_KINDS') &&
+    adapter.includes('CODEX_ANALYSIS_FAILURE_STAGES') &&
+    adapter.includes("this.name = 'CodexAnalysisAdapterError'") &&
     adapter.includes("'--output-schema'") && adapter.includes("'--output-last-message'") &&
     adapter.includes('diagnostic.mediation.searchLogs(logRequest)') &&
     adapter.includes('diagnostic.mediation.getTrace(traceRequest)') &&

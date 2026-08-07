@@ -5,6 +5,9 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import {
   CodexAnalysisAdapter,
+  CodexAnalysisAdapterError,
+  type CodexAnalysisFailureKind,
+  type CodexAnalysisFailureStage,
   type DiagnosticAnalysisMediation,
   type CodexAnalysisStartInput,
 } from '../agent/codex-analysis-adapter.js';
@@ -216,10 +219,16 @@ export interface AnalysisRunnerFailure {
   neededHumanInput: HumanInputCode;
 }
 
+export interface AnalysisFailureClassification {
+  kind: CodexAnalysisFailureKind;
+  stage: CodexAnalysisFailureStage;
+}
+
 export class AnalysisRunnerError extends Error {
   constructor(
     message: string,
     readonly failure?: AnalysisRunnerFailure,
+    readonly analysisFailure?: AnalysisFailureClassification,
   ) {
     super(message);
     this.name = 'AnalysisRunnerError';
@@ -1124,7 +1133,9 @@ export async function runAnalysisAttempt(
         failureSite: 'agent_output',
         attemptedPaths: ['repository_inspection'],
         neededHumanInput: 'manual_investigation',
-      });
+      }, error instanceof CodexAnalysisAdapterError
+        ? { kind: error.kind, stage: error.stage }
+        : undefined);
     }
     heartbeatController.abort();
     await heartbeatTask;

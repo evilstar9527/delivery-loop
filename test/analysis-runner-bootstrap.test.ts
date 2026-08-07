@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CodexAnalysisAdapter,
+  CodexAnalysisAdapterError,
   type CodexAnalysisStartInput,
 } from '../src/agent/codex-analysis-adapter.js';
 import { deriveAnalysisPlanId } from '../src/domain/analysis-plan.js';
@@ -21,7 +22,10 @@ import {
 } from '../src/domain/plan.js';
 import { taskRevisionDigest, type TaskEnvelope } from '../src/domain/task.js';
 import { TRIAGE_TOOL_ACTIONS } from '../src/domain/tool-bridge.js';
-import { runAnalysisAttempt } from '../src/runner/analysis-runner.js';
+import {
+  runAnalysisAttempt,
+} from '../src/runner/analysis-runner.js';
+import type { AnalysisRunnerError } from '../src/runner/analysis-runner.js';
 
 const ATTEMPT_ID = 'attempt-analysis-bootstrap';
 const RUN_ID = 'run-analysis-bootstrap';
@@ -200,6 +204,84 @@ async function runnerEnvironment(root: string): Promise<NodeJS.ProcessEnv> {
 }
 
 describe('analysis Runner bootstrap', () => {
+  it('preserves a fixed Agent failure kind and stage without changing terminal failure payloads', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-classification-'));
+    const environment = await runnerEnvironment(root);
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(environment.GITHUB_WORKSPACE!, { recursive: true });
+    await mkdir(environment.RUNNER_TEMP!, { recursive: true });
+    const bugTask = taskEnvelope('bug');
+    environment.DELIVERY_TASK_DIGEST = await taskRevisionDigest(bugTask);
+    let failureBody: unknown;
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('https://oidc.actions.test/token')) {
+        return Response.json({ value: OIDC_TOKEN });
+      }
+      if (url.endsWith('/exchange')) {
+        return Response.json({
+          attemptToken: INITIAL_TOKEN,
+          expiresAt: '2026-07-25T00:05:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: INITIAL_TOOL_TOKEN,
+            expiresAt: '2026-07-25T00:05:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith('/context')) {
+        return Response.json({
+          schemaVersion: '1',
+          attempt: {
+            id: ATTEMPT_ID, runId: RUN_ID, mode: 'analysis', version: 7,
+            leaseGeneration: 3, baseSha: BASE_SHA,
+          },
+          task: bugTask,
+          planPolicy: {
+            version: 1,
+            allowedEffects: ['repo_read', 'logs_read'],
+            allowedCommandRefs: ['policy:diagnose'],
+          },
+        });
+      }
+      if (url.endsWith('/events')) {
+        failureBody = JSON.parse(String(init?.body)) as unknown;
+        return Response.json({ accepted: true }, { status: 202 });
+      }
+      throw new Error('unexpected classification fake request');
+    };
+    const promise = runAnalysisAttempt({
+      environment,
+      fetch: fetchImplementation,
+      agent: {
+        start: async () => {
+          throw new CodexAnalysisAdapterError(
+            'structured_output_invalid',
+            'diagnostic_result',
+          );
+        },
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+    });
+    await expect(promise).rejects.toMatchObject({
+      name: 'AnalysisRunnerError',
+      analysisFailure: {
+        kind: 'structured_output_invalid',
+        stage: 'diagnostic_result',
+      },
+    } satisfies Partial<AnalysisRunnerError>);
+    expect(failureBody).toMatchObject({
+      failureCode: 'invalid_agent_output',
+      failureSite: 'agent_output',
+      attemptedPaths: ['repository_inspection'],
+      neededHumanInput: 'manual_investigation',
+    });
+    expect(failureBody).not.toHaveProperty('analysisFailure');
+  });
+
   it('keeps trusted context readable inside the read-only workspace and removes it before the final snapshot', async () => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-test-'));
     const environment = await runnerEnvironment(root);

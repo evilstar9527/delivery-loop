@@ -162,6 +162,42 @@ describe('secure structured logging', () => {
     )).toThrow('Runner failure kind is invalid');
   });
 
+  it('emits only fixed analysis failure kind and stage fields', () => {
+    const output: string[] = [];
+    const write = vi.spyOn(process.stderr, 'write').mockImplementation(((chunk: unknown) => {
+      output.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write);
+    try {
+      writeRunnerStructuredLog(
+        'analysis_attempt_result',
+        'failed',
+        {
+          DELIVERY_ATTEMPT_ID: 'attempt-safe-analysis-failure',
+          OPENAI_API_KEY: LOG_SECRET,
+        },
+        'structured_output_invalid',
+        'diagnostic_result',
+      );
+    } finally {
+      write.mockRestore();
+    }
+    expect(JSON.parse(output[0]!)).toMatchObject({
+      event: 'analysis_attempt_result',
+      outcome: 'failed',
+      failureKind: 'structured_output_invalid',
+      failureStage: 'diagnostic_result',
+    });
+    expect(output[0]).not.toContain(LOG_SECRET);
+    expect(() => writeRunnerStructuredLog(
+      'analysis_attempt_result',
+      'failed',
+      {},
+      'structured_output_invalid',
+      'repository_commit' as never,
+    )).toThrow('Runner failure classification is invalid');
+  });
+
   it('logs only fixed execution Agent activity counters', () => {
     const output: string[] = [];
     const write = vi.spyOn(process.stdout, 'write').mockImplementation(((chunk: unknown) => {

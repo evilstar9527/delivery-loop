@@ -92,6 +92,58 @@ export interface CodexAnalysisAdapterOptions {
   reasoningEffort?: CodexRelayReasoningEffort;
 }
 
+export const CODEX_ANALYSIS_FAILURE_KINDS = [
+  'process_unavailable',
+  'process_timeout',
+  'process_nonzero_exit',
+  'usage_invalid',
+  'structured_output_invalid',
+  'context_proof_invalid',
+  'plan_validation_failed',
+] as const;
+export type CodexAnalysisFailureKind = (typeof CODEX_ANALYSIS_FAILURE_KINDS)[number];
+
+export const CODEX_ANALYSIS_FAILURE_STAGES = [
+  'context_validation',
+  'single_pass',
+  'diagnostic_log_request',
+  'diagnostic_log_mediation',
+  'diagnostic_trace_request',
+  'diagnostic_trace_mediation',
+  'diagnostic_result',
+  'plan_validation',
+] as const;
+export type CodexAnalysisFailureStage = (typeof CODEX_ANALYSIS_FAILURE_STAGES)[number];
+
+function analysisFailureMessage(
+  kind: CodexAnalysisFailureKind,
+  stage: CodexAnalysisFailureStage,
+): string {
+  if (kind === 'process_unavailable') return 'Codex analysis process could not be started';
+  if (kind === 'process_timeout') return 'Codex analysis process timed out';
+  if (kind === 'process_nonzero_exit') return 'Codex analysis process failed';
+  if (kind === 'usage_invalid') return 'Codex analysis usage is unavailable';
+  if (kind === 'context_proof_invalid') return 'Codex analysis context proof is invalid';
+  if (kind === 'plan_validation_failed') return 'Codex analysis Plan is invalid';
+  if (stage === 'diagnostic_log_request') return 'Codex diagnostic log request is invalid';
+  if (stage === 'diagnostic_trace_request') return 'Codex diagnostic trace request is invalid';
+  if (stage === 'diagnostic_result') return 'Codex diagnostic analysis output is invalid';
+  if (stage === 'diagnostic_log_mediation' || stage === 'diagnostic_trace_mediation') {
+    return 'Codex diagnostic tool result is invalid';
+  }
+  return 'Codex analysis output is invalid';
+}
+
+export class CodexAnalysisAdapterError extends Error {
+  constructor(
+    readonly kind: CodexAnalysisFailureKind,
+    readonly stage: CodexAnalysisFailureStage,
+  ) {
+    super(analysisFailureMessage(kind, stage));
+    this.name = 'CodexAnalysisAdapterError';
+  }
+}
+
 function isInside(parent: string, child: string): boolean {
   const path = relative(parent, child);
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
@@ -164,13 +216,18 @@ async function assertContextProof(
   contextDigest: string,
   contextFilePath: string,
   initialContextDigest: string,
+  stage: CodexAnalysisFailureStage,
 ): Promise<void> {
-  const currentContextDigest = await readVerifiedContextDigest(contextFilePath);
-  if (
-    currentContextDigest !== initialContextDigest ||
-    contextDigest !== currentContextDigest
-  ) {
-    throw new Error('Codex analysis context proof is invalid');
+  try {
+    const currentContextDigest = await readVerifiedContextDigest(contextFilePath);
+    if (
+      currentContextDigest !== initialContextDigest ||
+      contextDigest !== currentContextDigest
+    ) {
+      throw new Error('context proof mismatch');
+    }
+  } catch {
+    throw new CodexAnalysisAdapterError('context_proof_invalid', stage);
   }
 }
 
@@ -289,18 +346,24 @@ function diagnosticResultPrompt(
 
 const MAX_MEDIATION_CONTEXT_BYTES = 256 * 1_024;
 
-function safeMediationContext(value: unknown): string {
+function safeMediationContext(
+  value: unknown,
+  stage: Extract<
+    CodexAnalysisFailureStage,
+    'diagnostic_log_mediation' | 'diagnostic_trace_mediation'
+  >,
+): string {
   if (new SecretScanner().scan(value).length > 0) {
-    throw new Error('Codex diagnostic tool result is invalid');
+    throw new CodexAnalysisAdapterError('structured_output_invalid', stage);
   }
   let serialized: string;
   try {
     serialized = JSON.stringify(value);
   } catch {
-    throw new Error('Codex diagnostic tool result is invalid');
+    throw new CodexAnalysisAdapterError('structured_output_invalid', stage);
   }
   if (new TextEncoder().encode(serialized).length > MAX_MEDIATION_CONTEXT_BYTES) {
-    throw new Error('Codex diagnostic tool result is invalid');
+    throw new CodexAnalysisAdapterError('structured_output_invalid', stage);
   }
   return serialized;
 }
@@ -336,7 +399,12 @@ export class CodexAnalysisAdapter {
       throw new Error('Codex analysis timeout must be a positive integer');
     }
     this.assertIdentity(input.identity, input.validation);
-    const promptContext = await readVerifiedAnalysisPromptContext(contextFilePath);
+    let promptContext: VerifiedAnalysisPromptContext;
+    try {
+      promptContext = await readVerifiedAnalysisPromptContext(contextFilePath);
+    } catch {
+      throw new CodexAnalysisAdapterError('context_proof_invalid', 'context_validation');
+    }
     const deadline = Date.now() + input.timeoutMs;
     const content = input.diagnostic === undefined
       ? await this.singlePassContent(input, {
@@ -374,7 +442,11 @@ export class CodexAnalysisAdapter {
       digest: await computeExecutionPlanDigest(body),
       status: 'proposed',
     };
-    return await validateExecutionPlanProposal(proposal, input.validation);
+    try {
+      return await validateExecutionPlanProposal(proposal, input.validation);
+    } catch {
+      throw new CodexAnalysisAdapterError('plan_validation_failed', 'plan_validation');
+    }
   }
 
   private async singlePassContent(
@@ -399,18 +471,20 @@ export class CodexAnalysisAdapter {
         input.validation.requiresRepositoryChange,
       ),
       paths.deadline,
+      'single_pass',
     );
     let output: z.infer<typeof AnalysisAgentOutputV1Schema>;
     try {
       const raw = JSON.parse(await readFile(paths.outputFilePath, 'utf8')) as unknown;
       output = AnalysisAgentOutputV1Schema.parse(raw);
     } catch {
-      throw new Error('Codex analysis output is invalid');
+      throw new CodexAnalysisAdapterError('structured_output_invalid', 'single_pass');
     }
     await assertContextProof(
       output.contextDigest,
       paths.contextFilePath,
       paths.expectedContextDigest,
+      'single_pass',
     );
     return output.plan;
   }
@@ -456,6 +530,7 @@ export class CodexAnalysisAdapter {
       resolved.logRequestOutputFilePath,
       diagnosticLogPrompt(paths.contextFilePath, paths.contextBlock),
       paths.deadline,
+      'diagnostic_log_request',
     );
     let logRequest: DiagnosticLogSearchRequestV1;
     try {
@@ -463,13 +538,16 @@ export class CodexAnalysisAdapter {
         JSON.parse(await readFile(resolved.logRequestOutputFilePath, 'utf8')) as unknown,
       );
     } catch {
-      throw new Error('Codex diagnostic log request is invalid');
+      throw new CodexAnalysisAdapterError(
+        'structured_output_invalid',
+        'diagnostic_log_request',
+      );
     }
     const logResult = await diagnostic.mediation.searchLogs(logRequest);
     const logMediationContext = safeMediationContext({
       schemaVersion: '1',
       logs: { result: logResult },
-    });
+    }, 'diagnostic_log_mediation');
     await writeFile(resolved.mediationContextFilePath, logMediationContext, { mode: 0o600 });
 
     await this.executePhase(
@@ -488,6 +566,7 @@ export class CodexAnalysisAdapter {
         ),
       ),
       paths.deadline,
+      'diagnostic_trace_request',
     );
     let traceRequest: DiagnosticTraceRequestV1;
     try {
@@ -495,14 +574,17 @@ export class CodexAnalysisAdapter {
         JSON.parse(await readFile(resolved.traceRequestOutputFilePath, 'utf8')) as unknown,
       );
     } catch {
-      throw new Error('Codex diagnostic trace request is invalid');
+      throw new CodexAnalysisAdapterError(
+        'structured_output_invalid',
+        'diagnostic_trace_request',
+      );
     }
     const traceResult = await diagnostic.mediation.getTrace(traceRequest);
     const fullMediationContext = safeMediationContext({
       schemaVersion: '1',
       logs: { result: logResult },
       trace: { result: traceResult },
-    });
+    }, 'diagnostic_trace_mediation');
     await writeFile(resolved.mediationContextFilePath, fullMediationContext, { mode: 0o600 });
 
     await this.executePhase(
@@ -522,24 +604,26 @@ export class CodexAnalysisAdapter {
         input.validation.requiresRepositoryChange,
       ),
       paths.deadline,
+      'diagnostic_result',
     );
     let diagnosticResult: DiagnosticAnalysisResultV1;
     try {
       const raw = JSON.parse(await readFile(paths.outputFilePath, 'utf8')) as unknown;
       diagnosticResult = parseDiagnosticAnalysisAgentOutput(raw);
     } catch {
-      throw new Error('Codex diagnostic analysis output is invalid');
+      throw new CodexAnalysisAdapterError('structured_output_invalid', 'diagnostic_result');
     }
     await assertContextProof(
       diagnosticResult.contextDigest,
       paths.contextFilePath,
       paths.expectedContextDigest,
+      'diagnostic_result',
     );
     if (
       diagnosticResult.plan.evidenceRefs.some((ref) =>
         DIAGNOSTIC_EVIDENCE_REF_PATTERN.test(ref))
     ) {
-      throw new Error('Codex diagnostic analysis output is invalid');
+      throw new CodexAnalysisAdapterError('structured_output_invalid', 'diagnostic_result');
     }
     await diagnostic.mediation.finish(diagnosticResult.rootCause);
     return diagnosticResult.plan;
@@ -552,10 +636,14 @@ export class CodexAnalysisAdapter {
     outputFilePath: string,
     prompt: string,
     deadline: number,
+    stage: Extract<
+      CodexAnalysisFailureStage,
+      'single_pass' | 'diagnostic_log_request' | 'diagnostic_trace_request' | 'diagnostic_result'
+    >,
   ): Promise<void> {
     const timeoutMs = Math.floor(deadline - Date.now());
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
-      throw new Error('Codex analysis process timed out');
+      throw new CodexAnalysisAdapterError('process_timeout', stage);
     }
     const usage = new CodexUsageAccumulator();
     let result: CommandExecutionResult;
@@ -600,18 +688,22 @@ export class CodexAnalysisAdapter {
             }),
       });
     } catch {
-      throw new Error('Codex analysis process could not be started');
+      throw new CodexAnalysisAdapterError('process_unavailable', stage);
     }
     if (result.timedOut === true) {
-      throw new Error('Codex analysis process timed out');
+      throw new CodexAnalysisAdapterError('process_timeout', stage);
     }
     if (result.exitCode !== 0) {
-      throw new Error(`Codex analysis process failed with exit code ${result.exitCode}`);
+      throw new CodexAnalysisAdapterError('process_nonzero_exit', stage);
     }
     if (input.model !== undefined) {
       const measured = usage.result();
-      if (measured === null) throw new Error('Codex analysis usage is unavailable');
-      input.onUsage?.(measured);
+      if (measured === null) throw new CodexAnalysisAdapterError('usage_invalid', stage);
+      try {
+        input.onUsage?.(measured);
+      } catch {
+        throw new CodexAnalysisAdapterError('usage_invalid', stage);
+      }
     }
   }
 
