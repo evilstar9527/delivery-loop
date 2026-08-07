@@ -259,7 +259,7 @@ describe('analysis Runner bootstrap', () => {
         start: async () => {
           throw new CodexAnalysisAdapterError(
             'process_nonzero_exit',
-            'diagnostic_result',
+            'diagnostic_root_cause',
             'provider_output_schema_rejected',
           );
         },
@@ -271,7 +271,7 @@ describe('analysis Runner bootstrap', () => {
       name: 'AnalysisRunnerError',
       analysisFailure: {
         kind: 'process_nonzero_exit',
-        stage: 'diagnostic_result',
+        stage: 'diagnostic_root_cause',
         providerFailureCode: 'provider_output_schema_rejected',
       },
     } satisfies Partial<AnalysisRunnerError>);
@@ -727,7 +727,7 @@ describe('analysis Runner bootstrap', () => {
           diagnostic.traceRequestOutputFilePath,
           diagnostic.logRequestSchemaPath,
           diagnostic.traceRequestSchemaPath,
-          diagnostic.resultSchemaPath,
+          diagnostic.rootCauseSchemaPath,
         ]) expect((await stat(path)).mode & 0o777).toBe(0o600);
         const logs = await diagnostic.mediation.searchLogs({
           schemaVersion: '1',
@@ -749,7 +749,7 @@ describe('analysis Runner bootstrap', () => {
           confidence: 'high',
           codeRefs: [{ path: 'src/cache.ts', line: 42 }],
         });
-        for (let index = 0; index < 3; index += 1) {
+        for (let index = 0; index < 4; index += 1) {
           input.onUsage?.({
             inputTokens: 100,
             cachedInputTokens: 60,
@@ -780,8 +780,8 @@ describe('analysis Runner bootstrap', () => {
       digest: expectedPlan.digest,
       payloadRef: expectedPlan.payloadRef,
     });
-    expect(reservationCount).toBe(3);
-    expect(usageCount).toBe(3);
+    expect(reservationCount).toBe(4);
+    expect(usageCount).toBe(4);
     expect(relevantOrder).toEqual(['logs/search', 'traces/get', 'diagnostic-evidence', 'plan']);
     expect(planBody).toEqual(expectedContent);
     expect(evidenceBody).toMatchObject({

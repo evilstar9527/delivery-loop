@@ -14,7 +14,7 @@ import {
 import {
   ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
   AnalysisPlanContentV1Schema,
-  DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA,
+  DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA,
   DIAGNOSTIC_EVIDENCE_REF_PATTERN,
   DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA,
   DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA,
@@ -915,7 +915,10 @@ export async function runAnalysisAttempt(
   const traceRequestOutputFilePath = join(temporaryRoot, 'diagnostic-trace-request.json');
   const logRequestSchemaPath = join(temporaryRoot, 'diagnostic-log-request-schema.json');
   const traceRequestSchemaPath = join(temporaryRoot, 'diagnostic-trace-request-schema.json');
-  const diagnosticResultSchemaPath = join(temporaryRoot, 'diagnostic-result-schema.json');
+  const diagnosticRootCauseSchemaPath = join(
+    temporaryRoot,
+    'diagnostic-root-cause-schema.json',
+  );
   const heartbeatController = new AbortController();
   const requestLock = new FencingRequestLock();
   let heartbeatFailure: unknown;
@@ -943,7 +946,7 @@ export async function runAnalysisAttempt(
       if (config.modelProfileId === undefined) {
         throw new AnalysisRunnerError('analysis Runner model profile is unavailable');
       }
-      const invocationCount = diagnosticMediation === null ? 1 : 3;
+      const invocationCount = diagnosticMediation === null ? 1 : 4;
       for (let invocation = 1; invocation <= invocationCount; invocation += 1) {
         const reservationDigest = await canonicalSha256({
           attemptId: config.attemptId,
@@ -1021,8 +1024,8 @@ export async function runAnalysisAttempt(
           { mode: 0o600, flag: 'wx' },
         ),
         writeFile(
-          diagnosticResultSchemaPath,
-          JSON.stringify(DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA),
+          diagnosticRootCauseSchemaPath,
+          JSON.stringify(DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA),
           { mode: 0o600, flag: 'wx' },
         ),
       ]);
@@ -1120,7 +1123,7 @@ export async function runAnalysisAttempt(
                   traceRequestOutputFilePath,
                   logRequestSchemaPath,
                   traceRequestSchemaPath,
-                  resultSchemaPath: diagnosticResultSchemaPath,
+                  rootCauseSchemaPath: diagnosticRootCauseSchemaPath,
                   mediation: diagnosticMediation.agentInterface(),
                 },
               }),

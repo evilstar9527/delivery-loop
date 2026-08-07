@@ -100,12 +100,11 @@ export const DiagnosticTraceRequestV1Schema = z
   })
   .strict();
 
-export const DiagnosticAnalysisResultV1Schema = z
+export const DiagnosticRootCauseResultV1Schema = z
   .object({
     schemaVersion: z.literal('1'),
     contextDigest: z.string().regex(CONTEXT_DIGEST_PATTERN),
     rootCause: DiagnosticRootCauseV1Schema,
-    plan: AnalysisPlanContentV1Schema,
   })
   .strict();
 
@@ -113,7 +112,7 @@ export type DiagnosticLogSearchRequestV1 = z.infer<
   typeof DiagnosticLogSearchRequestV1Schema
 >;
 export type DiagnosticTraceRequestV1 = z.infer<typeof DiagnosticTraceRequestV1Schema>;
-export type DiagnosticAnalysisResultV1 = z.infer<typeof DiagnosticAnalysisResultV1Schema>;
+export type DiagnosticRootCauseResultV1 = z.infer<typeof DiagnosticRootCauseResultV1Schema>;
 
 const DiagnosticLogSearchAgentOutputV1Schema = z.object({
   schemaVersion: z.literal('1'),
@@ -147,7 +146,7 @@ const DiagnosticTraceAgentOutputV1Schema = z.object({
   }).strict(),
 }).strict();
 
-const DiagnosticAnalysisAgentOutputV1Schema = z.object({
+const DiagnosticRootCauseAgentOutputV1Schema = z.object({
   schemaVersion: z.literal('1'),
   contextDigest: z.string().regex(CONTEXT_DIGEST_PATTERN),
   rootCause: z.object({
@@ -159,7 +158,6 @@ const DiagnosticAnalysisAgentOutputV1Schema = z.object({
       symbol: z.string().max(300),
     }).strict()).min(1).max(50),
   }).strict(),
-  plan: AnalysisPlanContentV1Schema,
 }).strict();
 
 export function parseDiagnosticLogSearchAgentOutput(
@@ -181,11 +179,11 @@ export function parseDiagnosticTraceAgentOutput(raw: unknown): DiagnosticTraceRe
   );
 }
 
-export function parseDiagnosticAnalysisAgentOutput(
+export function parseDiagnosticRootCauseAgentOutput(
   raw: unknown,
-): DiagnosticAnalysisResultV1 {
-  const output = DiagnosticAnalysisAgentOutputV1Schema.parse(raw);
-  return DiagnosticAnalysisResultV1Schema.parse({
+): DiagnosticRootCauseResultV1 {
+  const output = DiagnosticRootCauseAgentOutputV1Schema.parse(raw);
+  return DiagnosticRootCauseResultV1Schema.parse({
     ...output,
     rootCause: {
       ...output.rootCause,
@@ -372,10 +370,10 @@ export const ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA = {
   },
 } as const;
 
-export const DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA = {
+export const DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['schemaVersion', 'contextDigest', 'rootCause', 'plan'],
+  required: ['schemaVersion', 'contextDigest', 'rootCause'],
   properties: {
     schemaVersion: { type: 'string', enum: ['1'] },
     contextDigest: { type: 'string', pattern: '^sha256:[a-f0-9]{64}$' },
@@ -392,7 +390,6 @@ export const DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA = {
         },
       },
     },
-    plan: analysisPlanContentV1JsonSchema,
   },
 } as const;
 

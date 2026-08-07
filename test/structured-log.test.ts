@@ -177,14 +177,14 @@ describe('secure structured logging', () => {
           OPENAI_API_KEY: LOG_SECRET,
         },
         'structured_output_invalid',
-        'diagnostic_result',
+        'diagnostic_root_cause',
       );
       writeRunnerStructuredLog(
         'analysis_attempt_result',
         'failed',
         { DELIVERY_ATTEMPT_ID: 'attempt-safe-provider-failure' },
         'process_nonzero_exit',
-        'diagnostic_result',
+        'diagnostic_plan',
         'provider_output_schema_rejected',
       );
     } finally {
@@ -194,14 +194,14 @@ describe('secure structured logging', () => {
       event: 'analysis_attempt_result',
       outcome: 'failed',
       failureKind: 'structured_output_invalid',
-      failureStage: 'diagnostic_result',
+      failureStage: 'diagnostic_root_cause',
     });
     expect(output[0]).not.toContain(LOG_SECRET);
     expect(JSON.parse(output[1]!)).toMatchObject({
       event: 'analysis_attempt_result',
       outcome: 'failed',
       failureKind: 'process_nonzero_exit',
-      failureStage: 'diagnostic_result',
+      failureStage: 'diagnostic_plan',
       providerFailureCode: 'provider_output_schema_rejected',
     });
     expect(() => writeRunnerStructuredLog(
@@ -216,7 +216,7 @@ describe('secure structured logging', () => {
       'failed',
       {},
       'structured_output_invalid',
-      'diagnostic_result',
+      'diagnostic_plan',
       'provider_process_failed',
     )).toThrow('Runner provider failure classification is invalid');
   });

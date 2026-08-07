@@ -28,7 +28,7 @@ E2E-2证明一条真实`user_feedback + bug`任务中的`uid/cid/path`等定位�
 
 单份manifest最大64 KiB，必须保存在仓库外。不得保存uid/cid原值、日志/trace正文、根因摘要、token、raw API response或credential-shaped canary。
 
-当前仓库已经具备tool proxy、diagnostic Evidence producer API、Plan binding、固定Runner三阶段mediation和外部verifier。bug Action会以三个独立model reservation固定执行`logs/search → traces/get → root cause/Plan`，Evidence只在workspace仍clean后创建，exact ref由Runner注入。真实E2E-2仍保持未完成：本地fake调用、schema测试、手工D1写入或Wrangler dry-run都不能替代已部署控制面、真实Action/tool-bridge和真人根因review。
+当前仓库已经具备tool proxy、diagnostic Evidence producer API、Plan binding、固定Runner四阶段mediation和外部verifier。bug Action会以四个独立model reservation固定执行`logs/search → traces/get → root cause → Plan`；root cause通过可信边界后覆盖原始diagnostic临时上下文，Plan只接收净化root cause并复用普通Plan schema。Evidence只在Plan验证且workspace仍clean后创建，exact ref由Runner注入。真实E2E-2仍保持未完成：本地fake调用、schema测试、手工D1写入或Wrangler dry-run都不能替代已部署控制面、真实Action/tool-bridge和真人根因review。
 
 ## 4. 运行
 

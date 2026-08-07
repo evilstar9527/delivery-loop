@@ -13,11 +13,11 @@ import type { CodexAnalysisAdapterError } from '../src/agent/codex-analysis-adap
 import type { ExecutionPlanValidationContext } from '../src/domain/plan.js';
 import {
   ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
-  DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA,
+  DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA,
   DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA,
   DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA,
   DiagnosticLogSearchRequestV1Schema,
-  parseDiagnosticAnalysisAgentOutput,
+  parseDiagnosticRootCauseAgentOutput,
   parseDiagnosticLogSearchAgentOutput,
 } from
   '../src/domain/analysis-plan.js';
@@ -799,21 +799,21 @@ describe('Codex analysis Agent adapter', () => {
     expect(JSON.stringify(seen)).not.toContain('CANARY_JSONL_OUTPUT');
   });
 
-  it('mediates a bug through exactly three structured phases without exposing tool authority', async () => {
+  it('mediates a bug through four bounded schemas without exposing tool authority', async () => {
     const paths = await tempInput();
     const mediationContextFilePath = join(paths.root, 'diagnostic-context.json');
     const logRequestOutputFilePath = join(paths.root, 'log-request.json');
     const traceRequestOutputFilePath = join(paths.root, 'trace-request.json');
     const logRequestSchemaPath = join(paths.root, 'log-request-schema.json');
     const traceRequestSchemaPath = join(paths.root, 'trace-request-schema.json');
-    const resultSchemaPath = join(paths.root, 'diagnostic-result-schema.json');
+    const rootCauseSchemaPath = join(paths.root, 'diagnostic-root-cause-schema.json');
     for (const path of [
       mediationContextFilePath,
       logRequestOutputFilePath,
       traceRequestOutputFilePath,
       logRequestSchemaPath,
       traceRequestSchemaPath,
-      resultSchemaPath,
+      rootCauseSchemaPath,
     ]) await writeFile(path, '');
 
     const commands: CommandExecutionRequest[] = [];
@@ -844,7 +844,7 @@ describe('Codex analysis Agent adapter', () => {
             schemaVersion: '1',
             arguments: { requestId: 'request-trace-from-log-result' },
           }));
-        } else {
+        } else if (commands.length === 3) {
           await writeFile(outputPath, JSON.stringify({
             schemaVersion: '1',
             contextDigest: contextDigest(),
@@ -853,8 +853,9 @@ describe('Codex analysis Agent adapter', () => {
               confidence: 'high',
               codeRefs: [{ path: 'src/cache.ts', line: 42, symbol: '' }],
             },
-            plan: diagnosticPlanContent(),
           }));
+        } else {
+          await writeFile(outputPath, JSON.stringify(agentOutput(diagnosticPlanContent())));
         }
         return { exitCode: 0 };
       },
@@ -882,7 +883,7 @@ describe('Codex analysis Agent adapter', () => {
         traceRequestOutputFilePath,
         logRequestSchemaPath,
         traceRequestSchemaPath,
-        resultSchemaPath,
+        rootCauseSchemaPath,
         mediation: {
           async searchLogs(request) {
             calls.push({ stage: 'logs/search', value: request });
@@ -899,15 +900,17 @@ describe('Codex analysis Agent adapter', () => {
       },
     });
 
-    expect(commands).toHaveLength(3);
+    expect(commands).toHaveLength(4);
     expect(commands.map((request) => request.args[request.args.indexOf('--output-schema') + 1])).toEqual([
       logRequestSchemaPath,
       traceRequestSchemaPath,
-      resultSchemaPath,
+      rootCauseSchemaPath,
+      SCHEMA_PATH,
     ]);
     expect(commands.map((request) => request.args[request.args.indexOf('--output-last-message') + 1])).toEqual([
       logRequestOutputFilePath,
       traceRequestOutputFilePath,
+      paths.outputFile,
       paths.outputFile,
     ]);
     expect(calls.map((call) => call.stage)).toEqual(['logs/search', 'traces/get', 'finish']);
@@ -917,16 +920,18 @@ describe('Codex analysis Agent adapter', () => {
     expect(commands[2]?.stdin).toContain('BEGIN_UNTRUSTED_DIAGNOSTIC_CONTEXT_JSON');
     expect(commands[2]?.stdin).toContain('request-trace-from-log-result');
     expect(commands[2]?.stdin).toContain('stale-cache');
+    expect(commands[3]?.stdin).toContain('A stale cache branch returns the previous response.');
+    expect(commands[3]?.stdin).not.toContain('request-trace-from-log-result');
     expect(commands[1]?.args.join(' ')).not.toContain('request-trace-from-log-result');
     expect(commands[2]?.args.join(' ')).not.toContain('stale-cache');
     expect(commands.every((request) => request.args.includes('read-only'))).toBe(true);
     expect(JSON.stringify(commands)).not.toContain('CANARY_INITIAL_TOOL_TOKEN');
-    expect(usage).toHaveLength(3);
+    expect(usage).toHaveLength(4);
     expect(plan.evidenceRefs).toEqual([]);
     expect(plan.items[0]?.effects).toEqual(['repo_read', 'logs_read']);
   });
 
-  it('tells the diagnostic result phase when trusted policy requires a repository change', async () => {
+  it('tells the isolated diagnostic Plan phase when trusted policy requires a repository change', async () => {
     const paths = await tempInput();
     const files = {
       mediationContextFilePath: join(paths.root, 'diagnostic-context.json'),
@@ -934,7 +939,7 @@ describe('Codex analysis Agent adapter', () => {
       traceRequestOutputFilePath: join(paths.root, 'trace-request.json'),
       logRequestSchemaPath: join(paths.root, 'log-request-schema.json'),
       traceRequestSchemaPath: join(paths.root, 'trace-request-schema.json'),
-      resultSchemaPath: join(paths.root, 'diagnostic-result-schema.json'),
+      rootCauseSchemaPath: join(paths.root, 'diagnostic-root-cause-schema.json'),
     };
     for (const path of Object.values(files)) await writeFile(path, '');
 
@@ -951,13 +956,17 @@ describe('Codex analysis Agent adapter', () => {
             }
           : commands.length === 2
             ? { schemaVersion: '1', arguments: { requestId: 'safe-request-ref' } }
-            : {
+            : commands.length === 3
+              ? {
                 schemaVersion: '1',
                 contextDigest: contextDigest(),
                 rootCause: {
                   summary: 'A source-backed request failure.', confidence: 'high',
                   codeRefs: [{ path: 'src/request.ts', line: 42, symbol: '' }],
                 },
+              }
+              : {
+                contextDigest: contextDigest(),
                 plan: request.stdin.includes(
                   'Trusted Task policy requires a repository change.',
                 )
@@ -994,8 +1003,8 @@ describe('Codex analysis Agent adapter', () => {
       },
     });
 
-    expect(commands).toHaveLength(3);
-    expect(commands[2]?.stdin).toContain('Trusted Task policy requires a repository change.');
+    expect(commands).toHaveLength(4);
+    expect(commands[3]?.stdin).toContain('Trusted Task policy requires a repository change.');
     expect(plan.items).toHaveLength(1);
     expect(plan.items[0]).toMatchObject({
       kind: 'change',
@@ -1009,7 +1018,7 @@ describe('Codex analysis Agent adapter', () => {
     expect(plan.items[0]?.acceptanceCriteriaIndexes).toEqual([0, 1, 2]);
   });
 
-  it('rejects an Agent-authored diagnostic Evidence ref before finishing mediation', async () => {
+  it('rejects an Agent-authored diagnostic Evidence ref after root-cause validation', async () => {
     const paths = await tempInput();
     const files = {
       mediationContextFilePath: join(paths.root, 'diagnostic-context.json'),
@@ -1017,7 +1026,7 @@ describe('Codex analysis Agent adapter', () => {
       traceRequestOutputFilePath: join(paths.root, 'trace-request.json'),
       logRequestSchemaPath: join(paths.root, 'log-request-schema.json'),
       traceRequestSchemaPath: join(paths.root, 'trace-request-schema.json'),
-      resultSchemaPath: join(paths.root, 'diagnostic-result-schema.json'),
+      rootCauseSchemaPath: join(paths.root, 'diagnostic-root-cause-schema.json'),
     };
     for (const path of Object.values(files)) await writeFile(path, '');
     let invocation = 0;
@@ -1034,13 +1043,17 @@ describe('Codex analysis Agent adapter', () => {
             }
           : invocation === 2
             ? { schemaVersion: '1', arguments: { requestId: 'safe-trace-ref' } }
-            : {
+            : invocation === 3
+              ? {
                 schemaVersion: '1',
                 contextDigest: contextDigest(),
                 rootCause: {
                   summary: 'A source-backed cause.', confidence: 'medium',
                   codeRefs: [{ path: 'src/cache.ts', line: 0, symbol: 'readCache' }],
                 },
+              }
+              : {
+                contextDigest: contextDigest(),
                 plan: diagnosticPlanContent(['d1://evidence/diagnostic_attacker_selected']),
               };
         await writeFile(outputPath, JSON.stringify(output));
@@ -1070,9 +1083,9 @@ describe('Codex analysis Agent adapter', () => {
     await expect(promise).rejects.toMatchObject({
       name: 'CodexAnalysisAdapterError',
       kind: 'structured_output_invalid',
-      stage: 'diagnostic_result',
+      stage: 'diagnostic_plan',
     } satisfies Partial<CodexAnalysisAdapterError>);
-    expect(finished).toBe(false);
+    expect(finished).toBe(true);
   });
 
   it('rejects malformed content instead of allowing the Agent to set identity or effects', async () => {
@@ -1362,20 +1375,19 @@ describe('Codex analysis Agent adapter', () => {
     ]);
     expect(ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA.properties.plan).toEqual(planSchema);
     expectProviderStrictObjectSchemas(ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA);
-    expect(DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA.properties.plan).toEqual(planSchema);
-    expect(DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA.required).toEqual([
+    expect(DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA.properties).not.toHaveProperty('plan');
+    expect(DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA.required).toEqual([
       'schemaVersion',
       'contextDigest',
       'rootCause',
-      'plan',
     ]);
     expectProviderStrictObjectSchemas(DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA);
     expectProviderStrictObjectSchemas(DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA);
-    expectProviderStrictObjectSchemas(DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA);
+    expectProviderStrictObjectSchemas(DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA);
     for (const schema of [
       DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA,
       DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA,
-      DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA,
+      DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA,
     ]) {
       const serialized = JSON.stringify(schema);
       expect(serialized).not.toContain('uniqueItems');
@@ -1426,7 +1438,7 @@ describe('Codex analysis Agent adapter', () => {
   });
 
   it('normalizes closed provider code reference sentinels before the domain boundary', () => {
-    const result = parseDiagnosticAnalysisAgentOutput({
+    const result = parseDiagnosticRootCauseAgentOutput({
       schemaVersion: '1',
       contextDigest: contextDigest(),
       rootCause: {
@@ -1437,13 +1449,12 @@ describe('Codex analysis Agent adapter', () => {
           { path: 'src/cache.ts', line: 0, symbol: 'readCache' },
         ],
       },
-      plan: diagnosticPlanContent(),
     });
     expect(result.rootCause.codeRefs).toEqual([
       { path: 'src/cache.ts', line: 42 },
       { path: 'src/cache.ts', symbol: 'readCache' },
     ]);
-    expect(() => parseDiagnosticAnalysisAgentOutput({
+    expect(() => parseDiagnosticRootCauseAgentOutput({
       schemaVersion: '1',
       contextDigest: contextDigest(),
       rootCause: {
@@ -1451,7 +1462,6 @@ describe('Codex analysis Agent adapter', () => {
         confidence: 'high',
         codeRefs: [{ path: 'src/cache.ts', line: 0, symbol: '' }],
       },
-      plan: diagnosticPlanContent(),
     })).toThrow();
   });
 });

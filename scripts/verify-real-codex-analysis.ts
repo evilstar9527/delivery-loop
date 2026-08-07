@@ -15,7 +15,7 @@ import {
 import {
   ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
   AnalysisAgentOutputV1Schema,
-  DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA,
+  DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA,
   DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA,
   DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA,
   createAnalysisContextFileV1,
@@ -68,7 +68,7 @@ async function run(): Promise<void> {
   const traceRequestOutputFilePath = join(root, 'diagnostic-trace-request.json');
   const logRequestSchemaPath = join(root, 'diagnostic-log-request-schema.json');
   const traceRequestSchemaPath = join(root, 'diagnostic-trace-request-schema.json');
-  const diagnosticResultSchemaPath = join(root, 'diagnostic-result-schema.json');
+  const diagnosticRootCauseSchemaPath = join(root, 'diagnostic-root-cause-schema.json');
   await mkdir(workspacePath, { mode: 0o700 });
   await mkdir(contextRoot, { mode: 0o700 });
   await git(['init', '--initial-branch=main'], workspacePath);
@@ -235,8 +235,8 @@ async function run(): Promise<void> {
         { mode: 0o600, flag: 'wx' },
       ),
       writeFile(
-        diagnosticResultSchemaPath,
-        JSON.stringify(DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA),
+        diagnosticRootCauseSchemaPath,
+        JSON.stringify(DIAGNOSTIC_ROOT_CAUSE_RESULT_V1_JSON_SCHEMA),
         { mode: 0o600, flag: 'wx' },
       ),
     ]);
@@ -271,7 +271,7 @@ async function run(): Promise<void> {
         traceRequestOutputFilePath,
         logRequestSchemaPath,
         traceRequestSchemaPath,
-        resultSchemaPath: diagnosticResultSchemaPath,
+        rootCauseSchemaPath: diagnosticRootCauseSchemaPath,
         mediation: {
           async searchLogs() {
             return { entries: [{ requestId: 'preflight-request' }] };
@@ -296,7 +296,7 @@ async function run(): Promise<void> {
     statusAfter !== '' || output.length === 0 || usage === undefined ||
     plan.items.length === 0 || plan.evidenceRefs.length === 0 ||
     plan.items.some((item) => item.effects.some((effect) => effect !== 'repo_read')) ||
-    diagnosticPlan.items.length === 0 || diagnosticUsages.length !== 3 ||
+    diagnosticPlan.items.length === 0 || diagnosticUsages.length !== 4 ||
     !diagnosticFinished || diagnosticPlan.items.some((item) =>
       item.effects.some((effect) => effect !== 'repo_read' && effect !== 'logs_read'))
   ) throw new Error('analysis_contract_failed');
