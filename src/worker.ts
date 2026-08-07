@@ -213,6 +213,19 @@ export default {
         env.DB_CONTROL,
         new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
       ).drain(5);
+      const executionProgress = new ExecutionProgressReconciler(
+        env.DB_CONTROL,
+        env.TASK_OBJECTS,
+        { now: scheduledNow },
+      );
+      // A completed Action must be projected before lower-priority scans can
+      // exhaust the Free-plan CPU budget and the stuck detector fences it.
+      await reconcileAtRiskGitHubRunsFromEnv(env, {
+        limit: 5,
+        runningThresholdSeconds: 90,
+        now: scheduledNow,
+      });
+      await executionProgress.reconcileObservedCompletions(5);
       await new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
         now: scheduledNow,
       }).reconcileBatch(5);
@@ -221,26 +234,12 @@ export default {
       // by a previous Free-plan CPU fence. Only after that durable close-out
       // do we activate and schedule new work or scan GitHub external facts.
       await relay.relay();
-      const executionProgress = new ExecutionProgressReconciler(
-        env.DB_CONTROL,
-        env.TASK_OBJECTS,
-        { now: scheduledNow },
-      );
       const recoveredPreparedPublication =
         await executionProgress.reconcilePreparedPublications(1);
       if (recoveredPreparedPublication === 0) {
         await executionProgress.reconcileFinalizations(1);
       }
       await executionProgress.reconcileScheduling(5);
-      // Only attempts that the following stuck scan could fence are observed
-      // synchronously. Both selectors share one scheduled timestamp, threshold
-      // and limit, so an older candidate cannot be skipped and then marked lost.
-      await reconcileAtRiskGitHubRunsFromEnv(env, {
-        limit: 5,
-        runningThresholdSeconds: 90,
-        now: scheduledNow,
-      });
-      await executionProgress.reconcileObservedCompletions(5);
       // Detect/re-arm after existing outbox and execution progress have had a
       // chance to advance. Re-armed effects remain safe for the next minute.
       await new RunStuckDetector(env.DB_CONTROL, {
