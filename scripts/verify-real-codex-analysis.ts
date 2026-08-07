@@ -15,6 +15,9 @@ import {
 import {
   ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
   AnalysisAgentOutputV1Schema,
+  DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA,
+  DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA,
+  DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA,
   createAnalysisContextFileV1,
 } from '../src/domain/analysis-plan.js';
 import type { CodexModelUsage } from '../src/domain/quota.js';
@@ -60,6 +63,12 @@ async function run(): Promise<void> {
   const contextFilePath = join(contextRoot, 'context.json');
   const outputFilePath = join(root, 'plan.json');
   const analysisOutputSchemaPath = join(root, 'analysis-agent-output-schema.json');
+  const mediationContextFilePath = join(root, 'diagnostic-context.json');
+  const logRequestOutputFilePath = join(root, 'diagnostic-log-request.json');
+  const traceRequestOutputFilePath = join(root, 'diagnostic-trace-request.json');
+  const logRequestSchemaPath = join(root, 'diagnostic-log-request-schema.json');
+  const traceRequestSchemaPath = join(root, 'diagnostic-trace-request-schema.json');
+  const diagnosticResultSchemaPath = join(root, 'diagnostic-result-schema.json');
   await mkdir(workspacePath, { mode: 0o700 });
   await mkdir(contextRoot, { mode: 0o700 });
   await git(['init', '--initial-branch=main'], workspacePath);
@@ -137,7 +146,10 @@ async function run(): Promise<void> {
         processFailureCode = stdoutObserverFailed
           ? 'jsonl_usage_rejected'
           : classifyAnalysisProviderProcessFailure(result.stderr);
-      } else {
+      } else if (
+        request.args[request.args.indexOf('--output-schema') + 1] ===
+          analysisOutputSchemaPath
+      ) {
         try {
           const raw = JSON.parse(await readFile(outputFilePath, 'utf8')) as unknown;
           const parsed = AnalysisAgentOutputV1Schema.safeParse(raw);
@@ -155,6 +167,9 @@ async function run(): Promise<void> {
     },
   });
   let plan: Awaited<ReturnType<CodexAnalysisAdapter['start']>>;
+  let diagnosticPlan: Awaited<ReturnType<CodexAnalysisAdapter['start']>>;
+  const diagnosticUsages: CodexModelUsage[] = [];
+  let diagnosticFinished = false;
   try {
     plan = await adapter.start({
       workspacePath,
@@ -182,6 +197,99 @@ async function run(): Promise<void> {
       model,
       onUsage: (value) => { usage = value; },
     });
+    const diagnosticContext = {
+      schemaVersion: '1',
+      task: {
+        source: { system: 'manual', revision: 'provider-diagnostic-preflight-v1' },
+        intent: {
+          kind: 'bug',
+          description: [
+            'Investigate a synthetic failed request.',
+            'Use uid=preflight-user, cid=preflight-conversation, and path=/v1/preflight.',
+          ].join(' '),
+          acceptanceCriteria: [
+            'The plan binds a source-backed root cause without any repository write.',
+          ],
+        },
+      },
+      planPolicy: {
+        version: 1,
+        allowedEffects: ['repo_read', 'logs_read'],
+        allowedCommandRefs: ['policy:diagnose'],
+        requiresRepositoryChange: false,
+      },
+    };
+    await Promise.all([
+      writeFile(
+        contextFilePath,
+        JSON.stringify(await createAnalysisContextFileV1(diagnosticContext)),
+        { mode: 0o600 },
+      ),
+      writeFile(outputFilePath, '', { mode: 0o600 }),
+      writeFile(mediationContextFilePath, '', { mode: 0o600, flag: 'wx' }),
+      writeFile(logRequestOutputFilePath, '', { mode: 0o600, flag: 'wx' }),
+      writeFile(traceRequestOutputFilePath, '', { mode: 0o600, flag: 'wx' }),
+      writeFile(
+        logRequestSchemaPath,
+        JSON.stringify(DIAGNOSTIC_LOG_SEARCH_REQUEST_V1_JSON_SCHEMA),
+        { mode: 0o600, flag: 'wx' },
+      ),
+      writeFile(
+        traceRequestSchemaPath,
+        JSON.stringify(DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA),
+        { mode: 0o600, flag: 'wx' },
+      ),
+      writeFile(
+        diagnosticResultSchemaPath,
+        JSON.stringify(DIAGNOSTIC_ANALYSIS_RESULT_V1_JSON_SCHEMA),
+        { mode: 0o600, flag: 'wx' },
+      ),
+    ]);
+    diagnosticPlan = await adapter.start({
+      workspacePath,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: 10 * 60_000,
+      identity: {
+        planId: 'plan-provider-diagnostic-preflight-v1',
+        runId: 'run-provider-diagnostic-preflight-v1',
+        version: 1,
+        taskRevision: 'provider-diagnostic-preflight-v1',
+        baseSha,
+        attemptId: 'attempt-provider-diagnostic-preflight-v1',
+      },
+      validation: {
+        runId: 'run-provider-diagnostic-preflight-v1',
+        taskRevision: 'provider-diagnostic-preflight-v1',
+        baseSha,
+        expectedVersion: 1,
+        acceptanceCriteriaCount: 1,
+        allowedEffects: ['repo_read', 'logs_read'],
+        allowedCommandRefs: ['policy:diagnose'],
+        requiresRepositoryChange: false,
+      },
+      model,
+      onUsage: (value) => { diagnosticUsages.push(value); },
+      diagnostic: {
+        mediationContextFilePath,
+        logRequestOutputFilePath,
+        traceRequestOutputFilePath,
+        logRequestSchemaPath,
+        traceRequestSchemaPath,
+        resultSchemaPath: diagnosticResultSchemaPath,
+        mediation: {
+          async searchLogs() {
+            return { entries: [{ requestId: 'preflight-request' }] };
+          },
+          async getTrace() {
+            return {
+              spans: [{ service: 'preflight-service', outcome: 'synthetic-failure' }],
+            };
+          },
+          async finish() { diagnosticFinished = true; },
+        },
+      },
+    });
   } finally {
     await rm(contextRoot, { recursive: true, force: true });
   }
@@ -192,17 +300,23 @@ async function run(): Promise<void> {
   if (
     statusAfter !== '' || output.length === 0 || usage === undefined ||
     plan.items.length === 0 || plan.evidenceRefs.length === 0 ||
-    plan.items.some((item) => item.effects.some((effect) => effect !== 'repo_read'))
+    plan.items.some((item) => item.effects.some((effect) => effect !== 'repo_read')) ||
+    diagnosticPlan.items.length === 0 || diagnosticUsages.length !== 3 ||
+    !diagnosticFinished || diagnosticPlan.items.some((item) =>
+      item.effects.some((effect) => effect !== 'repo_read' && effect !== 'logs_read'))
   ) throw new Error('analysis_contract_failed');
 
   process.stdout.write(JSON.stringify({
     schemaVersion: '1',
     status: 'passed',
     planDigest: plan.digest,
+    diagnosticPlanDigest: diagnosticPlan.digest,
     itemCount: plan.items.length,
     evidenceRefCount: plan.evidenceRefs.length,
     repositoryClean: true,
     usageRecorded: true,
+    diagnosticSchemaVerified: true,
+    diagnosticUsageRecords: diagnosticUsages.length,
   }) + '\n');
 }
 

@@ -1192,6 +1192,41 @@ describe('Codex analysis Agent adapter', () => {
     await expect(promise).rejects.not.toThrow('CANARY_SECRET_FROM_CLI_STDERR');
   });
 
+  it('prefers a fixed Codex JSONL provider failure over opaque stderr', async () => {
+    const paths = await tempInput();
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async (request) => {
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'turn.failed',
+          error: { message: 'response_format schema maximum is not supported' },
+        }));
+        return { exitCode: 1, stderr: 'opaque process failure' };
+      },
+    });
+
+    const promise = adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-jsonl-provider-failure', runId: 'run-codex-analysis', version: 1,
+        taskRevision: 'revision-1', baseSha: BASE_SHA,
+        attemptId: 'attempt-jsonl-provider-failure',
+      },
+      validation: validationContext(),
+      model: 'gpt-test-metered',
+    });
+    await expect(promise).rejects.toMatchObject({
+      name: 'CodexAnalysisAdapterError',
+      kind: 'process_nonzero_exit',
+      stage: 'single_pass',
+      providerFailureCode: 'provider_schema_bounds_rejected',
+    } satisfies Partial<CodexAnalysisAdapterError>);
+    await expect(promise).rejects.not.toThrow('response_format');
+  });
+
   it.each([
     {
       name: 'an unavailable process',

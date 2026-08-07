@@ -30,6 +30,8 @@ export const ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES = [
 export type AnalysisProviderProcessFailureCode =
   typeof ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES[number];
 
+const GENERIC_PROVIDER_PROCESS_FAILURE = 'provider_process_failed';
+
 const AUTHENTICATION_FAILURE = /(?:\binvalid[_ -]?api[_ -]?key\b|\bauth(?:entication)?(?: error| failed| failure)\b|\bunauthorized\b|\bforbidden\b|\bpermission[_ -]?denied\b|(?:\bstatus(?: code)?\b|\bhttp(?:\/\d(?:\.\d)?)?\b)[^\d]{0,12}(?:401|403)\b)/i;
 const QUOTA_FAILURE = /(?:\binsufficient[_ -]?quota\b|\bquota(?: has been)? (?:exceeded|exhausted)\b|\bbilling(?: hard)? limit\b|\bcredits?(?: are)? (?:exhausted|depleted)\b)/i;
 const RATE_LIMIT_FAILURE = /(?:\brate[_ -]?limit(?:ed|ing)?\b|\btoo many requests\b|(?:\bstatus(?: code)?\b|\bhttp(?:\/\d(?:\.\d)?)?\b)?[^\d]{0,12}\b429\b)/i;
@@ -82,4 +84,52 @@ export function classifyAnalysisProviderProcessFailure(
       .test(sample)
   ) return 'provider_invalid_request';
   return classifyProviderProcessFailure(sample);
+}
+
+/**
+ * Projects Codex JSONL failure events to a fixed code without retaining the
+ * provider message, Agent output, reasoning, thread IDs, or other event data.
+ */
+export class AnalysisProviderJsonlFailureProjector {
+  private observedFailure = false;
+  private code: AnalysisProviderProcessFailureCode | null = null;
+
+  acceptLine(line: string): void {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(line) as unknown;
+    } catch {
+      return;
+    }
+    if (typeof raw !== 'object' || raw === null || !('type' in raw)) return;
+    const event = raw as {
+      type?: unknown;
+      message?: unknown;
+      error?: unknown;
+    };
+    let message: string | undefined;
+    if (event.type === 'error') {
+      this.observedFailure = true;
+      if (typeof event.message === 'string') message = event.message;
+    } else if (event.type === 'turn.failed') {
+      this.observedFailure = true;
+      if (
+        typeof event.error === 'object' && event.error !== null &&
+        'message' in event.error &&
+        typeof (event.error as { message?: unknown }).message === 'string'
+      ) {
+        message = (event.error as { message: string }).message;
+      }
+    }
+    if (message === undefined) return;
+    const candidate = classifyAnalysisProviderProcessFailure(message);
+    if (this.code === null || this.code === GENERIC_PROVIDER_PROCESS_FAILURE) {
+      this.code = candidate;
+    }
+  }
+
+  result(): AnalysisProviderProcessFailureCode | null {
+    if (this.code !== null) return this.code;
+    return this.observedFailure ? GENERIC_PROVIDER_PROCESS_FAILURE : null;
+  }
 }

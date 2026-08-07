@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AnalysisProviderJsonlFailureProjector,
   ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES,
   classifyAnalysisProviderProcessFailure,
   classifyProviderProcessFailure,
@@ -73,5 +74,32 @@ describe('provider preflight failure classification', () => {
   ] as const)('maps analysis provider stderr %s to %s', (stderr, expected) => {
     expect(classifyAnalysisProviderProcessFailure(stderr)).toBe(expected);
     expect(ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES).toContain(expected);
+  });
+
+  it.each([
+    [
+      { type: 'turn.failed', error: { message: 'schema maximum is not supported' } },
+      'provider_schema_bounds_rejected',
+    ],
+    [
+      { type: 'error', message: 'request failed with status 401 Unauthorized' },
+      'provider_authentication_failed',
+    ],
+  ] as const)('projects Codex JSONL provider failure to %s', (event, expected) => {
+    const projector = new AnalysisProviderJsonlFailureProjector();
+    projector.acceptLine(JSON.stringify(event));
+    expect(projector.result()).toBe(expected);
+  });
+
+  it('never retains or returns an untrusted JSONL provider message', () => {
+    const projector = new AnalysisProviderJsonlFailureProjector();
+    projector.acceptLine(JSON.stringify({
+      type: 'turn.failed',
+      error: { message: 'CANARY_PROVIDER_MESSAGE sk-exampleCredential123456789' },
+    }));
+    const result = projector.result();
+    expect(result).toBe('provider_process_failed');
+    expect(JSON.stringify(projector)).not.toContain('CANARY_PROVIDER_MESSAGE');
+    expect(JSON.stringify(projector)).not.toContain('sk-exampleCredential123456789');
   });
 });

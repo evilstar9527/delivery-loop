@@ -32,6 +32,12 @@ package.json
 pnpm-lock.yaml
 ```
 
+manifest v1继续只保存上述固定八文件及聚合digest。verifier还会从同一
+immutable `runner.sourceSha`读取`src/agent/codex-usage.ts`、
+`src/agent/command-runtime.ts`和`src/agent/provider-preflight-failure.ts`，核对usage
+投影、stderr脱敏/上限及JSONL failure固定分类形状；不接受当前main或调用方提供的
+替代源码，也不为这三个transitive依赖新增第二套manifest authority。
+
 release review先从目标Action的immutable SHA读取这些文件，记录每个Git blob SHA和`canonicalSha256(source)`，然后计算：
 
 ```text
