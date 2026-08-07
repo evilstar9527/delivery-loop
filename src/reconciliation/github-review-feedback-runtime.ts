@@ -35,5 +35,5 @@ export async function reconcileGitHubReviewFeedbacksFromEnv(
 export async function recoverLostGitHubReviewFeedbacksFromEnv(
   env: Bindings,
 ): Promise<unknown[]> {
-  return await new GitHubReviewFeedbackRecoveryReconciler(env.DB_CONTROL).reconcileBatch(5);
+  return await new GitHubReviewFeedbackRecoveryReconciler(env.DB_CONTROL).reconcileBatch(1);
 }
