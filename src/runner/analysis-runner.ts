@@ -6,6 +6,7 @@ import { z } from 'zod';
 import {
   CodexAnalysisAdapter,
   CodexAnalysisAdapterError,
+  bindWritableDiagnosticRequirement,
   type CodexAnalysisFailureKind,
   type CodexAnalysisFailureStage,
   type DiagnosticAnalysisMediation,
@@ -102,6 +103,11 @@ const ContextResponseSchema = z
       .strict(),
     task: TaskEnvelopeSchema,
     revisionSource: AnalysisRevisionSourceSchema.optional(),
+    carriedDiagnosticEvidenceRef: z
+      .string()
+      .max(220)
+      .regex(DIAGNOSTIC_EVIDENCE_REF_PATTERN)
+      .optional(),
     planPolicy: z
       .object({
         version: z.number().int().positive(),
@@ -853,6 +859,48 @@ async function bindDiagnosticEvidence(
   );
 }
 
+async function bindCarriedDiagnosticEvidence(
+  plan: ExecutionPlanV1,
+  evidenceRef: string,
+  validation: Parameters<typeof validateExecutionPlanProposal>[1],
+): Promise<ExecutionPlanV1> {
+  if (!DIAGNOSTIC_EVIDENCE_REF_PATTERN.test(evidenceRef)) {
+    throw invalidDiagnosticPlanShape();
+  }
+  const content = planContent(plan);
+  if (content.evidenceRefs.some((ref) => DIAGNOSTIC_EVIDENCE_REF_PATTERN.test(ref))) {
+    throw invalidDiagnosticPlanShape();
+  }
+  const boundContent = bindWritableDiagnosticRequirement(content, true);
+  const candidates = boundContent.items.filter((item) => {
+    const commandRefs = item.verification.commandRefs ?? [];
+    return item.required && item.kind === 'change' && item.effects.includes('repo_write') &&
+      item.effects.includes('logs_read') &&
+      commandRefs.some((ref) => ref.startsWith('test:')) &&
+      commandRefs.some((ref) => ref.startsWith('verify:')) &&
+      item.verification.evidenceKinds.includes('diagnostic') &&
+      item.verification.evidenceKinds.includes('commit') &&
+      item.verification.evidenceKinds.includes('test');
+  });
+  if (candidates.length !== 1) throw invalidDiagnosticPlanShape();
+  const body = {
+    schemaVersion: '1' as const,
+    id: plan.id,
+    runId: plan.runId,
+    version: plan.version,
+    taskRevision: plan.taskRevision,
+    baseSha: plan.baseSha,
+    createdByAttemptId: plan.createdByAttemptId,
+    ...boundContent,
+  };
+  const boundPlan = await validateExecutionPlanProposal({
+    ...body,
+    digest: await computeExecutionPlanDigest(body),
+    status: 'proposed',
+  }, validation);
+  return await bindDiagnosticEvidence(boundPlan, evidenceRef, validation);
+}
+
 /** Runs one analysis-only GitHub attempt without treating the hosted Runner as durable state. */
 export async function runAnalysisAttempt(
   options: RunAnalysisAttemptOptions = {},
@@ -903,6 +951,18 @@ export async function runAnalysisAttempt(
   ) {
     throw new AnalysisRunnerError('analysis context identity does not match dispatch');
   }
+  const carriedDiagnosticEvidenceRef = context.carriedDiagnosticEvidenceRef;
+  if (
+    carriedDiagnosticEvidenceRef !== undefined &&
+    (
+      context.revisionSource?.kind !== 'base_update' ||
+      context.task.intent.kind !== 'bug' ||
+      !context.task.policy.allowRepositoryWrite ||
+      !context.planPolicy.requiresRepositoryChange
+    )
+  ) {
+    throw new AnalysisRunnerError('analysis carried diagnostic context is invalid');
+  }
 
   const temporaryRoot = await mkdtemp(join(config.runnerTempPath, 'delivery-loop-analysis-'));
   let workspaceContextRoot: string | undefined;
@@ -937,7 +997,8 @@ export async function runAnalysisAttempt(
   let heartbeatTask: Promise<void> = Promise.resolve();
   const modelReservations: Array<z.infer<typeof ModelReservationResponseSchema>> = [];
   const measuredUsages: CodexModelUsage[] = [];
-  const diagnosticMediation = context.task.intent.kind === 'bug'
+  const diagnosticMediation = context.task.intent.kind === 'bug' &&
+      carriedDiagnosticEvidenceRef === undefined
     ? new ControlledDiagnosticMediation(
         fetchImplementation,
         config,
@@ -1007,9 +1068,11 @@ export async function runAnalysisAttempt(
     if (new SecretScanner({ secrets: [...runtimeSecrets] }).scan(context).length > 0) {
       throw new AnalysisRunnerError('analysis context contains a runtime Secret');
     }
+    const agentContext = { ...context };
+    delete agentContext.carriedDiagnosticEvidenceRef;
     await writeFile(
       contextFilePath,
-      JSON.stringify(await createAnalysisContextFileV1(context)),
+      JSON.stringify(await createAnalysisContextFileV1(agentContext)),
       { mode: 0o600, flag: 'wx' },
     );
     await Promise.all([
@@ -1216,6 +1279,12 @@ export async function runAnalysisAttempt(
       });
     }
     let content = planContent(validatedLocalPlan);
+    if (
+      carriedDiagnosticEvidenceRef !== undefined &&
+      content.evidenceRefs.some((ref) => DIAGNOSTIC_EVIDENCE_REF_PATTERN.test(ref))
+    ) {
+      throw invalidDiagnosticPlanShape();
+    }
     if (new SecretScanner({ secrets: [...runtimeSecrets] }).scan(content).length > 0) {
       throw new AnalysisRunnerError('analysis Agent output contains sensitive material', {
         failureCode: 'invalid_agent_output',
@@ -1251,6 +1320,13 @@ export async function runAnalysisAttempt(
       validatedLocalPlan = await bindDiagnosticEvidence(
         validatedLocalPlan,
         await diagnosticMediation.persistEvidence(),
+        validation,
+      );
+      content = planContent(validatedLocalPlan);
+    } else if (carriedDiagnosticEvidenceRef !== undefined) {
+      validatedLocalPlan = await bindCarriedDiagnosticEvidence(
+        validatedLocalPlan,
+        carriedDiagnosticEvidenceRef,
         validation,
       );
       content = planContent(validatedLocalPlan);

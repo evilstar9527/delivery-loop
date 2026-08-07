@@ -206,7 +206,7 @@ function bindSingleRequiredItemAcceptanceCoverage(
  * one unambiguous self-verifying writable item; all other shapes remain
  * unmodified so the normal Plan validator can reject them.
  */
-function bindWritableDiagnosticRequirement(
+export function bindWritableDiagnosticRequirement(
   content: AnalysisPlanContentV1,
   requiresRepositoryChange: boolean,
 ): AnalysisPlanContentV1 {
