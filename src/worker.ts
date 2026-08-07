@@ -217,6 +217,10 @@ export default {
         env.DB_CONTROL,
         new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
       ).drain(5);
+      // Lost pre-effect review work already has a settled Workflow fence. Its
+      // bounded D1-only recovery must run before external scans can consume the
+      // Free-plan CPU budget; the new dispatch remains durable for relay.
+      await recoverLostGitHubReviewFeedbacksFromEnv(env);
       const executionProgress = new ExecutionProgressReconciler(
         env.DB_CONTROL,
         env.TASK_OBJECTS,
@@ -261,7 +265,6 @@ export default {
       // Recover missed review webhooks before merge/base readers can race the
       // same pull_request_open Run-version transition.
       await reconcileGitHubReviewFeedbacksFromEnv(env);
-      await recoverLostGitHubReviewFeedbacksFromEnv(env);
       await Promise.all([
         reconcileWorkflowInstancesFromEnv(env),
         reconcileGitHubRunsFromEnv(env, 1),
