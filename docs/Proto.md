@@ -603,7 +603,7 @@ GitHub review feedback契约：
 - feedback同时冻结完成上述迁移后的expected replan Run version；任何其他Run迁移都会使该review decision stale，不能由endpoint重新读取“新当前版本”绕过fence；
 - review Attempt的checkout SHA等于reviewed head，`head_branch`在commit前仍为null，但受信target是lineage中的原PR branch。它不伪造`attempt_repairs`或测试失败；review feedback与verification repair必须恰好存在一种。
 - Git writer的Task/Attempt identity边界与控制面统一为1～200个受限字符，并继续对最终派生branch执行240字符Git-safe校验；因此稳定`attempt_review_<52 hex>` identity可更新原PR branch，但超长Task+Attempt组合仍在任何Git effect前拒绝。
-- pre-effect review recovery只接受`lost + github completed/non-success`的direct review Attempt，要求active Plan/Item仍绑定该Attempt、source head不变、write credential无issuing/active/revoking状态，并且不存在head update、verification suite、attempt failure或既有replacement。单一D1 batch创建带`recovered_from_attempt_id`的pending `review_fix`、切换Item activeAttempt并写新dedupe dispatch；dispatcher和context通过该一跳引用读取原immutable review lineage，旧Attempt和feedback不UPDATE/DELETE。
+- pre-effect review recovery只接受`lost + github completed/non-success`的direct review Attempt，要求active Plan/Item仍绑定该Attempt、source head不变、write credential无issuing/active/revoking状态，并且不存在head update、verification suite、attempt failure或既有replacement。Run可处于原`executing`，或处于由同一Attempt的resolved `attempt_fenced` incident直接产生的紧邻`blocked`版本；后者还必须零active blocker且stable Workflow cancel已经settled。单一D1 batch创建带`recovered_from_attempt_id`的pending `review_fix`、必要时恢复Run为`executing`、切换Item activeAttempt并写新dedupe dispatch；dispatcher和context通过该一跳引用读取原immutable review lineage，旧Attempt、incident、cancel和feedback不UPDATE/DELETE。
 
 GitHub base observation契约：
 

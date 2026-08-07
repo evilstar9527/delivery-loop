@@ -192,7 +192,34 @@ export class GitHubReviewFeedbackRecoveryReconciler {
            AND lost.github_status = 'completed'
            AND lost.github_conclusion IS NOT NULL AND lost.github_conclusion <> 'success'
            AND lost.head_sha IS NOT NULL
-           AND runs.state = 'executing'
+           AND (
+             runs.state = 'executing'
+             OR (
+               runs.state = 'blocked'
+               AND NOT EXISTS (
+                 SELECT 1 FROM run_blockers
+                 WHERE run_blockers.run_id = lost.run_id
+                   AND run_blockers.resolved_at IS NULL
+               )
+               AND EXISTS (
+                 SELECT 1 FROM run_stuck_incidents AS incident
+                 WHERE incident.run_id = lost.run_id
+                   AND incident.attempt_id = lost.attempt_id
+                   AND incident.state_kind = 'running'
+                   AND incident.observed_run_state = 'executing'
+                   AND incident.run_version + 1 = runs.version
+                   AND incident.action = 'fence_lost_attempt'
+                   AND incident.status = 'resolved'
+                   AND incident.resolution_code = 'attempt_fenced'
+               )
+               AND EXISTS (
+                 SELECT 1 FROM outbox AS cancel
+                 WHERE cancel.run_id = lost.run_id
+                   AND cancel.kind = 'workflow_cancel'
+                   AND cancel.delivery_state = 'settled'
+               )
+             )
+           )
            AND runs.active_plan_id = lost.plan_id
            AND runs.active_plan_version = lost.plan_version
            AND plans.status = 'active'
@@ -236,6 +263,40 @@ export class GitHubReviewFeedbackRecoveryReconciler {
         replacementAttemptId,
         lostAttemptId,
       ),
+      this.db.prepare(
+        `UPDATE runs
+         SET state = 'executing', version = version + 1, updated_at = ?
+         WHERE state = 'blocked'
+           AND NOT EXISTS (
+             SELECT 1 FROM run_blockers
+             WHERE run_blockers.run_id = runs.run_id
+               AND run_blockers.resolved_at IS NULL
+           )
+           AND EXISTS (
+             SELECT 1 FROM attempts AS replacement
+             JOIN attempts AS lost
+               ON lost.attempt_id = replacement.recovered_from_attempt_id
+             JOIN run_stuck_incidents AS incident
+               ON incident.run_id = lost.run_id
+              AND incident.attempt_id = lost.attempt_id
+             WHERE replacement.attempt_id = ?
+               AND replacement.recovered_from_attempt_id = ?
+               AND replacement.run_id = runs.run_id
+               AND replacement.status = 'pending'
+               AND incident.state_kind = 'running'
+               AND incident.observed_run_state = 'executing'
+               AND incident.run_version + 1 = runs.version
+               AND incident.action = 'fence_lost_attempt'
+               AND incident.status = 'resolved'
+               AND incident.resolution_code = 'attempt_fenced'
+           )
+           AND EXISTS (
+             SELECT 1 FROM outbox AS cancel
+             WHERE cancel.run_id = runs.run_id
+               AND cancel.kind = 'workflow_cancel'
+               AND cancel.delivery_state = 'settled'
+           )`,
+      ).bind(nowIso, replacementAttemptId, lostAttemptId),
       this.db.prepare(
         `INSERT INTO outbox (
            outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
@@ -294,7 +355,34 @@ export class GitHubReviewFeedbackRecoveryReconciler {
        WHERE lost.mode = 'review_fix' AND lost.status = 'lost'
          AND lost.github_status = 'completed'
          AND lost.github_conclusion IS NOT NULL AND lost.github_conclusion <> 'success'
-         AND runs.state = 'executing'
+         AND (
+           runs.state = 'executing'
+           OR (
+             runs.state = 'blocked'
+             AND NOT EXISTS (
+               SELECT 1 FROM run_blockers
+               WHERE run_blockers.run_id = lost.run_id
+                 AND run_blockers.resolved_at IS NULL
+             )
+             AND EXISTS (
+               SELECT 1 FROM run_stuck_incidents AS incident
+               WHERE incident.run_id = lost.run_id
+                 AND incident.attempt_id = lost.attempt_id
+                 AND incident.state_kind = 'running'
+                 AND incident.observed_run_state = 'executing'
+                 AND incident.run_version + 1 = runs.version
+                 AND incident.action = 'fence_lost_attempt'
+                 AND incident.status = 'resolved'
+                 AND incident.resolution_code = 'attempt_fenced'
+             )
+             AND EXISTS (
+               SELECT 1 FROM outbox AS cancel
+               WHERE cancel.run_id = lost.run_id
+                 AND cancel.kind = 'workflow_cancel'
+                 AND cancel.delivery_state = 'settled'
+             )
+           )
+         )
          AND progress.status = 'in_progress'
          AND progress.active_attempt_id = lost.attempt_id
          AND NOT EXISTS (
