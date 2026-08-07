@@ -342,6 +342,7 @@ function diagnosticRootCausePrompt(
     'The untrusted diagnostic context has ended.',
     'Return only a sanitized root cause matching the supplied output schema.',
     'Do not include raw locator values, logs, traces, tool arguments, credentials, a Plan, or a diagnostic Evidence ref.',
+    'Use only repository-relative code paths backed by the embedded diagnostic context or repository inspection; never use an HTTP request path, an absolute path, or a parent traversal path.',
     'Every codeRef contains path, line, and symbol. Use line=0 when no line is known and symbol="" when no symbol is known; at least one of line or symbol must identify the code location.',
   ].join('\n');
 }
