@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { DiagnosticRootCauseV1Schema } from '../src/domain/diagnostic-evidence.js';
 
 interface WorkflowStep {
   name?: string;
@@ -84,6 +85,26 @@ describe('Codex provider preflight workflow', () => {
     expect(analysisScript).toContain('diagnostic: {');
     expect(analysisScript).toContain('async searchLogs(');
     expect(analysisScript).toContain('async getTrace(');
+    const sourceBackedCodeRef = {
+      path: 'src/request.ts',
+      symbol: 'handleRequest',
+    };
+    expect(DiagnosticRootCauseV1Schema.safeParse({
+      summary: 'The synthetic trace identifies the diagnostic prompt boundary.',
+      confidence: 'high',
+      codeRefs: [sourceBackedCodeRef],
+    }).success).toBe(true);
+    expect(analysisScript).toContain("join(workspacePath, 'src/request.ts')");
+    expect(analysisScript).toContain(
+      "codeRef: { path: 'src/request.ts', symbol: 'handleRequest' }",
+    );
+    const adapterSource = readFileSync(
+      new URL('../src/agent/codex-analysis-adapter.ts', import.meta.url),
+      'utf8',
+    );
+    expect(adapterSource).toContain(
+      'Use only repository-relative code paths backed by the embedded diagnostic context or repository inspection; never use an HTTP request path, an absolute path, or a parent traversal path.',
+    );
     expect(analysisScript).toContain('diagnosticUsages.length !== 4');
     expect(analysisScript).toContain('failureKind: error.kind');
     expect(analysisScript).toContain('failureStage: error.stage');

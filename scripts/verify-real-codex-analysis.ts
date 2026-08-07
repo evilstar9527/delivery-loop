@@ -71,6 +71,7 @@ async function run(): Promise<void> {
   const diagnosticRootCauseSchemaPath = join(root, 'diagnostic-root-cause-schema.json');
   await mkdir(workspacePath, { mode: 0o700 });
   await mkdir(contextRoot, { mode: 0o700 });
+  await mkdir(join(workspacePath, 'src'), { mode: 0o700 });
   await git(['init', '--initial-branch=main'], workspacePath);
   await git(['config', 'user.name', 'Delivery Loop E2E'], workspacePath);
   await git(['config', 'user.email', 'delivery-loop-e2e@example.test'], workspacePath);
@@ -79,7 +80,12 @@ async function run(): Promise<void> {
     '# Delivery fixture\n\nThe repository needs one read-only inspection plan with source evidence.\n',
     { mode: 0o600, flag: 'wx' },
   );
-  await git(['add', 'README.md'], workspacePath);
+  await writeFile(
+    join(workspacePath, 'src/request.ts'),
+    "export function handleRequest(): { outcome: 'synthetic-failure' } {\n  return { outcome: 'synthetic-failure' };\n}\n",
+    { mode: 0o600, flag: 'wx' },
+  );
+  await git(['add', 'README.md', 'src/request.ts'], workspacePath);
   await git(['commit', '-m', 'create analysis fixture'], workspacePath);
   const baseSha = await git(['rev-parse', 'HEAD'], workspacePath);
   const statusBefore = await git(
@@ -278,7 +284,11 @@ async function run(): Promise<void> {
           },
           async getTrace() {
             return {
-              spans: [{ service: 'preflight-service', outcome: 'synthetic-failure' }],
+              spans: [{
+                service: 'preflight-service',
+                outcome: 'synthetic-failure',
+                codeRef: { path: 'src/request.ts', symbol: 'handleRequest' },
+              }],
             };
           },
           async finish() { diagnosticFinished = true; },
