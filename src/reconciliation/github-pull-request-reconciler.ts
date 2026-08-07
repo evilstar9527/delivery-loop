@@ -84,10 +84,16 @@ export class GitHubPullRequestReconciler {
       throw new Error('GitHub pull request reconciliation limit is invalid');
     }
     const candidates = await this.db.prepare(
-      `SELECT publication_id
+      `SELECT pull_request_publications.publication_id
        FROM pull_request_publications
-       WHERE status = 'created_unverified' AND github_pr_number IS NOT NULL
-       ORDER BY updated_at, publication_id LIMIT ?`,
+       JOIN runs ON runs.run_id = pull_request_publications.run_id
+       WHERE pull_request_publications.status = 'created_unverified'
+         AND pull_request_publications.github_pr_number IS NOT NULL
+         AND runs.state = 'verifying'
+         AND runs.version = pull_request_publications.run_version
+       ORDER BY pull_request_publications.updated_at,
+                pull_request_publications.publication_id
+       LIMIT ?`,
     ).bind(limit).all<{ publication_id: string }>();
     const results: GitHubPullRequestBatchResult[] = [];
     for (const candidate of candidates.results) {
@@ -117,9 +123,12 @@ export class GitHubPullRequestReconciler {
        FROM pull_request_publications
        JOIN pull_request_drafts
          ON pull_request_drafts.draft_id = pull_request_publications.draft_id
+       JOIN runs ON runs.run_id = pull_request_publications.run_id
        WHERE pull_request_publications.publication_id = ?
          AND pull_request_publications.status = 'created_unverified'
-         AND pull_request_publications.github_pr_number IS NOT NULL`,
+         AND pull_request_publications.github_pr_number IS NOT NULL
+         AND runs.state = 'verifying'
+         AND runs.version = pull_request_publications.run_version`,
     ).bind(publicationId).first<CandidateRow>();
   }
 }
