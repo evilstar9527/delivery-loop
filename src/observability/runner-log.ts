@@ -10,6 +10,10 @@ import {
   type CodexAnalysisFailureKind,
   type CodexAnalysisFailureStage,
 } from '../agent/codex-analysis-adapter.js';
+import {
+  ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES,
+  type AnalysisProviderProcessFailureCode,
+} from '../agent/provider-preflight-failure.js';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const EXECUTION_FAILURE_KINDS = [
@@ -52,6 +56,7 @@ export function writeRunnerStructuredLog(
   environment: NodeJS.ProcessEnv = process.env,
   failureKind?: RunnerExecutionFailureKind | CodexAnalysisFailureKind,
   failureStage?: CodexAnalysisFailureStage,
+  providerFailureCode?: AnalysisProviderProcessFailureCode,
 ): void {
   const validExecutionFailure = event === 'execution_attempt_result' &&
     outcome === 'failed' && failureStage === undefined &&
@@ -70,6 +75,17 @@ export function writeRunnerStructuredLog(
         : 'Runner failure kind is invalid',
     );
   }
+  const validProviderFailure = event === 'analysis_attempt_result' &&
+    outcome === 'failed' && failureKind === 'process_nonzero_exit' &&
+    failureStage !== undefined &&
+    ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES.includes(
+      providerFailureCode as AnalysisProviderProcessFailureCode,
+    );
+  if (
+    (failureKind === 'process_nonzero_exit' && event === 'analysis_attempt_result') !==
+      (providerFailureCode !== undefined) ||
+    providerFailureCode !== undefined && !validProviderFailure
+  ) throw new Error('Runner provider failure classification is invalid');
   const failed = outcome === 'failed' || outcome === 'blocked';
   const stream = failed ? process.stderr : process.stdout;
   secureStructuredLogSink({
@@ -83,6 +99,7 @@ export function writeRunnerStructuredLog(
     outcome,
     ...(failureKind === undefined ? {} : { failureKind }),
     ...(failureStage === undefined ? {} : { failureStage }),
+    ...(providerFailureCode === undefined ? {} : { providerFailureCode }),
     ...(ID_PATTERN.test(environment.DELIVERY_ATTEMPT_ID ?? '')
       ? { attemptId: environment.DELIVERY_ATTEMPT_ID }
       : {}),

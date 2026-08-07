@@ -18,6 +18,18 @@ export const PROVIDER_PROCESS_FAILURE_CODES = [
 export type ProviderProcessFailureCode =
   typeof PROVIDER_PROCESS_FAILURE_CODES[number];
 
+export const ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES = [
+  'provider_schema_unique_items_rejected',
+  'provider_schema_bounds_rejected',
+  'provider_schema_required_rejected',
+  'provider_output_schema_rejected',
+  'provider_invalid_request',
+  ...PROVIDER_PROCESS_FAILURE_CODES,
+] as const;
+
+export type AnalysisProviderProcessFailureCode =
+  typeof ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES[number];
+
 const AUTHENTICATION_FAILURE = /(?:\binvalid[_ -]?api[_ -]?key\b|\bauth(?:entication)?(?: error| failed| failure)\b|\bunauthorized\b|\bforbidden\b|\bpermission[_ -]?denied\b|(?:\bstatus(?: code)?\b|\bhttp(?:\/\d(?:\.\d)?)?\b)[^\d]{0,12}(?:401|403)\b)/i;
 const QUOTA_FAILURE = /(?:\binsufficient[_ -]?quota\b|\bquota(?: has been)? (?:exceeded|exhausted)\b|\bbilling(?: hard)? limit\b|\bcredits?(?: are)? (?:exhausted|depleted)\b)/i;
 const RATE_LIMIT_FAILURE = /(?:\brate[_ -]?limit(?:ed|ing)?\b|\btoo many requests\b|(?:\bstatus(?: code)?\b|\bhttp(?:\/\d(?:\.\d)?)?\b)?[^\d]{0,12}\b429\b)/i;
@@ -50,4 +62,24 @@ export function classifyProviderProcessFailure(
   if (NETWORK_FAILURE.test(sample)) return 'provider_network_failed';
   if (CLI_CONTRACT_FAILURE.test(sample)) return 'provider_cli_contract_failed';
   return 'provider_process_failed';
+}
+
+/** Adds analysis structured-output request failures to the shared safe provider classes. */
+export function classifyAnalysisProviderProcessFailure(
+  stderr: string | undefined,
+): AnalysisProviderProcessFailureCode {
+  const sample = stderr?.slice(0, MAX_PROVIDER_STDERR_CHARS) ?? '';
+  if (/uniqueItems/i.test(sample)) return 'provider_schema_unique_items_rejected';
+  if (/(?:minLength|maxLength|minItems|maxItems|minimum|maximum)/i.test(sample)) {
+    return 'provider_schema_bounds_rejected';
+  }
+  if (/\brequired\b/i.test(sample)) return 'provider_schema_required_rejected';
+  if (/(?:json[_ -]schema|\bschema\b|response[_ -]?format)/i.test(sample)) {
+    return 'provider_output_schema_rejected';
+  }
+  if (
+    /(?:status(?: code)?|http(?:\/\d(?:\.\d)?)?|response)[^\d]{0,12}400\b|\b400 bad request\b/i
+      .test(sample)
+  ) return 'provider_invalid_request';
+  return classifyProviderProcessFailure(sample);
 }
