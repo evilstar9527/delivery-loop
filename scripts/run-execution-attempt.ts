@@ -28,6 +28,7 @@ try {
     error instanceof ExecutionAttemptError || error instanceof ExecutionRunnerError
       ? error.kind
       : undefined,
+    error instanceof ExecutionAttemptError ? error.failureStage : undefined,
   );
   process.exitCode = 1;
 }

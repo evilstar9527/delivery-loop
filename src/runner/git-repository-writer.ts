@@ -104,6 +104,27 @@ export class RepositoryWritePolicyError extends Error {
   }
 }
 
+export const REPOSITORY_COMMIT_FAILURE_STAGES = [
+  'precondition',
+  'stage_changes',
+  'protected_path_scan',
+  'protected_path_report',
+  'create_commit',
+  'verify_commit',
+  'result_binding',
+  'unknown',
+] as const;
+
+export type RepositoryCommitFailureStage =
+  (typeof REPOSITORY_COMMIT_FAILURE_STAGES)[number];
+
+export class RepositoryCommitError extends Error {
+  constructor(readonly stage: RepositoryCommitFailureStage) {
+    super('repository commit failed');
+    this.name = 'RepositoryCommitError';
+  }
+}
+
 export class ProtectedPathApprovalRequired extends Error {
   readonly report: ProtectedPathChangeReportV1;
 
@@ -481,22 +502,35 @@ export class GitRepositoryWriter {
   }
 
   async commitAll(): Promise<RepositoryCommit> {
-    this.assertCredentialActive();
-    await this.assertCurrentBranch();
-    if (await this.requiredScalar(['rev-parse', '--verify', 'HEAD']) !== this.context.baseSha) {
-      throw new RepositoryWritePolicyError();
+    try {
+      this.assertCredentialActive();
+      await this.assertCurrentBranch();
+      if (await this.requiredScalar(['rev-parse', '--verify', 'HEAD']) !== this.context.baseSha) {
+        throw new RepositoryWritePolicyError();
+      }
+    } catch {
+      throw new RepositoryCommitError('precondition');
     }
-    await this.required(['add', '--all', '--']);
-    const staged = await this.git(['diff', '--cached', '--quiet', '--exit-code']);
-    if (staged.exitCode === 0 || staged.exitCode > 1) {
-      throw new RepositoryWritePolicyError();
+    try {
+      await this.required(['add', '--all', '--']);
+      const staged = await this.git(['diff', '--cached', '--quiet', '--exit-code']);
+      if (staged.exitCode === 0 || staged.exitCode > 1) {
+        throw new RepositoryWritePolicyError();
+      }
+    } catch {
+      throw new RepositoryCommitError('stage_changes');
     }
-    const protectedPathReport = await this.protectedPathReport();
+    let protectedPathReport: ProtectedPathChangeReportV1 | null;
+    try {
+      protectedPathReport = await this.protectedPathReport();
+    } catch {
+      throw new RepositoryCommitError('protected_path_scan');
+    }
     if (protectedPathReport !== null) {
       try {
         await this.context.onProtectedPathApprovalRequired(protectedPathReport);
       } catch {
-        throw new RepositoryWritePolicyError();
+        throw new RepositoryCommitError('protected_path_report');
       }
       throw new ProtectedPathApprovalRequired(protectedPathReport);
     }
@@ -507,43 +541,50 @@ export class GitRepositoryWriter {
       GIT_COMMITTER_NAME: BOT_COMMIT_NAME,
       GIT_COMMITTER_EMAIL: BOT_COMMIT_EMAIL,
     } as const;
-    await this.required([
-      '-c',
-      `user.name=${BOT_COMMIT_NAME}`,
-      '-c',
-      `user.email=${BOT_COMMIT_EMAIL}`,
-      '-c',
-      'user.useConfigOnly=true',
-      '-c',
-      'commit.gpgSign=false',
-      '-c',
-      'core.hooksPath=/dev/null',
-      'commit',
-      '--no-gpg-sign',
-      '--no-verify',
-      `--author=${BOT_COMMIT_NAME} <${BOT_COMMIT_EMAIL}>`,
-      '-m',
-      message,
-      '--',
-    ], identityEnvironment);
-    const fields = (await this.requiredScalar([
-      'show',
-      '-s',
-      '--format=%H%x00%an%x00%ae%x00%cn%x00%ce',
-      'HEAD',
-    ])).split('\0');
-    if (
-      fields.length !== 5 ||
-      !SHA_PATTERN.test(fields[0] ?? '') ||
-      fields[1] !== BOT_COMMIT_NAME ||
-      fields[2] !== BOT_COMMIT_EMAIL ||
-      fields[3] !== BOT_COMMIT_NAME ||
-      fields[4] !== BOT_COMMIT_EMAIL
-    ) {
-      throw new RepositoryWritePolicyError();
+    try {
+      await this.required([
+        '-c',
+        `user.name=${BOT_COMMIT_NAME}`,
+        '-c',
+        `user.email=${BOT_COMMIT_EMAIL}`,
+        '-c',
+        'user.useConfigOnly=true',
+        '-c',
+        'commit.gpgSign=false',
+        '-c',
+        'core.hooksPath=/dev/null',
+        'commit',
+        '--no-gpg-sign',
+        '--no-verify',
+        `--author=${BOT_COMMIT_NAME} <${BOT_COMMIT_EMAIL}>`,
+        '-m',
+        message,
+        '--',
+      ], identityEnvironment);
+    } catch {
+      throw new RepositoryCommitError('create_commit');
     }
-    if (await this.requiredScalar(['rev-parse', '--verify', 'HEAD^']) !== this.context.baseSha) {
-      throw new RepositoryWritePolicyError();
+    let fields: string[];
+    try {
+      fields = (await this.requiredScalar([
+        'show',
+        '-s',
+        '--format=%H%x00%an%x00%ae%x00%cn%x00%ce',
+        'HEAD',
+      ])).split('\0');
+      if (
+        fields.length !== 5 ||
+        !SHA_PATTERN.test(fields[0] ?? '') ||
+        fields[1] !== BOT_COMMIT_NAME ||
+        fields[2] !== BOT_COMMIT_EMAIL ||
+        fields[3] !== BOT_COMMIT_NAME ||
+        fields[4] !== BOT_COMMIT_EMAIL ||
+        await this.requiredScalar(['rev-parse', '--verify', 'HEAD^']) !== this.context.baseSha
+      ) {
+        throw new RepositoryWritePolicyError();
+      }
+    } catch {
+      throw new RepositoryCommitError('verify_commit');
     }
     return {
       branch: this.branch,

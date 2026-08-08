@@ -13,6 +13,7 @@ import {
   RepositoryWritePolicyError,
   executeGitCommand,
   repositoryAttemptBranch,
+  type RepositoryCommitError,
   type GitCommandExecutor,
 } from '../src/runner/git-repository-writer.js';
 
@@ -71,6 +72,85 @@ async function fixture(): Promise<{
 }
 
 describe('approved Git repository writer', () => {
+  it('classifies each commit boundary without exposing Git output or repository paths', async () => {
+    const cases = [
+      {
+        stage: 'precondition',
+        matches: (args: string[]) => args.join(' ') === 'branch --show-current',
+      },
+      {
+        stage: 'stage_changes',
+        matches: (args: string[]) => args.join(' ') === 'add --all --',
+      },
+      {
+        stage: 'protected_path_scan',
+        matches: (args: string[]) => args.includes('--name-status'),
+      },
+      {
+        stage: 'create_commit',
+        matches: (args: string[]) => args.includes('commit'),
+      },
+      {
+        stage: 'verify_commit',
+        matches: (args: string[]) => args[0] === 'show' && args.includes('HEAD'),
+      },
+    ] as const;
+
+    for (const failure of cases) {
+      const repo = await fixture();
+      let armed = false;
+      const executor: GitCommandExecutor = async (request) => armed && failure.matches(request.args)
+        ? { exitCode: 2, stdout: 'CANARY_GIT_STDOUT', stderr: 'CANARY_GIT_STDERR' }
+        : await executeGitCommand(request);
+      const writer = new GitRepositoryWriter({
+        repositoryPath: repo.repository,
+        repository: 'example/delivery-target',
+        taskId: TASK_ID,
+        attemptId: `attempt-${failure.stage}`,
+        baseSha: repo.baseSha,
+        baseBranch: 'main',
+        protectedBranches: [],
+        deliveryPolicy: DELIVERY_POLICY,
+        onProtectedPathApprovalRequired: async () => undefined,
+        credential: credential(),
+      }, executor);
+      await writer.prepareBranch();
+      await writeFile(join(repo.repository, 'README.md'), `change for ${failure.stage}\n`);
+      armed = true;
+
+      await expect(writer.commitAll()).rejects.toMatchObject({
+        name: 'RepositoryCommitError',
+        stage: failure.stage,
+        message: 'repository commit failed',
+      } satisfies Partial<RepositoryCommitError>);
+    }
+
+    const protectedRepo = await fixture();
+    const protectedWriter = new GitRepositoryWriter({
+      repositoryPath: protectedRepo.repository,
+      repository: 'example/delivery-target',
+      taskId: TASK_ID,
+      attemptId: 'attempt-protected-report',
+      baseSha: protectedRepo.baseSha,
+      baseBranch: 'main',
+      protectedBranches: [],
+      deliveryPolicy: DELIVERY_POLICY,
+      onProtectedPathApprovalRequired: async () => {
+        throw new Error('CANARY_PROTECTED_REPORT_ERROR');
+      },
+      credential: credential(),
+    });
+    await protectedWriter.prepareBranch();
+    await writeFile(join(protectedRepo.repository, 'delivery.yaml'), 'protected change\n');
+    const rejected = protectedWriter.commitAll();
+    await expect(rejected).rejects.toMatchObject({
+      name: 'RepositoryCommitError',
+      stage: 'protected_path_report',
+      message: 'repository commit failed',
+    } satisfies Partial<RepositoryCommitError>);
+    await expect(rejected).rejects.not.toThrow(/CANARY|delivery\.yaml/);
+  });
+
   it('creates a task/attempt branch, commits as the fixed bot, and pushes only that branch', async () => {
     const repo = await fixture();
     const commands: Parameters<GitCommandExecutor>[0][] = [];
@@ -306,7 +386,10 @@ describe('approved Git repository writer', () => {
     await git(repo.repository, 'commit', '-m', 'untrusted Agent commit');
     await writeFile(join(repo.repository, 'after-commit.txt'), 'additional Agent edit\n');
 
-    await expect(writer.commitAll()).rejects.toBeInstanceOf(RepositoryWritePolicyError);
+    await expect(writer.commitAll()).rejects.toMatchObject({
+      name: 'RepositoryCommitError',
+      stage: 'precondition',
+    } satisfies Partial<RepositoryCommitError>);
     expect(await git(repo.remote, 'show-ref', '--hash', 'refs/heads/main')).toBe(repo.baseSha);
   });
 });

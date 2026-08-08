@@ -134,6 +134,7 @@ describe('secure structured logging', () => {
         'failed',
         { DELIVERY_ATTEMPT_ID: 'attempt-safe-failure-kind' },
         'repository_commit_failed',
+        'create_commit',
       );
       writeRunnerStructuredLog(
         'execution_attempt_result',
@@ -154,6 +155,7 @@ describe('secure structured logging', () => {
       event: 'execution_attempt_result',
       outcome: 'failed',
       failureKind: 'repository_commit_failed',
+      failureStage: 'create_commit',
     });
     expect(JSON.parse(output[1]!)).toMatchObject({
       event: 'execution_attempt_result',
@@ -171,6 +173,13 @@ describe('secure structured logging', () => {
       {},
       'transcript_invalid',
     )).toThrow('Runner failure kind is invalid');
+    expect(() => writeRunnerStructuredLog(
+      'execution_attempt_result',
+      'failed',
+      {},
+      'repository_push_failed',
+      'create_commit',
+    )).toThrow('Runner failure classification is invalid');
   });
 
   it('emits only fixed analysis failure kind and stage fields', () => {

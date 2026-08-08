@@ -14,6 +14,10 @@ import {
   ANALYSIS_PROVIDER_PROCESS_FAILURE_CODES,
   type AnalysisProviderProcessFailureCode,
 } from '../agent/provider-preflight-failure.js';
+import {
+  REPOSITORY_COMMIT_FAILURE_STAGES,
+  type RepositoryCommitFailureStage,
+} from '../runner/git-repository-writer.js';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const EXECUTION_FAILURE_KINDS = [
@@ -61,12 +65,17 @@ export function writeRunnerStructuredLog(
   outcome: 'accepted' | 'passed' | 'failed' | 'blocked' | 'replanning',
   environment: NodeJS.ProcessEnv = process.env,
   failureKind?: RunnerExecutionFailureKind | CodexAnalysisFailureKind,
-  failureStage?: CodexAnalysisFailureStage,
+  failureStage?: CodexAnalysisFailureStage | RepositoryCommitFailureStage,
   providerFailureCode?: AnalysisProviderProcessFailureCode,
 ): void {
   const validExecutionFailure = event === 'execution_attempt_result' &&
-    outcome === 'failed' && failureStage === undefined &&
-    EXECUTION_FAILURE_KINDS.includes(failureKind as RunnerExecutionFailureKind);
+    outcome === 'failed' &&
+    EXECUTION_FAILURE_KINDS.includes(failureKind as RunnerExecutionFailureKind) &&
+    (failureKind === 'repository_commit_failed'
+      ? REPOSITORY_COMMIT_FAILURE_STAGES.includes(
+        failureStage as RepositoryCommitFailureStage,
+      )
+      : failureStage === undefined);
   const validAnalysisFailure = event === 'analysis_attempt_result' &&
     outcome === 'failed' &&
     CODEX_ANALYSIS_FAILURE_KINDS.includes(failureKind as CodexAnalysisFailureKind) &&
@@ -76,7 +85,7 @@ export function writeRunnerStructuredLog(
   }
   if (failureKind !== undefined && !validExecutionFailure && !validAnalysisFailure) {
     throw new Error(
-      event === 'analysis_attempt_result' && failureStage !== undefined
+      failureStage !== undefined
         ? 'Runner failure classification is invalid'
         : 'Runner failure kind is invalid',
     );
