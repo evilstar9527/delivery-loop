@@ -2,6 +2,7 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import {
   MAX_PATCH_CHANGES,
+  MAX_PATCH_FILE_BYTES,
   MAX_PATCH_TOTAL_BYTES,
   patchContentDigest,
   patchPathIsSafe,
@@ -87,7 +88,10 @@ export async function buildExecutionPatchSnapshot(input: {
       !isInside(root, canonicalPath)
     ) throw new ExecutionPatchSnapshotError('unsafe_candidate');
     totalBytes += bytes.byteLength;
-    if (totalBytes > MAX_PATCH_TOTAL_BYTES) {
+    if (
+      bytes.byteLength > MAX_PATCH_FILE_BYTES ||
+      totalBytes > MAX_PATCH_TOTAL_BYTES
+    ) {
       throw new ExecutionPatchSnapshotError('fallback_too_large');
     }
     let content: string;

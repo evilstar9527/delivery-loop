@@ -2,10 +2,10 @@ import { z } from 'zod';
 
 export const MAX_PATCH_CHANGES = 8;
 export const MAX_PATCH_PATH_BYTES = 240;
-// Codex JSONL repeats the structured final message inside an agent-message string.
-// Keep worst-case JSON escaping below the shared 64 KiB stdout-line boundary.
-export const MAX_PATCH_FILE_BYTES = 12 * 1_024;
-export const MAX_PATCH_TOTAL_BYTES = 12 * 1_024;
+// The proposal body is read only from Codex --output-last-message. Its duplicate
+// JSONL agent-message is replaced before any 64 KiB parser or transcript sink.
+export const MAX_PATCH_FILE_BYTES = 128 * 1_024;
+export const MAX_PATCH_TOTAL_BYTES = 256 * 1_024;
 
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const encoder = new TextEncoder();

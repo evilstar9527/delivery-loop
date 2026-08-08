@@ -59,10 +59,28 @@ describe('execution patch snapshot', () => {
     }
   });
 
-  it('disables only the optional fallback when one file or the aggregate is oversized', async () => {
+  it('keeps the optional fallback for the real two-file snapshot within 128/256 KiB', async () => {
+    const files = {
+      'src/storage/task-query-store.ts': 'a'.repeat(72_529),
+      'test/workflow/task-query-api.test.ts': 'b'.repeat(15_271),
+    };
+    const root = await repository(files);
+    const snapshot = await buildOptionalExecutionPatchSnapshot({
+      repositoryPath: root,
+      referencedText: Object.keys(files).map((path) => `Update ${path}.`),
+      protectedPaths: [],
+      runtimeSecrets: [],
+    });
+    expect(snapshot?.files.map(({ path, content }) => [path, content.length])).toEqual([
+      ['src/storage/task-query-store.ts', 72_529],
+      ['test/workflow/task-query-api.test.ts', 15_271],
+    ]);
+  });
+
+  it('disables only the optional fallback when one file or the aggregate exceeds 128/256 KiB', async () => {
     for (const files of [
-      { 'src/large.ts': 'x'.repeat(12 * 1024 + 1) },
-      { 'src/a.ts': 'a'.repeat(7 * 1024), 'src/b.ts': 'b'.repeat(7 * 1024) },
+      { 'src/large.ts': 'x'.repeat(128 * 1024 + 1) },
+      { 'src/a.ts': 'a'.repeat(128 * 1024), 'src/b.ts': 'b'.repeat(128 * 1024), 'src/c.ts': 'c' },
     ]) {
       const root = await repository(files);
       const referencedText = Object.keys(files).map((path) => `Update ${path}.`);
