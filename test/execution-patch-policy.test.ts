@@ -54,6 +54,17 @@ describe('execution patch proposal policy', () => {
         { path: 'c.txt', baseDigest: null, content: 'c' },
       ],
     }).success).toBe(false);
-    expect(MAX_PATCH_TOTAL_BYTES).toBe(MAX_PATCH_FILE_BYTES);
+    expect(MAX_PATCH_FILE_BYTES).toBe(128 * 1_024);
+    expect(MAX_PATCH_TOTAL_BYTES).toBe(256 * 1_024);
+  });
+
+  it('accepts the two real-sized replacement files within the independent limits', () => {
+    expect(PatchProposalV1Schema.safeParse({
+      schemaVersion: '1',
+      changes: [
+        { path: 'src/storage/task-query-store.ts', baseDigest: null, content: 'a'.repeat(72_529) },
+        { path: 'test/workflow/task-query-api.test.ts', baseDigest: null, content: 'b'.repeat(15_271) },
+      ],
+    }).success).toBe(true);
   });
 });

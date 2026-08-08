@@ -459,6 +459,73 @@ describe('Codex execution adapter', () => {
     expect(transcript.join('\n')).toContain('[PATCH_PROPOSAL_OMITTED]');
   });
 
+  it('reads an 88 KiB patch from the private output file while omitting the oversized JSONL copy', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-large-patch-'));
+    const workspace = join(root, 'repo');
+    const contextFilePath = join(root, 'context.json');
+    const outputFilePath = join(root, 'output.txt');
+    await mkdir(workspace, { mode: 0o700 });
+    await writeFile(contextFilePath, '{}', { mode: 0o600 });
+    await writeFile(outputFilePath, '', { mode: 0o600 });
+    const transcript: string[] = [];
+    const proposal = {
+      schemaVersion: '1' as const,
+      action: 'apply_patch' as const,
+      proposal: {
+        schemaVersion: '1' as const,
+        changes: [
+          {
+            path: 'src/storage/task-query-store.ts',
+            baseDigest: `sha256:${'a'.repeat(64)}`,
+            content: 'a'.repeat(72_529),
+          },
+          {
+            path: 'test/workflow/task-query-api.test.ts',
+            baseDigest: `sha256:${'b'.repeat(64)}`,
+            content: 'b'.repeat(15_271),
+          },
+        ],
+      },
+    };
+    const adapter = new CodexExecutionAdapter({
+      execute: async (request) => {
+        const oversized = JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: JSON.stringify(proposal) },
+        });
+        const replacement = request.onOversizedStdoutLine?.(oversized.slice(0, 64 * 1_024));
+        expect(replacement).toBeDefined();
+        request.onStdoutLine?.(replacement!);
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'turn.completed',
+          usage: {
+            input_tokens: 24_000,
+            cached_input_tokens: 10_000,
+            output_tokens: 30_000,
+            reasoning_output_tokens: 2_000,
+          },
+        }));
+        await writeFile(outputFilePath, JSON.stringify(proposal));
+        return { exitCode: 0 };
+      },
+    });
+
+    await expect(adapter.apply({
+      attemptId: 'attempt-execution-large-patch',
+      workspacePath: workspace,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: 60_000,
+      allowPlanRevision: false,
+      editTurn: 2,
+      patchProposal: true,
+      model: 'gpt-test',
+      onTranscriptLine: (line) => { transcript.push(line); },
+    })).resolves.toEqual(proposal);
+    expect(transcript.join('\n')).toContain('[PATCH_PROPOSAL_OMITTED]');
+    expect(transcript.join('\n')).not.toContain('a'.repeat(1_024));
+  });
+
   it('rejects metered apply_fix before commit when no command or file change was observed', async () => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-no-tool-activity-'));
     const workspace = join(root, 'repo');

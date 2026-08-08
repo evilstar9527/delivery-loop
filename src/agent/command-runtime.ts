@@ -6,6 +6,7 @@ import {
 
 const MAX_STDERR_BYTES = 8_192;
 const MAX_STDOUT_LINE_BYTES = 64 * 1_024;
+const MAX_OMITTABLE_STDOUT_LINE_BYTES = 2 * 1_024 * 1_024;
 const INTERRUPT_GRACE_MS = 1_000;
 
 export interface CommandExecutionRequest {
@@ -17,6 +18,12 @@ export interface CommandExecutionRequest {
   environment?: NodeJS.ProcessEnv;
   /** Streaming JSONL observer. Raw stdout is never retained or returned. */
   onStdoutLine?: (line: string) => void;
+  /**
+   * Receives at most a 64 KiB prefix when one physical line exceeds the JSONL
+   * parser boundary. Return a fixed bounded replacement to discard that line,
+   * or undefined to fail closed. Raw overflow bytes are never forwarded.
+   */
+  onOversizedStdoutLine?: (prefix: string) => string | undefined;
 }
 
 export interface CommandExecutionResult {
@@ -61,6 +68,8 @@ export function launchCommand(request: CommandExecutionRequest): CommandProcessH
   let settled = false;
   let interruptPromise: Promise<void> | undefined;
   let stdoutBuffer = '';
+  let stdoutOverflowBytes = 0;
+  let stdoutOverflowReplacement: string | undefined;
   let stdoutFailed = false;
   let timedOut = false;
   child.stderr!.setEncoding('utf8');
@@ -71,26 +80,106 @@ export function launchCommand(request: CommandExecutionRequest): CommandProcessH
   });
   if (request.onStdoutLine !== undefined && child.stdout !== null) {
     child.stdout.setEncoding('utf8');
+    const byteLength = (value: string): number => new TextEncoder().encode(value).length;
+    const failStdout = (): void => {
+      stdoutFailed = true;
+      child.kill('SIGTERM');
+    };
+    const emitLine = (line: string): void => {
+      if (line.length === 0 || stdoutFailed) return;
+      try {
+        request.onStdoutLine!(line);
+      } catch {
+        failStdout();
+      }
+    };
+    const boundedPrefix = (line: string): string => {
+      const bytes = new TextEncoder().encode(line);
+      return new TextDecoder().decode(bytes.slice(0, MAX_STDOUT_LINE_BYTES));
+    };
+    const replacementFor = (line: string): string | undefined => {
+      if (request.onOversizedStdoutLine === undefined) return undefined;
+      let replacement: string | undefined;
+      try {
+        replacement = request.onOversizedStdoutLine(boundedPrefix(line));
+      } catch {
+        return undefined;
+      }
+      if (
+        replacement === undefined || replacement.length === 0 ||
+        replacement.includes('\n') || byteLength(replacement) > MAX_STDOUT_LINE_BYTES
+      ) return undefined;
+      return replacement;
+    };
+    const acceptCompleteLine = (line: string): void => {
+      const normalized = line.replace(/\r$/, '');
+      const bytes = byteLength(normalized);
+      if (bytes <= MAX_STDOUT_LINE_BYTES) {
+        emitLine(normalized);
+        return;
+      }
+      if (bytes > MAX_OMITTABLE_STDOUT_LINE_BYTES) {
+        failStdout();
+        return;
+      }
+      const replacement = replacementFor(normalized);
+      if (replacement === undefined) {
+        failStdout();
+        return;
+      }
+      emitLine(replacement);
+    };
     child.stdout.on('data', (chunk: string) => {
       if (stdoutFailed) return;
-      stdoutBuffer += chunk;
-      while (true) {
-        const newline = stdoutBuffer.indexOf('\n');
-        if (newline < 0) break;
-        const line = stdoutBuffer.slice(0, newline).replace(/\r$/, '');
-        stdoutBuffer = stdoutBuffer.slice(newline + 1);
-        if (line.length === 0) continue;
-        try {
-          request.onStdoutLine!(line);
-        } catch {
-          stdoutFailed = true;
-          child.kill('SIGTERM');
-          return;
+      let remaining = chunk;
+      while (remaining.length > 0 && !stdoutFailed) {
+        if (stdoutOverflowReplacement !== undefined) {
+          const newline = remaining.indexOf('\n');
+          const fragment = newline < 0 ? remaining : remaining.slice(0, newline);
+          stdoutOverflowBytes += byteLength(fragment);
+          if (stdoutOverflowBytes > MAX_OMITTABLE_STDOUT_LINE_BYTES) {
+            failStdout();
+            return;
+          }
+          if (newline < 0) return;
+          emitLine(stdoutOverflowReplacement);
+          stdoutOverflowReplacement = undefined;
+          stdoutOverflowBytes = 0;
+          remaining = remaining.slice(newline + 1);
+          continue;
         }
+
+        const newline = remaining.indexOf('\n');
+        if (newline >= 0) {
+          stdoutBuffer += remaining.slice(0, newline);
+          acceptCompleteLine(stdoutBuffer);
+          stdoutBuffer = '';
+          remaining = remaining.slice(newline + 1);
+          continue;
+        }
+
+        stdoutBuffer += remaining;
+        const bytes = byteLength(stdoutBuffer);
+        if (bytes > MAX_STDOUT_LINE_BYTES) {
+          const replacement = replacementFor(stdoutBuffer);
+          if (replacement === undefined || bytes > MAX_OMITTABLE_STDOUT_LINE_BYTES) {
+            failStdout();
+            return;
+          }
+          stdoutOverflowReplacement = replacement;
+          stdoutOverflowBytes = bytes;
+          stdoutBuffer = '';
+        }
+        return;
       }
-      if (new TextEncoder().encode(stdoutBuffer).length > MAX_STDOUT_LINE_BYTES) {
-        stdoutFailed = true;
-        child.kill('SIGTERM');
+    });
+
+    child.once('close', () => {
+      if (stdoutFailed) return;
+      if (stdoutOverflowReplacement !== undefined) {
+        emitLine(stdoutOverflowReplacement);
+        stdoutOverflowReplacement = undefined;
+        stdoutOverflowBytes = 0;
       }
     });
   }
@@ -102,9 +191,17 @@ export function launchCommand(request: CommandExecutionRequest): CommandProcessH
     });
     child.once('close', (code) => {
       settled = true;
-      if (!stdoutFailed && request.onStdoutLine !== undefined && stdoutBuffer.length > 0) {
+      if (
+        !stdoutFailed && request.onStdoutLine !== undefined &&
+        stdoutOverflowReplacement === undefined && stdoutBuffer.length > 0
+      ) {
         try {
-          request.onStdoutLine(stdoutBuffer.replace(/\r$/, ''));
+          const line = stdoutBuffer.replace(/\r$/, '');
+          if (new TextEncoder().encode(line).length > MAX_STDOUT_LINE_BYTES) {
+            stdoutFailed = true;
+          } else {
+            request.onStdoutLine(line);
+          }
         } catch {
           stdoutFailed = true;
         }
