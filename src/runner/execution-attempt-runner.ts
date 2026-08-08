@@ -14,9 +14,11 @@ import type {
 } from '../domain/attempt-failure.js';
 import {
   ProtectedPathApprovalRequired,
+  RepositoryCommitError,
   type GitRepositoryWriter,
   type PushedRepositoryBranch,
   type RepositoryCommit,
+  type RepositoryCommitFailureStage,
 } from './git-repository-writer.js';
 import {
   VerificationExecutionRunner,
@@ -44,7 +46,10 @@ export type ExecutionAttemptFailureKind =
   | 'head_report_failed';
 
 export class ExecutionAttemptError extends Error {
-  constructor(readonly kind: ExecutionAttemptFailureKind) {
+  constructor(
+    readonly kind: ExecutionAttemptFailureKind,
+    readonly failureStage?: RepositoryCommitFailureStage,
+  ) {
     super('execution Attempt failed');
     this.name = 'ExecutionAttemptError';
   }
@@ -185,13 +190,14 @@ export class ExecutionAttemptRunner {
   private async fail(
     kind: ExecutionAttemptFailureKind,
     failure: ExecutionAttemptFailure,
+    failureStage?: RepositoryCommitFailureStage,
   ): Promise<never> {
     try {
       await this.context.failureReporter.report(failure);
     } catch {
       // Preserve the already-safe stage classification even if terminal reporting fails.
     }
-    throw new ExecutionAttemptError(kind);
+    throw new ExecutionAttemptError(kind, failureStage);
   }
 
   async run(): Promise<ExecutionAttemptResult> {
@@ -264,9 +270,6 @@ export class ExecutionAttemptRunner {
     let commit: RepositoryCommit;
     try {
       commit = await this.context.repositoryWriter.commitAll();
-      if (commit.branch !== prepared.branch || !SHA_PATTERN.test(commit.commitSha)) {
-        throw new Error('invalid commit binding');
-      }
     } catch (error) {
       if (error instanceof ProtectedPathApprovalRequired) throw error;
       return this.fail('repository_commit_failed', {
@@ -274,7 +277,15 @@ export class ExecutionAttemptRunner {
         failureSite: 'repo_snapshot',
         attemptedPaths: ['code_change'],
         neededHumanInput: 'manual_investigation',
-      });
+      }, error instanceof RepositoryCommitError ? error.stage : 'unknown');
+    }
+    if (commit.branch !== prepared.branch || !SHA_PATTERN.test(commit.commitSha)) {
+      return this.fail('repository_commit_failed', {
+        failureCode: 'unknown_failure',
+        failureSite: 'repo_snapshot',
+        attemptedPaths: ['code_change'],
+        neededHumanInput: 'manual_investigation',
+      }, 'result_binding');
     }
     let pushed: PushedRepositoryBranch;
     try {

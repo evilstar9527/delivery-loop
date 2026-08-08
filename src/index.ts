@@ -658,6 +658,8 @@ export {
   BOT_COMMIT_NAME,
   GitRepositoryWriter,
   ProtectedPathApprovalRequired,
+  REPOSITORY_COMMIT_FAILURE_STAGES,
+  RepositoryCommitError,
   RepositoryWritePolicyError,
   executeGitCommand,
   repositoryAttemptBranch,
@@ -669,6 +671,7 @@ export {
   type PushedRepositoryBranch,
   type PushRepositoryBranchInput,
   type RepositoryCommit,
+  type RepositoryCommitFailureStage,
 } from './runner/git-repository-writer.js';
 export {
   BaseRebasePolicyError,

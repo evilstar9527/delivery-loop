@@ -356,6 +356,7 @@ describe('execution Attempt Runner', () => {
     await expect(runner.run()).rejects.toMatchObject({
       name: 'ExecutionAttemptError',
       kind: 'repository_commit_failed',
+      failureStage: 'stage_changes',
       message: 'execution Attempt failed',
     } satisfies Partial<ExecutionAttemptError>);
     expect(failures).toEqual([{
@@ -413,6 +414,7 @@ describe('execution Attempt Runner', () => {
     await expect(rejected).rejects.toMatchObject({
       name: 'ExecutionAttemptError',
       kind: 'repository_commit_failed',
+      failureStage: 'stage_changes',
       message: 'execution Attempt failed',
     });
     await expect(rejected).rejects.not.toThrow(/CANARY_RAW_REPORT_ERROR/);
