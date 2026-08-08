@@ -1737,4 +1737,172 @@ describe('analysis Runner bootstrap', () => {
     expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
     expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
   });
+
+  it.each([
+    { name: 'accepts the second valid proposal', secondValid: true },
+    { name: 'fails after the second invalid proposal', secondValid: false },
+  ])('runs one bounded initial Plan correction and $name', async ({ secondValid }) => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-plan-correction-'));
+    const environment = await runnerEnvironment(root);
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(environment.GITHUB_WORKSPACE!, { recursive: true });
+    await mkdir(environment.RUNNER_TEMP!, { recursive: true });
+    const expectedPlan = await responsePlan();
+    const reservationIds: string[] = [];
+    const usageReservationIds: string[] = [];
+    const correctionCodes: Array<readonly string[] | undefined> = [];
+    let planSubmitted = false;
+    let failureBody: unknown;
+
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('https://oidc.actions.test/token')) {
+        return Response.json({ value: OIDC_TOKEN });
+      }
+      if (url.endsWith('/exchange')) {
+        return Response.json({
+          attemptToken: INITIAL_TOKEN,
+          expiresAt: '2026-07-25T00:05:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: INITIAL_TOOL_TOKEN,
+            expiresAt: '2026-07-25T00:05:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith('/context')) {
+        return Response.json({
+          schemaVersion: '1',
+          attempt: {
+            id: ATTEMPT_ID,
+            runId: RUN_ID,
+            mode: 'analysis',
+            version: 7,
+            leaseGeneration: 3,
+            baseSha: BASE_SHA,
+          },
+          task: taskEnvelope(),
+          planPolicy: {
+            version: 1,
+            allowedEffects: ['repo_read'],
+            allowedCommandRefs: ['policy:inspect'],
+          },
+        });
+      }
+      if (url.endsWith('/model-reservations')) {
+        const body = JSON.parse(String(init?.body)) as { reservationId: string };
+        reservationIds.push(body.reservationId);
+        return Response.json({
+          reservationId: body.reservationId,
+          attemptId: ATTEMPT_ID,
+          runId: RUN_ID,
+          provider: 'openai',
+          model: 'gpt-test-metered',
+          reservedTokens: 1_000,
+          reservedCostMicrousd: 1_000,
+          expiresAt: '2026-07-25T00:10:00.000Z',
+          overrideId: null,
+          disposition: 'created',
+        }, { status: 201 });
+      }
+      if (url.endsWith('/model-usage')) {
+        const body = JSON.parse(String(init?.body)) as {
+          usageId: string;
+          reservationId: string;
+        };
+        usageReservationIds.push(body.reservationId);
+        return Response.json({
+          usageId: body.usageId,
+          reservationId: body.reservationId,
+          totalTokens: 120,
+          costMicrousd: 42,
+          disposition: 'created',
+        }, { status: 201 });
+      }
+      if (url.endsWith('/plan')) {
+        planSubmitted = true;
+        return Response.json({
+          planId: expectedPlan.planId,
+          version: 1,
+          digest: expectedPlan.digest,
+          status: 'validated',
+          payloadRef: expectedPlan.payloadRef,
+        }, { status: 201 });
+      }
+      if (url.endsWith('/complete')) {
+        return Response.json({
+          accepted: true,
+          signalId: 'signal-plan-correction',
+          outboxId: 'outbox-plan-correction',
+        }, { status: 202 });
+      }
+      if (url.endsWith('/events')) {
+        failureBody = JSON.parse(String(init?.body)) as unknown;
+        return Response.json({ accepted: true }, { status: 202 });
+      }
+      throw new Error(`unexpected Plan correction fake request: ${url}`);
+    };
+    let invocation = 0;
+    const result = runAnalysisAttempt({
+      environment,
+      fetch: fetchImplementation,
+      agent: {
+        usesMeteredModel: true,
+        async start(input) {
+          invocation += 1;
+          correctionCodes.push(input.correctionIssueCodes);
+          expect(input.onPlanCorrection === undefined).toBe(invocation === 2);
+          input.onUsage?.({
+            inputTokens: 100,
+            cachedInputTokens: 60,
+            outputTokens: 20,
+            reasoningOutputTokens: 5,
+          });
+          const content = planContent();
+          if (invocation === 1 || !secondValid) {
+            (content.items as Array<Record<string, unknown>>)[0]!
+              .acceptanceCriteriaIndexes = [];
+          }
+          return await proposedPlan(input, content);
+        },
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+      now: () => new Date('2026-07-25T00:01:00.000Z'),
+    });
+
+    if (secondValid) {
+      await expect(result).resolves.toEqual({
+        planId: expectedPlan.planId,
+        version: 1,
+        digest: expectedPlan.digest,
+        payloadRef: expectedPlan.payloadRef,
+      });
+      expect(planSubmitted).toBe(true);
+      expect(failureBody).toBeUndefined();
+    } else {
+      await expect(result).rejects.toMatchObject({
+        name: 'AnalysisRunnerError',
+        analysisFailure: {
+          kind: 'plan_validation_failed',
+          stage: 'plan_validation',
+        },
+      } satisfies Partial<AnalysisRunnerError>);
+      expect(planSubmitted).toBe(false);
+      expect(failureBody).toMatchObject({
+        type: 'attempt_failed',
+        failureCode: 'invalid_agent_output',
+        failureSite: 'agent_output',
+      });
+    }
+    expect(invocation).toBe(2);
+    expect(correctionCodes).toEqual([undefined, ['acceptance_criterion_uncovered']]);
+    expect(reservationIds).toHaveLength(2);
+    expect(new Set(reservationIds).size).toBe(2);
+    expect(usageReservationIds).toEqual(reservationIds);
+    expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
+    expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
+  });
 });

@@ -16,10 +16,12 @@ import {
 import type { DiagnosticRootCauseV1Schema } from '../domain/diagnostic-evidence.js';
 import {
   computeExecutionPlanDigest,
+  ExecutionPlanValidationError,
   validateExecutionPlanProposal,
   type ExecutionPlanBodyV1,
   type ExecutionPlanV1,
   type ExecutionPlanValidationContext,
+  type ExecutionPlanValidationIssueCode,
 } from '../domain/plan.js';
 import {
   executeCommand,
@@ -70,6 +72,10 @@ export interface CodexAnalysisStartInput {
   validation: ExecutionPlanValidationContext;
   model?: string;
   onUsage?: (usage: CodexModelUsage) => void;
+  /** Runner-owned fixed codes from one rejected proposal; never raw Plan/error text. */
+  correctionIssueCodes?: readonly ExecutionPlanValidationIssueCode[];
+  /** Admits one separately metered correction after semantic Plan rejection. */
+  onPlanCorrection?: (issueCodes: readonly ExecutionPlanValidationIssueCode[]) => Promise<void>;
   diagnostic?: {
     mediationContextFilePath: string;
     logRequestOutputFilePath: string;
@@ -326,6 +332,7 @@ function analysisPrompt(
   contextFilePath: string,
   contextBlock: string,
   requiresRepositoryChange: boolean,
+  correctionIssueCodes: readonly ExecutionPlanValidationIssueCode[] = [],
 ): string {
   return [
     ...trustBoundaryPrompt(contextFilePath, contextBlock),
@@ -341,6 +348,12 @@ function analysisPrompt(
       ? ['Trusted Task policy requires a repository change. Return one self-verifying required change item with repo_write, test:*, verify:*, and commit/test Evidence; an investigation-only Plan will be rejected by the validator.']
       : []),
     'Every task acceptance criterion must be covered by its zero-based index on at least one required item.',
+    ...(correctionIssueCodes.length === 0
+      ? []
+      : [
+          `The trusted validator rejected one earlier proposal with these fixed issue codes only: ${JSON.stringify(correctionIssueCodes)}.`,
+          'Create a fresh proposal from the original trusted context. Do not infer or reproduce the earlier proposal, raw validator error, or any hidden text.',
+        ]),
   ].join('\n');
 }
 
@@ -484,7 +497,7 @@ export class CodexAnalysisAdapter {
       throw new CodexAnalysisAdapterError('context_proof_invalid', 'context_validation');
     }
     const deadline = Date.now() + input.timeoutMs;
-    const content = input.diagnostic === undefined
+    let content = input.diagnostic === undefined
       ? await this.singlePassContent(input, {
           workspacePath,
           contextFilePath,
@@ -501,36 +514,60 @@ export class CodexAnalysisAdapter {
           expectedContextDigest: promptContext.digest,
           contextBlock: promptContext.block,
         });
-    const diagnosticBoundContent = input.diagnostic === undefined
-      ? content
-      : bindWritableDiagnosticRequirement(
-          content,
-          input.validation.requiresRepositoryChange,
-        );
-    const normalizedContent = bindSingleRequiredItemAcceptanceCoverage(
-      diagnosticBoundContent,
-      input.validation.acceptanceCriteriaCount,
-    );
-    const body: ExecutionPlanBodyV1 = {
-      schemaVersion: '1',
-      id: input.identity.planId,
-      runId: input.identity.runId,
-      version: input.identity.version,
-      taskRevision: input.identity.taskRevision,
-      baseSha: input.identity.baseSha,
-      createdByAttemptId: input.identity.attemptId,
-      ...normalizedContent,
-    };
-    const proposal: ExecutionPlanV1 = {
-      ...body,
-      digest: await computeExecutionPlanDigest(body),
-      status: 'proposed',
-    };
-    try {
-      return await validateExecutionPlanProposal(proposal, input.validation);
-    } catch {
-      throw new CodexAnalysisAdapterError('plan_validation_failed', 'plan_validation');
+    for (const pass of [1, 2] as const) {
+      const diagnosticBoundContent = input.diagnostic === undefined
+        ? content
+        : bindWritableDiagnosticRequirement(
+            content,
+            input.validation.requiresRepositoryChange,
+          );
+      const normalizedContent = bindSingleRequiredItemAcceptanceCoverage(
+        diagnosticBoundContent,
+        input.validation.acceptanceCriteriaCount,
+      );
+      const body: ExecutionPlanBodyV1 = {
+        schemaVersion: '1',
+        id: input.identity.planId,
+        runId: input.identity.runId,
+        version: input.identity.version,
+        taskRevision: input.identity.taskRevision,
+        baseSha: input.identity.baseSha,
+        createdByAttemptId: input.identity.attemptId,
+        ...normalizedContent,
+      };
+      const proposal: ExecutionPlanV1 = {
+        ...body,
+        digest: await computeExecutionPlanDigest(body),
+        status: 'proposed',
+      };
+      try {
+        return await validateExecutionPlanProposal(proposal, input.validation);
+      } catch (error) {
+        if (
+          pass !== 1 || input.diagnostic !== undefined ||
+          input.correctionIssueCodes !== undefined || input.onPlanCorrection === undefined ||
+          !(error instanceof ExecutionPlanValidationError)
+        ) {
+          throw new CodexAnalysisAdapterError('plan_validation_failed', 'plan_validation');
+        }
+        const issueCodes = [...new Set(error.issues.map((issue) => issue.code))].sort();
+        await input.onPlanCorrection(issueCodes);
+        const correctionInput: CodexAnalysisStartInput = {
+          ...input,
+          correctionIssueCodes: issueCodes,
+        };
+        delete correctionInput.onPlanCorrection;
+        content = await this.singlePassContent(correctionInput, {
+          workspacePath,
+          contextFilePath,
+          outputFilePath,
+          deadline,
+          expectedContextDigest: promptContext.digest,
+          contextBlock: promptContext.block,
+        });
+      }
     }
+    throw new CodexAnalysisAdapterError('plan_validation_failed', 'plan_validation');
   }
 
   private async singlePassContent(
@@ -553,6 +590,7 @@ export class CodexAnalysisAdapter {
         paths.contextFilePath,
         paths.contextBlock,
         input.validation.requiresRepositoryChange,
+        input.correctionIssueCodes,
       ),
       paths.deadline,
       'single_pass',
