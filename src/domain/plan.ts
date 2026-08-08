@@ -106,6 +106,11 @@ export interface ExecutionPlanValidationContext {
   allowedEffects: readonly PlanEffect[];
   /** Trusted Task/policy classification; never derived from Agent-authored Plan text. */
   requiresRepositoryChange: boolean;
+  /**
+   * Runner-owned, policy-filtered tracked paths. When present, writable Items
+   * must name one exactly so execution can materialize its bounded fallback.
+   */
+  writableRepositoryPaths?: readonly string[];
 }
 
 export type ExecutionPlanValidationIssueCode =
@@ -120,6 +125,7 @@ export type ExecutionPlanValidationIssueCode =
   | 'effect_not_allowed'
   | 'acceptance_criterion_uncovered'
   | 'repository_change_required'
+  | 'repository_path_required'
   | 'verification_required_after_change'
   | 'duplicate_value'
   | 'acceptance_criterion_out_of_range'
@@ -174,6 +180,36 @@ function schemaIssueCode(issue: z.core.$ZodIssue): ExecutionPlanValidationIssueC
 
 function duplicateValues(values: readonly unknown[]): boolean {
   return new Set(values).size !== values.length;
+}
+
+const REPOSITORY_PATH_ADJACENT_CHARACTER = /[\p{L}\p{N}._/-]/u;
+
+export function explicitlyReferencesRepositoryPath(
+  text: string,
+  paths: readonly string[],
+): boolean {
+  return paths.some((path) => {
+    if (path.length === 0) return false;
+    let offset = 0;
+    while (offset <= text.length - path.length) {
+      const index = text.indexOf(path, offset);
+      if (index < 0) return false;
+      const before = index === 0 ? undefined : text[index - 1];
+      const afterIndex = index + path.length;
+      const after = afterIndex === text.length ? undefined : text[afterIndex];
+      const periodIsSentencePunctuation = after === '.' &&
+        (text[afterIndex + 1] === undefined || /\s/u.test(text[afterIndex + 1]!));
+      if (
+        (before === undefined || !REPOSITORY_PATH_ADJACENT_CHARACTER.test(before)) &&
+        (
+          after === undefined || !REPOSITORY_PATH_ADJACENT_CHARACTER.test(after) ||
+          periodIsSentencePunctuation
+        )
+      ) return true;
+      offset = index + 1;
+    }
+    return false;
+  });
 }
 
 function dependencyGraphHasCycle(items: readonly PlanItemV1[]): boolean {
@@ -366,6 +402,20 @@ export async function validateExecutionPlanProposal(
       item.verification.evidenceKinds.includes('commit') &&
       item.verification.evidenceKinds.includes('test');
     if (selfVerifying) hasRequiredRepositoryChange = true;
+    if (
+      context.requiresRepositoryChange && selfVerifying &&
+      context.writableRepositoryPaths !== undefined &&
+      !explicitlyReferencesRepositoryPath(
+        [item.objective, ...item.doneWhen].join('\n'),
+        context.writableRepositoryPaths,
+      )
+    ) {
+      push(
+        'repository_path_required',
+        `items.${index}`,
+        'a required repository change must name an exact trusted writable path',
+      );
+    }
     const downstreamVerification = verifications.some((verification) =>
       dependsTransitivelyOn(verification.id, item.id, dependencies));
     if (!selfVerifying && !downstreamVerification) {

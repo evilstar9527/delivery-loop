@@ -345,7 +345,10 @@ function analysisPrompt(
     'When repo_write is allowed and a code change is required, prefer one self-verifying required change item with repo_write, at least one test:* commandRef, at least one verify:* commandRef, and both commit and test Evidence; the execution Runner edits, commits, pushes, and runs both command classes in that same item.',
     'If the task explicitly requests a repository change and repo_write is allowed, inspect the relevant current files and return the concrete change item; do not replace it with an investigation-only placeholder.',
     ...(requiresRepositoryChange
-      ? ['Trusted Task policy requires a repository change. Return one self-verifying required change item with repo_write, test:*, verify:*, and commit/test Evidence; an investigation-only Plan will be rejected by the validator.']
+      ? [
+          'Trusted Task policy requires a repository change. Return one self-verifying required change item with repo_write, test:*, verify:*, and commit/test Evidence; an investigation-only Plan will be rejected by the validator.',
+          'Inspect the exact checkout and name at least one exact tracked, regular, writable repository path in that change item\'s objective or doneWhen. Do not invent a path, use a partial path, or name delivery policy/protected files; the trusted Runner matches it against a model-hidden policy-filtered inventory.',
+        ]
       : []),
     'Every task acceptance criterion must be covered by its zero-based index on at least one required item.',
     ...(correctionIssueCodes.length === 0

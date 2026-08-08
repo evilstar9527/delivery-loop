@@ -111,7 +111,7 @@ function unboundWritableDiagnosticPlanContent(): Record<string, unknown> {
         id: 'repair-request-path',
         kind: 'change',
         title: 'Repair and verify the request path',
-        objective: 'Make the smallest source change that fixes the traced failure.',
+        objective: 'Make the smallest source change in src/request.ts that fixes the traced failure.',
         acceptanceCriteriaIndexes: [0],
         doneWhen: ['The failure is fixed in one commit and trusted verification passes.'],
         verification: {
@@ -144,6 +144,31 @@ function planContent(): Record<string, unknown> {
           evidenceKinds: ['diagnostic'],
         },
         effects: ['repo_read'],
+        dependsOn: [],
+        required: true,
+      },
+    ],
+  };
+}
+
+function writablePlanContent(path = 'src/request.ts'): Record<string, unknown> {
+  return {
+    objective: 'Implement the requested repository change and prove the committed result.',
+    assumptions: ['The checked out base SHA is the trusted source snapshot.'],
+    evidenceRefs: [],
+    items: [
+      {
+        id: 'implement-request',
+        kind: 'change',
+        title: 'Implement and verify the request',
+        objective: `Make the smallest requested change in ${path}.`,
+        acceptanceCriteriaIndexes: [0],
+        doneWhen: ['The committed change passes targeted and required verification.'],
+        verification: {
+          commandRefs: ['test:unit', 'verify:all'],
+          evidenceKinds: ['commit', 'test'],
+        },
+        effects: ['repo_write'],
         dependsOn: [],
         required: true,
       },
@@ -995,6 +1020,7 @@ describe('analysis Runner bootstrap', () => {
       },
       heartbeatIntervalMs: 60_000,
       snapshotWorkspace: async () => 'clean',
+      listWritableRepositoryPaths: async () => ['src/request.ts'],
     });
 
     if (testCase.succeeds) {
@@ -1373,6 +1399,7 @@ describe('analysis Runner bootstrap', () => {
       agent,
       heartbeatIntervalMs: 60_000,
       snapshotWorkspace: async () => snapshots.shift() ?? 'unexpected',
+      listWritableRepositoryPaths: async () => ['src/request.ts'],
     });
     if (testCase.expectedClassification === undefined) {
       await expect(promise).rejects.toThrow();
@@ -1739,15 +1766,22 @@ describe('analysis Runner bootstrap', () => {
   });
 
   it.each([
-    { name: 'accepts the second valid proposal', secondValid: true },
-    { name: 'fails after the second invalid proposal', secondValid: false },
-  ])('runs one bounded initial Plan correction and $name', async ({ secondValid }) => {
+    { name: 'accepts the second valid proposal', secondValid: true, writable: false },
+    { name: 'fails after the second invalid proposal', secondValid: false, writable: false },
+    { name: 'adds an exact trusted repository path', secondValid: true, writable: true },
+  ])('runs one bounded initial Plan correction and $name', async ({ secondValid, writable }) => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-plan-correction-'));
     const environment = await runnerEnvironment(root);
     const { mkdir } = await import('node:fs/promises');
     await mkdir(environment.GITHUB_WORKSPACE!, { recursive: true });
     await mkdir(environment.RUNNER_TEMP!, { recursive: true });
-    const expectedPlan = await responsePlan();
+    if (writable) {
+      environment.DELIVERY_TASK_DIGEST = await taskRevisionDigest(
+        taskEnvelope('requirement', true),
+      );
+    }
+    const expectedContent = writable ? writablePlanContent() : planContent();
+    const expectedPlan = await responsePlan(expectedContent);
     const reservationIds: string[] = [];
     const usageReservationIds: string[] = [];
     const correctionCodes: Array<readonly string[] | undefined> = [];
@@ -1783,12 +1817,24 @@ describe('analysis Runner bootstrap', () => {
             leaseGeneration: 3,
             baseSha: BASE_SHA,
           },
-          task: taskEnvelope(),
-          planPolicy: {
-            version: 1,
-            allowedEffects: ['repo_read'],
-            allowedCommandRefs: ['policy:inspect'],
-          },
+          task: taskEnvelope('requirement', writable),
+          planPolicy: writable
+            ? {
+                version: 1,
+                allowedEffects: [
+                  'repo_read', 'logs_read', 'database_diagnostic', 'repo_write',
+                ],
+                allowedCommandRefs: [
+                  'policy:inspect', 'policy:diagnose', 'test:unit', 'verify:all',
+                ],
+                verificationCommandRefs: ['verify:all'],
+                requiresRepositoryChange: true,
+              }
+            : {
+                version: 1,
+                allowedEffects: ['repo_read'],
+                allowedCommandRefs: ['policy:inspect'],
+              },
         });
       }
       if (url.endsWith('/model-reservations')) {
@@ -1860,8 +1906,10 @@ describe('analysis Runner bootstrap', () => {
             outputTokens: 20,
             reasoningOutputTokens: 5,
           });
-          const content = planContent();
-          if (invocation === 1 || !secondValid) {
+          const content = writable
+            ? writablePlanContent(invocation === 1 || !secondValid ? 'src/request.ts.generated' : undefined)
+            : planContent();
+          if (!writable && (invocation === 1 || !secondValid)) {
             (content.items as Array<Record<string, unknown>>)[0]!
               .acceptanceCriteriaIndexes = [];
           }
@@ -1870,6 +1918,7 @@ describe('analysis Runner bootstrap', () => {
       },
       heartbeatIntervalMs: 60_000,
       snapshotWorkspace: async () => 'clean',
+      listWritableRepositoryPaths: async () => ['src/request.ts'],
       now: () => new Date('2026-07-25T00:01:00.000Z'),
     });
 
@@ -1898,7 +1947,10 @@ describe('analysis Runner bootstrap', () => {
       });
     }
     expect(invocation).toBe(2);
-    expect(correctionCodes).toEqual([undefined, ['acceptance_criterion_uncovered']]);
+    expect(correctionCodes).toEqual([
+      undefined,
+      [writable ? 'repository_path_required' : 'acceptance_criterion_uncovered'],
+    ]);
     expect(reservationIds).toHaveLength(2);
     expect(new Set(reservationIds).size).toBe(2);
     expect(usageReservationIds).toEqual(reservationIds);

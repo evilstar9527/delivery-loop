@@ -147,7 +147,7 @@ describe('ExecutionPlan v1 validation', () => {
         id: 'change',
         kind: 'change',
         title: 'Implement and verify the fix',
-        objective: 'Make the smallest safe change and prove it with the trusted commands.',
+        objective: 'Make the smallest safe change in src/worker.ts and prove it with the trusted commands.',
         acceptanceCriteriaIndexes: [0, 1],
         doneWhen: [
           'The bot commit contains the required change.',
@@ -166,7 +166,59 @@ describe('ExecutionPlan v1 validation', () => {
     await expect(validateExecutionPlanProposal(input, {
       ...CONTEXT,
       requiresRepositoryChange: true,
+      writableRepositoryPaths: ['src/worker.ts'],
     })).resolves.toEqual(input);
+  });
+
+  it('requires an exact trusted tracked path in every required self-verifying change item', async () => {
+    const withoutPath = await proposal((body) => {
+      body.items = [{
+        id: 'change',
+        kind: 'change',
+        title: 'Implement and verify the fix',
+        objective: 'Make the smallest safe source change.',
+        acceptanceCriteriaIndexes: [0, 1],
+        doneWhen: ['The committed change passes targeted and required verification.'],
+        verification: {
+          commandRefs: ['test:unit', 'verify:all'],
+          evidenceKinds: ['commit', 'test'],
+        },
+        effects: ['repo_write'],
+        dependsOn: [],
+        required: true,
+      }];
+    });
+    const fragmentOnly = await proposal((body) => {
+      body.items = structuredClone(withoutPath.items);
+      body.items[0]!.objective = 'Update src/worker.ts.generated without widening the change.';
+    });
+    const protectedOrUntracked = await proposal((body) => {
+      body.items = structuredClone(withoutPath.items);
+      body.items[0]!.doneWhen = [
+        'The change to .github/workflows/ci.yml and src/untracked.ts is verified.',
+      ];
+    });
+    const validation = {
+      ...CONTEXT,
+      requiresRepositoryChange: true,
+      writableRepositoryPaths: ['src/worker.ts'],
+    } as ExecutionPlanValidationContext;
+
+    await expectIssue(
+      withoutPath,
+      'repository_path_required' as ExecutionPlanValidationIssueCode,
+      validation,
+    );
+    await expectIssue(
+      fragmentOnly,
+      'repository_path_required' as ExecutionPlanValidationIssueCode,
+      validation,
+    );
+    await expectIssue(
+      protectedOrUntracked,
+      'repository_path_required' as ExecutionPlanValidationIssueCode,
+      validation,
+    );
   });
 
   it('rejects the revision-15 investigation-only shape when trusted context requires a repository change', async () => {
@@ -213,7 +265,10 @@ describe('ExecutionPlan v1 validation', () => {
       }];
     });
 
-    await expect(validateExecutionPlanProposal(input, CONTEXT)).resolves.toEqual(input);
+    await expect(validateExecutionPlanProposal(input, {
+      ...CONTEXT,
+      writableRepositoryPaths: [],
+    } as ExecutionPlanValidationContext)).resolves.toEqual(input);
   });
 
   it('rejects a repo-write item that cannot verify its own committed head', async () => {

@@ -61,14 +61,19 @@ describe('execution patch snapshot', () => {
 
   it('classifies a missing explicit path separately from unsafe snapshot candidates', async () => {
     const root = await repository({ 'src/worker.ts': 'export const ready = true;\n' });
-    await expect(buildExecutionPatchSnapshot({
-      repositoryPath: root,
-      referencedText: ['Fix the stuck event identity without widening the change.'],
-      protectedPaths: [],
-      runtimeSecrets: [],
-    })).rejects.toMatchObject({
-      name: 'ExecutionPatchSnapshotError',
-      kind: 'no_candidates',
-    });
+    for (const referencedText of [
+      ['Fix the stuck event identity without widening the change.'],
+      ['Only update src/worker.ts.generated.'],
+    ]) {
+      await expect(buildExecutionPatchSnapshot({
+        repositoryPath: root,
+        referencedText,
+        protectedPaths: [],
+        runtimeSecrets: [],
+      })).rejects.toMatchObject({
+        name: 'ExecutionPatchSnapshotError',
+        kind: 'no_candidates',
+      });
+    }
   });
 });

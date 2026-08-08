@@ -7,6 +7,7 @@ import {
   patchPathIsSafe,
 } from '../domain/patch-proposal.js';
 import { isProtectedRepositoryPath } from '../domain/protected-path-change.js';
+import { explicitlyReferencesRepositoryPath } from '../domain/plan.js';
 import { SecretScanner } from '../security/redaction.js';
 import { executeGitCommand } from './git-repository-writer.js';
 
@@ -53,9 +54,9 @@ export async function buildExecutionPatchSnapshot(input: {
   if (listed.exitCode !== 0 || listed.stderr !== '') {
     throw new ExecutionPatchSnapshotError('unavailable');
   }
-  const references = input.referencedText.join('\n');
   const paths = listed.stdout.split('\n').filter((path) =>
-    path !== '' && patchPathIsSafe(path) && references.includes(path) &&
+    path !== '' && patchPathIsSafe(path) &&
+    input.referencedText.some((text) => explicitlyReferencesRepositoryPath(text, [path])) &&
     !isProtectedRepositoryPath(path, input.protectedPaths),
   ).sort();
   if (paths.length < 1) throw new ExecutionPatchSnapshotError('no_candidates');
