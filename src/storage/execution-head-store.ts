@@ -57,6 +57,9 @@ interface CandidateRow {
   review_feedback_id: string | null;
   review_branch: string | null;
   review_source_head_sha: string | null;
+  automated_review_id: string | null;
+  automated_review_branch: string | null;
+  automated_review_source_head_sha: string | null;
   base_rebase_id: string | null;
   base_rebase_source_head_sha: string | null;
   base_rebase_target_branch: string | null;
@@ -121,9 +124,11 @@ export class ExecutionHeadStore {
       }
       throw new ExecutionHeadError('state_conflict');
     }
-    const expectedBranch = candidate.review_feedback_id === null
-      ? `agent/${candidate.task_id}/${candidate.attempt_id}`
-      : candidate.review_branch;
+    const expectedBranch = candidate.review_feedback_id !== null
+      ? candidate.review_branch
+      : candidate.automated_review_id !== null
+        ? candidate.automated_review_branch
+        : `agent/${candidate.task_id}/${candidate.attempt_id}`;
     if (expectedBranch === null || expectedBranch.length > 240 || input.branch !== expectedBranch) {
       throw new ExecutionHeadError('state_conflict');
     }
@@ -230,6 +235,30 @@ export class ExecutionHeadStore {
                      WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
                    )
                  )
+                 OR (
+                   EXISTS (
+                     SELECT 1
+                     FROM automated_review_fix_attempts AS automated_fix
+                     JOIN automated_reviews AS automated_review
+                       ON automated_review.review_id = automated_fix.review_id
+                     WHERE automated_fix.fix_attempt_id = attempts.attempt_id
+                       AND automated_review.source_head_sha = attempts.head_sha
+                       AND automated_review.branch = ?
+                       AND automated_review.status = 'changes_requested'
+                   )
+                   AND NOT EXISTS (
+                     SELECT 1 FROM attempt_repairs
+                     WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id
+                   )
+                   AND NOT EXISTS (
+                     SELECT 1 FROM review_feedback_attempts
+                     WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
+                   )
+                   AND NOT EXISTS (
+                     SELECT 1 FROM base_rebase_attempts
+                     WHERE base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
+                   )
+                 )
                )
              )
            )
@@ -245,6 +274,7 @@ export class ExecutionHeadStore {
         input.leaseGeneration,
         nowIso,
         input.parentSha,
+        input.branch,
         input.branch,
         input.branch,
       ),
@@ -350,6 +380,9 @@ export class ExecutionHeadStore {
               review_feedback_attempts.feedback_id AS review_feedback_id,
               review_feedback_attempts.branch AS review_branch,
               review_feedback_attempts.source_head_sha AS review_source_head_sha,
+              automated_reviews.review_id AS automated_review_id,
+              automated_reviews.branch AS automated_review_branch,
+              automated_reviews.source_head_sha AS automated_review_source_head_sha,
               base_rebase_attempts.rebase_id AS base_rebase_id,
               base_rebase_attempts.source_head_sha AS base_rebase_source_head_sha,
               base_rebase_attempts.target_branch AS base_rebase_target_branch
@@ -364,6 +397,10 @@ export class ExecutionHeadStore {
          ON attempt_repairs.repair_attempt_id = attempts.attempt_id
        LEFT JOIN review_feedback_attempts
          ON review_feedback_attempts.review_attempt_id = attempts.attempt_id
+       LEFT JOIN automated_review_fix_attempts
+         ON automated_review_fix_attempts.fix_attempt_id = attempts.attempt_id
+       LEFT JOIN automated_reviews
+         ON automated_reviews.review_id = automated_review_fix_attempts.review_id
        LEFT JOIN base_rebase_attempts
          ON base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
        WHERE attempts.attempt_id = ? AND attempts.run_id = ?`,
@@ -403,16 +440,23 @@ export class ExecutionHeadStore {
       row.has_repo_write_effect === 1 &&
       (
         (row.mode === 'implement' && row.repair_id === null &&
-          row.review_feedback_id === null && row.base_rebase_id === null) ||
+          row.review_feedback_id === null && row.automated_review_id === null &&
+          row.base_rebase_id === null) ||
         (
           row.mode === 'review_fix' &&
           Number(row.repair_id !== null) +
             Number(row.review_feedback_id !== null) +
+            Number(row.automated_review_id !== null) +
             Number(row.base_rebase_id !== null) === 1 &&
           (
             row.review_feedback_id === null ||
             (row.review_branch !== null &&
              row.review_source_head_sha === input.parentSha)
+          ) &&
+          (
+            row.automated_review_id === null ||
+            (row.automated_review_branch === input.branch &&
+             row.automated_review_source_head_sha === input.parentSha)
           ) &&
           (
             row.base_rebase_id === null ||

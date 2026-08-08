@@ -397,6 +397,8 @@ Task Revision
 | `github_review_webhook_deliveries` | delivery/raw digest、repo/PR/review ID、reviewed head、publication、applied/ignored | HMAC后reference-only去重；同delivery换payload冲突，stale head只记ignored |
 | `github_review_feedbacks` | review/publication/run/expected replan Run version/Plan/Item/prior Attempt、source head/branch、安全URL/time、R2 body ref/digest | 不存在自由文本body列；snapshot不可UPDATE；同review ID唯一 |
 | `review_feedback_attempts` | feedback、prior/review Attempt、原PR branch、source head | 两种review_fix来源之一；lineage不可UPDATE且每review Attempt唯一 |
+| `automated_reviews` | verified publication、Run/Plan/Item/prior Attempt、只读analysis Attempt、PR/head/branch、轮次、结果ref/digest与finding计数 | `(publication, source head)`和`(run, plan, iteration)`唯一；正文只进私有R2；pending只能单调进入approved/changes_requested/blocked |
+| `automated_review_fix_attempts` | automated review、唯一review_fix Attempt、prior Attempt、原PR branch/source head | 第三种且独占的review_fix来源；lineage不可UPDATE；修复继续更新同一PR branch |
 | `workflow_replays` | expected Run version、active Plan/Item、stable step/type/count、reason/effect snapshot digest、restart observed time | 同 Run expected version唯一；reason 不存明文；API 与外部 restart 用 outbox隔离 |
 | `workflow_replay_effects` | replay、下游 effect、exact approval ref | mutating effect 必须有当前有效 approval；effect 前再次核对 |
 | `workflow_replay_reconciliations` | replay、outbox/Evidence ref及 canonical digest | existing dispatch/PR/deploy 必须 settled/verified；snapshot 变化 fail-closed |
@@ -437,10 +439,11 @@ Cloudflare Workflows 的内部历史是活跃控制流和短期诊断来源，�
 9. verification Attempt先执行Plan选择的targeted tests，再执行policy全部required verify；每条结果以command/exit/duration/head进入unverified Evidence ledger，失败停止后续阶段但不由Agent自行关闭Item。
 10. required DoD Item 全部经核对为`passed`后，控制面先以Run version CAS把Task revision、active Plan/digest、最新immutable bot head、逐验收标准Evidence与final-head测试证据冻结为`prepared` PR正文快照；相同输入重放复用同一body digest。Cron优先为尚无publication的valid prepared snapshot调度唯一effect intent，只有本轮没有该恢复工作时才运行需要R2 Task与正文重算的完整finalization。后续GitHub producer才以稳定key创建/更新Draft PR，webhook/API核对前不推进`pull_request_open`。
 11. 签名`changes_requested` review只有在review `commit_id`、payload PR head与控制面当前PR branch head一致时，才把`pull_request_open → awaiting_review → executing`、重开原passed Item并创建一个`review_fix` Attempt/outbox；正文先扫描Secret再写私有R2。Runner从exact reviewed head在同一PR branch做non-force fast-forward并重验，旧head评论不写R2、不创建Attempt。
-12. exact review Runner若判定当前Plan body/base/effect不足，只提交结构化`request_replan`和Attempt fencing；控制面从签名feedback与冻结Run version派生immutable source fact，fence旧执行/审批并调度re-analysis。validated strict next version原子supersede旧Plan，所有Item从新Plan的独立progress开始，旧checkpoint/Evidence/approval不能自动继承；context/base producer遵循同一事实边界。
-13. 满足闸门后由真人/受保护GitHub机制合并；控制面只在签名webhook或只读API补偿核对exact merge SHA后写merge账本。无需部署策略可从`merging`进入`succeeded`，其余只能进入`deploying`并等待独立deployment事实。
-14. production Run只有在外部身份decision被服务端绑定到当前Task revision、active Plan和exact merge SHA后才创建GitHub Deployment；真实GitHub `production` Environment reviewer继续作为平台闸门。job启动与OIDC attestation不代表部署成功，Run保持`deploying`；签名/API success才进入`succeeded`，failure/error进入`failed`。
-15. test deployment或post-deployment acceptance失败后，控制面先确认verified failed Evidence，再只读观察失败SHA上的rollback contract。未声明保持零effect；已声明时走独立ledger/outbox/workflow/OIDC与双事实终态，rollback成功只表示测试环境补偿成功，不覆盖原失败Item。production rollback仍等待独立审批产品决策与真实演练。
+12. verified Draft PR进入`pull_request_open`后，Cron以exact publication、当前bot head、active Plan/Item和仍有效repo-write approval创建唯一只读analysis Attempt。review结果以context digest绑定该快照；minor-only或零finding直接approved，`blocker|major`在前两轮重开原passed Item并创建唯一`review_fix`，修复在原PR branch non-force前进且Evidence重新关门后再审新head。第三轮仍有blocking finding时Run/Plan/Item进入blocked并取消Workflow，不无限消耗Action或模型额度。
+13. exact human review Runner若判定当前Plan body/base/effect不足，只提交结构化`request_replan`和Attempt fencing；控制面从签名feedback与冻结Run version派生immutable source fact，fence旧执行/审批并调度re-analysis。validated strict next version原子supersede旧Plan，所有Item从新Plan的独立progress开始，旧checkpoint/Evidence/approval不能自动继承；context/base producer遵循同一事实边界。
+14. 满足闸门后由真人/受保护GitHub机制合并；控制面只在签名webhook或只读API补偿核对exact merge SHA后写merge账本。无需部署策略可从`merging`进入`succeeded`，其余只能进入`deploying`并等待独立deployment事实。
+15. production Run只有在外部身份decision被服务端绑定到当前Task revision、active Plan和exact merge SHA后才创建GitHub Deployment；真实GitHub `production` Environment reviewer继续作为平台闸门。job启动与OIDC attestation不代表部署成功，Run保持`deploying`；签名/API success才进入`succeeded`，failure/error进入`failed`。
+16. test deployment或post-deployment acceptance失败后，控制面先确认verified failed Evidence，再只读观察失败SHA上的rollback contract。未声明保持零effect；已声明时走独立ledger/outbox/workflow/OIDC与双事实终态，rollback成功只表示测试环境补偿成功，不覆盖原失败Item。production rollback仍等待独立审批产品决策与真实演练。
 
 ### 5.2 控制流恢复与回放
 

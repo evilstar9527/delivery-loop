@@ -34,6 +34,11 @@ import {
   AnalysisPlanProposalStore,
 } from '../storage/analysis-attempt-store.js';
 import {
+  AutomatedReviewContextStore,
+  AutomatedReviewError,
+  AutomatedReviewResultStore,
+} from '../storage/automated-review-store.js';
+import {
   ExecutionAttemptContextStore,
   ExecutionAttemptError,
 } from '../storage/execution-attempt-store.js';
@@ -270,6 +275,28 @@ function analysisError(
   }
 }
 
+function automatedReviewError(
+  c: Parameters<typeof errorResponse>[0],
+  error: AutomatedReviewError,
+): Response {
+  switch (error.code) {
+    case 'invalid_request':
+      return errorResponse(c, 400, 'invalid_argument', 'invalid automated review result', false);
+    case 'not_found':
+      return errorResponse(c, 404, 'not_found', 'automated review not found', false);
+    case 'approval_required':
+      return errorResponse(c, 403, 'policy_denied', 'repository write approval required', false);
+    case 'secret_detected':
+      return errorResponse(c, 403, 'policy_denied', 'automated review contains sensitive material', false);
+    case 'task_payload_unavailable':
+    case 'storage_unavailable':
+      return errorResponse(c, 503, 'unavailable', 'automated review storage unavailable', true);
+    case 'state_conflict':
+    case 'task_payload_conflict':
+      return errorResponse(c, 409, 'conflict', 'automated review state changed', false);
+  }
+}
+
 function diagnosticEvidenceError(
   c: Parameters<typeof errorResponse>[0],
   error: DiagnosticEvidenceError,
@@ -466,12 +493,16 @@ export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bi
         token,
       );
       const context = authorization.mode === 'analysis'
-        ? await new AnalysisAttemptContextStore(
+        ? await new AutomatedReviewContextStore(
+          c.env.DB_CONTROL,
+          c.env.TASK_OBJECTS,
+        ).get(authorization) ?? await new AnalysisAttemptContextStore(
           c.env.DB_CONTROL,
           c.env.TASK_OBJECTS,
         ).get(authorization)
         : await new ExecutionAttemptContextStore(
           c.env.DB_CONTROL,
+          c.env.TASK_OBJECTS,
           c.env.TASK_OBJECTS,
         ).get(authorization);
       c.header('cache-control', 'no-store');
@@ -480,6 +511,55 @@ export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bi
       if (error instanceof RunnerAttemptError) return runnerError(c, error);
       if (error instanceof AnalysisAttemptError) return analysisError(c, error);
       if (error instanceof ExecutionAttemptError) return executionError(c, error);
+      throw error;
+    }
+  });
+
+  app.post('/v1/attempts/:attemptId/automated-review-result', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    const token = runnerToken(c.req.header('authorization'));
+    if (token === null) {
+      return errorResponse(c, 401, 'unauthenticated', 'attempt token required', false);
+    }
+    let body: unknown;
+    try {
+      body = await runnerBody(c, MAX_PLAN_BODY_LENGTH);
+    } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid automated review result', false);
+    }
+    const store = new AutomatedReviewResultStore(
+      c.env.DB_CONTROL,
+      c.env.TASK_OBJECTS,
+      configuredSecrets(c.env),
+    );
+    try {
+      const now = options.now?.() ?? new Date();
+      const authorization = await new RunnerAttemptStore(c.env.DB_CONTROL).authorize(
+        attemptId,
+        token,
+        now,
+      );
+      const result = await store.complete(authorization, body, now);
+      c.header('cache-control', 'no-store');
+      return c.json({ accepted: true, ...result }, result.created ? 201 : 200);
+    } catch (error) {
+      if (error instanceof RunnerAttemptError) {
+        try {
+          const replay = await store.replay(attemptId, token, body);
+          c.header('cache-control', 'no-store');
+          return c.json({ accepted: true, ...replay }, 200);
+        } catch (replayError) {
+          if (replayError instanceof AutomatedReviewError) {
+            if (replayError.code === 'not_found') return runnerError(c, error);
+            return automatedReviewError(c, replayError);
+          }
+          throw replayError;
+        }
+      }
+      if (error instanceof AutomatedReviewError) return automatedReviewError(c, error);
       throw error;
     }
   });

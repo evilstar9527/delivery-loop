@@ -520,6 +520,7 @@ interface DispatchAttemptRow {
   protected_path_gate_id: string | null;
   repair_id: string | null;
   review_feedback_id: string | null;
+  automated_review_id: string | null;
   base_rebase_id: string | null;
 }
 
@@ -609,6 +610,7 @@ export class GitHubDispatchOutboxProcessor {
                 plan_item_progress.protected_path_gate_id,
                 attempt_repairs.repair_id,
                 review_feedback_attempts.feedback_id AS review_feedback_id,
+                automated_review_fix_attempts.review_id AS automated_review_id,
                 base_rebase_attempts.rebase_id AS base_rebase_id
          FROM attempts
          JOIN runs ON runs.run_id = attempts.run_id
@@ -622,6 +624,8 @@ export class GitHubDispatchOutboxProcessor {
          LEFT JOIN review_feedback_attempts
            ON review_feedback_attempts.review_attempt_id =
               COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
+         LEFT JOIN automated_review_fix_attempts
+           ON automated_review_fix_attempts.fix_attempt_id = attempts.attempt_id
          LEFT JOIN base_rebase_attempts
            ON base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
          WHERE attempts.attempt_id = ? AND attempts.run_id = ?`,
@@ -642,6 +646,7 @@ export class GitHubDispatchOutboxProcessor {
     if (executionDispatch) {
       const sourceCount = Number(attempt.repair_id !== null) +
         Number(attempt.review_feedback_id !== null) +
+        Number(attempt.automated_review_id !== null) +
         Number(attempt.base_rebase_id !== null);
       const validSource = attempt.mode === 'implement'
         ? sourceCount === 0
@@ -822,6 +827,33 @@ export class GitHubDispatchOutboxProcessor {
                        AND NOT EXISTS (
                          SELECT 1 FROM review_feedback_attempts
                          WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
+                       )
+                     )
+                     OR (
+                       EXISTS (
+                         SELECT 1
+                         FROM automated_review_fix_attempts AS automated_fix
+                         JOIN automated_reviews AS automated_review
+                           ON automated_review.review_id = automated_fix.review_id
+                         WHERE automated_fix.fix_attempt_id = attempts.attempt_id
+                           AND automated_review.run_id = attempts.run_id
+                           AND automated_review.plan_id = attempts.plan_id
+                           AND automated_review.plan_version = attempts.plan_version
+                           AND automated_review.plan_item_id = attempts.plan_item_id
+                           AND automated_review.source_head_sha = attempts.head_sha
+                           AND automated_review.status = 'changes_requested'
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM attempt_repairs
+                         WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM review_feedback_attempts
+                         WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM base_rebase_attempts
+                         WHERE base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
                        )
                      )
                        )

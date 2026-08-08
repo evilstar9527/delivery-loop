@@ -97,6 +97,8 @@ class FakeClient implements GitHubMergeGateExternalFactClient {
 
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM automated_review_fix_attempts'),
+    env.DB_CONTROL.prepare('DELETE FROM automated_reviews'),
     env.DB_CONTROL.prepare('DELETE FROM github_merge_observations'),
     env.DB_CONTROL.prepare('DELETE FROM github_merges'),
     env.DB_CONTROL.prepare('DELETE FROM merge_gate_decisions'),
@@ -398,6 +400,46 @@ describe('GitHub merge eligibility gate', () => {
         mergeGate: { status: 'rejected', reason },
       },
     });
+  });
+
+  it('rejects a pending automated review for the current PR head', async () => {
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           version, lease_generation, created_at, updated_at
+         ) VALUES ('attempt-pending-auto-review', ?, 3, 'analysis', 'pending', ?, ?, 0, 0, ?, ?)`,
+      ).bind(RUN_ID, HEAD_SHA, REPOSITORY, NOW, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO automated_reviews (
+           review_id, run_id, publication_id, plan_id, plan_version, plan_item_id,
+           prior_attempt_id, review_attempt_id, repository, github_pr_number,
+           base_branch, branch, source_head_sha, iteration, status, created_at, updated_at
+         ) VALUES ('pending-auto-review', ?, ?, ?, 1, ?, ?, 'attempt-pending-auto-review',
+                   ?, 7, 'main', ?, ?, 1, 'pending', ?, ?)`,
+      ).bind(
+        RUN_ID,
+        PUBLICATION_ID,
+        PLAN_ID,
+        ITEM_ID,
+        HEAD_ATTEMPT_ID,
+        REPOSITORY,
+        BRANCH,
+        HEAD_SHA,
+        NOW,
+        NOW,
+      ),
+    ]);
+    const result = await new GitHubMergeGateReconciler(env.DB_CONTROL, new FakeClient(), {
+      now: () => new Date(NOW),
+    }).reconcileRun(RUN_ID);
+    expect(result).toMatchObject({ disposition: 'rejected', reason: 'review_insufficient' });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT state, version FROM runs WHERE run_id = ?',
+    ).bind(RUN_ID).first()).toEqual({ state: 'pull_request_open', version: 10 });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM merge_gate_decisions',
+    ).first()).toEqual({ count: 0 });
   });
 
   it('rejects an expired exact merge approval and persists no merge decision/effect', async () => {

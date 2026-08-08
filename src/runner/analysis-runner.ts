@@ -59,6 +59,16 @@ import type { CodexModelUsage } from '../domain/quota.js';
 import { deriveAnalysisPlanPolicy } from '../domain/analysis-plan-policy.js';
 import type { AnalysisProviderProcessFailureCode } from
   '../agent/provider-preflight-failure.js';
+import {
+  CodexReviewAdapter,
+  CodexReviewAdapterError,
+  type CodexReviewStartInput,
+} from '../agent/codex-review-adapter.js';
+import {
+  AUTOMATED_REVIEW_RESULT_V1_JSON_SCHEMA,
+  AutomatedReviewContextV1Schema,
+  type AutomatedReviewResultV1,
+} from '../domain/automated-review.js';
 
 const OIDC_AUDIENCE = 'delivery-loop-control-plane';
 const HEARTBEAT_INTERVAL_MS = 45_000;
@@ -164,6 +174,13 @@ const ModelUsageResponseSchema = z.object({
   costMicrousd: z.number().int().nonnegative(),
   disposition: z.enum(['created', 'existing']),
 }).strict();
+const AutomatedReviewCompletionResponseSchema = z.object({
+  accepted: z.literal(true),
+  reviewId: z.string().regex(ID_PATTERN),
+  status: z.enum(['approved', 'changes_requested', 'blocked']),
+  fixAttemptId: z.string().regex(ID_PATTERN).optional(),
+  created: z.boolean(),
+}).strict();
 const ToolCallResponseSchema = z.object({
   ok: z.literal(true),
   traceId: z.string().regex(ID_PATTERN),
@@ -204,10 +221,16 @@ export interface AnalysisAgent {
   start(input: CodexAnalysisStartInput): Promise<ExecutionPlanV1>;
 }
 
+export interface AutomatedReviewAgent {
+  readonly usesMeteredModel?: boolean;
+  start(input: CodexReviewStartInput): Promise<AutomatedReviewResultV1>;
+}
+
 export interface RunAnalysisAttemptOptions {
   environment?: NodeJS.ProcessEnv;
   fetch?: typeof globalThis.fetch;
   agent?: AnalysisAgent;
+  reviewAgent?: AutomatedReviewAgent;
   heartbeatIntervalMs?: number;
   snapshotWorkspace?: (workspacePath: string) => Promise<string>;
   now?: () => Date;
@@ -218,6 +241,12 @@ export interface AnalysisAttemptResult {
   version: number;
   digest: string;
   payloadRef: string;
+}
+
+export interface AutomatedReviewAttemptResult {
+  reviewId: string;
+  status: 'approved' | 'changes_requested' | 'blocked';
+  fixAttemptId?: string;
 }
 
 export interface AnalysisRunnerFailure {
@@ -901,10 +930,209 @@ async function bindCarriedDiagnosticEvidence(
   return await bindDiagnosticEvidence(boundPlan, evidenceRef, validation);
 }
 
+async function runAutomatedReview(
+  context: z.infer<typeof AutomatedReviewContextV1Schema>,
+  config: RunnerConfiguration,
+  fencing: MutableFencing,
+  runtimeSecrets: Set<string>,
+  beforeSnapshot: string,
+  options: RunAnalysisAttemptOptions,
+  fetchImplementation: typeof globalThis.fetch,
+  snapshotWorkspace: (workspacePath: string) => Promise<string>,
+  heartbeatIntervalMs: number,
+  now: () => Date,
+  environment: NodeJS.ProcessEnv,
+): Promise<AutomatedReviewAttemptResult> {
+  if (
+    context.attempt.id !== config.attemptId || context.attempt.runId !== config.runId ||
+    context.attempt.version !== fencing.version ||
+    context.attempt.leaseGeneration !== fencing.leaseGeneration ||
+    context.attempt.baseSha !== config.baseSha || context.review.headSha !== config.baseSha ||
+    context.task.digest !== config.taskDigest
+  ) throw new AnalysisRunnerError('automated review context identity does not match dispatch');
+  if (new SecretScanner({ secrets: [...runtimeSecrets] }).scan(context).length > 0) {
+    throw new AnalysisRunnerError('automated review context contains a runtime Secret');
+  }
+  const temporaryRoot = await mkdtemp(join(config.runnerTempPath, 'delivery-loop-review-'));
+  await chmod(temporaryRoot, 0o700);
+  const contextFilePath = join(temporaryRoot, 'context.json');
+  const outputFilePath = join(temporaryRoot, 'result.json');
+  const outputSchemaPath = join(temporaryRoot, 'result-schema.json');
+  const heartbeatController = new AbortController();
+  const requestLock = new FencingRequestLock();
+  let heartbeatFailure: unknown;
+  let heartbeatTask: Promise<void> = Promise.resolve();
+  let reservation: z.infer<typeof ModelReservationResponseSchema> | undefined;
+  const measuredUsages: CodexModelUsage[] = [];
+  try {
+    if (options.reviewAgent === undefined || options.reviewAgent.usesMeteredModel === true) {
+      if (config.modelProfileId === undefined) {
+        throw new AnalysisRunnerError('automated review model profile is unavailable');
+      }
+      const reservationDigest = await canonicalSha256({
+        attemptId: config.attemptId,
+        kind: 'automated_review',
+      });
+      const reservationId =
+        `model_reservation_${reservationDigest.slice('sha256:'.length, 'sha256:'.length + 48)}`;
+      const rawReservation = await controlPlaneJson(
+        fetchImplementation,
+        config,
+        `/v1/attempts/${config.attemptId}/model-reservations`,
+        fencing.token,
+        'model quota reservation',
+        [200, 201],
+        {
+          reservationId,
+          profileId: config.modelProfileId,
+          expectedVersion: fencing.version,
+          leaseGeneration: fencing.leaseGeneration,
+        },
+      );
+      const parsed = ModelReservationResponseSchema.safeParse(rawReservation);
+      if (!parsed.success || parsed.data.reservationId !== reservationId ||
+        parsed.data.attemptId !== config.attemptId || parsed.data.runId !== config.runId) {
+        throw new AnalysisRunnerError('model quota reservation response is invalid');
+      }
+      reservation = parsed.data;
+    }
+    heartbeatTask = heartbeatLoop(
+      fetchImplementation,
+      config,
+      fencing,
+      heartbeatIntervalMs,
+      heartbeatController.signal,
+      runtimeSecrets,
+      requestLock,
+    ).catch((error: unknown) => {
+      heartbeatFailure = error;
+    });
+    await Promise.all([
+      writeFile(contextFilePath, JSON.stringify(context), { mode: 0o600, flag: 'wx' }),
+      writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' }),
+      writeFile(
+        outputSchemaPath,
+        JSON.stringify(AUTOMATED_REVIEW_RESULT_V1_JSON_SCHEMA),
+        { mode: 0o600, flag: 'wx' },
+      ),
+    ]);
+    const agent = options.reviewAgent ?? new CodexReviewAdapter({
+      outputSchemaPath,
+      runtimeSecrets: [...runtimeSecrets],
+      ...(environment.OPENAI_BASE_URL === undefined ||
+        environment.OPENAI_BASE_URL === ''
+        ? {}
+        : { providerBaseUrl: environment.OPENAI_BASE_URL }),
+    });
+    let result: AutomatedReviewResultV1;
+    try {
+      result = await agent.start({
+        workspacePath: config.workspacePath,
+        contextFilePath,
+        outputFilePath,
+        timeoutMs: ANALYSIS_TIMEOUT_MS,
+        ...(reservation === undefined
+          ? {}
+          : {
+              model: reservation.model,
+              onUsage: (usage: CodexModelUsage) => measuredUsages.push(usage),
+            }),
+      });
+    } catch (error) {
+      throw new AnalysisRunnerError('automated review Agent output is invalid', {
+        failureCode: 'invalid_agent_output',
+        failureSite: 'agent_output',
+        attemptedPaths: ['repository_inspection'],
+        neededHumanInput: 'manual_investigation',
+      }, error instanceof CodexReviewAdapterError
+        ? { kind: error.kind === 'process_failed' ? 'process_nonzero_exit' : 'structured_output_invalid', stage: 'single_pass' }
+        : undefined);
+    }
+    heartbeatController.abort();
+    await heartbeatTask;
+    if (heartbeatFailure !== undefined) {
+      throw new AnalysisRunnerError('attempt heartbeat failed during automated review');
+    }
+    if (reservation !== undefined) {
+      if (measuredUsages.length !== 1) {
+        throw new AnalysisRunnerError('automated review Agent usage is unavailable');
+      }
+      const usageDigest = await canonicalSha256({
+        reservationId: reservation.reservationId,
+        attemptId: config.attemptId,
+      });
+      const usageId =
+        `model_usage_${usageDigest.slice('sha256:'.length, 'sha256:'.length + 54)}`;
+      const rawUsage = await controlPlaneJson(
+        fetchImplementation,
+        config,
+        `/v1/attempts/${config.attemptId}/model-usage`,
+        fencing.token,
+        'model usage settlement',
+        [200, 201],
+        {
+          reservationId: reservation.reservationId,
+          usageId,
+          expectedVersion: fencing.version,
+          leaseGeneration: fencing.leaseGeneration,
+          ...measuredUsages[0]!,
+        },
+      );
+      if (!ModelUsageResponseSchema.safeParse(rawUsage).success) {
+        throw new AnalysisRunnerError('model usage settlement response is invalid');
+      }
+    }
+    if (await snapshotWorkspace(config.workspacePath) !== beforeSnapshot) {
+      throw new AnalysisRunnerError('repository workspace changed during automated review', {
+        failureCode: 'workspace_changed',
+        failureSite: 'repo_snapshot',
+        attemptedPaths: ['repository_inspection'],
+        neededHumanInput: 'manual_investigation',
+      });
+    }
+    const rawCompletion = await controlPlaneJson(
+      fetchImplementation,
+      config,
+      `/v1/attempts/${config.attemptId}/automated-review-result`,
+      fencing.token,
+      'automated review result',
+      [200, 201],
+      result,
+    );
+    const completion = AutomatedReviewCompletionResponseSchema.safeParse(rawCompletion);
+    if (!completion.success || completion.data.reviewId !== context.review.id) {
+      throw new AnalysisRunnerError('automated review result response is invalid');
+    }
+    return {
+      reviewId: completion.data.reviewId,
+      status: completion.data.status,
+      ...(completion.data.fixAttemptId === undefined
+        ? {}
+        : { fixAttemptId: completion.data.fixAttemptId }),
+    };
+  } catch (error) {
+    heartbeatController.abort();
+    await heartbeatTask;
+    if (error instanceof AnalysisRunnerError && error.failure !== undefined &&
+      heartbeatFailure === undefined) {
+      try {
+        await reportAttemptFailure(fetchImplementation, config, fencing, error.failure, now());
+      } catch {
+        // The original failure remains authoritative.
+      }
+    }
+    throw error;
+  } finally {
+    heartbeatController.abort();
+    await heartbeatTask;
+    await rm(temporaryRoot, { recursive: true, force: true });
+  }
+}
+
 /** Runs one analysis-only GitHub attempt without treating the hosted Runner as durable state. */
 export async function runAnalysisAttempt(
   options: RunAnalysisAttemptOptions = {},
-): Promise<AnalysisAttemptResult> {
+): Promise<AnalysisAttemptResult | AutomatedReviewAttemptResult> {
   const environment = options.environment ?? process.env;
   const config = configuration(environment);
   const fetchImplementation = options.fetch ?? globalThis.fetch;
@@ -938,6 +1166,22 @@ export async function runAnalysisAttempt(
     'analysis context',
     [200],
   );
+  const automatedReviewContext = AutomatedReviewContextV1Schema.safeParse(rawContext);
+  if (automatedReviewContext.success) {
+    return await runAutomatedReview(
+      automatedReviewContext.data,
+      config,
+      fencing,
+      runtimeSecrets,
+      beforeSnapshot,
+      options,
+      fetchImplementation,
+      snapshotWorkspace,
+      heartbeatIntervalMs,
+      now,
+      environment,
+    );
+  }
   const contextResult = ContextResponseSchema.safeParse(rawContext);
   if (!contextResult.success) throw new AnalysisRunnerError('analysis context response is invalid');
   const context = contextResult.data;
