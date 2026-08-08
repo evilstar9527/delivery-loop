@@ -39,8 +39,7 @@ import { DeliveryCommandRunner } from './delivery-command-runner.js';
 import { ControlPlaneProtectedPathApprovalReporter } from './protected-path-approval-reporter.js';
 import { validateExecutionPatchProposal } from './execution-patch-policy.js';
 import {
-  buildExecutionPatchSnapshot,
-  ExecutionPatchSnapshotError,
+  buildOptionalExecutionPatchSnapshot,
   type ExecutionPatchSnapshotV1,
 } from './execution-patch-snapshot.js';
 import {
@@ -797,23 +796,17 @@ export async function runExecutionAttempt(
   }
   let repositorySnapshot: ExecutionPatchSnapshotV1 | undefined;
   if (context.baseRebase === undefined) {
-    try {
-      repositorySnapshot = await buildExecutionPatchSnapshot({
-          repositoryPath: config.workspacePath,
-          referencedText: [
-            context.item.objective,
-            ...context.item.doneWhen,
-            context.task.intent.description,
-            ...context.task.intent.acceptanceCriteria,
-          ],
-          protectedPaths: policy.policy.protectedPaths,
-          runtimeSecrets: [...runtimeSecrets],
-      });
-    } catch (error) {
-      if (!(error instanceof ExecutionPatchSnapshotError) || error.kind !== 'no_candidates') {
-        throw error;
-      }
-    }
+    repositorySnapshot = await buildOptionalExecutionPatchSnapshot({
+      repositoryPath: config.workspacePath,
+      referencedText: [
+        context.item.objective,
+        ...context.item.doneWhen,
+        context.task.intent.description,
+        ...context.task.intent.acceptanceCriteria,
+      ],
+      protectedPaths: policy.policy.protectedPaths,
+      runtimeSecrets: [...runtimeSecrets],
+    });
   }
   const agentContext = repositorySnapshot === undefined
     ? context
