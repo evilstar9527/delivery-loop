@@ -19,6 +19,7 @@ export interface ExecutionPatchSnapshotV1 {
 export type ExecutionPatchSnapshotErrorKind =
   | 'no_candidates'
   | 'ambiguous_candidates'
+  | 'fallback_too_large'
   | 'unsafe_candidate'
   | 'unavailable';
 
@@ -87,7 +88,7 @@ export async function buildExecutionPatchSnapshot(input: {
     ) throw new ExecutionPatchSnapshotError('unsafe_candidate');
     totalBytes += bytes.byteLength;
     if (totalBytes > MAX_PATCH_TOTAL_BYTES) {
-      throw new ExecutionPatchSnapshotError('unsafe_candidate');
+      throw new ExecutionPatchSnapshotError('fallback_too_large');
     }
     let content: string;
     try {
@@ -105,4 +106,23 @@ export async function buildExecutionPatchSnapshot(input: {
     files.push(file);
   }
   return { schemaVersion: '1', files };
+}
+
+/**
+ * The full-content patch snapshot is an optional second-invocation recovery aid.
+ * A valid Plan may target a file that is too large for that bounded fallback;
+ * the primary workspace Agent must still be allowed to make the approved edit.
+ */
+export async function buildOptionalExecutionPatchSnapshot(
+  input: Parameters<typeof buildExecutionPatchSnapshot>[0],
+): Promise<ExecutionPatchSnapshotV1 | undefined> {
+  try {
+    return await buildExecutionPatchSnapshot(input);
+  } catch (error) {
+    if (
+      error instanceof ExecutionPatchSnapshotError &&
+      (error.kind === 'no_candidates' || error.kind === 'fallback_too_large')
+    ) return undefined;
+    throw error;
+  }
 }

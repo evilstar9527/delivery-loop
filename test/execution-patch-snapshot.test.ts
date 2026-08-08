@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import {
   buildExecutionPatchSnapshot,
+  buildOptionalExecutionPatchSnapshot,
   ExecutionPatchSnapshotError,
 } from '../src/runner/execution-patch-snapshot.js';
 import { patchContentDigest } from '../src/domain/patch-proposal.js';
@@ -41,11 +42,10 @@ describe('execution patch snapshot', () => {
     });
   });
 
-  it('rejects missing, protected, oversized, and credential-shaped candidates', async () => {
+  it('rejects missing, protected, and credential-shaped candidates', async () => {
     const cases = [
       { files: { 'README.md': 'other\n' }, text: 'docs/Vision.md', protected: [] },
       { files: { 'docs/Vision.md': 'vision\n' }, text: 'docs/Vision.md', protected: ['docs/**'] },
-      { files: { 'docs/Vision.md': 'x'.repeat(12 * 1024 + 1) }, text: 'docs/Vision.md', protected: [] },
       { files: { 'docs/Vision.md': 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz\n' }, text: 'docs/Vision.md', protected: [] },
     ];
     for (const scenario of cases) {
@@ -57,6 +57,42 @@ describe('execution patch snapshot', () => {
         runtimeSecrets: [],
       })).rejects.toBeInstanceOf(ExecutionPatchSnapshotError);
     }
+  });
+
+  it('disables only the optional fallback when one file or the aggregate is oversized', async () => {
+    for (const files of [
+      { 'src/large.ts': 'x'.repeat(12 * 1024 + 1) },
+      { 'src/a.ts': 'a'.repeat(7 * 1024), 'src/b.ts': 'b'.repeat(7 * 1024) },
+    ]) {
+      const root = await repository(files);
+      const referencedText = Object.keys(files).map((path) => `Update ${path}.`);
+      const input = {
+        repositoryPath: root,
+        referencedText,
+        protectedPaths: [],
+        runtimeSecrets: [],
+      };
+      await expect(buildExecutionPatchSnapshot(input)).rejects.toMatchObject({
+        name: 'ExecutionPatchSnapshotError',
+        kind: 'fallback_too_large',
+      });
+      await expect(buildOptionalExecutionPatchSnapshot(input)).resolves.toBeUndefined();
+    }
+  });
+
+  it('does not downgrade an unsafe candidate to an optional fallback miss', async () => {
+    const root = await repository({
+      'src/unsafe.ts': 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz\n',
+    });
+    await expect(buildOptionalExecutionPatchSnapshot({
+      repositoryPath: root,
+      referencedText: ['Update src/unsafe.ts.'],
+      protectedPaths: [],
+      runtimeSecrets: [],
+    })).rejects.toMatchObject({
+      name: 'ExecutionPatchSnapshotError',
+      kind: 'unsafe_candidate',
+    });
   });
 
   it('classifies a missing explicit path separately from unsafe snapshot candidates', async () => {
