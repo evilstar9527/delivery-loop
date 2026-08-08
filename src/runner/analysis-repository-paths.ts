@@ -2,6 +2,7 @@ import { lstat, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { patchPathIsSafe } from '../domain/patch-proposal.js';
 import { isProtectedRepositoryPath } from '../domain/protected-path-change.js';
+import { SecretScanner } from '../security/redaction.js';
 import { loadDeliveryPolicyAtCommit } from './delivery-policy-loader.js';
 import { executeGitCommand } from './git-repository-writer.js';
 
@@ -58,10 +59,12 @@ export async function listAnalysisWritableRepositoryPaths(
     }
 
     const writable: string[] = [];
+    const secretScanner = new SecretScanner();
     for (const path of [...new Set(tracked)].sort()) {
       if (
         !patchPathIsSafe(path) ||
-        isProtectedRepositoryPath(path, deliveryPolicy.policy.protectedPaths)
+        isProtectedRepositoryPath(path, deliveryPolicy.policy.protectedPaths) ||
+        secretScanner.scan(path).length > 0
       ) continue;
       const absolutePath = resolve(root, path);
       let metadata;
