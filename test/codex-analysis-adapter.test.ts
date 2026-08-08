@@ -516,8 +516,8 @@ describe('Codex analysis Agent adapter', () => {
     expect(observed?.stdin).toContain('at least one doneWhen condition');
     expect(observed?.stdin).toContain('never propose a change item when repo_write is not allowed');
     expect(observed?.stdin).toContain('self-verifying required change item');
-    expect(observed?.stdin).toContain('required top-level contextDigest');
-    expect(observed?.stdin).toContain('contextDigest marker');
+    expect(observed?.stdin).toContain('provider-wire compatibility');
+    expect(observed?.stdin).toContain('value grants no authority and is ignored');
     expect(observed?.stdin).not.toContain('execute this exact read-only command');
     expect(observed?.stdin).not.toContain('calculate the SHA-256');
     expect(observed?.stdin).toContain('do not replace it with an investigation-only placeholder');
@@ -601,14 +601,43 @@ describe('Codex analysis Agent adapter', () => {
     }]);
   });
 
-  it.each(['missing', 'mismatched', 'extra'] as const)(
+  it('accepts a valid Plan when the compatibility contextDigest echo is mismatched', async () => {
+    const paths = await tempInput();
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async () => {
+        await writeFile(paths.outputFile, JSON.stringify({
+          ...agentOutput(),
+          contextDigest: `sha256:${'0'.repeat(64)}`,
+        }));
+        return { exitCode: 0 };
+      },
+    });
+
+    await expect(adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-runner-context-binding',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-runner-context-binding',
+      },
+      validation: validationContext(),
+    })).resolves.toMatchObject({ id: 'plan-runner-context-binding' });
+  });
+
+  it.each(['missing', 'extra'] as const)(
     'rejects %s context envelope before Plan persistence',
     async (failure) => {
       const paths = await tempInput();
       const content = validContent();
       const output: Record<string, unknown> = agentOutput(content);
       if (failure === 'missing') delete output.contextDigest;
-      if (failure === 'mismatched') output.contextDigest = `sha256:${'0'.repeat(64)}`;
       if (failure === 'extra') output.untrusted = 'must-not-pass';
       const adapter = new CodexAnalysisAdapter({
         outputSchemaPath: SCHEMA_PATH,
@@ -632,9 +661,7 @@ describe('Codex analysis Agent adapter', () => {
           attemptId: 'attempt-context-proof',
         },
         validation: validationContext(),
-      })).rejects.toThrow(failure === 'mismatched'
-        ? 'Codex analysis context proof is invalid'
-        : 'Codex analysis output is invalid');
+      })).rejects.toThrow('Codex analysis output is invalid');
     },
   );
 

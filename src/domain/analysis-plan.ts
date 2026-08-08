@@ -53,7 +53,11 @@ export async function createAnalysisContextFileV1(
   };
 }
 
-/** Ephemeral model output; contextDigest is verified and never persisted in ExecutionPlan. */
+/**
+ * Ephemeral provider-wire output. `contextDigest` is a compatibility field only:
+ * the Runner ignores its value, verifies its own context file before/after the
+ * invocation, and never persists the field in ExecutionPlan.
+ */
 export const AnalysisAgentOutputV1Schema = z
   .object({
     contextDigest: z.string().regex(CONTEXT_DIGEST_PATTERN),
