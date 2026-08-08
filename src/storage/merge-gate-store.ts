@@ -71,6 +71,7 @@ interface CandidateRow {
   base_branch: string;
   current_head_sha: string | null;
   current_head_branch: string | null;
+  automated_review_status: string | null;
   incomplete_required_count: number;
   has_merge_effect: number;
 }
@@ -246,6 +247,15 @@ export class MergeGateStore {
                AND observations.missing_check_count = 0
                AND publications.status = 'verified'
                AND publications.evidence_id IS NOT NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM automated_reviews
+                 WHERE automated_reviews.run_id = runs.run_id
+                   AND automated_reviews.publication_id = publications.publication_id
+                   AND automated_reviews.plan_id = plans.plan_id
+                   AND automated_reviews.plan_version = plans.plan_version
+                   AND automated_reviews.source_head_sha = observations.head_sha
+                   AND automated_reviews.status <> 'approved'
+               )
                AND observations.head_sha = (
                  SELECT attempts.head_sha FROM attempts
                  WHERE attempts.run_id = runs.run_id
@@ -362,6 +372,10 @@ export class MergeGateStore {
     if (
       fact.reviewDecision !== 'approved' ||
       fact.approvedReviewCount < fact.requiredApprovals
+    ) return 'review_insufficient';
+    if (
+      candidate.automated_review_status !== null &&
+      candidate.automated_review_status !== 'approved'
     ) return 'review_insufficient';
     if (
       fact.state !== 'open' || fact.draft || fact.mergeability !== 'mergeable' ||
@@ -552,6 +566,23 @@ export class MergeGateStore {
                  AND attempts.mode IN ('implement', 'review_fix')
                  AND attempts.head_branch = publications.head_branch
                ORDER BY attempts.ordinal DESC LIMIT 1) AS current_head_branch,
+              (SELECT automated_reviews.status FROM automated_reviews
+               WHERE automated_reviews.run_id = runs.run_id
+                 AND automated_reviews.publication_id = publications.publication_id
+                 AND automated_reviews.plan_id = plans.plan_id
+                 AND automated_reviews.plan_version = plans.plan_version
+                 AND automated_reviews.source_head_sha = (
+                   SELECT attempts.head_sha FROM attempts
+                   WHERE attempts.run_id = runs.run_id
+                     AND attempts.plan_id = plans.plan_id
+                     AND attempts.plan_version = plans.plan_version
+                     AND attempts.status = 'completed'
+                     AND attempts.mode IN ('implement', 'review_fix')
+                     AND attempts.head_branch = publications.head_branch
+                   ORDER BY attempts.ordinal DESC LIMIT 1
+                 )
+               ORDER BY automated_reviews.iteration DESC LIMIT 1)
+                AS automated_review_status,
               (SELECT COUNT(*) FROM plan_items
                JOIN plan_item_progress
                  ON plan_item_progress.plan_id = plan_items.plan_id

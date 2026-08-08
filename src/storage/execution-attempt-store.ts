@@ -4,6 +4,10 @@ import { isExactExecutionToolActions } from '../domain/tool-bridge.js';
 import type { EvidenceKind, PlanEffect, PlanItemV1 } from '../domain/plan.js';
 import type { RunnerAuthorization } from './runner-attempt-store.js';
 import { z } from 'zod';
+import {
+  AutomatedReviewResultV1Schema,
+  renderAutomatedReviewFeedback,
+} from '../domain/automated-review.js';
 
 export type ExecutionAttemptErrorCode =
   | 'attempt_context_mismatch'
@@ -77,6 +81,17 @@ interface ReviewFeedbackRow {
   branch: string;
   review_url: string;
   submitted_at: string;
+}
+
+interface AutomatedReviewFeedbackRow {
+  review_id: string;
+  result_ref: string;
+  result_digest: string;
+  feedback_body_digest: string;
+  source_head_sha: string;
+  branch: string;
+  review_url: string;
+  completed_at: string;
 }
 
 interface BaseRebaseRow {
@@ -167,6 +182,7 @@ export class ExecutionAttemptContextStore {
   constructor(
     private readonly db: D1Database,
     private readonly objects: R2Bucket,
+    private readonly reviewObjects: R2Bucket = objects,
   ) {}
 
   async get(authorization: RunnerAuthorization): Promise<ExecutionAttemptContext> {
@@ -451,7 +467,7 @@ export class ExecutionAttemptContextStore {
       row.plan_version,
       row.plan_item_id,
     ).first<ReviewFeedbackRow>();
-    if (feedback === null) return undefined;
+    if (feedback === null) return await this.automatedReviewFeedback(row);
     if (
       feedback.source_head_sha !== row.head_sha ||
       !DIGEST_PATTERN.test(feedback.body_digest) ||
@@ -492,6 +508,68 @@ export class ExecutionAttemptContextStore {
       branch: payload.branch,
       url: payload.url,
       submittedAt: payload.submittedAt,
+    };
+  }
+
+  private async automatedReviewFeedback(
+    row: ExecutionContextRow,
+  ): Promise<NonNullable<ExecutionAttemptContext['reviewFeedback']> | undefined> {
+    const feedback = await this.db.prepare(
+      `SELECT reviews.review_id, reviews.result_ref, reviews.result_digest,
+              reviews.feedback_body_digest, reviews.source_head_sha, reviews.branch,
+              publications.github_pr_url AS review_url,
+              reviews.completed_at
+       FROM automated_review_fix_attempts AS fixes
+       JOIN automated_reviews AS reviews ON reviews.review_id = fixes.review_id
+       JOIN pull_request_publications AS publications
+         ON publications.publication_id = reviews.publication_id
+       WHERE fixes.fix_attempt_id = ?
+         AND reviews.run_id = ? AND reviews.plan_id = ?
+         AND reviews.plan_version = ? AND reviews.plan_item_id = ?
+         AND reviews.status = 'changes_requested'`,
+    ).bind(
+      row.attempt_id,
+      row.run_id,
+      row.plan_id,
+      row.plan_version,
+      row.plan_item_id,
+    ).first<AutomatedReviewFeedbackRow>();
+    if (feedback === null) return undefined;
+    if (
+      feedback.source_head_sha !== row.head_sha ||
+      !DIGEST_PATTERN.test(feedback.result_digest) ||
+      !DIGEST_PATTERN.test(feedback.feedback_body_digest) ||
+      !feedback.result_ref.startsWith('r2://')
+    ) throw new ExecutionAttemptError('attempt_context_mismatch');
+    const key = feedback.result_ref.slice('r2://'.length);
+    if (key.length === 0 || key.includes('..')) {
+      throw new ExecutionAttemptError('review_payload_conflict');
+    }
+    const object = await this.reviewObjects.get(key);
+    if (object === null) throw new ExecutionAttemptError('review_payload_unavailable');
+    let payload: z.infer<typeof AutomatedReviewResultV1Schema>;
+    try {
+      payload = AutomatedReviewResultV1Schema.parse(JSON.parse(await object.text()) as unknown);
+    } catch {
+      throw new ExecutionAttemptError('review_payload_conflict');
+    }
+    const body = renderAutomatedReviewFeedback(payload);
+    if (
+      await canonicalSha256(payload) !== feedback.result_digest ||
+      await canonicalSha256(body) !== feedback.feedback_body_digest ||
+      object.customMetadata?.schemaVersion !== '1' ||
+      object.customMetadata?.reviewId !== feedback.review_id ||
+      object.customMetadata?.resultDigest !== feedback.result_digest ||
+      object.customMetadata?.sourceHeadSha !== feedback.source_head_sha
+    ) throw new ExecutionAttemptError('review_payload_conflict');
+    return {
+      reviewId: feedback.review_id,
+      body,
+      bodyDigest: feedback.feedback_body_digest,
+      sourceHeadSha: feedback.source_head_sha,
+      branch: feedback.branch,
+      url: feedback.review_url,
+      submittedAt: feedback.completed_at,
     };
   }
 

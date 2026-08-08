@@ -101,6 +101,7 @@ import { reconcileWorkflowInstancesFromEnv } from './reconciliation/workflow-ins
 import { QuotaControlStore } from './storage/quota-control-store.js';
 import { BackupRestoreCoordinator } from './storage/backup-restore-store.js';
 import { DataRetentionStore } from './storage/data-retention-store.js';
+import { AutomatedReviewScheduler } from './storage/automated-review-store.js';
 
 export { DeliveryRunWorkflow } from './workflows/delivery-run-workflow.js';
 export { ControlPlaneBackupWorkflow } from './workflows/control-plane-backup-workflow.js';
@@ -238,6 +239,7 @@ export default {
         now: scheduledNow,
       });
       await executionProgress.reconcileObservedCompletions(5);
+      await new AutomatedReviewScheduler(env.DB_CONTROL).resumeFixedRuns(5, scheduledNow());
       await new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
         now: scheduledNow,
       }).reconcileBatch(5);
@@ -266,6 +268,11 @@ export default {
       // background batch lets their Run-version CAS race and can permanently
       // strand the stable API observation as ignored/observation_race.
       await reconcileGitHubPullRequestsFromEnv(env);
+      // Review the exact verified PR head before base reconciliation can move
+      // the Run into an unrelated revision. The dispatch remains fenced by the
+      // existing outbox processor and is immediately made visible to Queue.
+      await new AutomatedReviewScheduler(env.DB_CONTROL).scheduleBatch(5, scheduledNow());
+      await relay.relay();
       // Recover missed review webhooks before merge/base readers can race the
       // same pull_request_open Run-version transition.
       await reconcileGitHubReviewFeedbacksFromEnv(env);

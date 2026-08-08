@@ -627,6 +627,10 @@ export class ExecutionProgressReconciler {
              AND plan_items.required = 1
              AND plan_item_progress.status <> 'passed'
          )
+         AND NOT EXISTS (
+           SELECT 1 FROM automated_review_fix_attempts
+           WHERE automated_review_fix_attempts.fix_attempt_id = latest.attempt_id
+         )
          AND EXISTS (
            SELECT 1 FROM trusted_effect_approvals AS approval
            WHERE approval.run_id = runs.run_id
