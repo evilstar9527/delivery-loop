@@ -88,6 +88,7 @@ function writableRequirementValidationContext(): ExecutionPlanValidationContext 
     verificationCommandRefs: ['verify:all'],
     allowedEffects: ['repo_read', 'repo_write'],
     requiresRepositoryChange: true,
+    writableRepositoryPaths: ['src/request.ts'],
   };
 }
 
@@ -126,7 +127,7 @@ function writableRequirementContent(): Record<string, unknown> {
         id: 'implement-request',
         kind: 'change',
         title: 'Implement and verify the request',
-        objective: 'Make the smallest requested change and verify the committed head.',
+        objective: 'Make the smallest requested change in src/request.ts and verify the committed head.',
         acceptanceCriteriaIndexes: [0],
         doneWhen: ['The requested change is committed and all trusted verification passes.'],
         verification: {
@@ -176,7 +177,7 @@ function writableDiagnosticPlanContent(): Record<string, unknown> {
         id: 'repair-request-path',
         kind: 'change',
         title: 'Repair and verify the request path',
-        objective: 'Make the smallest source change that fixes the traced failure.',
+        objective: 'Make the smallest source change in src/request.ts that fixes the traced failure.',
         acceptanceCriteriaIndexes: [0],
         doneWhen: ['The traced failure is fixed in one commit and all trusted verification passes.'],
         verification: {
@@ -438,6 +439,8 @@ describe('Codex analysis Agent adapter', () => {
 
     expect(observed?.stdin).toContain('Trusted Task policy requires a repository change');
     expect(observed?.stdin).toContain('an investigation-only Plan will be rejected');
+    expect(observed?.stdin).toContain('name at least one exact tracked, regular, writable repository path');
+    expect(observed?.stdin).toContain('model-hidden policy-filtered inventory');
     expect(plan.items).toMatchObject([{
       kind: 'change',
       effects: ['repo_write'],

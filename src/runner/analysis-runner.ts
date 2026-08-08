@@ -71,6 +71,7 @@ import {
   AutomatedReviewContextV1Schema,
   type AutomatedReviewResultV1,
 } from '../domain/automated-review.js';
+import { listAnalysisWritableRepositoryPaths } from './analysis-repository-paths.js';
 
 const OIDC_AUDIENCE = 'delivery-loop-control-plane';
 const HEARTBEAT_INTERVAL_MS = 45_000;
@@ -235,6 +236,10 @@ export interface RunAnalysisAttemptOptions {
   reviewAgent?: AutomatedReviewAgent;
   heartbeatIntervalMs?: number;
   snapshotWorkspace?: (workspacePath: string) => Promise<string>;
+  listWritableRepositoryPaths?: (
+    workspacePath: string,
+    baseSha: string,
+  ) => Promise<readonly string[]>;
   now?: () => Date;
 }
 
@@ -1371,7 +1376,7 @@ export async function runAnalysisAttempt(
       baseSha: context.attempt.baseSha,
       attemptId: context.attempt.id,
     };
-    const validation = {
+    const validationBase = {
       runId: identity.runId,
       taskRevision: identity.taskRevision,
       baseSha: identity.baseSha,
@@ -1389,7 +1394,7 @@ export async function runAnalysisAttempt(
     const isUniqueSubset = (actual: readonly string[], trusted: readonly string[]): boolean =>
       new Set(actual).size === actual.length && actual.every((value) => trusted.includes(value));
     if (
-      validation.requiresRepositoryChange !== trustedPlanPolicy.requiresRepositoryChange ||
+      validationBase.requiresRepositoryChange !== trustedPlanPolicy.requiresRepositoryChange ||
       !isUniqueSubset(
         context.planPolicy.allowedEffects,
         trustedPlanPolicy.allowedEffects,
@@ -1413,6 +1418,33 @@ export async function runAnalysisAttempt(
     ) {
       throw new AnalysisRunnerError('analysis Plan policy does not match trusted Task');
     }
+    let writableRepositoryPaths: readonly string[] | undefined;
+    if (validationBase.requiresRepositoryChange) {
+      try {
+        writableRepositoryPaths = await (
+          options.listWritableRepositoryPaths ?? listAnalysisWritableRepositoryPaths
+        )(config.workspacePath, config.baseSha);
+      } catch {
+        throw new AnalysisRunnerError('analysis repository path inventory is unavailable', {
+          failureCode: 'unknown_failure',
+          failureSite: 'repo_snapshot',
+          attemptedPaths: ['repository_inspection'],
+          neededHumanInput: 'manual_investigation',
+        });
+      }
+      if (writableRepositoryPaths.length < 1) {
+        throw new AnalysisRunnerError('analysis repository path inventory is unavailable', {
+          failureCode: 'unknown_failure',
+          failureSite: 'repo_snapshot',
+          attemptedPaths: ['repository_inspection'],
+          neededHumanInput: 'manual_investigation',
+        });
+      }
+    }
+    const validation = {
+      ...validationBase,
+      ...(writableRepositoryPaths === undefined ? {} : { writableRepositoryPaths }),
+    };
     const agent =
       options.agent ??
       new CodexAnalysisAdapter({
