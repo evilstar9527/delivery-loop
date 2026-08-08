@@ -315,6 +315,96 @@ describe('Codex analysis Agent adapter', () => {
     } satisfies Partial<CodexAnalysisAdapterError>);
   });
 
+  it('accepts only fixed validation codes for a fresh read-only correction prompt', async () => {
+    const paths = await tempInput();
+    let observed: CommandExecutionRequest | undefined;
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async (request): Promise<CommandExecutionResult> => {
+        observed = request;
+        await writeFile(paths.outputFile, JSON.stringify(agentOutput()));
+        return { exitCode: 0 };
+      },
+    });
+
+    await adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-corrected-v1',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-corrected',
+      },
+      validation: validationContext(),
+      correctionIssueCodes: [
+        'acceptance_criterion_uncovered',
+        'repository_change_required',
+      ],
+    });
+
+    expect(observed?.stdin).toContain(
+      '["acceptance_criterion_uncovered","repository_change_required"]',
+    );
+    expect(observed?.stdin).toContain('Create a fresh proposal from the original trusted context');
+    expect(observed?.stdin).not.toContain('CANARY_PRIOR_PLAN_BODY');
+    expect(observed?.args).toContain('read-only');
+    expect(observed?.args).toContain('approval_policy="never"');
+  });
+
+  it('regenerates one fresh proposal without feeding back the rejected Plan', async () => {
+    const paths = await tempInput();
+    const prompts: string[] = [];
+    const correctionCodes: string[][] = [];
+    let invocation = 0;
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async (request): Promise<CommandExecutionResult> => {
+        invocation += 1;
+        prompts.push(request.stdin);
+        const content = validContent();
+        if (invocation === 1) {
+          content.objective = 'CANARY_REJECTED_PLAN_BODY';
+          content.assumptions = [
+            'The checked out commit is the trusted base snapshot.',
+            'The checked out commit is the trusted base snapshot.',
+          ];
+        }
+        await writeFile(paths.outputFile, JSON.stringify(agentOutput(content)));
+        return { exitCode: 0 };
+      },
+    });
+
+    const plan = await adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-bounded-correction-v1',
+        runId: 'run-codex-analysis',
+        version: 1,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        attemptId: 'attempt-bounded-correction',
+      },
+      validation: validationContext(),
+      onPlanCorrection: async (codes) => {
+        correctionCodes.push([...codes]);
+      },
+    });
+
+    expect(plan.objective).toBe(validContent().objective);
+    expect(invocation).toBe(2);
+    expect(correctionCodes).toEqual([['duplicate_value']]);
+    expect(prompts[1]).toContain('["duplicate_value"]');
+    expect(prompts[1]).not.toContain('CANARY_REJECTED_PLAN_BODY');
+  });
+
   it('announces and enforces the trusted writable-requirement change contract', async () => {
     const paths = await tempInput();
     let observed: CommandExecutionRequest | undefined;

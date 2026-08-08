@@ -400,6 +400,24 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
   const lockedCodex = lockDevDependencies === null ? null : record(lockDevDependencies['@openai/codex']);
   const required = schema.required;
   const properties = record(schema.properties);
+  const failureProjectionMatches =
+    (runner.includes('kind: error.kind') && runner.includes('stage: error.stage') &&
+      runner.includes('providerFailureCode: error.providerFailureCode')) ||
+    (runner.includes('kind: agentError.kind') && runner.includes('stage: agentError.stage') &&
+      runner.includes('providerFailureCode: agentError.providerFailureCode'));
+  const correctionShapeMatches = !runner.includes('canCorrectInitialPlan') || (
+    runner.includes('diagnosticMediation === null') &&
+    runner.includes('context.revisionSource === undefined') &&
+    runner.includes('for (const pass of [1, 2] as const)') &&
+    runner.includes('analysisDeadline - Date.now()') &&
+    runner.includes('correctionIssueCodes = [...new Set(') &&
+    runner.includes('await reserveModelInvocation(modelReservations.length + 1)') &&
+    adapter.includes('input.diagnostic !== undefined') &&
+    adapter.includes('input.correctionIssueCodes !== undefined') &&
+    adapter.includes('input.onPlanCorrection === undefined') &&
+    adapter.includes('Create a fresh proposal from the original trusted context') &&
+    adapter.includes('Do not infer or reproduce the earlier proposal, raw validator error')
+  );
   return devDependencies?.['@openai/codex'] === codexVersion &&
     lockedCodex?.specifier === codexVersion && lockedCodex.version === codexVersion &&
     Array.isArray(required) && ['objective', 'assumptions', 'evidenceRefs', 'items']
@@ -412,9 +430,9 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     entrypoint.includes('classification?.stage') &&
     entrypoint.includes('classification?.providerFailureCode') &&
     runner.includes('new CodexAnalysisAdapter({') &&
-    runner.includes('error instanceof CodexAnalysisAdapterError') &&
-    runner.includes('kind: error.kind') && runner.includes('stage: error.stage') &&
-    runner.includes('providerFailureCode: error.providerFailureCode') &&
+    (runner.includes('error instanceof CodexAnalysisAdapterError') ||
+      runner.includes('agentError instanceof CodexAnalysisAdapterError')) &&
+    failureProjectionMatches && correctionShapeMatches &&
     runner.includes('/context`') && runner.includes('/plan`') &&
     runner.includes("this.callTool('logs/search'") &&
     runner.includes("this.callTool('traces/get'") &&

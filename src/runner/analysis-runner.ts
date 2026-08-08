@@ -37,10 +37,12 @@ import {
 } from '../domain/diagnostic-evidence.js';
 import {
   computeExecutionPlanDigest,
+  ExecutionPlanValidationError,
   ExecutionPlanV1Schema,
   PlanEffectSchema,
   validateExecutionPlanProposal,
   type ExecutionPlanV1,
+  type ExecutionPlanValidationIssueCode,
 } from '../domain/plan.js';
 import type {
   AttemptedPath,
@@ -1257,45 +1259,53 @@ export async function runAnalysisAttempt(
     await rm(workspaceContextRoot, { recursive: true, force: true });
     workspaceContextRemoved = true;
   };
+  const usesMeteredModel = options.agent === undefined || options.agent.usesMeteredModel === true;
+  const reserveModelInvocation = async (invocation: number): Promise<void> => {
+    if (!usesMeteredModel) return;
+    if (!Number.isSafeInteger(invocation) || invocation !== modelReservations.length + 1) {
+      throw new AnalysisRunnerError('analysis model invocation order is invalid');
+    }
+    if (config.modelProfileId === undefined) {
+      throw new AnalysisRunnerError('analysis Runner model profile is unavailable');
+    }
+    const reservationDigest = await canonicalSha256({
+      attemptId: config.attemptId,
+      invocation,
+    });
+    const reservationId =
+      `model_reservation_${reservationDigest.slice('sha256:'.length, 'sha256:'.length + 48)}`;
+    const rawReservation = await requestLock.run(async () => await controlPlaneJson(
+      fetchImplementation,
+      config,
+      `/v1/attempts/${config.attemptId}/model-reservations`,
+      fencing.token,
+      'model quota reservation',
+      [200, 201],
+      {
+        reservationId,
+        profileId: config.modelProfileId,
+        expectedVersion: fencing.version,
+        leaseGeneration: fencing.leaseGeneration,
+      },
+    ));
+    const parsedReservation = ModelReservationResponseSchema.safeParse(rawReservation);
+    if (
+      !parsedReservation.success ||
+      parsedReservation.data.reservationId !== reservationId ||
+      parsedReservation.data.attemptId !== config.attemptId ||
+      parsedReservation.data.runId !== config.runId ||
+      (modelReservations[0] !== undefined &&
+        (parsedReservation.data.provider !== modelReservations[0].provider ||
+          parsedReservation.data.model !== modelReservations[0].model))
+    ) throw new AnalysisRunnerError('model quota reservation response is invalid');
+    modelReservations.push(parsedReservation.data);
+  };
 
   try {
-    if (options.agent === undefined || options.agent.usesMeteredModel === true) {
-      if (config.modelProfileId === undefined) {
-        throw new AnalysisRunnerError('analysis Runner model profile is unavailable');
-      }
+    if (usesMeteredModel) {
       const invocationCount = diagnosticMediation === null ? 1 : 4;
       for (let invocation = 1; invocation <= invocationCount; invocation += 1) {
-        const reservationDigest = await canonicalSha256({
-          attemptId: config.attemptId,
-          invocation,
-        });
-        const reservationId =
-          `model_reservation_${reservationDigest.slice('sha256:'.length, 'sha256:'.length + 48)}`;
-        const rawReservation = await controlPlaneJson(
-          fetchImplementation,
-          config,
-          `/v1/attempts/${config.attemptId}/model-reservations`,
-          fencing.token,
-          'model quota reservation',
-          [200, 201],
-          {
-            reservationId,
-            profileId: config.modelProfileId,
-            expectedVersion: fencing.version,
-            leaseGeneration: fencing.leaseGeneration,
-          },
-        );
-        const parsedReservation = ModelReservationResponseSchema.safeParse(rawReservation);
-        if (
-          !parsedReservation.success ||
-          parsedReservation.data.reservationId !== reservationId ||
-          parsedReservation.data.attemptId !== config.attemptId ||
-          parsedReservation.data.runId !== config.runId ||
-          (modelReservations[0] !== undefined &&
-            (parsedReservation.data.provider !== modelReservations[0].provider ||
-              parsedReservation.data.model !== modelReservations[0].model))
-        ) throw new AnalysisRunnerError('model quota reservation response is invalid');
-        modelReservations.push(parsedReservation.data);
+        await reserveModelInvocation(invocation);
       }
     }
     heartbeatTask = heartbeatLoop(
@@ -1412,17 +1422,39 @@ export async function runAnalysisAttempt(
           ? {}
           : { providerBaseUrl: environment.OPENAI_BASE_URL }),
       });
-    let localPlan: ExecutionPlanV1;
+    const canCorrectInitialPlan = diagnosticMediation === null &&
+      carriedDiagnosticEvidenceRef === undefined && context.revisionSource === undefined;
+    let validatedLocalPlan: ExecutionPlanV1 | undefined;
+    let agentError: unknown;
+    let correctionIssueCodes: readonly ExecutionPlanValidationIssueCode[] | undefined;
+    let correctionReserved = false;
+    const analysisDeadline = Date.now() + ANALYSIS_TIMEOUT_MS;
+    const admitPlanCorrection = async (
+      issueCodes: readonly ExecutionPlanValidationIssueCode[],
+    ): Promise<void> => {
+      if (correctionReserved || issueCodes.length === 0) {
+        throw new AnalysisRunnerError('analysis Plan correction admission is invalid');
+      }
+      correctionReserved = true;
+      await reserveModelInvocation(modelReservations.length + 1);
+    };
     try {
-      let agentResult: unknown;
-      try {
-        agentResult = await agent.start({
+      for (const pass of [1, 2] as const) {
+        const timeoutMs = Math.floor(analysisDeadline - Date.now());
+        if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+          throw new CodexAnalysisAdapterError('process_timeout', 'single_pass');
+        }
+        const agentResult = await agent.start({
           workspacePath: config.workspacePath,
           contextFilePath,
           outputFilePath,
-          timeoutMs: ANALYSIS_TIMEOUT_MS,
+          timeoutMs,
           identity,
           validation,
+          ...(correctionIssueCodes === undefined ? {} : { correctionIssueCodes }),
+          ...(canCorrectInitialPlan && correctionIssueCodes === undefined
+            ? { onPlanCorrection: admitPlanCorrection }
+            : {}),
           ...(modelReservations[0] === undefined
             ? {}
             : {
@@ -1447,27 +1479,24 @@ export async function runAnalysisAttempt(
                   mediation: diagnosticMediation.agentInterface(),
                 },
               }),
-          });
-      } finally {
-        await removeWorkspaceContext();
+        });
+        const localPlan = ExecutionPlanV1Schema.parse(agentResult);
+        try {
+          validatedLocalPlan = await validateExecutionPlanProposal(localPlan, validation);
+          break;
+        } catch (error) {
+          if (
+            pass !== 1 || !canCorrectInitialPlan ||
+            !(error instanceof ExecutionPlanValidationError)
+          ) throw error;
+          correctionIssueCodes = [...new Set(error.issues.map((issue) => issue.code))].sort();
+          if (!correctionReserved) await admitPlanCorrection(correctionIssueCodes);
+        }
       }
-      localPlan = ExecutionPlanV1Schema.parse(agentResult);
     } catch (error) {
-      if (error instanceof AnalysisRunnerError) throw error;
-      throw new AnalysisRunnerError('analysis Agent output is invalid', {
-        failureCode: 'invalid_agent_output',
-        failureSite: 'agent_output',
-        attemptedPaths: ['repository_inspection'],
-        neededHumanInput: 'manual_investigation',
-      }, error instanceof CodexAnalysisAdapterError
-        ? {
-            kind: error.kind,
-            stage: error.stage,
-            ...(error.providerFailureCode === undefined
-              ? {}
-              : { providerFailureCode: error.providerFailureCode }),
-          }
-        : undefined);
+      agentError = error;
+    } finally {
+      await removeWorkspaceContext();
     }
     heartbeatController.abort();
     await heartbeatTask;
@@ -1475,11 +1504,14 @@ export async function runAnalysisAttempt(
       throw new AnalysisRunnerError('attempt heartbeat failed during analysis');
     }
     if (modelReservations.length > 0) {
-      if (measuredUsages.length !== modelReservations.length) {
+      if (
+        measuredUsages.length > modelReservations.length ||
+        (agentError === undefined && measuredUsages.length !== modelReservations.length)
+      ) {
         throw new AnalysisRunnerError('analysis Agent usage is unavailable');
       }
-      for (const [index, modelReservation] of modelReservations.entries()) {
-        const usage = measuredUsages[index]!;
+      for (const [index, usage] of measuredUsages.entries()) {
+        const modelReservation = modelReservations[index]!;
         const usageDigest = await canonicalSha256({
           reservationId: modelReservation.reservationId,
           attemptId: config.attemptId,
@@ -1488,7 +1520,7 @@ export async function runAnalysisAttempt(
           'sha256:'.length,
           'sha256:'.length + 54,
         )}`;
-        const rawUsage = await controlPlaneJson(
+        const rawUsage = await requestLock.run(async () => await controlPlaneJson(
           fetchImplementation,
           config,
           `/v1/attempts/${config.attemptId}/model-usage`,
@@ -1502,7 +1534,7 @@ export async function runAnalysisAttempt(
             leaseGeneration: fencing.leaseGeneration,
             ...usage,
           },
-        );
+        ));
         const parsedUsage = ModelUsageResponseSchema.safeParse(rawUsage);
         if (
           !parsedUsage.success ||
@@ -1511,16 +1543,27 @@ export async function runAnalysisAttempt(
         ) throw new AnalysisRunnerError('model usage settlement response is invalid');
       }
     }
-    let validatedLocalPlan: ExecutionPlanV1;
-    try {
-      validatedLocalPlan = await validateExecutionPlanProposal(localPlan, validation);
-    } catch {
+    if (agentError !== undefined) {
+      if (agentError instanceof AnalysisRunnerError) throw agentError;
       throw new AnalysisRunnerError('analysis Agent output is invalid', {
         failureCode: 'invalid_agent_output',
         failureSite: 'agent_output',
         attemptedPaths: ['repository_inspection'],
         neededHumanInput: 'manual_investigation',
-      });
+      }, agentError instanceof CodexAnalysisAdapterError
+        ? {
+            kind: agentError.kind,
+            stage: agentError.stage,
+            ...(agentError.providerFailureCode === undefined
+              ? {}
+              : { providerFailureCode: agentError.providerFailureCode }),
+          }
+        : agentError instanceof ExecutionPlanValidationError
+          ? { kind: 'plan_validation_failed', stage: 'plan_validation' }
+          : undefined);
+    }
+    if (validatedLocalPlan === undefined) {
+      throw new AnalysisRunnerError('analysis Agent did not produce a validated Plan');
     }
     let content = planContent(validatedLocalPlan);
     if (
