@@ -22,6 +22,33 @@ function meteredApply(
 }
 
 describe('bounded edit recovery Agent', () => {
+  it('preserves an adapter failure when no model usage was produced', async () => {
+    const events: string[] = [];
+    const agent = new BoundedEditRecoveryAgent({
+      agent: meteredApply(async () => {
+        events.push('apply');
+        throw new CodexExecutionAdapterError('transcript_invalid');
+      }),
+      beforeInvocation: async () => {
+        events.push('before');
+        return { model: 'gpt-test' };
+      },
+      afterInvocation: async () => {
+        events.push('after');
+        throw new Error('usage settlement must not replace the adapter failure');
+      },
+      canRecover: async () => {
+        events.push('clean');
+        return true;
+      },
+    });
+
+    await expect(agent.apply(INPUT)).rejects.toMatchObject({
+      kind: 'transcript_invalid',
+    });
+    expect(events).toEqual(['before', 'apply']);
+  });
+
   it('does not recover incomplete activity or an unclean zero-tool turn', async () => {
     for (const scenario of [
       { reason: 'incomplete_tool_activity' as const, clean: true },
