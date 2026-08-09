@@ -25,7 +25,7 @@ import {
   type VerificationEvidenceReporter,
 } from './verification-execution-runner.js';
 import { DeliveryCommandRunner } from './delivery-command-runner.js';
-import type { PatchProposalV1 } from '../domain/patch-proposal.js';
+import type { PatchProposal } from '../domain/patch-proposal.js';
 
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
@@ -82,7 +82,7 @@ export interface PlanRevisionReporter {
 export interface ExecutionRepositoryWriter {
   prepareBranch(): Promise<{ branch: string; baseSha: string }>;
   refreshCredential?(): Promise<void>;
-  applyPatchProposal?(proposal: PatchProposalV1): Promise<void>;
+  applyPatchProposal?(proposal: PatchProposal): Promise<void>;
   commitAll(): Promise<RepositoryCommit>;
   push(input: { targetBranch: string; force: boolean }): Promise<PushedRepositoryBranch>;
 }

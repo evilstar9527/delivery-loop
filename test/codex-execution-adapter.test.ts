@@ -405,11 +405,11 @@ describe('Codex execution adapter', () => {
       schemaVersion: '1' as const,
       action: 'apply_patch' as const,
       proposal: {
-        schemaVersion: '1' as const,
+        schemaVersion: '2' as const,
         changes: [{
           path: 'README.md',
           baseDigest: `sha256:${'a'.repeat(64)}`,
-          content: 'bounded proposal body\n',
+          edits: [{ oldText: 'old bounded text\n', newText: 'new bounded text\n' }],
         }],
       },
     };
@@ -418,9 +418,13 @@ describe('Codex execution adapter', () => {
         observed = request;
         const schemaPath = request.args[request.args.indexOf('--output-schema') + 1];
         const schema = JSON.parse(await readFile(schemaPath!, 'utf8')) as {
-          properties: { action: { const: string } };
+          properties: {
+            action: { const: string };
+            proposal: { properties: { schemaVersion: { const: string } } };
+          };
         };
         expect(schema.properties.action.const).toBe('apply_patch');
+        expect(schema.properties.proposal.properties.schemaVersion.const).toBe('2');
         request.onStdoutLine?.(JSON.stringify({
           type: 'item.completed',
           item: { type: 'agent_message', text: JSON.stringify(proposal) },
@@ -455,11 +459,10 @@ describe('Codex execution adapter', () => {
     expect(observed?.args).not.toContain('workspace-write');
     expect(observed?.stdin).toContain('single controlled patch-proposal fallback');
     expect(observed?.stdin).toContain('baseDigest');
-    expect(observed?.stdin).toContain(
-      'preserve every byte outside the smallest required edit',
-    );
-    expect(observed?.stdin).toContain('less than half of its current UTF-8 bytes');
-    expect(transcript.join('\n')).not.toContain('bounded proposal body');
+    expect(observed?.stdin).toContain('oldText/newText');
+    expect(observed?.stdin).toContain('occurs exactly once');
+    expect(observed?.stdin).toContain('do not copy complete files');
+    expect(transcript.join('\n')).not.toContain('new bounded text');
     expect(transcript.join('\n')).toContain('[PATCH_PROPOSAL_OMITTED]');
   });
 

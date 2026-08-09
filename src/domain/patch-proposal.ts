@@ -6,6 +6,9 @@ export const MAX_PATCH_PATH_BYTES = 240;
 // JSONL agent-message is replaced before any 64 KiB parser or transcript sink.
 export const MAX_PATCH_FILE_BYTES = 128 * 1_024;
 export const MAX_PATCH_TOTAL_BYTES = 256 * 1_024;
+export const MAX_PATCH_EDITS_PER_FILE = 16;
+export const MAX_PATCH_EDIT_TEXT_BYTES = 32 * 1_024;
+export const MAX_PATCH_EDIT_TOTAL_BYTES = 128 * 1_024;
 
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const encoder = new TextEncoder();
@@ -86,6 +89,65 @@ export const PatchProposalV1Schema = z.object({
 });
 
 export type PatchProposalV1 = z.infer<typeof PatchProposalV1Schema>;
+
+const PatchEditV2Schema = z.object({
+  oldText: z.string().min(1),
+  newText: z.string(),
+}).strict().superRefine((edit, context) => {
+  const oldBytes = encoder.encode(edit.oldText).length;
+  const newBytes = encoder.encode(edit.newText).length;
+  if (!patchContentIsUtf8(edit.oldText) || !patchContentIsUtf8(edit.newText)) {
+    context.addIssue({ code: 'custom', message: 'patch edit text is not UTF-8' });
+  }
+  if (oldBytes > MAX_PATCH_EDIT_TEXT_BYTES || newBytes > MAX_PATCH_EDIT_TEXT_BYTES) {
+    context.addIssue({ code: 'custom', message: 'patch edit text is oversized' });
+  }
+  if (edit.oldText === edit.newText) {
+    context.addIssue({ code: 'custom', message: 'patch edit must change content' });
+  }
+});
+
+const PatchChangeV2Schema = z.object({
+  path: z.string().min(1).max(MAX_PATCH_PATH_BYTES),
+  baseDigest: z.string().regex(DIGEST_PATTERN),
+  edits: z.array(PatchEditV2Schema).min(1).max(MAX_PATCH_EDITS_PER_FILE),
+}).strict().superRefine((change, context) => {
+  if (!patchPathIsSafe(change.path)) {
+    context.addIssue({ code: 'custom', path: ['path'], message: 'patch path is invalid' });
+  }
+});
+
+export const PatchProposalV2Schema = z.object({
+  schemaVersion: z.literal('2'),
+  changes: z.array(PatchChangeV2Schema).min(1).max(MAX_PATCH_CHANGES),
+}).strict().superRefine((proposal, context) => {
+  let previous = '';
+  let totalBytes = 0;
+  for (const [changeIndex, change] of proposal.changes.entries()) {
+    if (changeIndex > 0 && change.path <= previous) {
+      context.addIssue({
+        code: 'custom',
+        path: ['changes', changeIndex, 'path'],
+        message: 'patch paths must be unique and sorted',
+      });
+    }
+    previous = change.path;
+    for (const edit of change.edits) {
+      totalBytes += encoder.encode(edit.oldText).length + encoder.encode(edit.newText).length;
+    }
+  }
+  if (totalBytes > MAX_PATCH_EDIT_TOTAL_BYTES) {
+    context.addIssue({ code: 'custom', path: ['changes'], message: 'patch edits are oversized' });
+  }
+});
+
+export const PatchProposalSchema = z.discriminatedUnion('schemaVersion', [
+  PatchProposalV1Schema,
+  PatchProposalV2Schema,
+]);
+
+export type PatchProposalV2 = z.infer<typeof PatchProposalV2Schema>;
+export type PatchProposal = z.infer<typeof PatchProposalSchema>;
 
 export async function patchContentDigest(content: string): Promise<string> {
   if (!patchContentIsUtf8(content)) throw new Error('patch content is not UTF-8');

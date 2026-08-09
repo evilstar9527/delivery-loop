@@ -13,10 +13,11 @@ import {
   type ProtectedPathChangeV1,
 } from '../domain/protected-path-change.js';
 import {
-  PatchProposalV1Schema,
+  MAX_PATCH_FILE_BYTES,
+  PatchProposalSchema,
   patchContentDigest,
   patchContentIsUtf8,
-  type PatchProposalV1,
+  type PatchProposal,
 } from '../domain/patch-proposal.js';
 
 export type { ProtectedPathChangeReportV1 } from '../domain/protected-path-change.js';
@@ -141,6 +142,22 @@ export class ProtectedPathApprovalRequired extends Error {
 
 function pathIsMissing(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
+function applyUniqueTextEdits(
+  current: string,
+  edits: readonly { oldText: string; newText: string }[],
+): string {
+  let next = current;
+  for (const edit of edits) {
+    const first = next.indexOf(edit.oldText);
+    if (
+      first < 0 ||
+      next.indexOf(edit.oldText, first + edit.oldText.length) >= 0
+    ) throw new RepositoryWritePolicyError();
+    next = `${next.slice(0, first)}${edit.newText}${next.slice(first + edit.oldText.length)}`;
+  }
+  return next;
 }
 
 interface StagedChange {
@@ -420,9 +437,9 @@ export class GitRepositoryWriter {
   }
 
   /** Applies a fully preconditioned text proposal without exposing arbitrary filesystem argv. */
-  async applyPatchProposal(rawProposal: PatchProposalV1): Promise<void> {
+  async applyPatchProposal(rawProposal: PatchProposal): Promise<void> {
     this.assertCredentialActive();
-    const parsed = PatchProposalV1Schema.safeParse(rawProposal);
+    const parsed = PatchProposalSchema.safeParse(rawProposal);
     if (!parsed.success) throw new RepositoryWritePolicyError();
     await this.assertCurrentBranch();
     if (await this.requiredScalar(['rev-parse', '--verify', 'HEAD']) !== this.context.baseSha) {
@@ -438,18 +455,59 @@ export class GitRepositoryWriter {
       throw new RepositoryWritePolicyError();
     }
     const prepared: PreparedPatchChange[] = [];
-    for (const change of parsed.data.changes) {
+    const prepareExisting = async (change: {
+      path: string;
+      baseDigest: string;
+      content: (current: string) => string;
+    }): Promise<void> => {
       if (isProtectedRepositoryPath(change.path, this.context.deliveryPolicy.policy.protectedPaths)) {
         throw new RepositoryWritePolicyError();
       }
       const absolutePath = resolve(repositoryRoot, change.path);
       if (!this.isInside(repositoryRoot, absolutePath)) throw new RepositoryWritePolicyError();
-      await this.assertNoSymlinkComponents(
-        repositoryRoot,
-        change.path,
-        change.baseDigest !== null,
-      );
-      if (change.baseDigest === null) {
+      await this.assertNoSymlinkComponents(repositoryRoot, change.path, true);
+      let metadata;
+      let canonicalPath: string;
+      let current: string;
+      try {
+        [metadata, canonicalPath, current] = await Promise.all([
+          lstat(absolutePath),
+          realpath(absolutePath),
+          readFile(absolutePath, 'utf8'),
+        ]);
+      } catch {
+        throw new RepositoryWritePolicyError();
+      }
+      const content = change.content(current);
+      const contentBytes = UTF8_ENCODER.encode(content).byteLength;
+      if (
+        !metadata.isFile() || metadata.isSymbolicLink() ||
+        !this.isInside(repositoryRoot, canonicalPath) ||
+        !patchContentIsUtf8(current) || !patchContentIsUtf8(content) ||
+        await patchContentDigest(current) !== change.baseDigest ||
+        await patchContentDigest(content) === change.baseDigest ||
+        contentBytes > MAX_PATCH_FILE_BYTES ||
+        contentBytes * 2 < UTF8_ENCODER.encode(current).byteLength
+      ) throw new RepositoryWritePolicyError();
+      prepared.push({ absolutePath, content, create: false });
+    };
+    if (parsed.data.schemaVersion === '1') {
+      for (const change of parsed.data.changes) {
+        if (change.baseDigest !== null) {
+          await prepareExisting({
+            path: change.path,
+            baseDigest: change.baseDigest,
+            content: () => change.content,
+          });
+          continue;
+        }
+        if (isProtectedRepositoryPath(
+          change.path,
+          this.context.deliveryPolicy.policy.protectedPaths,
+        )) throw new RepositoryWritePolicyError();
+        const absolutePath = resolve(repositoryRoot, change.path);
+        if (!this.isInside(repositoryRoot, absolutePath)) throw new RepositoryWritePolicyError();
+        await this.assertNoSymlinkComponents(repositoryRoot, change.path, false);
         try {
           await lstat(absolutePath);
           throw new RepositoryWritePolicyError();
@@ -472,30 +530,15 @@ export class GitRepositoryWriter {
           !this.isInside(repositoryRoot, parentPath)
         ) throw new RepositoryWritePolicyError();
         prepared.push({ absolutePath, content: change.content, create: true });
-        continue;
       }
-      let metadata;
-      let canonicalPath: string;
-      let current: string;
-      try {
-        [metadata, canonicalPath, current] = await Promise.all([
-          lstat(absolutePath),
-          realpath(absolutePath),
-          readFile(absolutePath, 'utf8'),
-        ]);
-      } catch {
-        throw new RepositoryWritePolicyError();
+    } else {
+      for (const change of parsed.data.changes) {
+        await prepareExisting({
+          path: change.path,
+          baseDigest: change.baseDigest,
+          content: (current) => applyUniqueTextEdits(current, change.edits),
+        });
       }
-      if (
-        !metadata.isFile() || metadata.isSymbolicLink() ||
-        !this.isInside(repositoryRoot, canonicalPath) ||
-        !patchContentIsUtf8(current) ||
-        await patchContentDigest(current) !== change.baseDigest ||
-        await patchContentDigest(change.content) === change.baseDigest ||
-        UTF8_ENCODER.encode(change.content).byteLength * 2 <
-          UTF8_ENCODER.encode(current).byteLength
-      ) throw new RepositoryWritePolicyError();
-      prepared.push({ absolutePath, content: change.content, create: false });
     }
 
     for (const change of prepared) {

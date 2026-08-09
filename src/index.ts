@@ -712,14 +712,21 @@ export {
 } from './agent/codex-execution-adapter.js';
 export {
   MAX_PATCH_CHANGES,
+  MAX_PATCH_EDITS_PER_FILE,
+  MAX_PATCH_EDIT_TEXT_BYTES,
+  MAX_PATCH_EDIT_TOTAL_BYTES,
   MAX_PATCH_FILE_BYTES,
   MAX_PATCH_PATH_BYTES,
   MAX_PATCH_TOTAL_BYTES,
+  PatchProposalSchema,
   PatchProposalV1Schema,
+  PatchProposalV2Schema,
   patchContentDigest,
   patchContentIsUtf8,
   patchPathIsSafe,
+  type PatchProposal,
   type PatchProposalV1,
+  type PatchProposalV2,
 } from './domain/patch-proposal.js';
 export {
   ExecutionPatchPolicyError,
