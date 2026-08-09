@@ -13,7 +13,7 @@ export interface EditInvocationBinding {
 export interface BoundedEditRecoveryAgentOptions {
   agent: ExecutionAgent;
   beforeInvocation(invocation: 1 | 2): Promise<EditInvocationBinding>;
-  afterInvocation(invocation: 1 | 2, usage: CodexModelUsage | null): Promise<void>;
+  afterInvocation(invocation: 1 | 2, usage: CodexModelUsage): Promise<void>;
   canRecover(): Promise<boolean>;
 }
 
@@ -83,7 +83,9 @@ export class BoundedEditRecoveryAgent implements ExecutionAgent {
       } catch (error) {
         failure = error;
       }
-      await this.options.afterInvocation(invocation, usage);
+      if (usage !== null) {
+        await this.options.afterInvocation(invocation, usage);
+      }
       if (decision !== undefined && (
         (invocation === 1 && decision.action === 'apply_patch') ||
         (invocation === 2 && decision.action !== 'apply_patch')
