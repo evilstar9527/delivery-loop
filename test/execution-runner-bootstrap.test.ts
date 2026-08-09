@@ -546,6 +546,7 @@ describe('production execution Runner bootstrap', () => {
     const reservationIds: string[] = [];
     const usageReservations: string[] = [];
     const agentModels: string[] = [];
+    let credentialRequests = 0;
     let agentInvocation = 0;
     let releaseAgent!: () => void;
     const heartbeatSeen = new Promise<void>((resolve) => { releaseAgent = resolve; });
@@ -621,6 +622,7 @@ describe('production execution Runner bootstrap', () => {
       }
       if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/github/write-token`)) {
         authorized(init);
+        credentialRequests += 1;
         expect(JSON.parse(String(init?.body))).toEqual({
           expectedVersion: version,
           leaseGeneration: generation,
@@ -633,7 +635,7 @@ describe('production execution Runner bootstrap', () => {
           githubExpiresAt: '2099-01-01T00:00:00.000Z',
           approvalId: 'approval-execution-bootstrap',
           permissions: { contents: 'write', pullRequests: 'write' },
-          created: true,
+          created: credentialRequests === 1,
         }, { status: 201, headers: { 'cache-control': 'no-store' } });
       }
       if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/model-reservations`)) {
@@ -794,6 +796,7 @@ describe('production execution Runner bootstrap', () => {
         apply: async (input) => {
           agentInvocation += 1;
           agentModels.push(input.model ?? 'missing');
+          expect(input.timeoutMs).toBe(10 * 60_000);
           input.onUsage?.({
             inputTokens: 12,
             cachedInputTokens: 4,
@@ -846,6 +849,7 @@ describe('production execution Runner bootstrap', () => {
     expect(new Set(reservationIds).size).toBe(2);
     expect(usageReservations).toEqual(reservationIds);
     expect(agentModels).toEqual(['gpt-test-metered', 'gpt-test-metered']);
+    expect(credentialRequests).toBe(2);
     expect(verificationRefs).toEqual(['test:unit', 'verify:all']);
     expect(manifestDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(failures).toEqual([]);

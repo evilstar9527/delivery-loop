@@ -40,6 +40,7 @@ export interface ExecutionAttemptFailure {
 export type ExecutionAttemptFailureKind =
   | CodexExecutionFailureKind
   | 'unknown'
+  | 'credential_unavailable'
   | 'repository_patch_failed'
   | 'repository_commit_failed'
   | 'repository_push_failed'
@@ -80,6 +81,7 @@ export interface PlanRevisionReporter {
 
 export interface ExecutionRepositoryWriter {
   prepareBranch(): Promise<{ branch: string; baseSha: string }>;
+  refreshCredential?(): Promise<void>;
   applyPatchProposal?(proposal: PatchProposalV1): Promise<void>;
   commitAll(): Promise<RepositoryCommit>;
   push(input: { targetBranch: string; force: boolean }): Promise<PushedRepositoryBranch>;
@@ -251,6 +253,16 @@ export class ExecutionAttemptRunner {
         revision.runVersion <= 0
       ) throw new Error('execution Plan revision response is invalid');
       return { status: 'replanning', ...revision };
+    }
+    try {
+      await this.context.repositoryWriter.refreshCredential?.();
+    } catch {
+      return this.fail('credential_unavailable', {
+        failureCode: 'tool_unavailable',
+        failureSite: 'external_reconciliation',
+        attemptedPaths: ['external_reconciliation'],
+        neededHumanInput: 'resolve_external_dependency',
+      });
     }
     if (decision.action === 'apply_patch') {
       try {

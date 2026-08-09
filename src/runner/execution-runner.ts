@@ -49,9 +49,9 @@ import {
 
 const OIDC_AUDIENCE = 'delivery-loop-control-plane';
 const HEARTBEAT_INTERVAL_MS = 45_000;
-// The repo_write credential is lease-bound at issuance; keep the edit window below
-// the dispatch lease and let checkpoint recovery create a new Attempt for longer work.
-const AGENT_TIMEOUT_MS = 5 * 60_000;
+// Heartbeats keep the Attempt lease live; the writer reauthorizes the same
+// repository token after the model turn and before any durable Git write.
+const AGENT_TIMEOUT_MS = 10 * 60_000;
 const MAX_RESPONSE_BYTES = 512 * 1_024;
 const MAX_RAW_TRANSCRIPT_BYTES = 512 * 1_024;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
@@ -975,10 +975,10 @@ export async function runExecutionAttempt(
     if (new SecretScanner({ secrets: [...runtimeSecrets] }).scan(agentContext).length > 0) {
       throw new ExecutionRunnerError('execution context contains runtime credentials');
     }
-    let credential: z.infer<typeof CredentialResponseSchema>;
-    try {
-      credential = await fencing.withAuthorization(async (authorization) => {
-        const parsed = CredentialResponseSchema.safeParse(await controlPlaneJson(
+    const requestRepoWriteCredential = async (): Promise<
+      z.infer<typeof CredentialResponseSchema>
+    > => await fencing.withAuthorization(async (authorization) => {
+      const parsed = CredentialResponseSchema.safeParse(await controlPlaneJson(
           fetcher,
           config,
           `/v1/attempts/${config.attemptId}/github/write-token`,
@@ -989,17 +989,20 @@ export async function runExecutionAttempt(
             expectedVersion: authorization.expectedVersion,
             leaseGeneration: authorization.leaseGeneration,
           },
-        ));
-        if (
-          !parsed.success ||
-          parsed.data.repository !== config.repository ||
-          Date.parse(parsed.data.expiresAt) <= now().getTime()
-        ) {
-          throw new ExecutionRunnerError('repo_write credential response is invalid');
-        }
-        runtimeSecrets.add(parsed.data.token);
-        return parsed.data;
-      });
+      ));
+      if (
+        !parsed.success ||
+        parsed.data.repository !== config.repository ||
+        Date.parse(parsed.data.expiresAt) <= now().getTime()
+      ) {
+        throw new ExecutionRunnerError('repo_write credential response is invalid');
+      }
+      runtimeSecrets.add(parsed.data.token);
+      return parsed.data;
+    });
+    let credential: z.infer<typeof CredentialResponseSchema>;
+    try {
+      credential = await requestRepoWriteCredential();
     } catch {
       let reported = false;
       try {
@@ -1063,6 +1066,7 @@ export async function runExecutionAttempt(
         deliveryPolicy: policy,
         onProtectedPathApprovalRequired: protectedPathReporter,
         credential,
+        refreshCredential: requestRepoWriteCredential,
       });
       const result = await new BaseRebaseRunner({
         repositoryPath: config.workspacePath,
@@ -1078,6 +1082,7 @@ export async function runExecutionAttempt(
         reporter: evidenceReporter,
       }, {
         onRebased: async (rebased) => {
+          await publisher.refreshCredential();
           const pushed = await publisher.push({
             targetBranch: rebased.targetBranch,
             force: false,
@@ -1193,6 +1198,7 @@ export async function runExecutionAttempt(
         deliveryPolicy: policy,
         onProtectedPathApprovalRequired: protectedPathReporter,
         credential,
+        refreshCredential: requestRepoWriteCredential,
       }),
       agent: artifactAgent,
       agentInput: {

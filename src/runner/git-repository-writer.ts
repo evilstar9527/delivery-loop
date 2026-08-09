@@ -46,6 +46,15 @@ export type GitCommandExecutor = (
   request: GitCommandRequest,
 ) => Promise<GitCommandResult>;
 
+export interface GitRepositoryWriteCredential {
+  credentialId: string;
+  repository: string;
+  approvalId: string;
+  token: string;
+  expiresAt: string;
+  permissions: { contents: 'write'; pullRequests: 'write' };
+}
+
 export interface GitRepositoryWriterContext {
   repositoryPath: string;
   repository: string;
@@ -60,14 +69,8 @@ export interface GitRepositoryWriterContext {
   onProtectedPathApprovalRequired: (
     report: ProtectedPathChangeReportV1,
   ) => Promise<void>;
-  credential: {
-    credentialId: string;
-    repository: string;
-    approvalId: string;
-    token: string;
-    expiresAt: string;
-    permissions: { contents: 'write'; pullRequests: 'write' };
-  };
+  credential: GitRepositoryWriteCredential;
+  refreshCredential?: () => Promise<GitRepositoryWriteCredential>;
 }
 
 export interface PreparedRepositoryBranch {
@@ -193,6 +196,8 @@ function validateContext(context: GitRepositoryWriterContext): void {
     !deliveryPolicy.success ||
     !/^sha256:[a-f0-9]{64}$/.test(context.deliveryPolicy.digest) ||
     typeof context.onProtectedPathApprovalRequired !== 'function' ||
+    (context.refreshCredential !== undefined &&
+      typeof context.refreshCredential !== 'function') ||
     !ID_PATTERN.test(context.credential.credentialId) ||
     !ID_PATTERN.test(context.credential.approvalId) ||
     context.credential.repository !== context.repository ||
@@ -387,6 +392,31 @@ export class GitRepositoryWriter {
     }
     if (await this.currentBranch() !== this.branch) throw new RepositoryWritePolicyError();
     return { branch: this.branch, baseSha: this.context.baseSha };
+  }
+
+  /** Rebinds the same external token to the latest live Attempt lease. */
+  async refreshCredential(): Promise<void> {
+    const refresh = this.context.refreshCredential;
+    if (refresh === undefined) return;
+    let credential: GitRepositoryWriteCredential;
+    try {
+      credential = await refresh();
+      validateContext({ ...this.context, credential });
+    } catch {
+      throw new RepositoryWritePolicyError();
+    }
+    if (
+      credential.credentialId !== this.context.credential.credentialId ||
+      credential.repository !== this.context.credential.repository ||
+      credential.approvalId !== this.context.credential.approvalId ||
+      credential.token !== this.context.credential.token ||
+      credential.permissions.contents !== 'write' ||
+      credential.permissions.pullRequests !== 'write'
+    ) throw new RepositoryWritePolicyError();
+    this.context.credential = {
+      ...credential,
+      permissions: { ...credential.permissions },
+    };
   }
 
   /** Applies a fully preconditioned text proposal without exposing arbitrary filesystem argv. */

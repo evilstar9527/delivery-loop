@@ -503,19 +503,56 @@ export class RepoWriteCredentialStore {
     }
     if (row.status !== 'active') throw new RepoWriteCredentialError('state_conflict');
     if (
-      row.authorization_expires_at === null ||
-      row.authorization_expires_at <= now.toISOString() ||
+      row.authorization_expires_at === null || row.github_expires_at === null ||
       row.token_ciphertext === null ||
       row.token_iv === null ||
-      row.token_digest === null
+      row.token_digest === null ||
+      validTimestamp(row.github_expires_at) <= now.getTime()
     ) {
       throw new RepoWriteCredentialError('state_conflict');
     }
-    const token = await this.cipher.decrypt(row.token_ciphertext, row.token_iv, row.credential_id);
-    if (await canonicalSha256(token) !== row.token_digest) {
+    const refreshedExpiresAt = new Date(Math.min(
+      validTimestamp(row.github_expires_at),
+      validTimestamp(approval.expires_at),
+      validTimestamp(authorization.leaseExpiresAt),
+    )).toISOString();
+    if (refreshedExpiresAt <= now.toISOString()) {
+      throw new RepoWriteCredentialError('state_conflict');
+    }
+    let active = row;
+    if (row.authorization_expires_at !== refreshedExpiresAt) {
+      const refreshed = await this.db
+        .prepare(
+          `UPDATE github_write_credentials
+           SET authorization_expires_at = ?, updated_at = ?
+           WHERE credential_id = ? AND status = 'active'
+             AND authorization_expires_at = ?
+             AND token_ciphertext IS NOT NULL AND token_iv IS NOT NULL`,
+        )
+        .bind(
+          refreshedExpiresAt,
+          now.toISOString(),
+          row.credential_id,
+          row.authorization_expires_at,
+        )
+        .run();
+      if (refreshed.meta.changes !== 1) {
+        throw new RepoWriteCredentialError('state_conflict');
+      }
+      active = (await this.readCredential(row.credential_id))!;
+      if (active.status !== 'active' || active.authorization_expires_at !== refreshedExpiresAt) {
+        throw new RepoWriteCredentialError('state_conflict');
+      }
+    }
+    const token = await this.cipher.decrypt(
+      active.token_ciphertext!,
+      active.token_iv!,
+      active.credential_id,
+    );
+    if (await canonicalSha256(token) !== active.token_digest) {
       throw new RepoWriteCredentialError('credential_conflict');
     }
-    return this.result(row, token, false);
+    return this.result(active, token, false);
   }
 
   private async authorizationContext(
@@ -764,11 +801,7 @@ export class RepoWriteCredentialRevoker {
         ? { attemptId: candidate.attempt_id, disposition: 'expired' }
         : null;
     }
-    if (
-      candidate.status !== 'revoking' &&
-      (candidate.authorization_expires_at ?? '') > nowIso &&
-      await this.stillAuthorized(candidate, nowIso)
-    ) {
+    if (candidate.status !== 'revoking' && await this.stillAuthorized(candidate, nowIso)) {
       return null;
     }
     if (candidate.token_ciphertext === null || candidate.token_iv === null) {

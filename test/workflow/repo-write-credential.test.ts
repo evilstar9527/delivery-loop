@@ -316,6 +316,73 @@ describe('repo_write approval and GitHub credential broker', () => {
     expect(JSON.stringify(row)).not.toContain(RAW_TOKEN);
   });
 
+  it('keeps one token while a heartbeat extends the live Attempt and refreshes its authorization window', async () => {
+    await approve({ expiresAt: '2026-07-25T10:09:00.000Z' });
+    const provider = new FakeGitHubWriteCredentialProvider();
+    const store = new RepoWriteCredentialStore(env.DB_CONTROL, provider, {
+      encryptionKey: ENCRYPTION_KEY,
+    });
+    const initialLeaseExpiresAt = '2026-07-25T10:05:00.000Z';
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts SET lease_expires_at = ? WHERE attempt_id = ?`,
+      ).bind(initialLeaseExpiresAt, ATTEMPT_ID),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempt_tokens SET expires_at = ? WHERE attempt_id = ?`,
+      ).bind(initialLeaseExpiresAt, ATTEMPT_ID),
+    ]);
+    const initial = await store.issue({
+      ...AUTHORIZATION,
+      leaseExpiresAt: initialLeaseExpiresAt,
+    }, NOW);
+    expect(initial.expiresAt).toBe('2026-07-25T10:05:00.000Z');
+
+    const refreshedAt = new Date('2026-07-25T10:06:00.000Z');
+    const refreshedLeaseExpiresAt = '2026-07-25T10:10:00.000Z';
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET version = 3, lease_expires_at = ?, heartbeat_at = ?, updated_at = ?
+         WHERE attempt_id = ? AND status = 'running' AND version = 2
+           AND lease_generation = 1`,
+      ).bind(
+        refreshedLeaseExpiresAt,
+        refreshedAt.toISOString(),
+        refreshedAt.toISOString(),
+        ATTEMPT_ID,
+      ),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempt_tokens SET expires_at = ?
+         WHERE attempt_id = ? AND lease_generation = 1 AND revoked_at IS NULL`,
+      ).bind(refreshedLeaseExpiresAt, ATTEMPT_ID),
+    ]);
+    const revoker = new RepoWriteCredentialRevoker(env.DB_CONTROL, provider, {
+      encryptionKey: ENCRYPTION_KEY,
+      now: () => refreshedAt,
+    });
+    expect(await revoker.scan()).toEqual([]);
+    expect(provider.revokedTokens).toEqual([]);
+
+    const refreshed = await store.issue({
+      ...AUTHORIZATION,
+      version: 3,
+      leaseExpiresAt: refreshedLeaseExpiresAt,
+    }, refreshedAt);
+    expect(refreshed).toMatchObject({
+      token: RAW_TOKEN,
+      expiresAt: '2026-07-25T10:09:00.000Z',
+      created: false,
+    });
+    expect(provider.issuedRepositories).toEqual([REPOSITORY]);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, authorization_expires_at
+       FROM github_write_credentials WHERE attempt_id = ?`,
+    ).bind(ATTEMPT_ID).first()).toEqual({
+      status: 'active',
+      authorization_expires_at: '2026-07-25T10:09:00.000Z',
+    });
+  });
+
   it('converges concurrent issuance to one GitHub token request', async () => {
     await approve();
     const provider = new FakeGitHubWriteCredentialProvider();
