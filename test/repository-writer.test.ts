@@ -235,6 +235,85 @@ describe('approved Git repository writer', () => {
     });
   });
 
+  it('applies bounded unique search/replace edits without copying a large file', async () => {
+    const repo = await fixture();
+    const original = Array.from({ length: 2_000 }, (_, index) =>
+      `preserved line ${index}\n`).join('');
+    await writeFile(join(repo.repository, 'README.md'), original);
+    await git(repo.repository, 'add', 'README.md');
+    await git(repo.repository, 'commit', '-m', 'large tracked source');
+    await git(repo.repository, 'push', 'origin', 'main');
+    const baseSha = await git(repo.repository, 'rev-parse', 'HEAD');
+    const writer = new GitRepositoryWriter({
+      repositoryPath: repo.repository,
+      repository: 'example/delivery-target',
+      taskId: TASK_ID,
+      attemptId: 'attempt-search-replace-proposal',
+      baseSha,
+      baseBranch: 'main',
+      protectedBranches: [],
+      deliveryPolicy: DELIVERY_POLICY,
+      onProtectedPathApprovalRequired: async () => undefined,
+      credential: credential(),
+    });
+    await writer.prepareBranch();
+
+    await writer.applyPatchProposal({
+      schemaVersion: '2',
+      changes: [{
+        path: 'README.md',
+        baseDigest: await patchContentDigest(original),
+        edits: [{ oldText: 'preserved line 1234\n', newText: 'approved line 1234\n' }],
+      }],
+    });
+    expect(await readFile(join(repo.repository, 'README.md'), 'utf8'))
+      .toBe(original.replace('preserved line 1234\n', 'approved line 1234\n'));
+    await expect(writer.commitAll()).resolves.toMatchObject({
+      branch: repositoryAttemptBranch(TASK_ID, 'attempt-search-replace-proposal'),
+    });
+  });
+
+  it('rejects stale, missing, or ambiguous search/replace edits before any write', async () => {
+    const repo = await fixture();
+    const original = 'duplicate\nunique target\nduplicate\n';
+    await writeFile(join(repo.repository, 'README.md'), original);
+    await git(repo.repository, 'add', 'README.md');
+    await git(repo.repository, 'commit', '-m', 'search replace fixture');
+    await git(repo.repository, 'push', 'origin', 'main');
+    const baseSha = await git(repo.repository, 'rev-parse', 'HEAD');
+    const writer = new GitRepositoryWriter({
+      repositoryPath: repo.repository,
+      repository: 'example/delivery-target',
+      taskId: TASK_ID,
+      attemptId: 'attempt-invalid-search-replace',
+      baseSha,
+      baseBranch: 'main',
+      protectedBranches: [],
+      deliveryPolicy: DELIVERY_POLICY,
+      onProtectedPathApprovalRequired: async () => undefined,
+      credential: credential(),
+    });
+    await writer.prepareBranch();
+    const cases = [
+      { baseDigest: `sha256:${'a'.repeat(64)}`, oldText: 'unique target\n' },
+      { baseDigest: await patchContentDigest(original), oldText: 'missing target\n' },
+      { baseDigest: await patchContentDigest(original), oldText: 'duplicate\n' },
+    ];
+    for (const rejected of cases) {
+      await expect(writer.applyPatchProposal({
+        schemaVersion: '2',
+        changes: [{
+          path: 'README.md',
+          baseDigest: rejected.baseDigest,
+          edits: [{ oldText: rejected.oldText, newText: 'replacement\n' }],
+        }],
+      })).rejects.toBeInstanceOf(RepositoryWritePolicyError);
+      expect(await readFile(join(repo.repository, 'README.md'), 'utf8')).toBe(original);
+      expect(await git(repo.repository, 'status', '--porcelain=v1', '--untracked-files=all'))
+        .toBe('');
+    }
+  });
+
   it('rejects a fallback proposal that replaces most of an existing file before writing', async () => {
     const repo = await fixture();
     const original = Array.from({ length: 200 }, (_, index) => `preserved line ${index}\n`).join('');
