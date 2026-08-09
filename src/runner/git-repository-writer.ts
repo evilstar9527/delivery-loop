@@ -25,6 +25,7 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
 const MAX_GIT_OUTPUT_BYTES = 64 * 1_024;
 const GIT_TIMEOUT_MS = 30_000;
+const UTF8_ENCODER = new TextEncoder();
 
 export const BOT_COMMIT_NAME = 'Delivery Loop Bot';
 export const BOT_COMMIT_EMAIL = 'delivery-loop[bot]@users.noreply.github.com';
@@ -460,7 +461,9 @@ export class GitRepositoryWriter {
         !this.isInside(repositoryRoot, canonicalPath) ||
         !patchContentIsUtf8(current) ||
         await patchContentDigest(current) !== change.baseDigest ||
-        await patchContentDigest(change.content) === change.baseDigest
+        await patchContentDigest(change.content) === change.baseDigest ||
+        UTF8_ENCODER.encode(change.content).byteLength * 2 <
+          UTF8_ENCODER.encode(current).byteLength
       ) throw new RepositoryWritePolicyError();
       prepared.push({ absolutePath, content: change.content, create: false });
     }

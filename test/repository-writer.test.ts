@@ -235,6 +235,41 @@ describe('approved Git repository writer', () => {
     });
   });
 
+  it('rejects a fallback proposal that replaces most of an existing file before writing', async () => {
+    const repo = await fixture();
+    const original = Array.from({ length: 200 }, (_, index) => `preserved line ${index}\n`).join('');
+    await writeFile(join(repo.repository, 'README.md'), original);
+    await git(repo.repository, 'add', 'README.md');
+    await git(repo.repository, 'commit', '-m', 'large tracked source');
+    await git(repo.repository, 'push', 'origin', 'main');
+    const baseSha = await git(repo.repository, 'rev-parse', 'HEAD');
+    const writer = new GitRepositoryWriter({
+      repositoryPath: repo.repository,
+      repository: 'example/delivery-target',
+      taskId: TASK_ID,
+      attemptId: 'attempt-destructive-patch-proposal',
+      baseSha,
+      baseBranch: 'main',
+      protectedBranches: [],
+      deliveryPolicy: DELIVERY_POLICY,
+      onProtectedPathApprovalRequired: async () => undefined,
+      credential: credential(),
+    });
+    await writer.prepareBranch();
+
+    await expect(writer.applyPatchProposal({
+      schemaVersion: '1',
+      changes: [{
+        path: 'README.md',
+        baseDigest: await patchContentDigest(original),
+        content: 'replacement stub\n',
+      }],
+    })).rejects.toBeInstanceOf(RepositoryWritePolicyError);
+    expect(await readFile(join(repo.repository, 'README.md'), 'utf8')).toBe(original);
+    expect(await git(repo.repository, 'status', '--porcelain=v1', '--untracked-files=all'))
+      .toBe('');
+  });
+
   it('rejects stale, escaping, protected, duplicate, missing-parent, and symlink proposals before writing', async () => {
     const repo = await fixture();
     await mkdir(join(repo.repository, 'real-dir'));
