@@ -401,6 +401,31 @@ describe('approved Git repository writer', () => {
     })).toThrow('repository write policy denied');
   });
 
+  it('refreshes only the same credential identity and token', async () => {
+    const repo = await fixture();
+    const initial = credential();
+    const writer = new GitRepositoryWriter({
+      repositoryPath: repo.repository,
+      repository: 'example/delivery-target',
+      taskId: TASK_ID,
+      attemptId: ATTEMPT_ID,
+      baseSha: repo.baseSha,
+      baseBranch: 'main',
+      protectedBranches: [],
+      deliveryPolicy: DELIVERY_POLICY,
+      onProtectedPathApprovalRequired: async () => undefined,
+      credential: initial,
+      refreshCredential: async () => ({
+        ...initial,
+        token: 'CANARY_DIFFERENT_REPOSITORY_TOKEN',
+      }),
+    });
+
+    await expect(writer.refreshCredential()).rejects.toBeInstanceOf(
+      RepositoryWritePolicyError,
+    );
+  });
+
   it('rejects Agent-created commits before the trusted bot commit or push', async () => {
     const repo = await fixture();
     const writer = new GitRepositoryWriter({

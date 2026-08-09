@@ -367,6 +367,57 @@ describe('execution Attempt Runner', () => {
     }]);
   });
 
+  it('refreshes repo_write authorization after the Agent and fails closed before repository writes', async () => {
+    const fixture = await repository();
+    const failures: ExecutionAttemptFailure[] = [];
+    let refreshCount = 0;
+    let commitCount = 0;
+    const runner = new ExecutionAttemptRunner({
+      repositoryPath: fixture.path,
+      checkoutSha: fixture.checkoutSha,
+      planVersion: 1,
+      planItemId: 'verify-and-repair',
+      targetedCommandRefs: ['test:unit'],
+      deliveryPolicy: policy,
+      repositoryWriter: {
+        prepareBranch: async () => ({
+          branch: 'agent-safe-branch',
+          baseSha: fixture.checkoutSha,
+        }),
+        refreshCredential: async () => {
+          refreshCount += 1;
+          throw new Error('CANARY_RAW_REFRESH_ERROR');
+        },
+        commitAll: async () => {
+          commitCount += 1;
+          throw new Error('commit must not run');
+        },
+        push: async () => { throw new Error('push must not run'); },
+      },
+      agent: { apply: async () => ({ schemaVersion: '1', action: 'apply_fix' }) },
+      agentInput: agentInput(fixture.path),
+      headReporter: { record: async () => { throw new Error('head must not run'); } },
+      evidenceReporter: evidenceReporter(),
+      failureReporter: { report: async (failure) => { failures.push(failure); } },
+    });
+
+    const rejected = runner.run();
+    await expect(rejected).rejects.toMatchObject({
+      name: 'ExecutionAttemptError',
+      kind: 'credential_unavailable',
+      message: 'execution Attempt failed',
+    });
+    await expect(rejected).rejects.not.toThrow(/CANARY_RAW_REFRESH_ERROR/);
+    expect(refreshCount).toBe(1);
+    expect(commitCount).toBe(0);
+    expect(failures).toEqual([{
+      failureCode: 'tool_unavailable',
+      failureSite: 'external_reconciliation',
+      attemptedPaths: ['external_reconciliation'],
+      neededHumanInput: 'resolve_external_dependency',
+    }]);
+  });
+
   it('preserves the protected-path pause instead of reporting a terminal commit failure', async () => {
     const fixture = await repository();
     const failures: ExecutionAttemptFailure[] = [];
