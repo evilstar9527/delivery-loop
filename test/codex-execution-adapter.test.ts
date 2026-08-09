@@ -455,6 +455,10 @@ describe('Codex execution adapter', () => {
     expect(observed?.args).not.toContain('workspace-write');
     expect(observed?.stdin).toContain('single controlled patch-proposal fallback');
     expect(observed?.stdin).toContain('baseDigest');
+    expect(observed?.stdin).toContain(
+      'preserve every byte outside the smallest required edit',
+    );
+    expect(observed?.stdin).toContain('less than half of its current UTF-8 bytes');
     expect(transcript.join('\n')).not.toContain('bounded proposal body');
     expect(transcript.join('\n')).toContain('[PATCH_PROPOSAL_OMITTED]');
   });
