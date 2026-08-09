@@ -158,19 +158,41 @@ export class DeliveryRunWorkflow extends WorkflowEntrypoint<
     activePlanId?: string;
     activePlanVersion?: number;
     activePlanDigest?: string;
+    automatedReview?: {
+      iteration: number;
+      status: string;
+      blockingFindingCount?: number;
+      minorFindingCount?: number;
+    };
   }): {
     runId: string;
     state: RunState;
     activePlanId: string | null;
     activePlanVersion: number | null;
     activePlanDigest: string | null;
+    automatedReview: {
+      iteration: number;
+      status: string;
+      blockingFindingCount: number | null;
+      minorFindingCount: number | null;
+    } | null;
   } {
+    const review = run.automatedReview;
     return {
       runId: run.runId,
       state: run.state,
       activePlanId: run.activePlanId ?? null,
       activePlanVersion: run.activePlanVersion ?? null,
       activePlanDigest: run.activePlanDigest ?? null,
+      automatedReview:
+        review === undefined
+          ? null
+          : {
+              iteration: review.iteration,
+              status: review.status,
+              blockingFindingCount: review.blockingFindingCount ?? null,
+              minorFindingCount: review.minorFindingCount ?? null,
+            },
     };
   }
 }
