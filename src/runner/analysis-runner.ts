@@ -491,27 +491,53 @@ async function reportAttemptFailure(
     failureCode: failure.failureCode,
     failureSite: failure.failureSite,
   });
-  const raw = await controlPlaneJson(
-    fetchImplementation,
-    config,
-    `/v1/attempts/${config.attemptId}/events`,
-    fencing.token,
-    'attempt failure report',
-    [202],
-    {
-      schemaVersion: '1',
-      eventId: `attempt_failure_${identityDigest.slice('sha256:'.length, 'sha256:'.length + 56)}`,
-      sequence: 1,
-      type: 'attempt_failed',
-      ...failure,
-      occurredAt: now.toISOString(),
-      expectedVersion: fencing.version,
-      leaseGeneration: fencing.leaseGeneration,
-    },
-  );
-  if (!FailureResponseSchema.safeParse(raw).success) {
-    throw new AnalysisRunnerError('attempt failure response is invalid');
+  const body = {
+    schemaVersion: '1' as const,
+    eventId: `attempt_failure_${identityDigest.slice('sha256:'.length, 'sha256:'.length + 56)}`,
+    sequence: 1,
+    type: 'attempt_failed' as const,
+    ...failure,
+    occurredAt: now.toISOString(),
+    expectedVersion: fencing.version,
+    leaseGeneration: fencing.leaseGeneration,
+  };
+  for (let request = 1; request <= 2; request += 1) {
+    try {
+      const raw = await controlPlaneJson(
+        fetchImplementation,
+        config,
+        `/v1/attempts/${config.attemptId}/events`,
+        fencing.token,
+        'attempt failure report',
+        [202],
+        body,
+      );
+      if (!FailureResponseSchema.safeParse(raw).success) {
+        throw new AnalysisRunnerError('attempt failure response is invalid');
+      }
+      return;
+    } catch {
+      if (request === 2) throw new AnalysisRunnerError('attempt failure report failed');
+    }
   }
+}
+
+const UNKNOWN_TERMINAL_FAILURE: AnalysisRunnerFailure = {
+  failureCode: 'unknown_failure',
+  failureSite: 'external_reconciliation',
+  attemptedPaths: ['external_reconciliation'],
+  neededHumanInput: 'manual_investigation',
+};
+
+function terminalAnalysisRunnerError(error: unknown): AnalysisRunnerError {
+  if (error instanceof AnalysisRunnerError && error.failure !== undefined) return error;
+  return new AnalysisRunnerError(
+    error instanceof AnalysisRunnerError ? error.message : 'analysis Runner failed',
+    UNKNOWN_TERMINAL_FAILURE,
+    error instanceof AnalysisRunnerError && error.analysisFailure !== undefined
+      ? error.analysisFailure
+      : { kind: 'runner_internal_failure', stage: 'runner_boundary' },
+  );
 }
 
 class FencingRequestLock {
@@ -1126,15 +1152,20 @@ async function runAutomatedReview(
   } catch (error) {
     heartbeatController.abort();
     await heartbeatTask;
-    if (error instanceof AnalysisRunnerError && error.failure !== undefined &&
-      heartbeatFailure === undefined) {
-      try {
-        await reportAttemptFailure(fetchImplementation, config, fencing, error.failure, now());
-      } catch {
-        // The original failure remains authoritative.
-      }
+    const terminalError = terminalAnalysisRunnerError(error);
+    try {
+      await reportAttemptFailure(
+        fetchImplementation,
+        config,
+        fencing,
+        terminalError.failure!,
+        now(),
+      );
+    } catch {
+      // The original safe classification remains authoritative. GitHub fact
+      // reconciliation and the stuck detector retain the durable fallback.
     }
-    throw error;
+    throw terminalError;
   } finally {
     heartbeatController.abort();
     await heartbeatTask;
@@ -1712,24 +1743,20 @@ export async function runAnalysisAttempt(
   } catch (error) {
     heartbeatController.abort();
     await heartbeatTask;
-    if (
-      error instanceof AnalysisRunnerError &&
-      error.failure !== undefined &&
-      heartbeatFailure === undefined
-    ) {
-      try {
-        await reportAttemptFailure(
-          fetchImplementation,
-          config,
-          fencing,
-          error.failure,
-          now(),
-        );
-      } catch {
-        // Failure reporting is best effort here; the original safe error remains authoritative.
-      }
+    const terminalError = terminalAnalysisRunnerError(error);
+    try {
+      await reportAttemptFailure(
+        fetchImplementation,
+        config,
+        fencing,
+        terminalError.failure!,
+        now(),
+      );
+    } catch {
+      // The original safe classification remains authoritative. GitHub fact
+      // reconciliation and the stuck detector retain the durable fallback.
     }
-    throw error;
+    throw terminalError;
   } finally {
     heartbeatController.abort();
     await heartbeatTask;
