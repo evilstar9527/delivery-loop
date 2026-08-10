@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import type { CommandExecutionRequest } from '../src/agent/command-runtime.js';
 import {
   CodexExecutionAdapter,
-  type CodexExecutionAdapterError,
+  CodexExecutionAdapterError,
 } from '../src/agent/codex-execution-adapter.js';
 
 describe('Codex execution adapter', () => {
@@ -646,6 +646,39 @@ describe('Codex execution adapter', () => {
       onTranscriptLine: () => undefined,
     });
     await expect(rejected).rejects.toMatchObject({
+      name: 'CodexExecutionAdapterError',
+      kind: 'transcript_invalid',
+      message: 'execution Agent transcript is invalid',
+    } satisfies Partial<CodexExecutionAdapterError>);
+  });
+
+  it('does not relabel a typed transcript observer failure as process_unavailable', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-execution-transcript-observer-'));
+    const workspace = join(root, 'repo');
+    const contextFilePath = join(root, 'context.json');
+    const outputFilePath = join(root, 'output.txt');
+    await mkdir(workspace, { mode: 0o700 });
+    await writeFile(contextFilePath, '{}', { mode: 0o600 });
+    await writeFile(outputFilePath, '', { mode: 0o600 });
+    const adapter = new CodexExecutionAdapter({
+      execute: async (request) => {
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'PUBLIC_OBSERVER_MARKER' },
+        }));
+        return { exitCode: 0 };
+      },
+    });
+
+    await expect(adapter.apply({
+      attemptId: 'attempt-execution-transcript-observer',
+      workspacePath: workspace,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: 60_000,
+      allowPlanRevision: false,
+      onTranscriptLine: () => { throw new CodexExecutionAdapterError('transcript_invalid'); },
+    })).rejects.toMatchObject({
       name: 'CodexExecutionAdapterError',
       kind: 'transcript_invalid',
       message: 'execution Agent transcript is invalid',

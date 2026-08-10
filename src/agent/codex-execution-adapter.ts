@@ -425,6 +425,7 @@ export class CodexExecutionAdapter implements ExecutionAgent {
     }
     const usage = new CodexUsageAccumulator();
     const activity = new CodexExecutionActivityAccumulator();
+    let streamingFailureKind: 'transcript_invalid' | 'usage_invalid' | undefined;
     let result;
     try {
       result = await this.execute({
@@ -471,18 +472,34 @@ export class CodexExecutionAdapter implements ExecutionAgent {
           ? {}
           : {
               onStdoutLine: (line: string) => {
-                input.onTranscriptLine?.(
-                  patchProposalRequired ? proposalSafeTranscriptLine(line) : line,
-                );
-                activity.acceptLine(line);
-                if (input.model !== undefined) usage.acceptLine(line);
+                try {
+                  input.onTranscriptLine?.(
+                    patchProposalRequired ? proposalSafeTranscriptLine(line) : line,
+                  );
+                  activity.acceptLine(line);
+                } catch {
+                  streamingFailureKind = 'transcript_invalid';
+                  throw new Error('execution Agent transcript observer failed');
+                }
+                if (input.model !== undefined) {
+                  try {
+                    usage.acceptLine(line);
+                  } catch {
+                    streamingFailureKind = 'usage_invalid';
+                    throw new Error('execution Agent usage observer failed');
+                  }
+                }
               },
               ...(patchProposalRequired
                 ? { onOversizedStdoutLine: oversizedPatchProposalLineReplacement }
                 : {}),
             }),
       });
-    } catch {
+    } catch (error) {
+      if (streamingFailureKind !== undefined) {
+        throw new CodexExecutionAdapterError(streamingFailureKind);
+      }
+      if (error instanceof CodexExecutionAdapterError) throw error;
       throw new CodexExecutionAdapterError('process_unavailable');
     } finally {
       if (structuredDecisionRequired) await rm(decisionSchemaPath, { force: true });
