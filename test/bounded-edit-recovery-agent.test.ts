@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { BoundedEditRecoveryAgent } from '../src/agent/bounded-edit-recovery-agent.js';
+import {
+  BoundedEditRecoveryAgent,
+  ExecutionAgentUsageSettlementError,
+} from '../src/agent/bounded-edit-recovery-agent.js';
 import {
   CodexExecutionAdapterError,
   type CodexExecutionInput,
@@ -22,6 +25,27 @@ function meteredApply(
 }
 
 describe('bounded edit recovery Agent', () => {
+  it('classifies persistent usage settlement failure as external quota infrastructure', async () => {
+    const agent = new BoundedEditRecoveryAgent({
+      agent: meteredApply(async (input) => {
+        input.onUsage?.({
+          inputTokens: 10,
+          cachedInputTokens: 2,
+          outputTokens: 4,
+          reasoningOutputTokens: 1,
+        });
+        throw new CodexExecutionAdapterError('decision_invalid', 'no_tool_activity');
+      }),
+      beforeInvocation: async () => ({ model: 'gpt-test' }),
+      afterInvocation: async () => { throw new Error('CANARY_RAW_SETTLEMENT_ERROR'); },
+      canRecover: async () => true,
+    });
+
+    const failure = await agent.apply(INPUT).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(ExecutionAgentUsageSettlementError);
+    expect(String(failure)).not.toContain('CANARY_RAW_SETTLEMENT_ERROR');
+  });
+
   it('preserves an adapter failure when no model usage was produced', async () => {
     const events: string[] = [];
     const agent = new BoundedEditRecoveryAgent({

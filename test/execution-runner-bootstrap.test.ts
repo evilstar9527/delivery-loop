@@ -705,6 +705,7 @@ describe('production execution Runner bootstrap', () => {
     let manifestDigest = '';
     const reservationIds: string[] = [];
     const usageReservations: string[] = [];
+    let transientUsageFailureInjected = false;
     const agentModels: string[] = [];
     let credentialRequests = 0;
     let agentInvocation = 0;
@@ -826,12 +827,19 @@ describe('production execution Runner bootstrap', () => {
           usageId: string;
         };
         usageReservations.push(body.reservationId);
+        if (!transientUsageFailureInjected) {
+          transientUsageFailureInjected = true;
+          return Response.json(
+            { code: 'temporarily_unavailable' },
+            { status: 503, headers: { 'cache-control': 'no-store' } },
+          );
+        }
         return Response.json({
           usageId: body.usageId,
           reservationId: body.reservationId,
           totalTokens: 18,
           costMicrousd: 10,
-          disposition: 'created',
+          disposition: 'existing',
         }, { status: 201, headers: { 'cache-control': 'no-store' } });
       }
       if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/heartbeat`)) {
@@ -1007,7 +1015,7 @@ describe('production execution Runner bootstrap', () => {
     expect(heartbeatCount).toBeGreaterThanOrEqual(1);
     expect(reservationIds).toHaveLength(2);
     expect(new Set(reservationIds).size).toBe(2);
-    expect(usageReservations).toEqual(reservationIds);
+    expect(usageReservations).toEqual([reservationIds[0], ...reservationIds]);
     expect(agentModels).toEqual(['gpt-test-metered', 'gpt-test-metered']);
     expect(credentialRequests).toBe(2);
     expect(verificationRefs).toEqual(['test:unit', 'verify:all']);

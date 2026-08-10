@@ -961,28 +961,37 @@ export async function runExecutionAttempt(
       'sha256:'.length,
       'sha256:'.length + 54,
     )}`;
-    await fencing.withAuthorization(async (authorization) => {
-      const parsed = ModelUsageResponseSchema.safeParse(await controlPlaneJson(
-        fetcher,
-        config,
-        `/v1/attempts/${config.attemptId}/model-usage`,
-        authorization.attemptToken,
-        'model usage settlement',
-        [200, 201],
-        {
-          reservationId: reservation.reservationId,
-          usageId,
-          expectedVersion: authorization.expectedVersion,
-          leaseGeneration: authorization.leaseGeneration,
-          ...usage,
-        },
-      ));
-      if (
-        !parsed.success || parsed.data.usageId !== usageId ||
-        parsed.data.reservationId !== reservation.reservationId
-      ) throw new ExecutionRunnerError('model usage settlement response is invalid');
-    });
-    settledModelInvocations.add(invocation);
+    let lastFailure: unknown;
+    for (let requestAttempt = 1; requestAttempt <= 2; requestAttempt += 1) {
+      try {
+        await fencing.withAuthorization(async (authorization) => {
+          const parsed = ModelUsageResponseSchema.safeParse(await controlPlaneJson(
+            fetcher,
+            config,
+            `/v1/attempts/${config.attemptId}/model-usage`,
+            authorization.attemptToken,
+            'model usage settlement',
+            [200, 201],
+            {
+              reservationId: reservation.reservationId,
+              usageId,
+              expectedVersion: authorization.expectedVersion,
+              leaseGeneration: authorization.leaseGeneration,
+              ...usage,
+            },
+          ));
+          if (
+            !parsed.success || parsed.data.usageId !== usageId ||
+            parsed.data.reservationId !== reservation.reservationId
+          ) throw new ExecutionRunnerError('model usage settlement response is invalid');
+        });
+        settledModelInvocations.add(invocation);
+        return;
+      } catch (error) {
+        lastFailure = error;
+      }
+    }
+    throw lastFailure ?? new ExecutionRunnerError('model usage settlement is unavailable');
   };
 
   const attemptAgent = executionAgent.usesMeteredModel === true &&
