@@ -150,6 +150,166 @@ deployment: { mode: none }
 }
 
 describe('production execution Runner bootstrap', () => {
+  it('accepts exact human and automated review identities while rejecting malformed or mixed sources', async () => {
+    const fixture = await repository();
+    const taskDigest = await taskRevisionDigest(task());
+    const branch = `agent/${TASK_ID}/attempt-prior-review`;
+
+    const run = async (
+      reviewId: string,
+      options: { includeRepair?: boolean } = {},
+    ): Promise<{ error: unknown; credentialRequests: number; failureReports: number }> => {
+      const runnerTemp = join(fixture.root, `runner-temp-review-${reviewId.replaceAll('/', '-')}`);
+      await mkdir(runnerTemp, { mode: 0o700 });
+      const environment: NodeJS.ProcessEnv = {
+        DELIVERY_SCHEMA_VERSION: '1',
+        DELIVERY_RUN_ID: RUN_ID,
+        DELIVERY_ATTEMPT_ID: ATTEMPT_ID,
+        DELIVERY_TASK_DIGEST: taskDigest,
+        DELIVERY_BASE_SHA: fixture.baseSha,
+        DELIVERY_CHECKOUT_SHA: fixture.checkoutSha,
+        DELIVERY_ATTEMPT_MODE: 'review_fix',
+        DELIVERY_PLAN_VERSION: '1',
+        DELIVERY_PLAN_ITEM_ID: ITEM_ID,
+        DELIVERY_CONTROL_PLANE_URL: 'https://control.delivery.test',
+        ACTIONS_ID_TOKEN_REQUEST_URL: `https://oidc.actions.test/token?review=${reviewId}`,
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'CANARY_ACTIONS_RUNTIME_REVIEW_CONTEXT_TOKEN',
+        GITHUB_WORKSPACE: fixture.path,
+        RUNNER_TEMP: runnerTemp,
+        GITHUB_REPOSITORY: REPOSITORY,
+      };
+      const attemptToken = 'CANARY_EXECUTION_REVIEW_CONTEXT_ATTEMPT_TOKEN';
+      let credentialRequests = 0;
+      let failureReports = 0;
+      const fetchImplementation: typeof fetch = async (input, init) => {
+        const url = String(input);
+        if (url.startsWith('https://oidc.actions.test/token')) {
+          return Response.json({ value: OIDC_TOKEN });
+        }
+        if (url.endsWith('/exchange')) {
+          return Response.json({
+            attemptToken,
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            attemptVersion: 7,
+            leaseGeneration: 3,
+            grant: {
+              toolBridgeToken: 'CANARY_EXECUTION_REVIEW_CONTEXT_TOOL_TOKEN',
+              expiresAt: '2099-01-01T00:00:00.000Z',
+              scopes: [...EXECUTION_TOOL_ACTIONS],
+            },
+          });
+        }
+        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${attemptToken}`);
+        if (url.endsWith('/context')) {
+          return Response.json({
+            schemaVersion: '1',
+            attempt: {
+              id: ATTEMPT_ID,
+              runId: RUN_ID,
+              taskId: TASK_ID,
+              mode: 'review_fix',
+              version: 7,
+              leaseGeneration: 3,
+              baseSha: fixture.baseSha,
+              checkoutSha: fixture.checkoutSha,
+              repository: REPOSITORY,
+              baseBranch: 'main',
+              planId: PLAN_ID,
+              planVersion: 1,
+              planItemId: ITEM_ID,
+              targetBranch: branch,
+              targetBranchMode: 'existing_fast_forward',
+            },
+            task: task(),
+            item: {
+              id: ITEM_ID,
+              kind: 'change',
+              title: 'Apply exact review feedback',
+              objective: 'Fix only the blocking finding on the reviewed head.',
+              required: true,
+              doneWhen: ['Targeted and required verification pass on the replacement head.'],
+              commandRefs: ['test:unit', 'verify:all'],
+              evidenceKinds: ['commit', 'test'],
+              effects: ['repo_read', 'repo_write'],
+            },
+            reviewFeedback: {
+              reviewId,
+              body: '[MAJOR] Fix the exact reviewed behavior.',
+              bodyDigest: `sha256:${'7'.repeat(64)}`,
+              sourceHeadSha: fixture.checkoutSha,
+              branch,
+              url: 'https://github.com/example/delivery-target/pull/1',
+              submittedAt: '2026-08-10T04:46:30.000Z',
+            },
+            ...(options.includeRepair === true ? {
+              repair: {
+                failedAttemptId: 'attempt-conflicting-repair-source',
+                sourceSuiteId: 'suite-conflicting-repair-source',
+                sourceEvidenceId: 'evidence-conflicting-repair-source',
+                sourceHeadSha: fixture.checkoutSha,
+                failureFactDigest: `sha256:${'8'.repeat(64)}`,
+                phase: 'targeted',
+                commandRef: 'test:unit',
+                exitCode: 7,
+              },
+            } : {}),
+          });
+        }
+        if (url.endsWith('/github/write-token')) {
+          credentialRequests += 1;
+          return new Response(null, { status: 503 });
+        }
+        if (url.endsWith('/events')) {
+          failureReports += 1;
+          return Response.json({ accepted: true }, {
+            status: 202,
+            headers: { 'cache-control': 'no-store' },
+          });
+        }
+        throw new Error(`unexpected fake URL: ${url}`);
+      };
+      let error: unknown;
+      try {
+        await runExecutionAttempt({
+          environment,
+          fetch: fetchImplementation,
+          heartbeatIntervalMs: 60_000,
+          agent: { apply: async () => { throw new Error('credential gate must run first'); } },
+          now: () => new Date('2026-08-10T04:47:00.000Z'),
+        });
+      } catch (caught) {
+        error = caught;
+      }
+      return { error, credentialRequests, failureReports };
+    };
+
+    for (const reviewId of ['9001', `automated_review_${'a'.repeat(52)}`]) {
+      const accepted = await run(reviewId);
+      expect(accepted.error).toMatchObject({
+        message: 'repo_write credential dependency is unavailable',
+        kind: 'credential_unavailable',
+      });
+      expect(accepted.credentialRequests).toBe(1);
+      expect(accepted.failureReports).toBe(1);
+    }
+
+    const malformed = await run('automated_review_not-a-stable-identity');
+    expect(malformed.error).toMatchObject({
+      message: 'execution context response is invalid',
+      kind: 'context_invalid',
+    });
+    expect(malformed.credentialRequests).toBe(0);
+    expect(malformed.failureReports).toBe(0);
+
+    const mixed = await run(`automated_review_${'b'.repeat(52)}`, { includeRepair: true });
+    expect(mixed.error).toMatchObject({
+      message: 'execution context identity does not match dispatch',
+      kind: 'context_invalid',
+    });
+    expect(mixed.credentialRequests).toBe(0);
+    expect(mixed.failureReports).toBe(0);
+  });
+
   it('runs a base-only rebase without Agent edits, publishes a new branch, and reports new Evidence', async () => {
     const fixture = await rebaseRepository();
     const runnerTemp = join(fixture.root, 'runner-temp-rebase');

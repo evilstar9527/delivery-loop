@@ -1,5 +1,6 @@
 import { canonicalSha256 } from '../domain/digest.js';
 import {
+  AutomatedReviewIdSchema,
   AutomatedReviewContextV1Schema,
   AutomatedReviewResultV1Schema,
   automatedReviewContextDigest,
@@ -279,7 +280,7 @@ export class AutomatedReviewScheduler {
       iteration: candidate.iteration,
     });
     const stable = suffix(identity);
-    const reviewId = `automated_review_${stable}`;
+    const reviewId = AutomatedReviewIdSchema.parse(`automated_review_${stable}`);
     const attemptId = `attempt_auto_review_${stable}`;
     const outboxId = `dispatch_auto_review_${stable}`;
     const nowIso = now.toISOString();

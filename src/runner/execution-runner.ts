@@ -14,6 +14,7 @@ import {
   type CodexExecutionActivity,
 } from '../agent/codex-execution-activity.js';
 import { EvidenceKindSchema, PlanEffectSchema } from '../domain/plan.js';
+import { AutomatedReviewIdSchema } from '../domain/automated-review.js';
 import { canonicalSha256 } from '../domain/digest.js';
 import { taskRevisionDigest, TaskEnvelopeSchema } from '../domain/task.js';
 import { EXECUTION_TOOL_ACTIONS, isExactExecutionToolActions } from '../domain/tool-bridge.js';
@@ -114,7 +115,7 @@ const ContextResponseSchema = z.object({
     exitCode: z.number().int().positive().max(255),
   }).strict().optional(),
   reviewFeedback: z.object({
-    reviewId: z.string().regex(/^[0-9]+$/),
+    reviewId: z.union([z.string().regex(/^[0-9]+$/), AutomatedReviewIdSchema]),
     body: z.string().min(1).max(65_536),
     bodyDigest: z.string().regex(DIGEST_PATTERN),
     sourceHeadSha: z.string().regex(SHA_PATTERN),
