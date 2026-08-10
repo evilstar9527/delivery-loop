@@ -161,6 +161,34 @@ function githubBaseReadinessUnavailable(
   }, 503);
 }
 
+type SafeAutomatedReviewProjection = {
+  iteration: number;
+  status: 'pending' | 'approved' | 'changes_requested' | 'changes-requested' | 'blocked';
+  blockingFindingCount?: number;
+  minorFindingCount?: number;
+};
+
+function safeAutomatedReviewProjection(value: unknown): SafeAutomatedReviewProjection | undefined {
+  if (value === null || typeof value !== 'object') return undefined;
+  const review = value as Record<string, unknown>;
+  const { iteration, status } = review;
+  if (
+    !Number.isSafeInteger(iteration) || iteration < 0 ||
+    (status !== 'pending' && status !== 'approved' && status !== 'changes_requested' &&
+      status !== 'changes-requested' && status !== 'blocked')
+  ) {
+    return undefined;
+  }
+  const projection: SafeAutomatedReviewProjection = { iteration, status };
+  if (Number.isSafeInteger(review.blockingFindingCount) && review.blockingFindingCount >= 0) {
+    projection.blockingFindingCount = review.blockingFindingCount;
+  }
+  if (Number.isSafeInteger(review.minorFindingCount) && review.minorFindingCount >= 0) {
+    projection.minorFindingCount = review.minorFindingCount;
+  }
+  return projection;
+}
+
 export interface TaskApiOptions {
   baseShaResolverFromEnv?: (env: Bindings) => GitHubBaseShaResolver | null;
 }
@@ -252,7 +280,9 @@ export function taskApi(options: TaskApiOptions = {}): Hono<{ Bindings: Bindings
     }
     const view = await new TaskQueryStore(c.env.DB_CONTROL).getRunPlanStatus(runId);
     if (view === null) return errorResponse(c, 404, 'not_found', 'run not found', false);
-    return c.json(view);
+    const { automatedReview, ...planView } = view as typeof view & { automatedReview?: unknown };
+    const review = safeAutomatedReviewProjection(automatedReview);
+    return c.json(review === undefined ? planView : { ...planView, automatedReview: review });
   });
 
   app.post('/v1/runs/:runId/context', async (c) => {
