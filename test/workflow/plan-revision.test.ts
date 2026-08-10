@@ -27,6 +27,7 @@ const NOW = '2026-07-25T20:00:00.000Z';
 
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM workflow_signals'),
     env.DB_CONTROL.prepare('DELETE FROM approval_invalidations'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revision_analysis_retries'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revisions'),
@@ -425,6 +426,201 @@ describe('immutable ExecutionPlan revision', () => {
     ).bind(started.revisionId).run()).rejects.toThrow(
       'plan_revision_analysis_retry_is_immutable',
     );
+  });
+
+  it('activates a validated replan whose completion callback is already durable', async () => {
+    const store = new PlanRevisionStore(env.DB_CONTROL);
+    const started = await store.begin({
+      runId: RUN_ID,
+      expectedRunVersion: 10,
+      activePlanVersion: 1,
+      activePlanDigest: OLD_PLAN_DIGEST,
+      sourceKind: 'supplemental_context',
+      sourceRef: 'r2://supplemental-context/context-revision-1.json',
+      sourceDigest: SOURCE_DIGEST,
+      requestedBaseSha: NEW_BASE_SHA,
+    }, new Date(NOW));
+    const body = revisedPlanBody(started.analysisAttemptId);
+    const proposal: ExecutionPlanV1 = {
+      ...body,
+      digest: await computeExecutionPlanDigest(body),
+      status: 'proposed',
+    };
+    const plan = await new ExecutionPlanStore(env.DB_CONTROL).saveValidatedProposal(
+      proposal,
+      {
+        runId: RUN_ID,
+        taskRevision: 'revision-1',
+        baseSha: NEW_BASE_SHA,
+        expectedVersion: 2,
+        acceptanceCriteriaCount: 1,
+        allowedCommandRefs: ['test:unit', 'verify:all'],
+        verificationCommandRefs: ['test:unit', 'verify:all'],
+        allowedEffects: ['repo_read', 'repo_write', 'test_deploy'],
+        requiresRepositoryChange: false,
+      },
+      NOW,
+    );
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET status = 'running', version = 2, lease_generation = 1,
+             result_event_id = 'event-prepared-replan', result_sequence = 1,
+             result_payload_ref = ?, result_digest = ?, result_reported_at = ?, updated_at = ?
+         WHERE attempt_id = ?`,
+      ).bind(
+        `d1://execution-plans/${plan.id}`,
+        plan.digest,
+        NOW,
+        NOW,
+        started.analysisAttemptId,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO workflow_signals (
+           signal_id, run_id, event_id, workflow_event_type, signal_type,
+           attempt_id, sequence, payload_ref, digest, occurred_at, created_at
+         ) VALUES ('signal-prepared-replan', ?, 'event-prepared-replan',
+                   'attempt-result-prepared-replan', 'attempt_completed', ?, 1, ?, ?, ?, ?)`,
+      ).bind(
+        RUN_ID,
+        started.analysisAttemptId,
+        `d1://execution-plans/${plan.id}`,
+        plan.digest,
+        NOW,
+        NOW,
+      ),
+    ]);
+
+    const reconciler = new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    });
+    expect(await reconciler.reconcilePreparedPlans(5)).toBe(1);
+    expect(await reconciler.reconcilePreparedPlans(5)).toBe(0);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state, version, active_plan_id, active_plan_version, active_plan_digest
+       FROM runs WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({
+      state: 'awaiting_approval',
+      version: 12,
+      active_plan_id: plan.id,
+      active_plan_version: 2,
+      active_plan_digest: plan.digest,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, new_plan_id, base_changed
+       FROM plan_revisions WHERE revision_id = ?`,
+    ).bind(started.revisionId).first()).toEqual({
+      status: 'activated',
+      new_plan_id: plan.id,
+      base_changed: 1,
+    });
+  });
+
+  it('settles a durable semantically unchanged replan without failing reconciliation', async () => {
+    await env.DB_CONTROL.prepare('DELETE FROM plan_revision_source_facts').run();
+    const sourceRef = 'r2://supplemental-context/prepared-no-change.json';
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO plan_revision_source_facts (
+         source_ref, run_id, expected_run_version, prior_plan_id, prior_plan_version,
+         prior_plan_digest, source_kind, source_digest,
+         requested_base_sha, observed_at, created_at
+       ) VALUES (?, ?, 10, ?, 1, ?, 'supplemental_context', ?, ?, ?, ?)`,
+    ).bind(
+      sourceRef,
+      RUN_ID,
+      OLD_PLAN_ID,
+      OLD_PLAN_DIGEST,
+      SOURCE_DIGEST,
+      OLD_BASE_SHA,
+      NOW,
+      NOW,
+    ).run();
+    const store = new PlanRevisionStore(env.DB_CONTROL);
+    const started = await store.begin({
+      runId: RUN_ID,
+      expectedRunVersion: 10,
+      activePlanVersion: 1,
+      activePlanDigest: OLD_PLAN_DIGEST,
+      sourceKind: 'supplemental_context',
+      sourceRef,
+      sourceDigest: SOURCE_DIGEST,
+      requestedBaseSha: OLD_BASE_SHA,
+    }, new Date(NOW));
+    const body = semanticallyUnchangedPlanBody(started.analysisAttemptId);
+    const proposal: ExecutionPlanV1 = {
+      ...body,
+      digest: await computeExecutionPlanDigest(body),
+      status: 'proposed',
+    };
+    const plan = await new ExecutionPlanStore(env.DB_CONTROL).saveValidatedProposal(
+      proposal,
+      {
+        runId: RUN_ID,
+        taskRevision: 'revision-1',
+        baseSha: OLD_BASE_SHA,
+        expectedVersion: 2,
+        acceptanceCriteriaCount: 1,
+        allowedCommandRefs: ['test:unit'],
+        verificationCommandRefs: ['test:unit'],
+        allowedEffects: ['repo_read', 'repo_write'],
+        requiresRepositoryChange: false,
+      },
+      NOW,
+    );
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET status = 'running', version = 2, lease_generation = 1,
+             result_event_id = 'event-prepared-no-change', result_sequence = 1,
+             result_payload_ref = ?, result_digest = ?, result_reported_at = ?, updated_at = ?
+         WHERE attempt_id = ?`,
+      ).bind(
+        `d1://execution-plans/${plan.id}`,
+        plan.digest,
+        NOW,
+        NOW,
+        started.analysisAttemptId,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO workflow_signals (
+           signal_id, run_id, event_id, workflow_event_type, signal_type,
+           attempt_id, sequence, payload_ref, digest, occurred_at, created_at
+         ) VALUES ('signal-prepared-no-change', ?, 'event-prepared-no-change',
+                   'attempt-result-prepared-no-change', 'attempt_completed', ?, 1, ?, ?, ?, ?)`,
+      ).bind(
+        RUN_ID,
+        started.analysisAttemptId,
+        `d1://execution-plans/${plan.id}`,
+        plan.digest,
+        NOW,
+        NOW,
+      ),
+    ]);
+
+    const reconciler = new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    });
+    expect(await reconciler.reconcilePreparedPlans(5)).toBe(0);
+    expect(await reconciler.reconcilePreparedPlans(5)).toBe(0);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state, version, base_sha, active_plan_id
+       FROM runs WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({
+      state: 'awaiting_approval',
+      version: 12,
+      base_sha: OLD_BASE_SHA,
+      active_plan_id: OLD_PLAN_ID,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, new_plan_id, body_changed, base_changed, effects_changed
+       FROM plan_revisions WHERE revision_id = ?`,
+    ).bind(started.revisionId).first()).toEqual({
+      status: 'rejected',
+      new_plan_id: plan.id,
+      body_changed: 0,
+      base_changed: 0,
+      effects_changed: 0,
+    });
   });
 
   it('converges re-analysis, invalidates old approval, and atomically activates changed v2', async () => {

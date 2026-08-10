@@ -217,6 +217,9 @@ export default {
         env.TASK_OBJECTS,
         { now: scheduledNow },
       );
+      const planRevisionAnalysis = new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
+        now: scheduledNow,
+      });
       // An exact human approval is already a durable external fact. Activate
       // and claim one approved Item before any recovery or observation scan can
       // consume the Free-plan 10 ms CPU budget, then make its fenced dispatch
@@ -224,6 +227,11 @@ export default {
       // duplicate Queue delivery remains D1-fenced.
       await executionProgress.reconcileScheduling(1);
       await relay.relay();
+      // A re-analysis Runner may have persisted a fully validated replacement
+      // Plan and its completion callback before an HTTP response or Workflow
+      // signal is observed. Activate one such D1-bound Plan before external
+      // scans can consume the Free-plan scheduled CPU budget.
+      await planRevisionAnalysis.reconcilePreparedPlans(1);
       // Free-plan scheduled and Queue invocations have a 10 ms CPU ceiling.
       // Keep a direct workflow-root delivery after the priority relay so a
       // Queue delay cannot strand Task creation, without starving an already
@@ -253,9 +261,7 @@ export default {
       });
       await executionProgress.reconcileObservedCompletions(5);
       await new AutomatedReviewScheduler(env.DB_CONTROL).resumeFixedRuns(5, scheduledNow());
-      await new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
-        now: scheduledNow,
-      }).reconcileBatch(5);
+      await planRevisionAnalysis.reconcileBatch(5);
       // Relay every remaining durable effect, then first resume one already
       // verified Run whose Draft/publication preparation may have been cut off
       // by a previous Free-plan CPU fence. Only after that durable close-out
