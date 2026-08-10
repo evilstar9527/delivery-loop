@@ -161,6 +161,32 @@ function githubBaseReadinessUnavailable(
   }, 503);
 }
 
+function safeRunPlanProjection(view: unknown): unknown {
+  if (view === null || typeof view !== 'object' || Array.isArray(view)) return view;
+  const record = view as Record<string, unknown>;
+  const review = record.automatedReview;
+  if (review === undefined || review === null || typeof review !== 'object' || Array.isArray(review)) {
+    return view;
+  }
+  const source = review as Record<string, unknown>;
+  const projection: Record<string, unknown> = {};
+  if (typeof source.iteration === 'number' && Number.isInteger(source.iteration) && source.iteration >= 0) {
+    projection.iteration = source.iteration;
+  }
+  if (source.status === 'pending' || source.status === 'approved' || source.status === 'changes-requested' || source.status === 'changes_requested' || source.status === 'blocked') {
+    projection.status = source.status;
+  }
+  const blockingFindingCount = source.blockingFindingCount ?? source.blockingFindingsCount;
+  if (typeof blockingFindingCount === 'number' && Number.isInteger(blockingFindingCount) && blockingFindingCount >= 0) {
+    projection.blockingFindingCount = blockingFindingCount;
+  }
+  const minorFindingCount = source.minorFindingCount ?? source.minorFindingsCount;
+  if (typeof minorFindingCount === 'number' && Number.isInteger(minorFindingCount) && minorFindingCount >= 0) {
+    projection.minorFindingCount = minorFindingCount;
+  }
+  return { ...record, automatedReview: projection };
+}
+
 export interface TaskApiOptions {
   baseShaResolverFromEnv?: (env: Bindings) => GitHubBaseShaResolver | null;
 }
@@ -252,7 +278,7 @@ export function taskApi(options: TaskApiOptions = {}): Hono<{ Bindings: Bindings
     }
     const view = await new TaskQueryStore(c.env.DB_CONTROL).getRunPlanStatus(runId);
     if (view === null) return errorResponse(c, 404, 'not_found', 'run not found', false);
-    return c.json(view);
+    return c.json(safeRunPlanProjection(view));
   });
 
   app.post('/v1/runs/:runId/context', async (c) => {
