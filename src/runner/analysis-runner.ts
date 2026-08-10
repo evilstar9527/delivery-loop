@@ -1052,7 +1052,13 @@ async function runAutomatedReview(
         attemptedPaths: ['repository_inspection'],
         neededHumanInput: 'manual_investigation',
       }, error instanceof CodexReviewAdapterError
-        ? { kind: error.kind === 'process_failed' ? 'process_nonzero_exit' : 'structured_output_invalid', stage: 'single_pass' }
+        ? {
+            kind: error.kind,
+            stage: 'single_pass',
+            ...(error.providerFailureCode === undefined
+              ? {}
+              : { providerFailureCode: error.providerFailureCode }),
+          }
         : undefined);
     }
     heartbeatController.abort();

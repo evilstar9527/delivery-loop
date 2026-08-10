@@ -20,6 +20,11 @@ import {
   type CodexRelayReasoningEffort,
 } from './codex-provider-profile.js';
 import { normalizeProviderBaseUrl } from './provider-base-url.js';
+import {
+  AnalysisProviderJsonlFailureProjector,
+  classifyAnalysisProviderProcessFailure,
+  type AnalysisProviderProcessFailureCode,
+} from './provider-preflight-failure.js';
 
 export { AUTOMATED_REVIEW_RESULT_V1_JSON_SCHEMA };
 
@@ -41,8 +46,21 @@ export interface CodexReviewAdapterOptions {
   runtimeSecrets?: readonly string[];
 }
 
+export type CodexReviewFailureKind =
+  | 'process_unavailable'
+  | 'process_timeout'
+  | 'process_nonzero_exit'
+  | 'usage_invalid'
+  | 'structured_output_invalid';
+
 export class CodexReviewAdapterError extends Error {
-  constructor(readonly kind: 'process_failed' | 'usage_invalid' | 'output_invalid') {
+  constructor(
+    readonly kind: CodexReviewFailureKind,
+    readonly providerFailureCode?: AnalysisProviderProcessFailureCode,
+  ) {
+    if ((kind === 'process_nonzero_exit') !== (providerFailureCode !== undefined)) {
+      throw new Error('Codex automated review failure classification is invalid');
+    }
     super(`Codex automated review ${kind.replaceAll('_', ' ')}`);
     this.name = 'CodexReviewAdapterError';
   }
@@ -51,6 +69,22 @@ export class CodexReviewAdapterError extends Error {
 function isInside(parent: string, child: string): boolean {
   const path = relative(parent, child);
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
+}
+
+function normalizeProviderReviewResult(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw;
+  const record = raw as Record<string, unknown>;
+  if (!Array.isArray(record.findings)) return raw;
+  return {
+    ...record,
+    findings: record.findings.map((finding) => {
+      if (typeof finding !== 'object' || finding === null || Array.isArray(finding)) return finding;
+      const normalized = { ...(finding as Record<string, unknown>) };
+      if (normalized.path === null) delete normalized.path;
+      if (normalized.line === null) delete normalized.line;
+      return normalized;
+    }),
+  };
 }
 
 /** Read-only structured review of one exact PR head. */
@@ -90,7 +124,7 @@ export class CodexReviewAdapter {
         throw new Error('secret');
       }
     } catch {
-      throw new CodexReviewAdapterError('output_invalid');
+      throw new CodexReviewAdapterError('structured_output_invalid');
     }
     const prompt = [
       'You are a read-only senior code reviewer for one exact pull-request head.',
@@ -105,6 +139,7 @@ export class CodexReviewAdapter {
       'END_UNTRUSTED_AUTOMATED_REVIEW_CONTEXT_JSON',
     ].join('\n');
     const usage = new CodexUsageAccumulator();
+    const providerFailure = new AnalysisProviderJsonlFailureProjector();
     let execution: CommandExecutionResult;
     try {
       execution = await this.execute({
@@ -140,13 +175,31 @@ export class CodexReviewAdapter {
         timeoutMs: input.timeoutMs,
         ...(input.model === undefined
           ? {}
-          : { onStdoutLine: (line: string) => usage.acceptLine(line) }),
+          : {
+              onStdoutLine: (line: string) => {
+                usage.acceptLine(line);
+                providerFailure.acceptLine(line);
+              },
+            }),
       });
     } catch {
-      throw new CodexReviewAdapterError('process_failed');
+      throw new CodexReviewAdapterError('process_unavailable');
     }
-    if (execution.exitCode !== 0 || execution.timedOut === true) {
-      throw new CodexReviewAdapterError('process_failed');
+    if (execution.timedOut === true) {
+      throw new CodexReviewAdapterError('process_timeout');
+    }
+    if (execution.stdoutInvalid === true) {
+      throw new CodexReviewAdapterError('usage_invalid');
+    }
+    if (execution.exitCode !== 0) {
+      const stderrCode = classifyAnalysisProviderProcessFailure(execution.stderr);
+      const jsonlCode = providerFailure.result();
+      throw new CodexReviewAdapterError(
+        'process_nonzero_exit',
+        jsonlCode !== null && jsonlCode !== 'provider_process_failed'
+          ? jsonlCode
+          : stderrCode,
+      );
     }
     if (input.model !== undefined) {
       const measured = usage.result();
@@ -161,14 +214,14 @@ export class CodexReviewAdapter {
     }
     try {
       const raw = JSON.parse(await readFile(resolve(input.outputFilePath), 'utf8')) as unknown;
-      const result = AutomatedReviewResultV1Schema.parse(raw);
+      const result = AutomatedReviewResultV1Schema.parse(normalizeProviderReviewResult(raw));
       if (
         result.contextDigest !== contextDigest ||
         new SecretScanner({ secrets: this.runtimeSecrets }).scan(result).length > 0
       ) throw new Error('result mismatch');
       return result;
     } catch {
-      throw new CodexReviewAdapterError('output_invalid');
+      throw new CodexReviewAdapterError('structured_output_invalid');
     }
   }
 }
