@@ -1,5 +1,17 @@
 import { canonicalSha256 } from '../domain/digest.js';
 import { DEFAULT_MAX_ATTEMPTS, REPEATED_FAILURE_LIMIT } from '../domain/attempt-failure.js';
+import {
+  PlanRevisionError,
+  PlanRevisionStore,
+} from '../storage/plan-revision-store.js';
+
+interface PreparedCandidateRow {
+  revision_id: string;
+  run_version: number;
+  plan_id: string;
+  plan_version: number;
+  plan_digest: string;
+}
 
 interface RetryCandidateRow {
   revision_id: string;
@@ -32,6 +44,96 @@ export class PlanRevisionAnalysisReconciler {
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
       throw new Error('Plan revision analysis reconciliation limit must be between 1 and 100');
     }
+    const activated = await this.reconcilePreparedPlans(limit);
+    const remaining = limit - activated;
+    if (remaining === 0) return activated;
+    return activated + await this.reconcileFailedAttempts(remaining);
+  }
+
+  /**
+   * Activates a server-validated replacement Plan after the Runner completion
+   * callback is durable. This does not replay the model or trust Action status.
+   */
+  async reconcilePreparedPlans(limit = 5): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+      throw new Error('Prepared Plan revision reconciliation limit must be between 1 and 100');
+    }
+    const result = await this.db.prepare(
+      `SELECT revisions.revision_id, runs.version AS run_version,
+              replacement.plan_id, replacement.plan_version,
+              replacement.digest AS plan_digest
+       FROM plan_revisions AS revisions
+       JOIN runs ON runs.run_id = revisions.run_id
+       JOIN execution_plans AS prior
+         ON prior.plan_id = revisions.prior_plan_id
+        AND prior.run_id = revisions.run_id
+        AND prior.plan_version = revisions.prior_plan_version
+        AND prior.digest = revisions.prior_plan_digest
+       JOIN attempts AS analysis
+         ON analysis.attempt_id = COALESCE(
+           (SELECT retry.retry_attempt_id
+            FROM plan_revision_analysis_retries AS retry
+            WHERE retry.revision_id = revisions.revision_id
+            ORDER BY retry.retry_sequence DESC LIMIT 1),
+           revisions.analysis_attempt_id
+         )
+       JOIN execution_plans AS replacement
+         ON replacement.run_id = revisions.run_id
+        AND replacement.created_by_attempt_id = analysis.attempt_id
+       JOIN workflow_signals AS signal
+         ON signal.run_id = revisions.run_id
+        AND signal.attempt_id = analysis.attempt_id
+        AND signal.event_id = analysis.result_event_id
+        AND signal.sequence = analysis.result_sequence
+        AND signal.payload_ref = analysis.result_payload_ref
+        AND signal.digest = analysis.result_digest
+       WHERE revisions.status = 'analyzing'
+         AND runs.state = 'planning'
+         AND runs.base_sha = revisions.requested_base_sha
+         AND runs.active_plan_id = revisions.prior_plan_id
+         AND runs.active_plan_version = revisions.prior_plan_version
+         AND runs.active_plan_digest = revisions.prior_plan_digest
+         AND prior.status = 'active'
+         AND analysis.mode = 'analysis' AND analysis.status = 'running'
+         AND analysis.base_sha = revisions.requested_base_sha
+         AND analysis.result_event_id IS NOT NULL
+         AND analysis.result_sequence IS NOT NULL
+         AND analysis.result_payload_ref = 'd1://execution-plans/' || replacement.plan_id
+         AND analysis.result_digest = replacement.digest
+         AND replacement.plan_version = revisions.prior_plan_version + 1
+         AND replacement.base_sha = revisions.requested_base_sha
+         AND replacement.status = 'validated'
+         AND NOT EXISTS (
+           SELECT 1 FROM run_blockers
+           WHERE run_blockers.run_id = revisions.run_id
+             AND run_blockers.resolved_at IS NULL
+         )
+       ORDER BY analysis.result_reported_at, revisions.revision_id
+       LIMIT ?`,
+    ).bind(limit).all<PreparedCandidateRow>();
+    let activated = 0;
+    const store = new PlanRevisionStore(this.db);
+    for (const candidate of result.results) {
+      try {
+        const outcome = await store.activate({
+          revisionId: candidate.revision_id,
+          expectedRunVersion: candidate.run_version,
+          planId: candidate.plan_id,
+          planVersion: candidate.plan_version,
+          planDigest: candidate.plan_digest,
+        }, this.now());
+        if (outcome.created) activated += 1;
+      } catch (error) {
+        // activate() durably rejects a semantically unchanged proposal before
+        // surfacing no_change. That is a successful reconciliation outcome,
+        // not a reason to abort the rest of the scheduled handler.
+        if (!(error instanceof PlanRevisionError) || error.code !== 'no_change') throw error;
+      }
+    }
+    return activated;
+  }
+
+  private async reconcileFailedAttempts(limit: number): Promise<number> {
     const candidates = await this.candidates(limit);
     let created = 0;
     for (const candidate of candidates) {

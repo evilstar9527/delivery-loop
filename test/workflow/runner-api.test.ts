@@ -354,6 +354,107 @@ describe('authenticated Runner heartbeat and result API', () => {
     expect(replay.status).toBe(401);
   });
 
+  it('accepts sequence one independently for two analysis attempts in the same Run', async () => {
+    const store = new RunnerAttemptStore(env.DB_CONTROL);
+    const now = new Date();
+    const first = await store.complete(
+      ATTEMPT_ID,
+      RAW_TOKEN,
+      {
+        schemaVersion: '1',
+        eventId: 'runner-result-event-first-attempt',
+        sequence: 1,
+        payloadRef: `d1://execution-plans/${PLAN_ID}`,
+        digest: PLAN_DIGEST,
+        occurredAt: now.toISOString(),
+        expectedVersion: 1,
+        leaseGeneration: 1,
+      },
+      now,
+    );
+
+    const secondAttemptId = 'attempt-runner-api-replan';
+    const secondPlanId = 'plan-runner-api-replan';
+    const secondPlanDigest = `sha256:${'6'.repeat(64)}`;
+    const secondToken = 'runner-token-replan-attempt';
+    const expiresAt = new Date(now.getTime() + 5 * 60_000).toISOString();
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, github_run_id, version, lease_generation,
+           lease_token_digest, lease_expires_at, heartbeat_at, created_at, updated_at
+         ) VALUES (?, ?, 2, 'analysis', 'running', ?, 'example/repo',
+                   'example/repo/.github/workflows/delivery-agent.yml@refs/heads/main',
+                   '123457', 1, 1, ?, ?, ?, ?, ?)`,
+      ).bind(
+        secondAttemptId,
+        RUN_ID,
+        BASE_SHA,
+        `sha256:${'7'.repeat(64)}`,
+        expiresAt,
+        now.toISOString(),
+        now.toISOString(),
+        now.toISOString(),
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_tokens (
+           token_id, attempt_id, oidc_token_digest, token_digest, tool_token_digest,
+           lease_generation, scopes_json, expires_at, created_at
+         ) VALUES ('token-runner-api-replan', ?, ?, ?, ?, 1, '["repo:read"]', ?, ?)`,
+      ).bind(
+        secondAttemptId,
+        `sha256:${'8'.repeat(64)}`,
+        await canonicalSha256(secondToken),
+        `sha256:${'9'.repeat(64)}`,
+        expiresAt,
+        now.toISOString(),
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO execution_plans (
+           plan_id, run_id, plan_version, task_revision, base_sha, digest, status,
+           created_by_attempt_id, objective, created_at, updated_at
+         ) VALUES (?, ?, 2, '1', ?, ?, 'validated', ?,
+                   'Runner replan result', ?, ?)`,
+      ).bind(
+        secondPlanId,
+        RUN_ID,
+        BASE_SHA,
+        secondPlanDigest,
+        secondAttemptId,
+        now.toISOString(),
+        now.toISOString(),
+      ),
+    ]);
+
+    const second = await store.complete(
+      secondAttemptId,
+      secondToken,
+      {
+        schemaVersion: '1',
+        eventId: 'runner-result-event-second-attempt',
+        sequence: 1,
+        payloadRef: `d1://execution-plans/${secondPlanId}`,
+        digest: secondPlanDigest,
+        occurredAt: now.toISOString(),
+        expectedVersion: 1,
+        leaseGeneration: 1,
+      },
+      now,
+    );
+
+    expect(first.signalId).not.toBe(second.signalId);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT attempt_id, sequence FROM workflow_signals
+       WHERE run_id = ? ORDER BY attempt_id`,
+    ).bind(RUN_ID).all()).toMatchObject({
+      results: [
+        { attempt_id: ATTEMPT_ID, sequence: 1 },
+        { attempt_id: secondAttemptId, sequence: 1 },
+      ],
+    });
+  });
+
   it('rejects stale generation, expired token, and untrusted result fields without echoing them', async () => {
     const staleGeneration = await runnerPost(
       `/v1/attempts/${ATTEMPT_ID}/heartbeat`,
