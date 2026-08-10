@@ -7,7 +7,9 @@ import {
   automatedReviewContextDigest,
 } from '../src/domain/automated-review.js';
 import { TRIAGE_TOOL_ACTIONS } from '../src/domain/tool-bridge.js';
+import { CodexReviewAdapterError } from '../src/agent/codex-review-adapter.js';
 import { runAnalysisAttempt } from '../src/runner/analysis-runner.js';
+import type { AnalysisRunnerError } from '../src/runner/analysis-runner.js';
 
 const RUN_ID = 'run-review-runner';
 const ATTEMPT_ID = 'attempt-review-runner';
@@ -137,5 +139,81 @@ describe('automated review Runner', () => {
       `/v1/attempts/${ATTEMPT_ID}/context`,
       `/v1/attempts/${ATTEMPT_ID}/automated-review-result`,
     ]);
+  });
+
+  it('keeps automated-review provider failures safe and loggable', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-review-runner-failure-'));
+    const workspace = join(root, 'workspace');
+    const runnerTemp = join(root, 'runner-temp');
+    await Promise.all([mkdir(workspace), mkdir(runnerTemp)]);
+    let failureBody: unknown;
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('https://oidc.actions.test/token')) {
+        return Response.json({ value: 'CANARY_REVIEW_OIDC_TOKEN' });
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/exchange`)) {
+        return Response.json({
+          attemptToken: ATTEMPT_TOKEN,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: 'CANARY_REVIEW_TOOL_TOKEN',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/context`)) {
+        return Response.json(context());
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/events`)) {
+        failureBody = JSON.parse(String(init?.body)) as unknown;
+        return Response.json({ accepted: true }, { status: 202 });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    };
+    const promise = runAnalysisAttempt({
+      environment: {
+        DELIVERY_SCHEMA_VERSION: '1',
+        DELIVERY_RUN_ID: RUN_ID,
+        DELIVERY_ATTEMPT_ID: ATTEMPT_ID,
+        DELIVERY_TASK_DIGEST: TASK_DIGEST,
+        DELIVERY_BASE_SHA: HEAD_SHA,
+        DELIVERY_ATTEMPT_MODE: 'analysis',
+        DELIVERY_CONTROL_PLANE_URL: 'https://control.delivery.test',
+        ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.actions.test/token',
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'CANARY_ACTIONS_RUNTIME_TOKEN',
+        GITHUB_WORKSPACE: workspace,
+        RUNNER_TEMP: runnerTemp,
+      },
+      fetch: fetchImplementation,
+      reviewAgent: {
+        usesMeteredModel: false,
+        start: async () => {
+          throw new CodexReviewAdapterError(
+            'process_nonzero_exit',
+            'provider_output_schema_rejected',
+          );
+        },
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+    });
+    await expect(promise).rejects.toMatchObject({
+      name: 'AnalysisRunnerError',
+      analysisFailure: {
+        kind: 'process_nonzero_exit',
+        stage: 'single_pass',
+        providerFailureCode: 'provider_output_schema_rejected',
+      },
+    } satisfies Partial<AnalysisRunnerError>);
+    expect(failureBody).toMatchObject({
+      failureCode: 'invalid_agent_output',
+      failureSite: 'agent_output',
+      attemptedPaths: ['repository_inspection'],
+      neededHumanInput: 'manual_investigation',
+    });
   });
 });

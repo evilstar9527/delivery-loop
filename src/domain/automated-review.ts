@@ -152,13 +152,13 @@ export const AUTOMATED_REVIEW_RESULT_V1_JSON_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['severity', 'title', 'body'],
+        required: ['severity', 'title', 'body', 'path', 'line'],
         properties: {
           severity: { type: 'string', enum: ['blocker', 'major', 'minor'] },
           title: { type: 'string', minLength: 1, maxLength: 200 },
           body: { type: 'string', minLength: 1, maxLength: 1_000 },
-          path: { type: 'string', minLength: 1, maxLength: 240 },
-          line: { type: 'integer', minimum: 1, maximum: 10_000_000 },
+          path: { type: ['string', 'null'], minLength: 1, maxLength: 240 },
+          line: { type: ['integer', 'null'], minimum: 1, maximum: 10_000_000 },
         },
       },
     },

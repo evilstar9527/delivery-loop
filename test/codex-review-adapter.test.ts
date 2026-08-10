@@ -78,6 +78,13 @@ async function paths() {
 }
 
 describe('Codex automated review adapter', () => {
+  it('uses a strict provider schema with nullable required finding locations', () => {
+    const finding = AUTOMATED_REVIEW_RESULT_V1_JSON_SCHEMA.properties.findings.items;
+    expect(finding.required).toEqual(['severity', 'title', 'body', 'path', 'line']);
+    expect(finding.properties.path.type).toEqual(['string', 'null']);
+    expect(finding.properties.line.type).toEqual(['integer', 'null']);
+  });
+
   it('runs read-only and returns a digest-bound structured review', async () => {
     const input = await paths();
     let request: CommandExecutionRequest | undefined;
@@ -137,5 +144,69 @@ describe('Codex automated review adapter', () => {
       outputFilePath: input.outputFile,
       timeoutMs: 60_000,
     })).rejects.toBeInstanceOf(CodexReviewAdapterError);
+  });
+
+  it('normalizes nullable provider locations before trusted result validation', async () => {
+    const input = await paths();
+    const digest = await automatedReviewContextDigest(context());
+    const adapter = new CodexReviewAdapter({
+      outputSchemaPath: input.schemaFile,
+      execute: async () => {
+        await writeFile(input.outputFile, JSON.stringify({
+          schemaVersion: '1',
+          contextDigest: digest,
+          verdict: 'approved',
+          summary: 'No blocker or major findings remain.',
+          findings: [{
+            severity: 'minor',
+            title: 'Optional cleanup',
+            body: 'This does not block the requested change.',
+            path: null,
+            line: null,
+          }],
+        }));
+        return { exitCode: 0 };
+      },
+    });
+    const result = await adapter.start({
+      workspacePath: input.workspace,
+      contextFilePath: input.contextFile,
+      outputFilePath: input.outputFile,
+      timeoutMs: 60_000,
+    });
+    expect(result).toMatchObject({
+      verdict: 'approved',
+      findings: [{ title: 'Optional cleanup' }],
+    });
+    expect(result.findings[0]).not.toHaveProperty('path');
+    expect(result.findings[0]).not.toHaveProperty('line');
+  });
+
+  it('preserves a fixed provider classification for a nonzero review process', async () => {
+    const input = await paths();
+    const adapter = new CodexReviewAdapter({
+      outputSchemaPath: input.schemaFile,
+      execute: async (request) => {
+        request.onStdoutLine?.(JSON.stringify({
+          type: 'turn.failed',
+          error: { message: 'HTTP 400 invalid request' },
+        }));
+        return {
+          exitCode: 1,
+          stderr: 'response_format JSON schema rejected',
+        };
+      },
+    });
+    await expect(adapter.start({
+      workspacePath: input.workspace,
+      contextFilePath: input.contextFile,
+      outputFilePath: input.outputFile,
+      timeoutMs: 60_000,
+      model: 'review-model',
+    })).rejects.toMatchObject({
+      name: 'CodexReviewAdapterError',
+      kind: 'process_nonzero_exit',
+      providerFailureCode: 'provider_invalid_request',
+    });
   });
 });
