@@ -492,6 +492,14 @@ interface ModelUsageProjectionRow {
   at: string;
 }
 
+interface AutomatedReviewProjectionRow {
+  iteration: number;
+  head_sha: string;
+  status: string;
+  blocking_finding_count: number | null;
+  minor_finding_count: number | null;
+}
+
 export interface TaskStatusView {
   task: Record<string, unknown>;
   run: Record<string, unknown>;
@@ -698,6 +706,8 @@ export class TaskQueryStore {
     if (planRevision !== null) runView.planRevision = planRevision;
     const mergeGate = await this.mergeGateSummary(runId);
     if (mergeGate !== null) runView.mergeGate = mergeGate;
+    const automatedReview = await this.automatedReviewSummary(runId);
+    if (automatedReview !== null) runView.automatedReview = automatedReview;
     const testDeployments = await this.testDeploymentSummaries(runId);
     if (testDeployments.length > 0) runView.testDeployments = testDeployments;
     const testAcceptances = await this.testAcceptanceSummaries(runId);
@@ -1309,6 +1319,37 @@ export class TaskQueryStore {
       optional(summary, 'evidenceId', row.evidence_id);
       return summary;
     });
+  }
+
+  private async automatedReviewSummary(runId: string): Promise<Record<string, unknown> | null> {
+    const row = await this.db.prepare(
+      `WITH current_head AS (
+         SELECT observations.head_sha
+         FROM github_merge_gate_observations AS observations
+         JOIN merge_gate_evaluations AS evaluations
+           ON evaluations.observation_id = observations.observation_id
+         WHERE evaluations.run_id = ?
+         ORDER BY observations.external_updated_at DESC,
+                  evaluations.created_at DESC, observations.observation_id DESC
+         LIMIT 1
+       )
+       SELECT lineage.iteration, lineage.head_sha, lineage.status,
+              lineage.blocking_finding_count, lineage.minor_finding_count
+       FROM automated_review_lineage AS lineage
+       WHERE lineage.run_id = ?
+         AND lineage.head_sha = (SELECT head_sha FROM current_head)
+       ORDER BY lineage.iteration DESC, lineage.updated_at DESC
+       LIMIT 1`,
+    ).bind(runId, runId).first<AutomatedReviewProjectionRow>();
+    if (row === null) return null;
+    const projection: Record<string, unknown> = {
+      iteration: row.iteration,
+      headSha: row.head_sha,
+      status: row.status,
+    };
+    optional(projection, 'blockingFindingCount', row.blocking_finding_count);
+    optional(projection, 'minorFindingCount', row.minor_finding_count);
+    return projection;
   }
 
   private async githubMergeSummary(runId: string): Promise<Record<string, unknown> | null> {
