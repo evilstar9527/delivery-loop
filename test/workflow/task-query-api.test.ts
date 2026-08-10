@@ -386,7 +386,8 @@ describe('safe Task and ExecutionPlan query API', () => {
     const ids = await createTask('empty-plan');
     const response = await apiGet(`/v1/runs/${ids.runId}/plan`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
+    const body = await response.json();
+    expect(body).toMatchObject({
       run: { id: ids.runId, state: 'queued', version: 0 },
       plan: null,
       items: [],
@@ -395,6 +396,7 @@ describe('safe Task and ExecutionPlan query API', () => {
       checkpoints: [],
       evidence: [],
     });
+    expect(body).not.toHaveProperty('automatedReview');
   });
 
   it('fails closed for unauthenticated, invalid, and missing resources', async () => {
