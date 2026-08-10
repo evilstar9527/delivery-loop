@@ -6,6 +6,7 @@ import {
   CodexExecutionAdapter,
   CodexExecutionAdapterError,
   type ExecutionAgent,
+  type ExecutionAgentDecision,
 } from '../agent/codex-execution-adapter.js';
 import { BoundedEditRecoveryAgent } from '../agent/bounded-edit-recovery-agent.js';
 import {
@@ -254,20 +255,20 @@ class RawTranscriptBuffer {
     try {
       event = JSON.parse(line) as unknown;
     } catch {
-      throw new ExecutionRunnerError('execution Agent transcript is invalid');
+      throw new CodexExecutionAdapterError('transcript_invalid');
     }
     if (event === null || typeof event !== 'object' || Array.isArray(event)) {
-      throw new ExecutionRunnerError('execution Agent transcript is invalid');
+      throw new CodexExecutionAdapterError('transcript_invalid');
     }
     if (
       new SecretScanner({ secrets: [...this.runtimeSecrets] })
         .scanText(line, '$.agent_transcript').length > 0
     ) {
-      throw new ExecutionRunnerError('execution Agent transcript contains sensitive material');
+      throw new CodexExecutionAdapterError('transcript_invalid');
     }
     const sizeBytes = new TextEncoder().encode(`${line}\n`).length;
     if (this.sizeBytes + sizeBytes > MAX_RAW_TRANSCRIPT_BYTES) {
-      throw new ExecutionRunnerError('execution Agent transcript is oversized');
+      throw new CodexExecutionAdapterError('transcript_invalid');
     }
     this.activity.accept(event);
     this.lines.push(line);
@@ -281,6 +282,69 @@ class RawTranscriptBuffer {
   activitySummary(): CodexExecutionActivity {
     return this.activity.result();
   }
+}
+
+export interface RawTranscriptArtifactAgentOptions {
+  agent: ExecutionAgent;
+  runtimeSecrets: ReadonlySet<string>;
+  persist(content: string): Promise<void>;
+  onActivity?(activity: CodexExecutionActivity): void;
+  validateDecision?(decision: ExecutionAgentDecision): ExecutionAgentDecision;
+}
+
+/**
+ * Persists the encrypted raw transcript without allowing that secondary
+ * artifact operation to erase the Agent's primary typed failure.
+ */
+export function createRawTranscriptArtifactAgent(
+  options: RawTranscriptArtifactAgentOptions,
+): ExecutionAgent {
+  return {
+    ...(options.agent.usesMeteredModel === undefined
+      ? {}
+      : { usesMeteredModel: options.agent.usesMeteredModel }),
+    apply: async (input) => {
+      const transcript = new RawTranscriptBuffer(new Set(options.runtimeSecrets));
+      let decision: ExecutionAgentDecision | undefined;
+      let agentFailure: unknown;
+      try {
+        const applied = await options.agent.apply({
+          ...input,
+          onTranscriptLine: (line) => { transcript.accept(line); },
+        });
+        decision = options.validateDecision?.(applied) ?? applied;
+      } catch (error) {
+        agentFailure = error;
+      } finally {
+        try {
+          options.onActivity?.(transcript.activitySummary());
+        } catch {
+          // Diagnostic logging cannot change the delivery Attempt outcome.
+        }
+      }
+
+      let transcriptFailure: CodexExecutionAdapterError | undefined;
+      try {
+        const content = transcript.content();
+        if (content === null) {
+          if (options.agent.usesMeteredModel === true) {
+            throw new CodexExecutionAdapterError('transcript_invalid');
+          }
+        } else {
+          await options.persist(content);
+        }
+      } catch {
+        transcriptFailure = new CodexExecutionAdapterError('transcript_invalid');
+      }
+
+      if (agentFailure !== undefined) throw agentFailure;
+      if (transcriptFailure !== undefined) throw transcriptFailure;
+      if (decision === undefined) {
+        throw new CodexExecutionAdapterError('decision_invalid', 'invalid_output');
+      }
+      return decision;
+    },
+  };
 }
 
 function requiredEnvironment(environment: NodeJS.ProcessEnv, key: string): string {
@@ -1127,57 +1191,27 @@ export async function runExecutionAttempt(
         branch: result.targetBranch,
       };
     }
-    const transcript = new RawTranscriptBuffer(runtimeSecrets);
-    const artifactAgent: ExecutionAgent = {
-      ...(attemptAgent.usesMeteredModel === undefined
-        ? {}
-        : { usesMeteredModel: attemptAgent.usesMeteredModel }),
-      apply: async (input) => {
-        let decision;
-        let failure: unknown;
+    const artifactAgent = createRawTranscriptArtifactAgent({
+      agent: attemptAgent,
+      runtimeSecrets,
+      persist: async (content) => persistRawTranscript(fetcher, config, fencing, content),
+      ...(options.onAgentActivity === undefined ? {} : { onActivity: options.onAgentActivity }),
+      validateDecision: (decision) => {
+        if (decision.action !== 'apply_patch') return decision;
         try {
-          decision = await attemptAgent.apply({
-            ...input,
-            onTranscriptLine: (line) => { transcript.accept(line); },
-          });
-          if (decision.action === 'apply_patch') {
-            try {
-              decision = {
-                ...decision,
-                proposal: validateExecutionPatchProposal(
-                  decision.proposal,
-                  policy.policy.protectedPaths,
-                  [...runtimeSecrets],
-                ),
-              };
-            } catch {
-              throw new CodexExecutionAdapterError('decision_invalid', 'invalid_output');
-            }
-          }
-        } catch (error) {
-          failure = error;
-        } finally {
-          try {
-            options.onAgentActivity?.(transcript.activitySummary());
-          } catch {
-            // Diagnostic logging cannot change the delivery Attempt outcome.
-          }
+          return {
+            ...decision,
+            proposal: validateExecutionPatchProposal(
+              decision.proposal,
+              policy.policy.protectedPaths,
+              [...runtimeSecrets],
+            ),
+          };
+        } catch {
+          throw new CodexExecutionAdapterError('decision_invalid', 'invalid_output');
         }
-        const content = transcript.content();
-        if (content === null) {
-          if (attemptAgent.usesMeteredModel === true) {
-            throw new ExecutionRunnerError('execution Agent transcript is unavailable');
-          }
-        } else {
-          await persistRawTranscript(fetcher, config, fencing, content);
-        }
-        if (failure !== undefined) throw failure;
-        if (decision === undefined) {
-          throw new ExecutionRunnerError('execution Agent decision is unavailable');
-        }
-        return decision;
       },
-    };
+    });
     const runner = new ExecutionAttemptRunner({
       repositoryPath: config.workspacePath,
       checkoutSha: config.checkoutSha,
