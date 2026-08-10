@@ -212,9 +212,22 @@ export default {
         await revokeRepoWriteCredentialsFromEnv(env);
         return;
       }
+      const executionProgress = new ExecutionProgressReconciler(
+        env.DB_CONTROL,
+        env.TASK_OBJECTS,
+        { now: scheduledNow },
+      );
+      // An exact human approval is already a durable external fact. Activate
+      // and claim one approved Item before any recovery or observation scan can
+      // consume the Free-plan 10 ms CPU budget, then make its fenced dispatch
+      // visible to Queue immediately. The relay includes workflow roots too;
+      // duplicate Queue delivery remains D1-fenced.
+      await executionProgress.reconcileScheduling(1);
+      await relay.relay();
       // Free-plan scheduled and Queue invocations have a 10 ms CPU ceiling.
-      // Workflow creation is the control-flow root, so attempt its fenced
-      // direct delivery before spending CPU enqueueing or scanning anything.
+      // Keep a direct workflow-root delivery after the priority relay so a
+      // Queue delay cannot strand Task creation, without starving an already
+      // approved Run before its first execution dispatch is durable.
       await new WorkflowOutboxProcessor(
         env.DB_CONTROL,
         new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
@@ -226,11 +239,6 @@ export default {
       // A fresh OWNER approval resumes only its immutable failed-review
       // lineage. Generic initial scheduling explicitly excludes this Run.
       await recoverApprovedGitHubReviewFeedbacksFromEnv(env);
-      const executionProgress = new ExecutionProgressReconciler(
-        env.DB_CONTROL,
-        env.TASK_OBJECTS,
-        { now: scheduledNow },
-      );
       // A Run already activated by an exact approval has no remaining external
       // read dependency. Claim one ready Item before higher-cost observation
       // work can exhaust the Free-plan scheduled CPU budget; the resulting
