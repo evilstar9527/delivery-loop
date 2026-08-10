@@ -135,9 +135,11 @@ type GitHubBaseReadinessFailureReason =
   | GitHubBaseResolutionErrorCode;
 
 function safeGitHubBaseBranch(value: string): boolean {
-  return GITHUB_BASE_BRANCH_PATTERN.test(value) &&
+  return (
+    GITHUB_BASE_BRANCH_PATTERN.test(value) &&
     !value.includes('..') &&
-    !value.includes('//');
+    !value.includes('//')
+  );
 }
 
 function safeGitHubRepository(value: string): boolean {
@@ -173,9 +175,13 @@ function safeAutomatedReviewProjection(value: unknown): SafeAutomatedReviewProje
   const review = value as Record<string, unknown>;
   const { iteration, status } = review;
   if (
-    !Number.isSafeInteger(iteration) || iteration < 0 ||
-    (status !== 'pending' && status !== 'approved' && status !== 'changes_requested' &&
-      status !== 'changes-requested' && status !== 'blocked')
+    !Number.isSafeInteger(iteration) ||
+    iteration < 0 ||
+    (status !== 'pending' &&
+      status !== 'approved' &&
+      status !== 'changes_requested' &&
+      status !== 'changes-requested' &&
+      status !== 'blocked')
   ) {
     return undefined;
   }
