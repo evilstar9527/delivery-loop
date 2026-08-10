@@ -9,6 +9,9 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const nonBlank = (maximum: number): z.ZodString =>
   z.string().min(1).max(maximum).refine((value) => /\S/.test(value), 'must not be blank');
 
+export const AutomatedReviewIdSchema = z.string()
+  .regex(/^automated_review_[a-f0-9]{52}$/);
+
 export const AutomatedReviewFindingV1Schema = z.object({
   severity: z.enum(['blocker', 'major', 'minor']),
   title: nonBlank(200),
