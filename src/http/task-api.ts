@@ -66,6 +66,12 @@ const RESOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const BASE_SHA_PATTERN = /^[a-f0-9]{40}$/;
 const GITHUB_REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const GITHUB_BASE_BRANCH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,239}$/;
+const AutomatedReviewProjectionSchema = z.object({
+  iteration: z.number().int().positive(),
+  status: z.enum(['pending', 'approved', 'changes_requested', 'blocked']),
+  blockingFindingCount: z.number().int().nonnegative().optional(),
+  minorFindingCount: z.number().int().nonnegative().optional(),
+});
 const CancelRunBodySchema = z
   .object({ expectedRunVersion: z.number().int().nonnegative() })
   .strict();
@@ -252,7 +258,15 @@ export function taskApi(options: TaskApiOptions = {}): Hono<{ Bindings: Bindings
     }
     const view = await new TaskQueryStore(c.env.DB_CONTROL).getRunPlanStatus(runId);
     if (view === null) return errorResponse(c, 404, 'not_found', 'run not found', false);
-    return c.json(view);
+    const { automatedReview: rawAutomatedReview, ...safeView } = view as typeof view & {
+      automatedReview?: unknown;
+    };
+    const automatedReview = AutomatedReviewProjectionSchema.safeParse(rawAutomatedReview);
+    return c.json(
+      automatedReview.success
+        ? { ...safeView, automatedReview: automatedReview.data }
+        : safeView,
+    );
   });
 
   app.post('/v1/runs/:runId/context', async (c) => {
