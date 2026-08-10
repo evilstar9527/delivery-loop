@@ -1957,4 +1957,124 @@ describe('analysis Runner bootstrap', () => {
     expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
     expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
   });
+
+  it('durably reports an unclassified post-reservation failure with one exact retry', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-terminal-failure-'));
+    const environment = await runnerEnvironment(root);
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(environment.GITHUB_WORKSPACE!, { recursive: true });
+    await mkdir(environment.RUNNER_TEMP!, { recursive: true });
+    const eventBodies: unknown[] = [];
+    let eventRequests = 0;
+
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('https://oidc.actions.test/token')) {
+        return Response.json({ value: OIDC_TOKEN });
+      }
+      if (url.endsWith('/exchange')) {
+        return Response.json({
+          attemptToken: INITIAL_TOKEN,
+          expiresAt: '2026-07-25T00:05:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: INITIAL_TOOL_TOKEN,
+            expiresAt: '2026-07-25T00:05:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith('/context')) {
+        return Response.json({
+          schemaVersion: '1',
+          attempt: {
+            id: ATTEMPT_ID,
+            runId: RUN_ID,
+            mode: 'analysis',
+            version: 7,
+            leaseGeneration: 3,
+            baseSha: BASE_SHA,
+          },
+          task: taskEnvelope(),
+          planPolicy: {
+            version: 1,
+            allowedEffects: ['repo_read'],
+            allowedCommandRefs: ['policy:inspect'],
+          },
+        });
+      }
+      if (url.endsWith('/model-reservations')) {
+        const body = JSON.parse(String(init?.body)) as { reservationId: string };
+        return Response.json({
+          reservationId: body.reservationId,
+          attemptId: ATTEMPT_ID,
+          runId: RUN_ID,
+          provider: 'openai',
+          model: 'gpt-test-metered',
+          reservedTokens: 1_000,
+          reservedCostMicrousd: 1_000,
+          expiresAt: '2026-07-25T00:10:00.000Z',
+          overrideId: null,
+          disposition: 'created',
+        }, { status: 201 });
+      }
+      if (url.endsWith('/model-usage')) {
+        return Response.json(
+          { error: { code: 'temporarily_unavailable' } },
+          { status: 503 },
+        );
+      }
+      if (url.endsWith('/events')) {
+        eventRequests += 1;
+        eventBodies.push(JSON.parse(String(init?.body)) as unknown);
+        if (eventRequests === 1) throw new Error('CANARY_AMBIGUOUS_FAILURE_CALLBACK');
+        return Response.json({ accepted: true }, { status: 202 });
+      }
+      throw new Error(`unexpected terminal failure fake request: ${url}`);
+    };
+
+    const promise = runAnalysisAttempt({
+      environment,
+      fetch: fetchImplementation,
+      agent: {
+        usesMeteredModel: true,
+        async start(input) {
+          input.onUsage?.({
+            inputTokens: 100,
+            cachedInputTokens: 60,
+            outputTokens: 20,
+            reasoningOutputTokens: 5,
+          });
+          return await proposedPlan(input, planContent());
+        },
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+      now: () => new Date('2026-07-25T00:01:00.000Z'),
+    });
+
+    await expect(promise).rejects.toMatchObject({
+      name: 'AnalysisRunnerError',
+      analysisFailure: {
+        kind: 'runner_internal_failure',
+        stage: 'runner_boundary',
+      },
+    } satisfies Partial<AnalysisRunnerError>);
+    await expect(promise).rejects.not.toThrow(/CANARY_AMBIGUOUS_FAILURE_CALLBACK/);
+    expect(eventRequests).toBe(2);
+    expect(eventBodies[0]).toEqual(eventBodies[1]);
+    expect(eventBodies[0]).toMatchObject({
+      type: 'attempt_failed',
+      failureCode: 'unknown_failure',
+      failureSite: 'external_reconciliation',
+      attemptedPaths: ['external_reconciliation'],
+      neededHumanInput: 'manual_investigation',
+      expectedVersion: 7,
+      leaseGeneration: 3,
+    });
+    expect(JSON.stringify(eventBodies)).not.toContain('CANARY_AMBIGUOUS_FAILURE_CALLBACK');
+    expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
+    expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
+  });
 });

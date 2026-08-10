@@ -117,6 +117,7 @@ export const CODEX_ANALYSIS_FAILURE_KINDS = [
   'structured_output_invalid',
   'context_proof_invalid',
   'plan_validation_failed',
+  'runner_internal_failure',
 ] as const;
 export type CodexAnalysisFailureKind = (typeof CODEX_ANALYSIS_FAILURE_KINDS)[number];
 
@@ -130,6 +131,7 @@ export const CODEX_ANALYSIS_FAILURE_STAGES = [
   'diagnostic_root_cause',
   'diagnostic_plan',
   'plan_validation',
+  'runner_boundary',
 ] as const;
 export type CodexAnalysisFailureStage = (typeof CODEX_ANALYSIS_FAILURE_STAGES)[number];
 
@@ -143,6 +145,7 @@ function analysisFailureMessage(
   if (kind === 'usage_invalid') return 'Codex analysis usage is unavailable';
   if (kind === 'context_proof_invalid') return 'Codex analysis context proof is invalid';
   if (kind === 'plan_validation_failed') return 'Codex analysis Plan is invalid';
+  if (kind === 'runner_internal_failure') return 'Analysis runner boundary failed';
   if (stage === 'diagnostic_log_request') return 'Codex diagnostic log request is invalid';
   if (stage === 'diagnostic_trace_request') return 'Codex diagnostic trace request is invalid';
   if (stage === 'diagnostic_root_cause') return 'Codex diagnostic root cause is invalid';

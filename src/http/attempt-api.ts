@@ -975,16 +975,23 @@ export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bi
     if (!parsed.success) {
       return errorResponse(c, 400, 'invalid_argument', 'invalid attempt event body', false);
     }
+    const now = options.now?.() ?? new Date();
+    const failures = new AttemptFailureStore(c.env.DB_CONTROL);
     try {
-      const authorization = await new RunnerAttemptStore(c.env.DB_CONTROL).authorize(
-        attemptId,
-        token,
-      );
-      const result = await new AttemptFailureStore(c.env.DB_CONTROL).report(
-        authorization,
-        token,
-        parsed.data,
-      );
+      let result;
+      try {
+        const authorization = await new RunnerAttemptStore(c.env.DB_CONTROL).authorize(
+          attemptId,
+          token,
+          now,
+        );
+        result = await failures.report(authorization, token, parsed.data, now);
+      } catch (error) {
+        if (!(error instanceof RunnerAttemptError)) throw error;
+        const replay = await failures.replayAnalysis(attemptId, token, parsed.data, now);
+        if (replay === null) throw error;
+        result = replay;
+      }
       c.header('cache-control', 'no-store');
       return c.json({ accepted: true, ...result }, 202);
     } catch (error) {

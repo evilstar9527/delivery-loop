@@ -151,6 +151,64 @@ function stableSuffix(digest: string): string {
 export class AttemptFailureStore {
   constructor(private readonly db: D1Database) {}
 
+  /**
+   * Reads back an already committed analysis failure after its HTTP response
+   * was lost. The exact revoked token and immutable event are required; this
+   * path performs no mutation and cannot revive the Attempt.
+   */
+  async replayAnalysis(
+    attemptId: string,
+    rawToken: string,
+    input: AttemptFailureReportV1,
+    now = new Date(),
+  ): Promise<AttemptFailureResult | null> {
+    const report = AttemptFailureReportV1Schema.parse(input);
+    const tokenDigest = await canonicalSha256(rawToken);
+    const replayIdentity = await this.db.prepare(
+      `SELECT attempts.run_id
+       FROM attempts
+       JOIN attempt_tokens ON attempt_tokens.attempt_id = attempts.attempt_id
+       WHERE attempts.attempt_id = ?
+         AND attempt_tokens.token_digest = ?
+         AND attempt_tokens.revoked_at IS NOT NULL
+         AND attempt_tokens.expires_at > ?`,
+    ).bind(attemptId, tokenDigest, now.toISOString()).first<{ run_id: string }>();
+    if (replayIdentity === null) return null;
+    const candidate = await this.candidateByIdentity(attemptId, replayIdentity.run_id);
+    if (
+      candidate === null || candidate.mode !== 'analysis' || candidate.status !== 'failed' ||
+      candidate.version !== report.expectedVersion + 1 ||
+      candidate.lease_generation !== report.leaseGeneration + 1
+    ) throw new AttemptFailureError('state_conflict');
+    const scopeDigest = await retryScopeDigest({
+      runId: candidate.run_id,
+      mode: 'analysis',
+      planId: candidate.plan_id,
+      planVersion: candidate.plan_version,
+      planItemId: candidate.plan_item_id,
+    });
+    const fingerprintDigest = await failureFingerprint({
+      retryScopeDigest: scopeDigest,
+      failureCode: report.failureCode,
+      failureSite: report.failureSite,
+    });
+    const identityDigest = await canonicalSha256({
+      runId: candidate.run_id,
+      eventId: report.eventId,
+    });
+    return await this.projection(
+      candidate,
+      report,
+      `failure_${stableSuffix(identityDigest)}`,
+      scopeDigest,
+      fingerprintDigest,
+      null,
+      null,
+      null,
+      false,
+    );
+  }
+
   async report(
     authorization: RunnerAuthorization,
     rawToken: string,
@@ -806,6 +864,13 @@ export class AttemptFailureStore {
   private async candidate(
     authorization: RunnerAuthorization,
   ): Promise<FailureCandidateRow | null> {
+    return await this.candidateByIdentity(authorization.attemptId, authorization.runId);
+  }
+
+  private async candidateByIdentity(
+    attemptId: string,
+    runId: string,
+  ): Promise<FailureCandidateRow | null> {
     return await this.db
       .prepare(
         `SELECT attempts.attempt_id, attempts.run_id, attempts.ordinal, attempts.mode,
@@ -827,7 +892,7 @@ export class AttemptFailureStore {
           AND plan_item_progress.item_id = attempts.plan_item_id
          WHERE attempts.attempt_id = ? AND attempts.run_id = ?`,
       )
-      .bind(authorization.attemptId, authorization.runId)
+      .bind(attemptId, runId)
       .first<FailureCandidateRow>();
   }
 

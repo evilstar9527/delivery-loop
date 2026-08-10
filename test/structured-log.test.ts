@@ -207,6 +207,13 @@ describe('secure structured logging', () => {
         'diagnostic_plan',
         'provider_output_schema_rejected',
       );
+      writeRunnerStructuredLog(
+        'analysis_attempt_result',
+        'failed',
+        { DELIVERY_ATTEMPT_ID: 'attempt-safe-runner-failure' },
+        'runner_internal_failure',
+        'runner_boundary',
+      );
     } finally {
       write.mockRestore();
     }
@@ -223,6 +230,12 @@ describe('secure structured logging', () => {
       failureKind: 'process_nonzero_exit',
       failureStage: 'diagnostic_plan',
       providerFailureCode: 'provider_output_schema_rejected',
+    });
+    expect(JSON.parse(output[2]!)).toMatchObject({
+      event: 'analysis_attempt_result',
+      outcome: 'failed',
+      failureKind: 'runner_internal_failure',
+      failureStage: 'runner_boundary',
     });
     expect(() => writeRunnerStructuredLog(
       'analysis_attempt_result',

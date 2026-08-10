@@ -214,6 +214,29 @@ beforeEach(async () => {
 });
 
 describe('bounded Attempt failure policy and blocker projection', () => {
+  it('replays an exact accepted analysis failure with the revoked token', async () => {
+    const attempt = await seedAttempt(1);
+    const body = failureBody(1);
+
+    const first = await reportFailure(attempt.attemptId, attempt.token, body);
+    expect(first.status).toBe(202);
+    const firstProjection = await first.json();
+
+    const replay = await reportFailure(attempt.attemptId, attempt.token, body);
+    expect(replay.status).toBe(202);
+    expect(await replay.json()).toEqual(firstProjection);
+    const changedEvent = await reportFailure(attempt.attemptId, attempt.token, {
+      ...body,
+      eventId: 'failure-event-rebound',
+    });
+    expect(changedEvent.status).toBe(409);
+    expect(
+      await env.DB_CONTROL.prepare(
+        'SELECT COUNT(*) AS count FROM attempt_failures WHERE attempt_id = ?',
+      ).bind(attempt.attemptId).first(),
+    ).toEqual({ count: 1 });
+  });
+
   it('blocks on the second consecutive trusted fingerprint and exposes card-safe paths/input', async () => {
     const first = await seedAttempt(1);
     const firstResponses = await Promise.all(
