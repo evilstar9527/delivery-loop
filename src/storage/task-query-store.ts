@@ -54,6 +54,13 @@ interface RunRow {
   updated_at: string;
 }
 
+interface AutomatedReviewProjectionRow {
+  iteration: number;
+  status: string;
+  blocking_finding_count: number | null;
+  minor_finding_count: number | null;
+}
+
 interface PlanRow {
   plan_id: string;
   plan_version: number;
@@ -497,6 +504,13 @@ export interface TaskStatusView {
   run: Record<string, unknown>;
 }
 
+export interface AutomatedReviewStatusView {
+  iteration: number;
+  status: 'pending' | 'approved' | 'changes_requested' | 'blocked';
+  blockingFindingCount?: number;
+  minorFindingCount?: number;
+}
+
 export interface RunPlanStatusView {
   run: Record<string, unknown>;
   plan: Record<string, unknown> | null;
@@ -505,6 +519,7 @@ export interface RunPlanStatusView {
   heartbeats: Array<Record<string, unknown>>;
   checkpoints: Array<Record<string, unknown>>;
   evidence: Array<Record<string, unknown>>;
+  automatedReview?: AutomatedReviewStatusView;
 }
 
 function optional(
@@ -710,6 +725,11 @@ export class TaskQueryStore {
     }
     const githubMerge = await this.githubMergeSummary(runId);
     if (githubMerge !== null) runView.merge = githubMerge;
+    const automatedReview = await this.automatedReviewSummary(
+      runId,
+      run.active_plan_id,
+      run.active_plan_version,
+    );
 
     const [attemptResult, heartbeatResult, checkpointResult, evidenceResult] = await Promise.all([
       this.db
@@ -932,6 +952,7 @@ export class TaskQueryStore {
         heartbeats,
         checkpoints,
         evidence,
+        ...(automatedReview === null ? {} : { automatedReview }),
       };
     }
 
@@ -1174,7 +1195,53 @@ export class TaskQueryStore {
       heartbeats,
       checkpoints,
       evidence,
+      ...(automatedReview === null ? {} : { automatedReview }),
     };
+  }
+
+  private async automatedReviewSummary(
+    runId: string,
+    activePlanId: string | null,
+    activePlanVersion: number | null,
+  ): Promise<AutomatedReviewStatusView | null> {
+    if (activePlanId === null || activePlanVersion === null) return null;
+    const row = await this.db.prepare(
+      `SELECT reviews.iteration, reviews.status,
+              reviews.blocking_finding_count, reviews.minor_finding_count
+       FROM automated_reviews AS reviews
+       JOIN pull_request_publications AS publications
+         ON publications.publication_id = reviews.publication_id
+        AND publications.run_id = reviews.run_id
+       WHERE reviews.run_id = ?
+         AND reviews.plan_id = ?
+         AND reviews.plan_version = ?
+         AND publications.status = 'verified'
+       ORDER BY reviews.iteration DESC, reviews.created_at DESC, reviews.review_id DESC
+       LIMIT 1`,
+    ).bind(runId, activePlanId, activePlanVersion).first<AutomatedReviewProjectionRow>();
+    if (row === null) return null;
+    if (
+      !Number.isSafeInteger(row.iteration) || row.iteration < 1 || row.iteration > 3 ||
+      !['pending', 'approved', 'changes_requested', 'blocked'].includes(row.status) ||
+      (row.blocking_finding_count !== null && (
+        !Number.isSafeInteger(row.blocking_finding_count) || row.blocking_finding_count < 0
+      )) ||
+      (row.minor_finding_count !== null && (
+        !Number.isSafeInteger(row.minor_finding_count) || row.minor_finding_count < 0
+      ))
+    ) throw new Error('active automated review projection is invalid');
+
+    const summary: AutomatedReviewStatusView = {
+      iteration: row.iteration,
+      status: row.status as AutomatedReviewStatusView['status'],
+    };
+    if (row.blocking_finding_count !== null) {
+      summary.blockingFindingCount = row.blocking_finding_count;
+    }
+    if (row.minor_finding_count !== null) {
+      summary.minorFindingCount = row.minor_finding_count;
+    }
+    return summary;
   }
 
   private async testDeploymentSummaries(
