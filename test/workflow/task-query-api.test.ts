@@ -1,7 +1,8 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 
 import { env } from 'cloudflare:test';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TaskQueryStore } from '../../src/storage/task-query-store.js';
 import { canonicalSha256 } from '../../src/domain/digest.js';
 import type { TaskEnvelope } from '../../src/domain/task.js';
 import { taskApi } from '../../src/http/task-api.js';
@@ -397,6 +398,47 @@ describe('safe Task and ExecutionPlan query API', () => {
       evidence: [],
     });
     expect(body).not.toHaveProperty('automatedReview');
+  });
+
+  it('returns only the safe current automated-review projection', async () => {
+    const getRunPlanStatus = vi.spyOn(TaskQueryStore.prototype, 'getRunPlanStatus');
+    const statuses = [
+      ['pending', { iteration: 1, status: 'pending' }],
+      ['approved', { iteration: 2, status: 'approved', blockingFindingCount: 0, minorFindingCount: 1 }],
+      ['changes_requested', { iteration: 3, status: 'changes_requested', blockingFindingCount: 2, minorFindingCount: 4 }],
+      ['blocked', { iteration: 3, status: 'blocked', blockingFindingCount: 1 }],
+    ] as const;
+
+    for (const [runId, automatedReview] of statuses) {
+      getRunPlanStatus.mockResolvedValueOnce({
+        run: { id: runId },
+        automatedReview: {
+          ...automatedReview,
+          summary: 'private review text',
+          findingBody: 'private finding body',
+          payloadRef: 'r2://private-review',
+          taskBody: TASK_CANARY,
+          modelOutput: 'private model output',
+          credential: 'private credential',
+        },
+      } as never);
+      const response = await apiGet(`/v1/runs/${runId}/plan`);
+      expect(response.status).toBe(200);
+      const text = await response.text();
+      expect(text).not.toContain('private review text');
+      expect(text).not.toContain('private finding body');
+      expect(text).not.toContain('r2://private-review');
+      expect(text).not.toContain(TASK_CANARY);
+      expect(text).not.toContain('private model output');
+      expect(text).not.toContain('private credential');
+      expect(JSON.parse(text)).toEqual({ run: { id: runId }, automatedReview });
+    }
+
+    getRunPlanStatus.mockResolvedValueOnce({ run: { id: 'stale-head' } } as never);
+    const staleResponse = await apiGet('/v1/runs/stale-head/plan');
+    expect(staleResponse.status).toBe(200);
+    expect(await staleResponse.json()).toEqual({ run: { id: 'stale-head' } });
+    vi.restoreAllMocks();
   });
 
   it('fails closed for unauthenticated, invalid, and missing resources', async () => {
