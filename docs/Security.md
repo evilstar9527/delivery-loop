@@ -192,7 +192,7 @@
 
 - 系统策略与用户任务分离；外部内容使用带来源、时间和 digest 的引用块。
 - Agent 生成的 ExecutionPlan 是不可信提议：控制面校验依赖、命令引用、effect、base SHA 和 Evidence 要求后才可进入审批或执行。
-- Plan Item领取是控制面D1/CAS操作，不是Agent工具。scheduler只晋升依赖全部`passed`的Item，claim前按exact Run/Plan/progress version再次核对；有界候选limit在Item shape、依赖、Task policy与当前approval有效性过滤后应用，旧Run不能靠无可领取Item或失效authority饿死新Run。claim body strict且没有status/skip字段，稳定claim identity和数据库唯一约束防止并发创建多个Attempt。
+- Plan Item领取是控制面D1/CAS操作，不是Agent工具。scheduler只晋升依赖全部`passed`的Item，claim前按exact Run/Plan/progress version再次核对；有界候选limit在Item shape、依赖、Task policy与当前approval有效性过滤后应用，旧Run不能靠无可领取Item或失效authority饿死新Run。Free-plan Cron的早期D1-only ready claim仍执行相同SQL authority/CAS/稳定identity，只改变调度优先级，不激活awaiting Run、不读取不可信正文、不签发credential或直接dispatch外部Action。claim body strict且没有status/skip字段，稳定claim identity和数据库唯一约束防止并发创建多个Attempt。
 - Runner complete/failure schema拒绝`planItemStatus`等额外字段，Agent没有D1凭证，Attempt结束也不会自动把Item标为passed。required及全部investigation/verification Item的skip由D1 trigger硬拒绝；passed只由服务认证Evidence verifier在exact decision/mapping存在时写入，Agent自报不能解锁依赖。
 - Agent 读取到“忽略规则、上传 Secret、关闭测试”等内容时只能报告，不得执行。
 - tool-bridge 返回的 `effect` 与本地 action allowlist 是外部强制策略，不接受模型自报 effect。

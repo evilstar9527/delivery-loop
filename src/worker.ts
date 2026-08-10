@@ -231,6 +231,11 @@ export default {
         env.TASK_OBJECTS,
         { now: scheduledNow },
       );
+      // A Run already activated by an exact approval has no remaining external
+      // read dependency. Claim one ready Item before higher-cost observation
+      // work can exhaust the Free-plan scheduled CPU budget; the resulting
+      // dispatch stays durable and is relayed below.
+      await executionProgress.reconcileReadyAttempts(1);
       // A completed Action must be projected before lower-priority scans can
       // exhaust the Free-plan CPU budget and the stuck detector fences it.
       await reconcileAtRiskGitHubRunsFromEnv(env, {

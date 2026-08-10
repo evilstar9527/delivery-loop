@@ -538,6 +538,32 @@ describe('execution progress reconciliation', () => {
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
   });
 
+  it('claims an already activated ready Item through the early D1-only path', async () => {
+    await seed('approve');
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE runs SET state = 'executing', version = 3, updated_at = ?
+         WHERE run_id = ? AND state = 'awaiting_approval' AND version = 2`,
+      ).bind(NOW.toISOString(), RUN_ID),
+      env.DB_CONTROL.prepare(
+        `UPDATE plan_item_progress SET status = 'ready', version = 1, updated_at = ?
+         WHERE plan_id = ? AND item_id = 'change' AND status = 'pending'`,
+      ).bind(NOW.toISOString(), PLAN_ID),
+    ]);
+    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
+      now: () => NOW,
+    });
+
+    expect(await reconciler.reconcileReadyAttempts(1)).toBe(1);
+    expect(await reconciler.reconcileReadyAttempts(1)).toBe(0);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts WHERE run_id = ? AND mode = 'implement'`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'execution_dispatch'`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+  });
+
   it('verifies a successful Action and creates one durable Draft PR publication', async () => {
     await seed('approve');
     const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
