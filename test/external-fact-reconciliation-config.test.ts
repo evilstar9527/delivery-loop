@@ -39,6 +39,10 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await recoverApprovedGitHubReviewFeedbacksFromEnv(env);',
       reviewAttemptRecovery,
     );
+    const readyAttemptScheduling = worker.indexOf(
+      'await executionProgress.reconcileReadyAttempts(1);',
+      reviewApprovalRecovery,
+    );
     const relay = worker.indexOf('await relay.relay();');
     const priorityFinalization = worker.indexOf(
       'await executionProgress.reconcileFinalizations(1);',
@@ -79,6 +83,8 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(workflowDrain).toBeGreaterThan(-1);
     expect(reviewAttemptRecovery).toBeGreaterThan(workflowDrain);
     expect(reviewApprovalRecovery).toBeGreaterThan(reviewAttemptRecovery);
+    expect(readyAttemptScheduling).toBeGreaterThan(reviewApprovalRecovery);
+    expect(readyAttemptScheduling).toBeLessThan(atRiskGitHubReconciliation);
     expect(reviewApprovalRecovery).toBeLessThan(atRiskGitHubReconciliation);
     expect(reviewAttemptRecovery).toBeLessThan(atRiskGitHubReconciliation);
     expect(atRiskGitHubReconciliation).toBeGreaterThan(workflowDrain);

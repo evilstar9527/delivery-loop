@@ -108,8 +108,15 @@ export class ExecutionProgressReconciler {
       throw new Error('execution progress reconciliation limit must be between 1 and 100');
     }
     const activatedRuns = await this.activateApprovedRuns(limit);
-    const scheduledAttempts = await this.scheduleInitialAttempts(limit);
+    const scheduledAttempts = await this.reconcileReadyAttempts(limit);
     return { activatedRuns, scheduledAttempts };
+  }
+
+  async reconcileReadyAttempts(limit = 25): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+      throw new Error('execution progress reconciliation limit must be between 1 and 100');
+    }
+    return await this.scheduleInitialAttempts(limit);
   }
 
   async reconcileObservedCompletions(
