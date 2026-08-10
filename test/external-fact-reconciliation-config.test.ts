@@ -24,9 +24,13 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(feishuRuntime).toContain('runtime.messageReconciler.reconcileBatch(25)');
   });
 
-  it('finalizes passed work before scheduling and observes at-risk completion before fencing', () => {
+  it('activates approved work and relays its dispatch before optional Cron work', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     const workflowDrain = worker.indexOf(').drain(5);');
+    const priorityExecutionScheduling = worker.indexOf(
+      'await executionProgress.reconcileScheduling(1);',
+    );
+    const priorityRelay = worker.indexOf('await relay.relay();');
     const planRevisionAnalysisRecovery = worker.indexOf(
       'await new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {',
       workflowDrain,
@@ -43,7 +47,7 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await executionProgress.reconcileReadyAttempts(1);',
       reviewApprovalRecovery,
     );
-    const relay = worker.indexOf('await relay.relay();');
+    const relay = worker.indexOf('await relay.relay();', priorityRelay + 1);
     const priorityFinalization = worker.indexOf(
       'await executionProgress.reconcileFinalizations(1);',
       relay,
@@ -81,6 +85,9 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
 
     expect(workflowDrain).toBeGreaterThan(-1);
+    expect(priorityExecutionScheduling).toBeGreaterThan(-1);
+    expect(priorityExecutionScheduling).toBeLessThan(priorityRelay);
+    expect(priorityRelay).toBeLessThan(workflowDrain);
     expect(reviewAttemptRecovery).toBeGreaterThan(workflowDrain);
     expect(reviewApprovalRecovery).toBeGreaterThan(reviewAttemptRecovery);
     expect(readyAttemptScheduling).toBeGreaterThan(reviewApprovalRecovery);
@@ -92,7 +99,7 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(planRevisionAnalysisRecovery).toBeGreaterThan(executionFinalization);
     expect(planRevisionAnalysisRecovery).toBeLessThan(relay);
     expect(reviewAttemptRecovery).toBeLessThan(relay);
-    expect(relay).toBeGreaterThan(-1);
+    expect(relay).toBeGreaterThan(priorityRelay);
     expect(workflowDrain).toBeLessThan(relay);
     expect(preparedPublicationRecovery).toBeGreaterThan(relay);
     expect(preparedPublicationRecovery).toBeLessThan(priorityFinalization);
