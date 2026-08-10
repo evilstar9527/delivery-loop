@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { parseDeliveryPolicy } from '../src/domain/delivery-policy.js';
 import { patchContentDigest } from '../src/domain/patch-proposal.js';
 import { CodexExecutionAdapterError } from '../src/agent/codex-execution-adapter.js';
+import { ExecutionAgentUsageSettlementError } from '../src/agent/bounded-edit-recovery-agent.js';
 import type { VerificationEvidenceReporter } from '../src/runner/verification-execution-runner.js';
 import {
   ExecutionAttemptRunner,
@@ -332,6 +333,38 @@ describe('execution Attempt Runner', () => {
       failureSite: 'agent_output',
       attemptedPaths: ['code_change'],
       neededHumanInput: 'manual_investigation',
+    }]);
+  });
+
+  it('reports model usage settlement failure as quota external reconciliation', async () => {
+    const fixture = await repository();
+    const failures: ExecutionAttemptFailure[] = [];
+    const runner = new ExecutionAttemptRunner({
+      repositoryPath: fixture.path,
+      checkoutSha: fixture.checkoutSha,
+      planVersion: 1,
+      planItemId: 'verify-and-repair',
+      targetedCommandRefs: ['test:unit'],
+      deliveryPolicy: policy,
+      repositoryWriter: writer(fixture.path, fixture.checkoutSha),
+      agent: {
+        apply: async () => { throw new ExecutionAgentUsageSettlementError(); },
+      },
+      agentInput: agentInput(fixture.path),
+      headReporter: { record: async () => undefined },
+      evidenceReporter: evidenceReporter(),
+      failureReporter: { report: async (failure) => { failures.push(failure); } },
+    });
+
+    await expect(runner.run()).rejects.toMatchObject({
+      name: 'ExecutionAttemptError',
+      kind: 'quota_unavailable',
+    } satisfies Partial<ExecutionAttemptError>);
+    expect(failures).toEqual([{
+      failureCode: 'tool_unavailable',
+      failureSite: 'external_reconciliation',
+      attemptedPaths: ['external_reconciliation'],
+      neededHumanInput: 'resolve_external_dependency',
     }]);
   });
 

@@ -4,6 +4,7 @@ import {
   type CodexExecutionFailureKind,
   type ExecutionAgent,
 } from '../agent/codex-execution-adapter.js';
+import { ExecutionAgentUsageSettlementError } from '../agent/bounded-edit-recovery-agent.js';
 import { DeliveryPolicyV1Schema, type ParsedDeliveryPolicy } from '../domain/delivery-policy.js';
 import { canonicalSha256 } from '../domain/digest.js';
 import type {
@@ -40,6 +41,7 @@ export interface ExecutionAttemptFailure {
 export type ExecutionAttemptFailureKind =
   | CodexExecutionFailureKind
   | 'unknown'
+  | 'quota_unavailable'
   | 'credential_unavailable'
   | 'repository_patch_failed'
   | 'repository_commit_failed'
@@ -228,6 +230,14 @@ export class ExecutionAttemptRunner {
           decision.action !== 'apply_patch')
       ) throw new Error('invalid decision');
     } catch (error) {
+      if (error instanceof ExecutionAgentUsageSettlementError) {
+        return this.fail('quota_unavailable', {
+          failureCode: 'tool_unavailable',
+          failureSite: 'external_reconciliation',
+          attemptedPaths: ['external_reconciliation'],
+          neededHumanInput: 'resolve_external_dependency',
+        });
+      }
       const kind = error instanceof CodexExecutionAdapterError ? error.kind : 'unknown';
       const failureCode = kind === 'process_nonzero_exit'
         ? 'command_nonzero_exit'

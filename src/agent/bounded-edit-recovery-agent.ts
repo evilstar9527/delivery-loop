@@ -17,6 +17,14 @@ export interface BoundedEditRecoveryAgentOptions {
   canRecover(): Promise<boolean>;
 }
 
+/** Safe boundary for an admitted model call whose durable usage settlement failed. */
+export class ExecutionAgentUsageSettlementError extends Error {
+  constructor() {
+    super('execution Agent usage settlement is unavailable');
+    this.name = 'ExecutionAgentUsageSettlementError';
+  }
+}
+
 function omitPatchProposalBody(line: string): string {
   let event: unknown;
   try {
@@ -84,7 +92,11 @@ export class BoundedEditRecoveryAgent implements ExecutionAgent {
         failure = error;
       }
       if (usage !== null) {
-        await this.options.afterInvocation(invocation, usage);
+        try {
+          await this.options.afterInvocation(invocation, usage);
+        } catch {
+          throw new ExecutionAgentUsageSettlementError();
+        }
       }
       if (decision !== undefined && (
         (invocation === 1 && decision.action === 'apply_patch') ||
