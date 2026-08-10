@@ -22,6 +22,7 @@ import {
 import { ExecutionAttemptContextStore } from '../../src/storage/execution-attempt-store.js';
 import { ExecutionHeadStore } from '../../src/storage/execution-head-store.js';
 import { ExecutionProgressReconciler } from '../../src/reconciliation/execution-progress-reconciler.js';
+import { TaskQueryStore } from '../../src/storage/task-query-store.js';
 
 const RUN_ID = 'run-automated-review';
 const TASK_ID = 'task-automated-review';
@@ -298,6 +299,15 @@ async function scheduleAndContext(): Promise<{
   return { authorization, context };
 }
 
+async function apiPlanProjection(): Promise<Record<string, unknown>> {
+  const response = await SELF.fetch(
+    `https://delivery-loop.test/v1/runs/${RUN_ID}/plan`,
+    { headers: { authorization: 'Bearer test-task-intake-token' } },
+  );
+  expect(response.status).toBe(200);
+  return await response.json() as Record<string, unknown>;
+}
+
 beforeEach(async () => {
   await reset();
   await seed();
@@ -338,6 +348,12 @@ describe('automated review loop', () => {
     const context = await contextStore.get(authorization);
     expect(context?.review.headSha).toBe(HEAD_SHA);
     if (context === null) throw new Error('automated review context was not created');
+    expect((await new TaskQueryStore(env.DB_CONTROL).getRunPlanStatus(RUN_ID))?.automatedReview)
+      .toEqual({ iteration: 1, status: 'pending' });
+    expect((await apiPlanProjection()).automatedReview).toEqual({
+      iteration: 1,
+      status: 'pending',
+    });
     const result = {
       schemaVersion: '1' as const,
       contextDigest: await automatedReviewContextDigest(context),
@@ -364,6 +380,19 @@ describe('automated review loop', () => {
       created: true,
     });
     expect(replay).toEqual({ ...first, created: false });
+    expect((await new TaskQueryStore(env.DB_CONTROL).getRunPlanStatus(RUN_ID))?.automatedReview)
+      .toEqual({
+        iteration: 1,
+        status: 'changes_requested',
+        blockingFindingCount: 1,
+        minorFindingCount: 0,
+      });
+    expect((await apiPlanProjection()).automatedReview).toEqual({
+      iteration: 1,
+      status: 'changes_requested',
+      blockingFindingCount: 1,
+      minorFindingCount: 0,
+    });
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM attempts WHERE mode = 'review_fix'`,
     ).first()).toEqual({ count: 1 });
@@ -450,6 +479,19 @@ describe('automated review loop', () => {
     expect(await store.complete(authorization, result, new Date(NOW))).toMatchObject({
       status: 'approved',
       created: true,
+    });
+    expect((await new TaskQueryStore(env.DB_CONTROL).getRunPlanStatus(RUN_ID))?.automatedReview)
+      .toEqual({
+        iteration: 1,
+        status: 'approved',
+        blockingFindingCount: 0,
+        minorFindingCount: 1,
+      });
+    expect((await apiPlanProjection()).automatedReview).toEqual({
+      iteration: 1,
+      status: 'approved',
+      blockingFindingCount: 0,
+      minorFindingCount: 1,
     });
     expect(await store.complete(authorization, result, new Date(NOW))).toMatchObject({
       status: 'approved',

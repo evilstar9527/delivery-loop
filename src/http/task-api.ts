@@ -165,7 +165,7 @@ function githubBaseReadinessUnavailable(
 
 type SafeAutomatedReviewProjection = {
   iteration: number;
-  status: 'pending' | 'approved' | 'changes_requested' | 'changes-requested' | 'blocked';
+  status: 'pending' | 'approved' | 'changes_requested' | 'blocked';
   blockingFindingCount?: number;
   minorFindingCount?: number;
 };
@@ -175,22 +175,31 @@ function safeAutomatedReviewProjection(value: unknown): SafeAutomatedReviewProje
   const review = value as Record<string, unknown>;
   const { iteration, status } = review;
   if (
+    typeof iteration !== 'number' ||
     !Number.isSafeInteger(iteration) ||
-    iteration < 0 ||
+    iteration < 1 ||
+    iteration > 3 ||
     (status !== 'pending' &&
       status !== 'approved' &&
       status !== 'changes_requested' &&
-      status !== 'changes-requested' &&
       status !== 'blocked')
   ) {
     return undefined;
   }
   const projection: SafeAutomatedReviewProjection = { iteration, status };
-  if (Number.isSafeInteger(review.blockingFindingCount) && review.blockingFindingCount >= 0) {
-    projection.blockingFindingCount = review.blockingFindingCount;
+  const blockingFindingCount = review.blockingFindingCount;
+  if (
+    typeof blockingFindingCount === 'number' &&
+    Number.isSafeInteger(blockingFindingCount) && blockingFindingCount >= 0
+  ) {
+    projection.blockingFindingCount = blockingFindingCount;
   }
-  if (Number.isSafeInteger(review.minorFindingCount) && review.minorFindingCount >= 0) {
-    projection.minorFindingCount = review.minorFindingCount;
+  const minorFindingCount = review.minorFindingCount;
+  if (
+    typeof minorFindingCount === 'number' &&
+    Number.isSafeInteger(minorFindingCount) && minorFindingCount >= 0
+  ) {
+    projection.minorFindingCount = minorFindingCount;
   }
   return projection;
 }
