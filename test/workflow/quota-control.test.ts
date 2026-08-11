@@ -212,6 +212,60 @@ describe('durable multi-dimensional quota control', () => {
       .rejects.toThrow('quota_model_profile_is_immutable');
   });
 
+  it('settles production-shape cumulative Codex tool-loop usage under its selected profile', async () => {
+    const legacyRun = await seedRun('legacy-tool-loop');
+    const legacyAttemptId = await seedAttempt(legacyRun.runId, 'legacy-tool-loop', 1);
+    const legacyStore = new QuotaControlStore(env.DB_CONTROL);
+    const legacyReservation = await legacyStore.reserveModelCall({
+      reservationId: 'model_reservation_legacy_tool_loop',
+      attemptId: legacyAttemptId,
+      profileId: 'codex-gpt-5p6-terra-medium-20260804',
+      occurredAt: NOW.toISOString(),
+    });
+    await expect(legacyStore.settleModelCall({
+      reservationId: legacyReservation.reservationId,
+      usageId: 'usage_legacy_tool_loop',
+      attemptId: legacyAttemptId,
+      inputTokens: 312_964,
+      cachedInputTokens: 227_840,
+      outputTokens: 1_921,
+      reasoningOutputTokens: 847,
+      occurredAt: LATER.toISOString(),
+    })).rejects.toMatchObject({ code: 'usage_exceeds_reservation' });
+
+    const run = await seedRun('cumulative-tool-loop');
+    const attemptId = await seedAttempt(run.runId, 'cumulative-tool-loop', 1);
+    const store = new QuotaControlStore(env.DB_CONTROL);
+    const reservation = await store.reserveModelCall({
+      reservationId: 'model_reservation_cumulative_tool_loop',
+      attemptId,
+      profileId: 'codex-gpt-5p6-terra-medium-tool-loop-20260811',
+      occurredAt: NOW.toISOString(),
+    });
+
+    expect(reservation).toMatchObject({
+      provider: 'delivery_loop_relay',
+      model: 'gpt-5.6-terra',
+      reservedTokens: 2_040_000,
+      reservedCostMicrousd: 5_600_000,
+      disposition: 'created',
+    });
+    await expect(store.settleModelCall({
+      reservationId: reservation.reservationId,
+      usageId: 'usage_cumulative_tool_loop',
+      attemptId,
+      inputTokens: 312_964,
+      cachedInputTokens: 227_840,
+      outputTokens: 1_921,
+      reasoningOutputTokens: 847,
+      occurredAt: LATER.toISOString(),
+    })).resolves.toMatchObject({
+      usageId: 'usage_cumulative_tool_loop',
+      totalTokens: 314_885,
+      disposition: 'created',
+    });
+  });
+
   it('enforces attempt limits in D1 for every producer and keeps idempotent retries valid', async () => {
     for (const [index, scopeType] of QUOTA_SCOPE_TYPES.entries()) {
       const run = await seedRun(`attempt-${scopeType}`);
