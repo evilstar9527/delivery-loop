@@ -18,6 +18,10 @@ import {
 } from '../domain/task.js';
 import { canonicalSha256 } from '../domain/digest.js';
 import {
+  AutomatedReviewResultV1Schema,
+  renderAutomatedReviewFeedback,
+} from '../domain/automated-review.js';
+import {
   BaseUpdateRevisionDataSchema,
   ReviewFeedbackRevisionDataSchema,
   SupplementalContextDataSchema,
@@ -259,6 +263,12 @@ export class AnalysisAttemptContextStore {
     row: AttemptContextRow,
     fact: RevisionSourceFactRow,
   ): Promise<AnalysisRevisionSource> {
+    if (fact.source_ref.startsWith('d1://automated-reviews/')) {
+      return await this.automatedReviewRevisionSource(row, fact);
+    }
+    if (!fact.source_ref.startsWith('d1://github-review-feedbacks/')) {
+      throw new AnalysisAttemptError('revision_source_conflict');
+    }
     const feedback = await this.db.prepare(
       `SELECT feedback_id, github_review_id, body_ref, body_digest,
               source_head_sha, branch, review_url, submitted_at
@@ -302,6 +312,84 @@ export class AnalysisAttemptContextStore {
       object.customMetadata?.bodyDigest !== feedback.body_digest ||
       object.customMetadata?.sourceHeadSha !== feedback.source_head_sha
     ) throw new AnalysisAttemptError('revision_source_conflict');
+    return { schemaVersion: '1', kind: 'review_feedback', digest: fact.source_digest, data };
+  }
+
+  private async automatedReviewRevisionSource(
+    row: AttemptContextRow,
+    fact: RevisionSourceFactRow,
+  ): Promise<AnalysisRevisionSource> {
+    const review = await this.db.prepare(
+      `SELECT reviews.review_id, reviews.result_ref, reviews.result_digest,
+              reviews.feedback_body_digest AS body_digest,
+              reviews.source_head_sha, reviews.branch,
+              publication.github_pr_url AS review_url,
+              reviews.completed_at AS submitted_at
+       FROM automated_reviews AS reviews
+       JOIN pull_request_publications AS publication
+         ON publication.publication_id = reviews.publication_id
+       WHERE reviews.run_id = ?
+         AND ? = 'd1://automated-reviews/' || reviews.review_id
+         AND reviews.status = 'changes_requested'
+         AND reviews.result_ref IS NOT NULL
+         AND reviews.result_digest IS NOT NULL
+         AND reviews.feedback_body_digest IS NOT NULL
+         AND reviews.completed_at IS NOT NULL
+         AND publication.status = 'verified'
+         AND publication.github_pr_url IS NOT NULL
+         AND publication.head_branch = reviews.branch
+         AND publication.head_sha = reviews.source_head_sha`,
+    ).bind(row.run_id, fact.source_ref).first<AutomatedReviewRevisionSourceRow>();
+    if (review === null || !review.result_ref.startsWith('r2://')) {
+      throw new AnalysisAttemptError('revision_source_conflict');
+    }
+    const expectedDigest = await canonicalSha256({
+      schemaVersion: '1',
+      sourceKind: 'review_feedback',
+      sourceType: 'automated_review',
+      reviewId: review.review_id,
+      resultDigest: review.result_digest,
+      bodyDigest: review.body_digest,
+      sourceHeadSha: review.source_head_sha,
+      branch: review.branch,
+      reviewUrl: review.review_url,
+      submittedAt: review.submitted_at,
+    });
+    if (expectedDigest !== fact.source_digest) {
+      throw new AnalysisAttemptError('revision_source_conflict');
+    }
+    const object = await this.revisionObject(review.result_ref);
+    let result: ReturnType<typeof AutomatedReviewResultV1Schema.parse>;
+    try {
+      result = AutomatedReviewResultV1Schema.parse(JSON.parse(await object.text()) as unknown);
+    } catch {
+      throw new AnalysisAttemptError('revision_source_conflict');
+    }
+    const body = renderAutomatedReviewFeedback(result);
+    if (
+      result.verdict !== 'changes_requested' ||
+      await canonicalSha256(result) !== review.result_digest ||
+      await canonicalSha256(body) !== review.body_digest ||
+      object.customMetadata?.schemaVersion !== '1' ||
+      object.customMetadata?.reviewId !== review.review_id ||
+      object.customMetadata?.resultDigest !== review.result_digest ||
+      object.customMetadata?.sourceHeadSha !== review.source_head_sha
+    ) throw new AnalysisAttemptError('revision_source_conflict');
+    let data: ReturnType<typeof ReviewFeedbackRevisionDataSchema.parse>;
+    try {
+      data = ReviewFeedbackRevisionDataSchema.parse({
+        schemaVersion: '1',
+        reviewId: review.review_id,
+        body,
+        bodyDigest: review.body_digest,
+        sourceHeadSha: review.source_head_sha,
+        branch: review.branch,
+        url: review.review_url,
+        submittedAt: review.submitted_at,
+      });
+    } catch {
+      throw new AnalysisAttemptError('revision_source_conflict');
+    }
     return { schemaVersion: '1', kind: 'review_feedback', digest: fact.source_digest, data };
   }
 
@@ -434,6 +522,17 @@ interface ReviewRevisionSourceRow {
   feedback_id: string;
   github_review_id: string;
   body_ref: string;
+  body_digest: string;
+  source_head_sha: string;
+  branch: string;
+  review_url: string;
+  submitted_at: string;
+}
+
+interface AutomatedReviewRevisionSourceRow {
+  review_id: string;
+  result_ref: string;
+  result_digest: string;
   body_digest: string;
   source_head_sha: string;
   branch: string;

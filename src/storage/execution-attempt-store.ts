@@ -467,7 +467,11 @@ export class ExecutionAttemptContextStore {
       row.plan_version,
       row.plan_item_id,
     ).first<ReviewFeedbackRow>();
-    if (feedback === null) return await this.automatedReviewFeedback(row);
+    const automatedFeedback = await this.automatedReviewFeedback(row);
+    if (feedback === null) return automatedFeedback;
+    if (automatedFeedback !== undefined) {
+      throw new ExecutionAttemptError('attempt_context_mismatch');
+    }
     if (
       feedback.source_head_sha !== row.head_sha ||
       !DIGEST_PATTERN.test(feedback.body_digest) ||

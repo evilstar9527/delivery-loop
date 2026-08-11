@@ -626,4 +626,42 @@ describe('execution Attempt Runner', () => {
       { cwd: fixture.remote },
     )).rejects.toThrow();
   });
+
+  it('reports a fixed external-reconciliation failure when Plan revision admission fails', async () => {
+    const fixture = await repository();
+    const evidence = evidenceReporter();
+    const failures: ExecutionAttemptFailure[] = [];
+    const runner = new ExecutionAttemptRunner({
+      repositoryPath: fixture.path,
+      checkoutSha: fixture.checkoutSha,
+      planVersion: 1,
+      planItemId: 'verify-and-repair',
+      targetedCommandRefs: ['test:unit'],
+      deliveryPolicy: policy,
+      repositoryWriter: writer(fixture.path, fixture.checkoutSha),
+      agent: { apply: async () => ({ schemaVersion: '1', action: 'request_replan' }) },
+      agentInput: { ...agentInput(fixture.path), allowPlanRevision: true },
+      planRevisionReporter: {
+        request: async () => { throw new Error('CANARY_RAW_PLAN_REVISION_ERROR'); },
+      },
+      headReporter: { record: async () => { throw new Error('head must not be recorded'); } },
+      evidenceReporter: evidence,
+      failureReporter: { report: async (failure) => { failures.push(failure); } },
+    });
+
+    const rejected = runner.run();
+    await expect(rejected).rejects.toMatchObject({
+      name: 'ExecutionAttemptError',
+      kind: 'unknown',
+      message: 'execution Attempt failed',
+    });
+    await expect(rejected).rejects.not.toThrow(/CANARY_RAW_PLAN_REVISION_ERROR/);
+    expect(failures).toEqual([{
+      failureCode: 'unknown_failure',
+      failureSite: 'external_reconciliation',
+      attemptedPaths: ['code_change', 'external_reconciliation'],
+      neededHumanInput: 'manual_investigation',
+    }]);
+    expect(evidence.commands).toEqual([]);
+  });
 });

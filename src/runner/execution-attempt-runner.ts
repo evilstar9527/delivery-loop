@@ -254,7 +254,17 @@ export class ExecutionAttemptRunner {
     if (decision.action === 'request_replan') {
       const reporter = this.context.planRevisionReporter;
       if (reporter === undefined) throw new Error('execution Plan revision is not allowed');
-      const revision = await reporter.request();
+      let revision: PlanRevisionRequestResult;
+      try {
+        revision = await reporter.request();
+      } catch {
+        return this.fail('unknown', {
+          failureCode: 'unknown_failure',
+          failureSite: 'external_reconciliation',
+          attemptedPaths: ['code_change', 'external_reconciliation'],
+          neededHumanInput: 'manual_investigation',
+        });
+      }
       if (
         !ID_PATTERN.test(revision.revisionId) ||
         !ID_PATTERN.test(revision.analysisAttemptId) ||

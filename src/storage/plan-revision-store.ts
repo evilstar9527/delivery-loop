@@ -173,10 +173,12 @@ interface SourceFactRow {
 }
 
 interface ReviewRevisionCandidateRow {
+  source_type: 'github' | 'automated';
   feedback_id: string;
   expected_run_version: number;
   github_review_id: string;
   body_digest: string;
+  result_digest: string | null;
   source_head_sha: string;
   branch: string;
   review_url: string;
@@ -208,6 +210,7 @@ interface ReviewRevisionCandidateRow {
   publication_head_branch: string;
   current_branch_head_sha: string | null;
   lineage_count: number;
+  opposite_lineage_count: number;
   repair_count: number;
 }
 
@@ -287,7 +290,7 @@ function stableSuffix(digest: string): string {
 function sourceRefMatches(kind: BeginPlanRevisionInput['sourceKind'], ref: string): boolean {
   switch (kind) {
     case 'review_feedback':
-      return /^d1:\/\/github-review-feedbacks\/[A-Za-z0-9_-]+$/.test(ref);
+      return /^d1:\/\/(?:github-review-feedbacks|automated-reviews)\/[A-Za-z0-9_-]+$/.test(ref);
     case 'supplemental_context':
       return /^r2:\/\/supplemental-context\/[A-Za-z0-9_./-]+\.json$/.test(ref) &&
         !ref.includes('..');
@@ -330,6 +333,7 @@ export class PlanRevisionStore {
       candidate.run_id !== authorization.runId ||
       candidate.attempt_mode !== 'review_fix' ||
       candidate.lineage_count !== 1 ||
+      candidate.opposite_lineage_count !== 0 ||
       candidate.repair_count !== 0 ||
       candidate.attempt_plan_id !== candidate.active_plan_id ||
       candidate.attempt_plan_version !== candidate.active_plan_version ||
@@ -341,21 +345,38 @@ export class PlanRevisionStore {
       candidate.publication_head_branch !== candidate.branch ||
       candidate.current_branch_head_sha !== candidate.source_head_sha ||
       candidate.progress_status !== 'in_progress' ||
-      candidate.progress_active_attempt_id !== authorization.attemptId
+      candidate.progress_active_attempt_id !== authorization.attemptId ||
+      (candidate.source_type === 'automated' &&
+        (candidate.result_digest === null || !DIGEST_PATTERN.test(candidate.result_digest)))
     ) throw new PlanRevisionError('state_conflict');
 
-    const sourceRef = `d1://github-review-feedbacks/${candidate.feedback_id}`;
-    const sourceDigest = await canonicalSha256({
-      schemaVersion: '1',
-      sourceKind: 'review_feedback',
-      feedbackId: candidate.feedback_id,
-      githubReviewId: candidate.github_review_id,
-      bodyDigest: candidate.body_digest,
-      sourceHeadSha: candidate.source_head_sha,
-      branch: candidate.branch,
-      reviewUrl: candidate.review_url,
-      submittedAt: candidate.submitted_at,
-    });
+    const sourceRef = candidate.source_type === 'github'
+      ? `d1://github-review-feedbacks/${candidate.feedback_id}`
+      : `d1://automated-reviews/${candidate.feedback_id}`;
+    const sourceDigest = await canonicalSha256(candidate.source_type === 'github'
+      ? {
+          schemaVersion: '1',
+          sourceKind: 'review_feedback',
+          feedbackId: candidate.feedback_id,
+          githubReviewId: candidate.github_review_id,
+          bodyDigest: candidate.body_digest,
+          sourceHeadSha: candidate.source_head_sha,
+          branch: candidate.branch,
+          reviewUrl: candidate.review_url,
+          submittedAt: candidate.submitted_at,
+        }
+      : {
+          schemaVersion: '1',
+          sourceKind: 'review_feedback',
+          sourceType: 'automated_review',
+          reviewId: candidate.feedback_id,
+          resultDigest: candidate.result_digest,
+          bodyDigest: candidate.body_digest,
+          sourceHeadSha: candidate.source_head_sha,
+          branch: candidate.branch,
+          reviewUrl: candidate.review_url,
+          submittedAt: candidate.submitted_at,
+        });
     const existingSource = await this.sourceFact(sourceRef);
     if (existingSource !== null) {
       if (
@@ -401,7 +422,7 @@ export class PlanRevisionStore {
       sourceDigest,
       requestedBaseSha: candidate.run_base_sha,
     });
-    const sourceInsert = this.db.prepare(
+    const sourceInsert = candidate.source_type === 'github' ? this.db.prepare(
       `INSERT INTO plan_revision_source_facts (
          source_ref, run_id, expected_run_version, prior_plan_id,
          prior_plan_version, prior_plan_digest, source_kind, source_digest,
@@ -451,6 +472,10 @@ export class PlanRevisionStore {
            SELECT 1 FROM attempt_repairs
            WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id
          )
+         AND NOT EXISTS (
+           SELECT 1 FROM automated_review_fix_attempts
+           WHERE automated_review_fix_attempts.fix_attempt_id = attempts.attempt_id
+         )
          AND feedback.source_head_sha = (
            SELECT candidate_updates.head_sha
            FROM attempt_head_updates AS candidate_updates
@@ -475,6 +500,13 @@ export class PlanRevisionStore {
       nowIso,
       candidate.expected_run_version,
       candidate.run_base_sha,
+    ) : this.automatedReviewSourceInsert(
+      candidate,
+      sourceRef,
+      sourceDigest,
+      authorization,
+      request,
+      nowIso,
     );
     return await this.beginPrepared(input, now, [sourceInsert]);
   }
@@ -1441,10 +1473,11 @@ export class PlanRevisionStore {
   private async reviewRevisionCandidate(
     attemptId: string,
   ): Promise<ReviewRevisionCandidateRow | null> {
-    return await this.db.prepare(
-      `SELECT feedback.feedback_id, feedback.expected_run_version,
+    const human = await this.db.prepare(
+      `SELECT 'github' AS source_type, feedback.feedback_id, feedback.expected_run_version,
               feedback.github_review_id,
-              feedback.body_digest, feedback.source_head_sha, feedback.branch,
+              feedback.body_digest, NULL AS result_digest,
+              feedback.source_head_sha, feedback.branch,
               feedback.review_url, feedback.submitted_at,
               lineage.review_attempt_id,
               attempts.run_id AS attempt_run_id, attempts.mode AS attempt_mode,
@@ -1476,6 +1509,9 @@ export class PlanRevisionStore {
                LIMIT 1) AS current_branch_head_sha,
               (SELECT COUNT(*) FROM review_feedback_attempts AS exact_lineage
                WHERE exact_lineage.review_attempt_id = attempts.attempt_id) AS lineage_count,
+              (SELECT COUNT(*) FROM automated_review_fix_attempts AS opposite_lineage
+               WHERE opposite_lineage.fix_attempt_id = attempts.attempt_id)
+                AS opposite_lineage_count,
               (SELECT COUNT(*) FROM attempt_repairs
                WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id) AS repair_count
        FROM attempts
@@ -1492,6 +1528,162 @@ export class PlanRevisionStore {
          ON publication.publication_id = feedback.publication_id
        WHERE attempts.attempt_id = ?`,
     ).bind(attemptId).first<ReviewRevisionCandidateRow>();
+    if (human !== null) return human;
+    return await this.db.prepare(
+      `SELECT 'automated' AS source_type, reviews.review_id AS feedback_id,
+              runs.version AS expected_run_version,
+              reviews.review_id AS github_review_id,
+              reviews.feedback_body_digest AS body_digest,
+              reviews.result_digest,
+              reviews.source_head_sha, reviews.branch,
+              publication.github_pr_url AS review_url,
+              reviews.completed_at AS submitted_at,
+              fixes.fix_attempt_id AS review_attempt_id,
+              attempts.run_id AS attempt_run_id, attempts.mode AS attempt_mode,
+              attempts.status AS attempt_status, attempts.version AS attempt_version,
+              attempts.lease_generation AS attempt_lease_generation,
+              attempts.lease_expires_at AS attempt_lease_expires_at,
+              attempts.plan_id AS attempt_plan_id,
+              attempts.plan_version AS attempt_plan_version,
+              attempts.plan_item_id AS attempt_plan_item_id,
+              attempts.head_sha AS attempt_head_sha,
+              attempts.head_branch AS attempt_head_branch,
+              runs.run_id, runs.state AS run_state, runs.version AS run_version,
+              runs.base_sha AS run_base_sha, runs.active_plan_id,
+              runs.active_plan_version, runs.active_plan_digest,
+              plans.status AS plan_status,
+              progress.status AS progress_status,
+              progress.active_attempt_id AS progress_active_attempt_id,
+              publication.status AS publication_status,
+              publication.head_sha AS publication_head_sha,
+              publication.head_branch AS publication_head_branch,
+              (SELECT candidate_updates.head_sha
+               FROM attempt_head_updates AS candidate_updates
+               JOIN attempts AS candidate_attempt
+                 ON candidate_attempt.attempt_id = candidate_updates.attempt_id
+               WHERE candidate_updates.run_id = runs.run_id
+                 AND candidate_updates.plan_id = reviews.plan_id
+                 AND candidate_updates.branch = reviews.branch
+               ORDER BY candidate_attempt.ordinal DESC, candidate_updates.created_at DESC
+               LIMIT 1) AS current_branch_head_sha,
+              (SELECT COUNT(*) FROM automated_review_fix_attempts AS exact_lineage
+               WHERE exact_lineage.fix_attempt_id = attempts.attempt_id) AS lineage_count,
+              (SELECT COUNT(*) FROM review_feedback_attempts AS opposite_lineage
+               WHERE opposite_lineage.review_attempt_id = attempts.attempt_id)
+                AS opposite_lineage_count,
+              (SELECT COUNT(*) FROM attempt_repairs
+               WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id) AS repair_count
+       FROM attempts
+       JOIN automated_review_fix_attempts AS fixes
+         ON fixes.fix_attempt_id = attempts.attempt_id
+       JOIN automated_reviews AS reviews ON reviews.review_id = fixes.review_id
+       JOIN runs ON runs.run_id = reviews.run_id
+       JOIN execution_plans AS plans ON plans.plan_id = reviews.plan_id
+       JOIN plan_item_progress AS progress
+         ON progress.plan_id = reviews.plan_id
+        AND progress.item_id = reviews.plan_item_id
+       JOIN pull_request_publications AS publication
+         ON publication.publication_id = reviews.publication_id
+       WHERE attempts.attempt_id = ?
+         AND reviews.status = 'changes_requested'
+         AND reviews.result_digest IS NOT NULL
+         AND reviews.feedback_body_digest IS NOT NULL
+         AND reviews.completed_at IS NOT NULL
+         AND publication.github_pr_url IS NOT NULL`,
+    ).bind(attemptId).first<ReviewRevisionCandidateRow>();
+  }
+
+  private automatedReviewSourceInsert(
+    candidate: ReviewRevisionCandidateRow,
+    sourceRef: string,
+    sourceDigest: string,
+    authorization: RunnerAuthorization,
+    request: ReviewPlanRevisionRequest,
+    nowIso: string,
+  ): D1PreparedStatement {
+    return this.db.prepare(
+      `INSERT INTO plan_revision_source_facts (
+         source_ref, run_id, expected_run_version, prior_plan_id,
+         prior_plan_version, prior_plan_digest, source_kind, source_digest,
+         requested_base_sha, observed_at, created_at
+       )
+       SELECT ?, runs.run_id, runs.version, runs.active_plan_id,
+              runs.active_plan_version, runs.active_plan_digest,
+              'review_feedback', ?, runs.base_sha, reviews.completed_at, ?
+       FROM attempts
+       JOIN automated_review_fix_attempts AS fixes
+         ON fixes.fix_attempt_id = attempts.attempt_id
+       JOIN automated_reviews AS reviews ON reviews.review_id = fixes.review_id
+       JOIN runs ON runs.run_id = reviews.run_id
+       JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
+       JOIN plan_item_progress AS progress
+         ON progress.plan_id = reviews.plan_id
+        AND progress.item_id = reviews.plan_item_id
+       JOIN pull_request_publications AS publication
+         ON publication.publication_id = reviews.publication_id
+       WHERE attempts.attempt_id = ? AND attempts.run_id = ?
+         AND attempts.mode = 'review_fix' AND attempts.status = 'running'
+         AND attempts.version = ? AND attempts.lease_generation = ?
+         AND attempts.lease_token_digest IS NOT NULL
+         AND attempts.lease_expires_at > ?
+         AND attempts.plan_id = reviews.plan_id
+         AND attempts.plan_version = reviews.plan_version
+         AND attempts.plan_item_id = reviews.plan_item_id
+         AND attempts.head_sha = reviews.source_head_sha
+         AND attempts.head_branch IS NULL
+         AND fixes.branch = reviews.branch
+         AND fixes.source_head_sha = reviews.source_head_sha
+         AND fixes.prior_attempt_id = reviews.prior_attempt_id
+         AND reviews.status = 'changes_requested'
+         AND reviews.result_digest IS NOT NULL
+         AND reviews.feedback_body_digest IS NOT NULL
+         AND reviews.completed_at IS NOT NULL
+         AND runs.state = 'executing' AND runs.version = ?
+         AND runs.base_sha = ?
+         AND runs.active_plan_id = reviews.plan_id
+         AND runs.active_plan_version = reviews.plan_version
+         AND runs.active_plan_digest = plans.digest
+         AND plans.status = 'active'
+         AND progress.status = 'in_progress'
+         AND progress.active_attempt_id = attempts.attempt_id
+         AND publication.status = 'verified'
+         AND publication.github_pr_url IS NOT NULL
+         AND publication.head_branch = reviews.branch
+         AND publication.head_sha = reviews.source_head_sha
+         AND (SELECT COUNT(*) FROM automated_review_fix_attempts AS exact_lineage
+              WHERE exact_lineage.fix_attempt_id = attempts.attempt_id) = 1
+         AND NOT EXISTS (
+           SELECT 1 FROM review_feedback_attempts
+           WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM attempt_repairs
+           WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id
+         )
+         AND reviews.source_head_sha = (
+           SELECT candidate_updates.head_sha
+           FROM attempt_head_updates AS candidate_updates
+           JOIN attempts AS candidate_attempt
+             ON candidate_attempt.attempt_id = candidate_updates.attempt_id
+           WHERE candidate_updates.run_id = runs.run_id
+             AND candidate_updates.plan_id = reviews.plan_id
+             AND candidate_updates.branch = reviews.branch
+           ORDER BY candidate_attempt.ordinal DESC, candidate_updates.created_at DESC
+           LIMIT 1
+         )
+       ON CONFLICT DO NOTHING`,
+    ).bind(
+      sourceRef,
+      sourceDigest,
+      nowIso,
+      authorization.attemptId,
+      authorization.runId,
+      request.expectedVersion,
+      request.leaseGeneration,
+      nowIso,
+      candidate.expected_run_version,
+      candidate.run_base_sha,
+    );
   }
 
   private async beginProjection(revisionId: string): Promise<BeginProjectionRow | null> {
