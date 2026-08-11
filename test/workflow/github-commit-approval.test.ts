@@ -295,6 +295,77 @@ describe('GitHub commit-comment repo-write approval', () => {
     )).status).toBe(409);
   });
 
+  it('issues one fresh exact approval for the only failed replacement before redispatch', async () => {
+    await seedFailedAutomatedReview();
+    const client = new FakeGitHubCommitApprovalClient();
+    const firstTemplate = await (await request(
+      client,
+      `/v1/runs/${RUN_ID}/github-commit-approval-template`,
+    )).json<{ commentBody: string }>();
+    client.fact = {
+      schemaVersion: '1', repository: REPOSITORY, commentId: 809,
+      commitSha: BASE_SHA, authorLogin: 'evilstar9527', authorType: 'User',
+      authorAssociation: 'OWNER', body: firstTemplate.commentBody,
+      createdAt: '2026-08-05T05:59:20.000Z', updatedAt: '2026-08-05T05:59:20.000Z',
+      url: `https://github.com/${REPOSITORY}/commit/${BASE_SHA}#commitcomment-809`,
+    };
+    expect((await request(client, `/v1/runs/${RUN_ID}/github-commit-approvals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commentId: 809 }),
+    })).status).toBe(201);
+
+    const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
+    const replacement = await scheduler.recoverRun(RUN_ID, new Date(NOW));
+    if (replacement === null) throw new Error('automated review replacement was not created');
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE approvals SET expires_at = '2026-08-05T05:59:59.000Z'
+         WHERE run_id = ? AND effect = 'repo_write'`,
+      ).bind(RUN_ID),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET status = 'running', version = 2, lease_generation = 1,
+             lease_expires_at = '2026-08-05T05:59:00.000Z',
+             github_run_id = '88002', github_head_sha = ?,
+             github_status = 'completed', github_conclusion = 'failure', updated_at = ?
+         WHERE attempt_id = ? AND status = 'pending'`,
+      ).bind(BASE_SHA, NOW, replacement.attemptId),
+    ]);
+
+    const templateResponse = await request(
+      client,
+      `/v1/runs/${RUN_ID}/github-commit-approval-template`,
+    );
+    expect(templateResponse.status).toBe(200);
+    const template = await templateResponse.json<{ commentBody: string }>();
+    client.fact = {
+      schemaVersion: '1', repository: REPOSITORY, commentId: 810,
+      commitSha: BASE_SHA, authorLogin: 'evilstar9527', authorType: 'User',
+      authorAssociation: 'OWNER', body: template.commentBody,
+      createdAt: '2026-08-05T05:59:40.000Z', updatedAt: '2026-08-05T05:59:40.000Z',
+      url: `https://github.com/${REPOSITORY}/commit/${BASE_SHA}#commitcomment-810`,
+    };
+    expect((await request(client, `/v1/runs/${RUN_ID}/github-commit-approvals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commentId: 810 }),
+    })).status).toBe(201);
+
+    const redispatch = await scheduler.redispatchRun(RUN_ID, new Date(NOW));
+    expect(redispatch).toMatchObject({ created: true, attemptId: replacement.attemptId });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts
+       WHERE recovered_from_attempt_id = 'attempt-github-automated-review-root'`,
+    ).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM automated_review_replacement_redispatches
+       WHERE replacement_attempt_id = ?`,
+    ).bind(replacement.attemptId).first()).toEqual({ count: 1 });
+    expect((await request(
+      client,
+      `/v1/runs/${RUN_ID}/github-commit-approval-template`,
+    )).status).toBe(409);
+  });
+
   it('does not open repo-write approval for an ordinary pull_request_open Run', async () => {
     await env.DB_CONTROL.prepare(
       `UPDATE runs SET state = 'pull_request_open', version = 9, updated_at = ?
