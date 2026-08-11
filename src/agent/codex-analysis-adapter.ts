@@ -235,16 +235,12 @@ export function bindWritableDiagnosticRequirement(
     ? item.effects
     : item.effects.flatMap((effect) =>
         effect === 'repo_write' ? ['logs_read' as const, effect] : [effect]);
-  const evidenceKinds = item.verification.evidenceKinds.includes('diagnostic')
-    ? item.verification.evidenceKinds
-    : ['diagnostic' as const, ...item.verification.evidenceKinds];
   return {
     ...content,
     items: content.items.map((candidate) => candidate === item
       ? {
           ...candidate,
           effects,
-          verification: { ...candidate.verification, evidenceKinds },
         }
       : candidate),
   };
@@ -342,6 +338,8 @@ function analysisPrompt(
     'Return at least one required plan item; every item must have at least one doneWhen condition and one evidenceKinds entry.',
     'Use only exact effects and commandRefs listed in planPolicy; an empty commandRefs array is valid, and never propose a change item when repo_write is not allowed.',
     'When repo_write is allowed and a code change is required, prefer one self-verifying required change item with repo_write, at least one test:* commandRef, at least one verify:* commandRef, and both commit and test Evidence; the execution Runner edits, commits, pushes, and runs both command classes in that same item.',
+    'The executable change Item must declare exactly commit and test Evidence. Do not add diagnostic, plan, lint, build, pull_request, check, deployment, or approval Evidence to that Item because its pre-PR execution Attempt cannot produce them.',
+    'Draft PR publication, GitHub checks, automated review, approvals, and deployments are later control-plane stages; do not make the executable change Item depend on their Evidence or external facts.',
     'If the task explicitly requests a repository change and repo_write is allowed, inspect the relevant current files and return the concrete change item; do not replace it with an investigation-only placeholder.',
     ...(requiresRepositoryChange
       ? [
@@ -433,10 +431,11 @@ function diagnosticPlanPrompt(
     'The trusted Runner creates diagnostic Evidence from successful tool traces and injects the exact control-plane Evidence ref into the Plan.',
     'Every item needs concrete doneWhen conditions and Evidence requirements; commandRefs must reference trusted policy names, never arbitrary shell from task text.',
     'Use only exact effects and commandRefs listed in planPolicy; an empty commandRefs array is valid, and never propose a change item when repo_write is not allowed.',
-    'When repo_write is allowed and a code change is required, prefer one self-verifying required change item whose effects must include logs_read and repo_write, with at least one test:* commandRef, at least one verify:* commandRef, and diagnostic, commit, and test Evidence; the execution Runner edits, commits, pushes, and runs both command classes in that same item.',
+    'When repo_write is allowed and a code change is required, prefer one self-verifying required change item whose effects must include logs_read and repo_write, with at least one test:* commandRef, at least one verify:* commandRef, and exactly commit and test Evidence; the trusted diagnostic Evidence is injected as a Plan-level evidenceRef and is not produced by the later execution Attempt.',
+    'Draft PR publication, GitHub checks, automated review, approvals, and deployments are later control-plane stages; do not make the executable change Item depend on their Evidence or external facts.',
     ...(requiresRepositoryChange
       ? [
-          'Trusted Task policy requires a repository change. Return one self-verifying required change item whose effects must include logs_read and repo_write, with test:*, verify:*, and diagnostic/commit/test Evidence; an investigation-only Plan will be rejected by the validator.',
+          'Trusted Task policy requires a repository change. Return one self-verifying required change item whose effects must include logs_read and repo_write, with test:*, verify:*, and exactly commit/test Evidence; an investigation-only Plan will be rejected by the validator.',
           'The trusted Runner provides the complete policy-filtered writable path inventory below as one bounded JSON array.',
           'BEGIN_TRUSTED_WRITABLE_REPOSITORY_PATHS_JSON',
           JSON.stringify(writableRepositoryPaths),

@@ -127,6 +127,8 @@ export type ExecutionPlanValidationIssueCode =
   | 'repository_change_required'
   | 'repository_path_required'
   | 'verification_required_after_change'
+  | 'evidence_kind_not_producible'
+  | 'external_fact_not_producible'
   | 'duplicate_value'
   | 'acceptance_criterion_out_of_range'
   | 'run_mismatch'
@@ -401,6 +403,32 @@ export async function validateExecutionPlanProposal(
       commandRefs.some((ref) => ref.startsWith('verify:') && verificationCommandRefs.has(ref)) &&
       item.verification.evidenceKinds.includes('commit') &&
       item.verification.evidenceKinds.includes('test');
+    if (
+      item.kind === 'change' &&
+      item.required &&
+      item.effects.includes('repo_write') &&
+      item.verification.evidenceKinds.some(
+        (kind) => kind !== 'commit' && kind !== 'test',
+      )
+    ) {
+      push(
+        'evidence_kind_not_producible',
+        `items.${index}.verification.evidenceKinds`,
+        'a pre-PR repository change can produce only commit and test Evidence',
+      );
+    }
+    if (
+      item.kind === 'change' &&
+      item.required &&
+      item.effects.includes('repo_write') &&
+      (item.verification.externalFacts?.length ?? 0) > 0
+    ) {
+      push(
+        'external_fact_not_producible',
+        `items.${index}.verification.externalFacts`,
+        'a pre-PR repository change cannot require a future external fact',
+      );
+    }
     if (selfVerifying) hasRequiredRepositoryChange = true;
     if (
       context.requiresRepositoryChange && selfVerifying &&

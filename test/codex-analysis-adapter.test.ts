@@ -524,6 +524,12 @@ describe('Codex analysis Agent adapter', () => {
     expect(observed?.stdin).toContain('repo_write, at least one test:* commandRef');
     expect(observed?.stdin).toContain('at least one verify:* commandRef');
     expect(observed?.stdin).toContain('commit and test Evidence');
+    expect(observed?.stdin).toContain(
+      'The executable change Item must declare exactly commit and test Evidence',
+    );
+    expect(observed?.stdin).toContain(
+      'Draft PR publication, GitHub checks, automated review, approvals, and deployments are later control-plane stages',
+    );
     expect(observed?.stdin).toContain('covered by its zero-based index');
     expect(observed?.stdin).toContain(paths.contextFile);
     expect(observed?.stdin).toContain('BEGIN_UNTRUSTED_ANALYSIS_CONTEXT_JSON');
@@ -1155,7 +1161,7 @@ describe('Codex analysis Agent adapter', () => {
       effects: ['repo_read', 'logs_read', 'repo_write'],
       verification: {
         commandRefs: ['test:unit', 'verify:all'],
-        evidenceKinds: ['diagnostic', 'commit', 'test'],
+        evidenceKinds: ['commit', 'test'],
       },
     });
     expect(plan.items[0]?.acceptanceCriteriaIndexes).toEqual([0, 1, 2]);

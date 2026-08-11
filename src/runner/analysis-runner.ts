@@ -43,6 +43,7 @@ import {
   validateExecutionPlanProposal,
   type ExecutionPlanV1,
   type ExecutionPlanValidationIssueCode,
+  type PlanItemV1,
 } from '../domain/plan.js';
 import type {
   AttemptedPath,
@@ -884,6 +885,18 @@ class ControlledDiagnosticMediation implements DiagnosticAnalysisMediation {
   }
 }
 
+function consumesBoundDiagnosticEvidence(item: PlanItemV1): boolean {
+  if (!item.effects.includes('logs_read')) return false;
+  if (item.verification.evidenceKinds.includes('diagnostic')) return true;
+  const commandRefs = item.verification.commandRefs ?? [];
+  return item.kind === 'change' && item.required && item.effects.includes('repo_write') &&
+    commandRefs.some((ref) => ref.startsWith('test:')) &&
+    commandRefs.some((ref) => ref.startsWith('verify:')) &&
+    item.verification.evidenceKinds.length === 2 &&
+    item.verification.evidenceKinds.includes('commit') &&
+    item.verification.evidenceKinds.includes('test');
+}
+
 async function bindDiagnosticEvidence(
   plan: ExecutionPlanV1,
   evidenceRef: string,
@@ -892,11 +905,7 @@ async function bindDiagnosticEvidence(
   const content = planContent(plan);
   if (
     content.evidenceRefs.some((ref) => DIAGNOSTIC_EVIDENCE_REF_PATTERN.test(ref)) ||
-    !content.items.some(
-      (item) =>
-        item.effects.includes('logs_read') &&
-        item.verification.evidenceKinds.includes('diagnostic'),
-    )
+    !content.items.some(consumesBoundDiagnosticEvidence)
   ) {
     throw invalidDiagnosticPlanShape();
   }
@@ -940,9 +949,7 @@ async function bindCarriedDiagnosticEvidence(
       item.effects.includes('logs_read') &&
       commandRefs.some((ref) => ref.startsWith('test:')) &&
       commandRefs.some((ref) => ref.startsWith('verify:')) &&
-      item.verification.evidenceKinds.includes('diagnostic') &&
-      item.verification.evidenceKinds.includes('commit') &&
-      item.verification.evidenceKinds.includes('test');
+      consumesBoundDiagnosticEvidence(item);
   });
   if (candidates.length !== 1) throw invalidDiagnosticPlanShape();
   const body = {
@@ -1653,11 +1660,7 @@ export async function runAnalysisAttempt(
       if (
         !diagnosticMediation.isReady() ||
         content.evidenceRefs.some((ref) => DIAGNOSTIC_EVIDENCE_REF_PATTERN.test(ref)) ||
-        !content.items.some(
-          (item) =>
-            item.effects.includes('logs_read') &&
-            item.verification.evidenceKinds.includes('diagnostic'),
-        )
+        !content.items.some(consumesBoundDiagnosticEvidence)
       ) {
         throw invalidDiagnosticPlanShape();
       }

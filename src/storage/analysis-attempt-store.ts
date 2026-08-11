@@ -8,6 +8,7 @@ import {
   ExecutionPlanValidationError,
   type ExecutionPlanBodyV1,
   type ExecutionPlanV1,
+  type PlanItemV1,
   type PlanEffect,
 } from '../domain/plan.js';
 import {
@@ -477,6 +478,18 @@ async function nextPlanVersion(db: D1Database, runId: string): Promise<number> {
   return row.next_version;
 }
 
+function consumesBoundDiagnosticEvidence(item: PlanItemV1): boolean {
+  if (!item.effects.includes('logs_read')) return false;
+  if (item.verification.evidenceKinds.includes('diagnostic')) return true;
+  const commandRefs = item.verification.commandRefs ?? [];
+  return item.kind === 'change' && item.required && item.effects.includes('repo_write') &&
+    commandRefs.some((ref) => ref.startsWith('test:')) &&
+    commandRefs.some((ref) => ref.startsWith('verify:')) &&
+    item.verification.evidenceKinds.length === 2 &&
+    item.verification.evidenceKinds.includes('commit') &&
+    item.verification.evidenceKinds.includes('test');
+}
+
 export class AnalysisPlanProposalStore {
   constructor(private readonly db: D1Database) {}
 
@@ -553,9 +566,7 @@ export class AnalysisPlanProposalStore {
       if (
         diagnosticReferences.length !== 1 ||
         diagnosticReferences[0] !== carriedDiagnosticEvidenceRef ||
-        !content.items.some((item) =>
-          item.effects.includes('logs_read') &&
-          item.verification.evidenceKinds.includes('diagnostic'))
+        !content.items.some(consumesBoundDiagnosticEvidence)
       ) throw new AnalysisAttemptError('plan_evidence_conflict');
       return;
     }

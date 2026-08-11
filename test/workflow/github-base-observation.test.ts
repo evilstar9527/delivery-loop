@@ -681,7 +681,7 @@ describe('GitHub base observation reconciliation', () => {
         doneWhen: ['The carried root cause is repaired and trusted verification passes.'],
         verification: {
           commandRefs: ['test:unit', 'verify:all'],
-          evidenceKinds: ['diagnostic', 'commit', 'test'],
+          evidenceKinds: ['commit', 'test'],
         },
         effects: ['logs_read', 'repo_write'],
         dependsOn: [],

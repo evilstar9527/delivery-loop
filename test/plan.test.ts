@@ -7,6 +7,7 @@ import {
   type ExecutionPlanV1,
   type ExecutionPlanValidationContext,
   type ExecutionPlanValidationIssueCode,
+  type EvidenceKind,
 } from '../src/domain/plan.js';
 import { deriveAnalysisPlanPolicy } from '../src/domain/analysis-plan-policy.js';
 
@@ -169,6 +170,82 @@ describe('ExecutionPlan v1 validation', () => {
       writableRepositoryPaths: ['src/worker.ts'],
     })).resolves.toEqual(input);
   });
+
+  it.each([
+    'diagnostic',
+    'plan',
+    'lint',
+    'build',
+    'pull_request',
+    'check',
+    'deployment',
+    'approval',
+  ] satisfies readonly EvidenceKind[])(
+    'rejects %s Evidence that the pre-PR execution Item cannot produce',
+    async (unproducibleKind) => {
+      const input = await proposal((body) => {
+        body.items = [{
+          id: 'change',
+          kind: 'change',
+          title: 'Implement and verify the fix',
+          objective: 'Make the smallest safe change in src/worker.ts and prove it.',
+          acceptanceCriteriaIndexes: [0, 1],
+          doneWhen: ['The committed change passes targeted and required verification.'],
+          verification: {
+            commandRefs: ['test:unit', 'verify:all'],
+            evidenceKinds: ['commit', 'test', unproducibleKind],
+          },
+          effects: ['repo_write'],
+          dependsOn: [],
+          required: true,
+        }];
+      });
+
+      await expectIssue(
+        input,
+        'evidence_kind_not_producible' as ExecutionPlanValidationIssueCode,
+        {
+          ...CONTEXT,
+          requiresRepositoryChange: true,
+          writableRepositoryPaths: ['src/worker.ts'],
+        },
+      );
+    },
+  );
+
+  it.each(['github_pr', 'github_check', 'deployment'] as const)(
+    'rejects %s as a future external fact on the pre-PR execution Item',
+    async (unproducibleFact) => {
+      const input = await proposal((body) => {
+        body.items = [{
+          id: 'change',
+          kind: 'change',
+          title: 'Implement and verify the fix',
+          objective: 'Make the smallest safe change in src/worker.ts and prove it.',
+          acceptanceCriteriaIndexes: [0, 1],
+          doneWhen: ['The committed change passes targeted and required verification.'],
+          verification: {
+            commandRefs: ['test:unit', 'verify:all'],
+            evidenceKinds: ['commit', 'test'],
+            externalFacts: [unproducibleFact],
+          },
+          effects: ['repo_write'],
+          dependsOn: [],
+          required: true,
+        }];
+      });
+
+      await expectIssue(
+        input,
+        'external_fact_not_producible' as ExecutionPlanValidationIssueCode,
+        {
+          ...CONTEXT,
+          requiresRepositoryChange: true,
+          writableRepositoryPaths: ['src/worker.ts'],
+        },
+      );
+    },
+  );
 
   it('requires an exact trusted tracked path in every required self-verifying change item', async () => {
     const withoutPath = await proposal((body) => {
