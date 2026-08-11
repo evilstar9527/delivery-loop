@@ -306,7 +306,7 @@
 - 当前head一旦存在自动review lineage，merge gate必须看到其terminal `approved`；pending、changes requested或blocked都按review不足拒绝，passed SQL在Run/Plan/publication/head同一快照上再次核对。Cron顺序保证fresh PR先创建自动review再观察merge/base，避免只靠Agent结论或调度时序放行。
 - Plan revision 必须先有受信 source fact，不能由 Agent/HTTP caller 选择 source ref、base SHA、effect、Plan body 或 approval 绑定。review/base/context 三类 source 都在 D1 中保存 canonical digest 和 prior Plan snapshot；review source内部再区分真人GitHub signed feedback与自动review immutable result，二者不得同时绑定同一Attempt。activation 前旧 Plan/approval 只可被 invalidated，new Plan 必须 `version + 1` 且重新获得 exact human/provider approval。Case 8 `planRevisions` 对自动source只公开review Attempt/PR/head/result/body digest等安全投影；GitHub ref/真人Review/compare由只读 API 复核，自动结果由D1/R2双重重算，Feishu/Meegle 签名、tenant/identity 与审批后台仍需人工核对。Task/PRD/context/review 正文、R2 ref/content、raw source payload/API response、token、nonce 和 Action 输出无序列化入口。
 
-“PR projector先于base”按同一Run实施：base reconciler在batch候选和按Run ID直查两层排除任一`status <> verified` publication。Free-plan优先base入口即使位于全局PR projector之前，也只能读取没有未核验publication的其他Run，不能与`created_unverified → verified`竞争Run version或绕过PR外部事实核对；base token仍保持独立单仓库`contents:read`最小权限。
+“PR projector先于base”按同一Run version实施：base reconciler在batch候选和按Run ID直查两层排除`publication.run_version = runs.version AND status <> verified`。Free-plan优先base入口即使位于全局PR projector之前，也不能与current `created_unverified → verified`竞争Run version或绕过PR外部事实核对；历史stale publication没有当前CAS authority，不能永久阻断新base；base token仍保持独立单仓库`contents:read`最小权限。
 
 ## 7. 人审闸门
 
