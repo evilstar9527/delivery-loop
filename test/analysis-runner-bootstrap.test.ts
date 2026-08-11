@@ -878,7 +878,7 @@ describe('analysis Runner bootstrap', () => {
         effects: ['repo_read', 'logs_read', 'repo_write'],
         verification: {
           commandRefs: ['test:unit', 'verify:all'],
-          evidenceKinds: ['diagnostic', 'commit', 'test'],
+          evidenceKinds: ['commit', 'test'],
         },
       }],
     };
