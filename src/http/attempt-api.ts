@@ -1025,16 +1025,26 @@ export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bi
     }
     try {
       const now = options.now?.() ?? new Date();
-      const authorization = await new RunnerAttemptStore(c.env.DB_CONTROL).authorize(
-        attemptId,
-        token,
-        now,
-      );
-      const result = await new PlanRevisionStore(c.env.DB_CONTROL).beginFromReviewFeedback(
-        authorization,
-        parsed.data,
-        now,
-      );
+      const revisions = new PlanRevisionStore(c.env.DB_CONTROL);
+      let result;
+      try {
+        const authorization = await new RunnerAttemptStore(c.env.DB_CONTROL).authorize(
+          attemptId,
+          token,
+          now,
+        );
+        result = await revisions.beginFromReviewFeedback(authorization, parsed.data, now);
+      } catch (error) {
+        if (!(error instanceof RunnerAttemptError)) throw error;
+        const replay = await revisions.replayFromReviewFeedback(
+          attemptId,
+          token,
+          parsed.data,
+          now,
+        );
+        if (replay === null) throw error;
+        result = replay;
+      }
       c.header('cache-control', 'no-store');
       const response = { accepted: true, ...result };
       return result.created ? c.json(response, 202) : c.json(response, 200);

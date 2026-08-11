@@ -1227,6 +1227,43 @@ describe('automated review loop', () => {
       runVersion: number;
     };
     expect(revision).toMatchObject({ runVersion: 11 });
+    const replay = await SELF.fetch(
+      `https://delivery-loop.test/v1/attempts/${completed.fixAttemptId}/plan-revision`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          expectedVersion: fix.version,
+          leaseGeneration: fix.lease_generation,
+        }),
+      },
+    );
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toMatchObject({
+      accepted: true,
+      revisionId: revision.revisionId,
+      analysisAttemptId: revision.analysisAttemptId,
+      created: false,
+      runVersion: 11,
+    });
+    const rebound = await SELF.fetch(
+      `https://delivery-loop.test/v1/attempts/${completed.fixAttemptId}/plan-revision`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          expectedVersion: fix.version + 1,
+          leaseGeneration: fix.lease_generation,
+        }),
+      },
+    );
+    expect(rebound.status).toBe(409);
     expect(await env.DB_CONTROL.prepare(
       `SELECT source_kind, source_ref FROM plan_revision_source_facts`,
     ).first()).toEqual({

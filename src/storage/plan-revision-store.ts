@@ -214,6 +214,15 @@ interface ReviewRevisionCandidateRow {
   repair_count: number;
 }
 
+interface ReviewRevisionReplayIdentityRow {
+  run_id: string;
+  mode: string;
+  status: string;
+  version: number;
+  lease_generation: number;
+  token_lease_generation: number;
+}
+
 interface BaseObservationRow {
   observation_id: string;
   run_id: string;
@@ -509,6 +518,55 @@ export class PlanRevisionStore {
       nowIso,
     );
     return await this.beginPrepared(input, now, [sourceInsert]);
+  }
+
+  /**
+   * Reads back an already committed review-driven revision after its HTTP
+   * response was lost. Only the exact unexpired revoked token and original
+   * fencing are accepted; the existing revision path performs no mutation.
+   */
+  async replayFromReviewFeedback(
+    attemptId: string,
+    rawToken: string,
+    rawRequest: unknown,
+    now = new Date(),
+  ): Promise<BeginPlanRevisionResult | null> {
+    const parsed = ReviewPlanRevisionRequestSchema.safeParse(rawRequest);
+    if (!parsed.success) throw new PlanRevisionError('invalid_request');
+    const request = parsed.data;
+    const identity = await this.db.prepare(
+      `SELECT attempts.run_id, attempts.mode, attempts.status, attempts.version,
+              attempts.lease_generation,
+              attempt_tokens.lease_generation AS token_lease_generation
+       FROM attempts
+       JOIN attempt_tokens ON attempt_tokens.attempt_id = attempts.attempt_id
+       WHERE attempts.attempt_id = ?
+         AND attempt_tokens.token_digest = ?
+         AND attempt_tokens.revoked_at IS NOT NULL
+         AND attempt_tokens.expires_at > ?`,
+    ).bind(
+      attemptId,
+      await canonicalSha256(rawToken),
+      now.toISOString(),
+    ).first<ReviewRevisionReplayIdentityRow>();
+    if (identity === null) return null;
+    if (
+      identity.mode !== 'review_fix' ||
+      identity.status !== 'cancelled' ||
+      identity.version !== request.expectedVersion + 1 ||
+      identity.lease_generation !== request.leaseGeneration + 1 ||
+      identity.token_lease_generation !== request.leaseGeneration
+    ) throw new PlanRevisionError('state_conflict');
+    return await this.beginFromReviewFeedback({
+      attemptId,
+      runId: identity.run_id,
+      mode: 'review_fix',
+      status: 'running',
+      version: request.expectedVersion,
+      leaseGeneration: request.leaseGeneration,
+      leaseExpiresAt: now.toISOString(),
+      scopes: [],
+    }, request, now);
   }
 
   async beginFromSupplementalContext(
