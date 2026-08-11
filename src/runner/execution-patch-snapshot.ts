@@ -22,6 +22,7 @@ export type ExecutionPatchSnapshotErrorKind =
   | 'ambiguous_candidates'
   | 'fallback_too_large'
   | 'unsafe_candidate'
+  | 'runtime_secret_detected'
   | 'unavailable';
 
 export class ExecutionPatchSnapshotError extends Error {
@@ -104,7 +105,11 @@ export async function buildExecutionPatchSnapshot(input: {
       throw new ExecutionPatchSnapshotError('unsafe_candidate');
     }
     const file = { path, baseDigest: await patchContentDigest(content), content };
-    if (new SecretScanner({ secrets: input.runtimeSecrets }).scan(file).length > 0) {
+    const secretFindings = new SecretScanner({ secrets: input.runtimeSecrets }).scan(file);
+    if (secretFindings.some((finding) => finding.kind === 'registered_secret')) {
+      throw new ExecutionPatchSnapshotError('runtime_secret_detected');
+    }
+    if (secretFindings.length > 0) {
       throw new ExecutionPatchSnapshotError('unsafe_candidate');
     }
     files.push(file);
@@ -125,7 +130,7 @@ export async function buildOptionalExecutionPatchSnapshot(
   } catch (error) {
     if (
       error instanceof ExecutionPatchSnapshotError &&
-      (error.kind === 'no_candidates' || error.kind === 'fallback_too_large')
+      error.kind !== 'runtime_secret_detected'
     ) return undefined;
     throw error;
   }
