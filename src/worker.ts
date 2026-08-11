@@ -227,6 +227,16 @@ export default {
       // duplicate Queue delivery remains D1-fenced.
       await executionProgress.reconcileScheduling(1);
       await relay.relay();
+      // A completed Action is the authority needed to verify Evidence and
+      // close its Plan Item. Project stale active runs immediately after the
+      // priority dispatch relay, before any other external read or recovery
+      // scan can consume the Free-plan 10 ms CPU budget.
+      await reconcileAtRiskGitHubRunsFromEnv(env, {
+        limit: 5,
+        runningThresholdSeconds: 90,
+        now: scheduledNow,
+      });
+      await executionProgress.reconcileObservedCompletions(5);
       // A Draft PR created by a previous Cron already has a durable publication
       // intent, but its GitHub fact still has to be observed before review can
       // start. Keep that external read and the resulting review dispatch ahead
@@ -262,14 +272,6 @@ export default {
       // work can exhaust the Free-plan scheduled CPU budget; the resulting
       // dispatch stays durable and is relayed below.
       await executionProgress.reconcileReadyAttempts(1);
-      // A completed Action must be projected before lower-priority scans can
-      // exhaust the Free-plan CPU budget and the stuck detector fences it.
-      await reconcileAtRiskGitHubRunsFromEnv(env, {
-        limit: 5,
-        runningThresholdSeconds: 90,
-        now: scheduledNow,
-      });
-      await executionProgress.reconcileObservedCompletions(5);
       await new AutomatedReviewScheduler(env.DB_CONTROL).resumeFixedRuns(5, scheduledNow());
       await planRevisionAnalysis.reconcileBatch(5);
       // Relay every remaining durable effect, then first resume one already

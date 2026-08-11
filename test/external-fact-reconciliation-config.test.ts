@@ -78,7 +78,7 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
     const atRiskGitHubReconciliation = worker.indexOf(
       'await reconcileAtRiskGitHubRunsFromEnv(env, {',
-      workflowDrain,
+      priorityRelay,
     );
     const executionFinalization = worker.indexOf(
       'await executionProgress.reconcileObservedCompletions(5);',
@@ -111,11 +111,10 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(reviewAttemptRecovery).toBeGreaterThan(workflowDrain);
     expect(reviewApprovalRecovery).toBeGreaterThan(reviewAttemptRecovery);
     expect(readyAttemptScheduling).toBeGreaterThan(reviewApprovalRecovery);
-    expect(readyAttemptScheduling).toBeLessThan(atRiskGitHubReconciliation);
-    expect(reviewApprovalRecovery).toBeLessThan(atRiskGitHubReconciliation);
-    expect(reviewAttemptRecovery).toBeLessThan(atRiskGitHubReconciliation);
-    expect(atRiskGitHubReconciliation).toBeGreaterThan(workflowDrain);
+    expect(atRiskGitHubReconciliation).toBeGreaterThan(priorityRelay);
+    expect(atRiskGitHubReconciliation).toBeLessThan(priorityPullRequestReconciliation);
     expect(executionFinalization).toBeGreaterThan(atRiskGitHubReconciliation);
+    expect(executionFinalization).toBeLessThan(priorityPullRequestReconciliation);
     expect(planRevisionAnalysisRecovery).toBeGreaterThan(executionFinalization);
     expect(planRevisionAnalysisRecovery).toBeLessThan(relay);
     expect(reviewAttemptRecovery).toBeLessThan(relay);
@@ -126,7 +125,7 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(priorityFinalization).toBeGreaterThan(relay);
     expect(priorityFinalization).toBeLessThan(executionScheduling);
     expect(executionScheduling).toBeGreaterThan(relay);
-    expect(executionFinalization).toBeLessThan(relay);
+    expect(executionFinalization).toBeLessThan(workflowDrain);
     expect(detectorEnd).toBeGreaterThan(-1);
     expect(executionFinalization).toBeLessThan(detectorEnd);
     expect(concurrentStart).toBeGreaterThan(detectorEnd);
