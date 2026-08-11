@@ -31,9 +31,21 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await executionProgress.reconcileScheduling(1);',
     );
     const priorityRelay = worker.indexOf('await relay.relay();');
+    const priorityPullRequestReconciliation = worker.indexOf(
+      'await reconcileGitHubPullRequestsFromEnv(env);',
+      priorityRelay,
+    );
+    const priorityAutomatedReviewScheduling = worker.indexOf(
+      'await new AutomatedReviewScheduler(env.DB_CONTROL).scheduleBatch(5, scheduledNow());',
+      priorityPullRequestReconciliation,
+    );
+    const priorityReviewRelay = worker.indexOf(
+      'await relay.relay();',
+      priorityAutomatedReviewScheduling,
+    );
     const preparedPlanRevisionRecovery = worker.indexOf(
       'await planRevisionAnalysis.reconcilePreparedPlans(1);',
-      priorityRelay,
+      priorityReviewRelay,
     );
     const planRevisionAnalysisRecovery = worker.indexOf(
       'await planRevisionAnalysis.reconcileBatch(5);',
@@ -51,7 +63,7 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await executionProgress.reconcileReadyAttempts(1);',
       reviewApprovalRecovery,
     );
-    const relay = worker.indexOf('await relay.relay();', priorityRelay + 1);
+    const relay = worker.indexOf('await relay.relay();', priorityReviewRelay + 1);
     const priorityFinalization = worker.indexOf(
       'await executionProgress.reconcileFinalizations(1);',
       relay,
@@ -73,10 +85,6 @@ describe('periodic external-fact reconciliation wiring', () => {
       atRiskGitHubReconciliation,
     );
     const detectorEnd = worker.indexOf('}).scan(5);');
-    const pullRequestReconciliation = worker.indexOf(
-      'await reconcileGitHubPullRequestsFromEnv(env);',
-      detectorEnd,
-    );
     const concurrentStart = worker.indexOf('await Promise.all([', detectorEnd);
     const concurrentEnd = worker.indexOf(']);', concurrentStart);
     const workflowReconciliation = worker.indexOf(
@@ -91,7 +99,13 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(workflowDrain).toBeGreaterThan(-1);
     expect(priorityExecutionScheduling).toBeGreaterThan(-1);
     expect(priorityExecutionScheduling).toBeLessThan(priorityRelay);
-    expect(preparedPlanRevisionRecovery).toBeGreaterThan(priorityRelay);
+    expect(priorityPullRequestReconciliation).toBeGreaterThan(priorityRelay);
+    expect(priorityAutomatedReviewScheduling).toBeGreaterThan(
+      priorityPullRequestReconciliation,
+    );
+    expect(priorityReviewRelay).toBeGreaterThan(priorityAutomatedReviewScheduling);
+    expect(priorityReviewRelay).toBeLessThan(preparedPlanRevisionRecovery);
+    expect(preparedPlanRevisionRecovery).toBeGreaterThan(priorityReviewRelay);
     expect(preparedPlanRevisionRecovery).toBeLessThan(workflowDrain);
     expect(priorityRelay).toBeLessThan(workflowDrain);
     expect(reviewAttemptRecovery).toBeGreaterThan(workflowDrain);
@@ -115,8 +129,6 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(executionFinalization).toBeLessThan(relay);
     expect(detectorEnd).toBeGreaterThan(-1);
     expect(executionFinalization).toBeLessThan(detectorEnd);
-    expect(pullRequestReconciliation).toBeGreaterThan(detectorEnd);
-    expect(pullRequestReconciliation).toBeLessThan(concurrentStart);
     expect(concurrentStart).toBeGreaterThan(detectorEnd);
     expect(concurrentEnd).toBeGreaterThan(concurrentStart);
     expect(workflowReconciliation).toBeGreaterThan(concurrentStart);
@@ -138,6 +150,12 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain('relay.relay()');
     expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain(
       'reconcileGitHubPullRequestsFromEnv(env)',
+    );
+    expect(worker.slice(priorityPullRequestReconciliation + 1)).not.toContain(
+      'await reconcileGitHubPullRequestsFromEnv(env);',
+    );
+    expect(worker.slice(priorityAutomatedReviewScheduling + 1)).not.toContain(
+      'await new AutomatedReviewScheduler(env.DB_CONTROL).scheduleBatch(5, scheduledNow());',
     );
   });
 });
