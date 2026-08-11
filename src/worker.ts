@@ -235,6 +235,10 @@ export default {
         runningThresholdSeconds: 90,
         now: scheduledNow,
       });
+      // A prior invocation may have completed the R2-backed immutable Draft
+      // but lost CPU before scheduling its D1 publication. Recover that cheap
+      // prepared state before the completion path can attempt R2 work again.
+      await executionProgress.reconcilePreparedPublications(1);
       await executionProgress.reconcileObservedCompletions(5);
       await relay.relay();
       // A Draft PR created by a previous Cron already has a durable publication
@@ -274,16 +278,10 @@ export default {
       await executionProgress.reconcileReadyAttempts(1);
       await new AutomatedReviewScheduler(env.DB_CONTROL).resumeFixedRuns(5, scheduledNow());
       await planRevisionAnalysis.reconcileBatch(5);
-      // Relay every remaining durable effect, then first resume one already
-      // verified Run whose Draft/publication preparation may have been cut off
-      // by a previous Free-plan CPU fence. Only after that durable close-out
-      // do we activate and schedule new work or scan GitHub external facts.
+      // Relay every remaining durable effect, then activate and schedule more
+      // work. Prepared Draft recovery already ran before the first relay, so
+      // this background half cannot become its only recovery opportunity.
       await relay.relay();
-      const recoveredPreparedPublication =
-        await executionProgress.reconcilePreparedPublications(1);
-      if (recoveredPreparedPublication === 0) {
-        await executionProgress.reconcileFinalizations(1);
-      }
       await executionProgress.reconcileScheduling(5);
       // Detect/re-arm after existing outbox and execution progress have had a
       // chance to advance. Re-armed effects remain safe for the next minute.
