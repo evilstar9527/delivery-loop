@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { canonicalSha256 } from '../../src/domain/digest.js';
 import type { TaskEnvelope } from '../../src/domain/task.js';
 import { taskApi } from '../../src/http/task-api.js';
+import { TaskQueryStore } from '../../src/storage/task-query-store.js';
 
 const BASE_URL = 'https://delivery-loop.test';
 const TEST_TOKEN = 'test-task-intake-token';
@@ -397,6 +398,58 @@ describe('safe Task and ExecutionPlan query API', () => {
       evidence: [],
     });
     expect(body).not.toHaveProperty('automatedReview');
+  });
+
+  it('returns only the safe current automated-review projection', async () => {
+    const getRunPlanStatus = vi.spyOn(TaskQueryStore.prototype, 'getRunPlanStatus');
+    const view = {
+      run: { id: 'run-review', state: 'awaiting_approval', version: 2 },
+      plan: null,
+      items: [],
+      attempts: [],
+      heartbeats: [],
+      checkpoints: [],
+      evidence: [],
+    };
+    const cases = [
+      { name: 'no lineage', review: undefined, expected: undefined },
+      {
+        name: 'pending',
+        review: { iteration: 1, status: 'pending' },
+        expected: { iteration: 1, status: 'pending' },
+      },
+      {
+        name: 'approved',
+        review: { iteration: 2, status: 'approved', blockingFindingCount: 0, minorFindingCount: 1 },
+        expected: { iteration: 2, status: 'approved', blockingFindingCount: 0, minorFindingCount: 1 },
+      },
+      {
+        name: 'changes requested',
+        review: { iteration: 2, status: 'changes_requested', blockingFindingCount: 1, minorFindingCount: 2 },
+        expected: { iteration: 2, status: 'changes_requested', blockingFindingCount: 1, minorFindingCount: 2 },
+      },
+      {
+        name: 'blocked',
+        review: { iteration: 3, status: 'blocked', blockingFindingCount: 2, minorFindingCount: 0 },
+        expected: { iteration: 3, status: 'blocked', blockingFindingCount: 2, minorFindingCount: 0 },
+      },
+      { name: 'stale head', review: undefined, expected: undefined },
+    ];
+
+    for (const { review, expected } of cases) {
+      getRunPlanStatus.mockResolvedValueOnce(
+        (review === undefined ? view : { ...view, automatedReview: review }) as never,
+      );
+      const response = await apiGet('/v1/runs/run-review/plan');
+      expect(response.status).toBe(200);
+      const body = await response.json() as Record<string, unknown>;
+      if (expected === undefined) {
+        expect(body).not.toHaveProperty('automatedReview');
+      } else {
+        expect(body.automatedReview).toEqual(expected);
+      }
+    }
+    getRunPlanStatus.mockRestore();
   });
 
   it('fails closed for unauthenticated, invalid, and missing resources', async () => {
