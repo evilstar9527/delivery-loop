@@ -89,6 +89,24 @@ describe('GitHub-hosted base readiness workflow', () => {
             default: '',
             type: 'string',
           },
+          replay_dead_letter_id: {
+            description: 'Optional exact workflow outbox dead-letter ID to replay',
+            required: false,
+            default: '',
+            type: 'string',
+          },
+          replay_expected_outbox_attempt_count: {
+            description: 'Exact outbox attempt count bound to the dead letter',
+            required: false,
+            default: '',
+            type: 'string',
+          },
+          replay_reason_code: {
+            description: 'Fixed replay reason code',
+            required: false,
+            default: '',
+            type: 'string',
+          },
         },
       },
     });
@@ -137,7 +155,8 @@ describe('GitHub-hosted base readiness workflow', () => {
     expect(readinessStep).toEqual({
       name: 'Run exactly one GitHub base readiness GET',
       if: "inputs.diagnostic_run_id == '' && inputs.approval_run_id == '' && " +
-        "inputs.approval_comment_id == ''",
+        "inputs.approval_comment_id == '' && inputs.replay_dead_letter_id == '' && " +
+        "inputs.replay_expected_outbox_attempt_count == '' && inputs.replay_reason_code == ''",
       env: {
         DELIVERY_LOOP_GITHUB_BASE_READINESS: '1',
         GITHUB_BASE_READINESS_CONTROL_PLANE_URL:
@@ -155,7 +174,8 @@ describe('GitHub-hosted base readiness workflow', () => {
     );
     expect(diagnosticStep?.if).toBe(
       "inputs.diagnostic_run_id != '' && inputs.approval_run_id == '' && " +
-      "inputs.approval_comment_id == ''",
+      "inputs.approval_comment_id == '' && inputs.replay_dead_letter_id == '' && " +
+      "inputs.replay_expected_outbox_attempt_count == '' && inputs.replay_reason_code == ''",
     );
     expect(diagnosticStep?.env).toEqual({
       DELIVERY_DIAGNOSTIC_RUN_ID: '${{ inputs.diagnostic_run_id }}',
@@ -198,7 +218,8 @@ describe('GitHub-hosted base readiness workflow', () => {
     );
     expect(approvalStep?.if).toBe(
       "inputs.diagnostic_run_id == '' && inputs.approval_run_id != '' && " +
-      "inputs.approval_comment_id != ''",
+      "inputs.approval_comment_id != '' && inputs.replay_dead_letter_id == '' && " +
+      "inputs.replay_expected_outbox_attempt_count == '' && inputs.replay_reason_code == ''",
     );
     expect(approvalStep?.env).toEqual({
       DELIVERY_APPROVAL_RUN_ID: '${{ inputs.approval_run_id }}',
@@ -222,6 +243,41 @@ describe('GitHub-hosted base readiness workflow', () => {
     expect(approvalStep?.run?.match(/\bcurl\b/g)).toHaveLength(1);
     for (const forbidden of ['commentBody', 'actor', 'effect', 'expiresAt', 'planId']) {
       expect(approvalStep?.run).not.toContain(forbidden);
+    }
+
+    const replayStep = readiness.steps.find(
+      (step) => step.name === 'Replay one exact workflow outbox dead letter',
+    );
+    expect(replayStep?.if).toBe(
+      "inputs.diagnostic_run_id == '' && inputs.approval_run_id == '' && " +
+      "inputs.approval_comment_id == '' && inputs.replay_dead_letter_id != '' && " +
+      "inputs.replay_expected_outbox_attempt_count != '' && inputs.replay_reason_code != ''",
+    );
+    expect(replayStep?.env).toEqual({
+      DELIVERY_REPLAY_DEAD_LETTER_ID: '${{ inputs.replay_dead_letter_id }}',
+      DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT:
+        '${{ inputs.replay_expected_outbox_attempt_count }}',
+      DELIVERY_REPLAY_REASON_CODE: '${{ inputs.replay_reason_code }}',
+      DELIVERY_OPERATIONS_TOKEN:
+        '${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}',
+    });
+    expect(replayStep?.run).toContain(
+      '[[ "$DELIVERY_REPLAY_DEAD_LETTER_ID" =~ ^outbox-dlq-[a-f0-9]{56}$ ]]',
+    );
+    expect(replayStep?.run).toContain(
+      '[[ "$DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT" =~ ^[1-9][0-9]{0,9}$ ]]',
+    );
+    expect(replayStep?.run).toContain(
+      'operator_retry|upstream_recovered|configuration_fixed',
+    );
+    expect(replayStep?.run).toContain('/v1/dead-letters/$DELIVERY_REPLAY_DEAD_LETTER_ID/replay');
+    expect(replayStep?.run).toContain('--request POST');
+    expect(replayStep?.run).toContain('expectedOutboxAttemptCount');
+    expect(replayStep?.run).toContain('reasonCode');
+    expect(replayStep?.run).toMatch(/select\(\s+\.accepted == true/);
+    expect(replayStep?.run?.match(/\bcurl\b/g)).toHaveLength(1);
+    for (const forbidden of ['payloadRef', 'taskJson', 'effect', 'destination']) {
+      expect(replayStep?.run).not.toContain(forbidden);
     }
 
     const serializedPreflight = JSON.stringify(preflight);

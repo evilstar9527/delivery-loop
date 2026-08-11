@@ -18,6 +18,21 @@ on:
         required: false
         default: ''
         type: string
+      replay_dead_letter_id:
+        description: Optional exact workflow outbox dead-letter ID to replay
+        required: false
+        default: ''
+        type: string
+      replay_expected_outbox_attempt_count:
+        description: Exact outbox attempt count bound to the dead letter
+        required: false
+        default: ''
+        type: string
+      replay_reason_code:
+        description: Fixed replay reason code
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -47,22 +62,42 @@ jobs:
           DELIVERY_DIAGNOSTIC_RUN_ID: ${{ inputs.diagnostic_run_id }}
           DELIVERY_APPROVAL_RUN_ID: ${{ inputs.approval_run_id }}
           DELIVERY_APPROVAL_COMMENT_ID: ${{ inputs.approval_comment_id }}
+          DELIVERY_REPLAY_DEAD_LETTER_ID: ${{ inputs.replay_dead_letter_id }}
+          DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT: ${{ inputs.replay_expected_outbox_attempt_count }}
+          DELIVERY_REPLAY_REASON_CODE: ${{ inputs.replay_reason_code }}
         run: |
           set -euo pipefail
           modes=0
           if test -z "$DELIVERY_DIAGNOSTIC_RUN_ID" \
             && test -z "$DELIVERY_APPROVAL_RUN_ID" \
-            && test -z "$DELIVERY_APPROVAL_COMMENT_ID"; then
+            && test -z "$DELIVERY_APPROVAL_COMMENT_ID" \
+            && test -z "$DELIVERY_REPLAY_DEAD_LETTER_ID" \
+            && test -z "$DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT" \
+            && test -z "$DELIVERY_REPLAY_REASON_CODE"; then
             modes=$((modes + 1))
           fi
           if test -n "$DELIVERY_DIAGNOSTIC_RUN_ID" \
             && test -z "$DELIVERY_APPROVAL_RUN_ID" \
-            && test -z "$DELIVERY_APPROVAL_COMMENT_ID"; then
+            && test -z "$DELIVERY_APPROVAL_COMMENT_ID" \
+            && test -z "$DELIVERY_REPLAY_DEAD_LETTER_ID" \
+            && test -z "$DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT" \
+            && test -z "$DELIVERY_REPLAY_REASON_CODE"; then
             modes=$((modes + 1))
           fi
           if test -z "$DELIVERY_DIAGNOSTIC_RUN_ID" \
             && test -n "$DELIVERY_APPROVAL_RUN_ID" \
-            && test -n "$DELIVERY_APPROVAL_COMMENT_ID"; then
+            && test -n "$DELIVERY_APPROVAL_COMMENT_ID" \
+            && test -z "$DELIVERY_REPLAY_DEAD_LETTER_ID" \
+            && test -z "$DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT" \
+            && test -z "$DELIVERY_REPLAY_REASON_CODE"; then
+            modes=$((modes + 1))
+          fi
+          if test -z "$DELIVERY_DIAGNOSTIC_RUN_ID" \
+            && test -z "$DELIVERY_APPROVAL_RUN_ID" \
+            && test -z "$DELIVERY_APPROVAL_COMMENT_ID" \
+            && test -n "$DELIVERY_REPLAY_DEAD_LETTER_ID" \
+            && test -n "$DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT" \
+            && test -n "$DELIVERY_REPLAY_REASON_CODE"; then
             modes=$((modes + 1))
           fi
           test "$modes" = 1
@@ -119,7 +154,8 @@ jobs:
       - name: Run exactly one GitHub base readiness GET
         if: >-
           inputs.diagnostic_run_id == '' && inputs.approval_run_id == '' &&
-          inputs.approval_comment_id == ''
+          inputs.approval_comment_id == '' && inputs.replay_dead_letter_id == '' &&
+          inputs.replay_expected_outbox_attempt_count == '' && inputs.replay_reason_code == ''
         env:
           DELIVERY_LOOP_GITHUB_BASE_READINESS: '1'
           GITHUB_BASE_READINESS_CONTROL_PLANE_URL: https://delivery-loop-control-plane.eve55265.workers.dev
@@ -131,7 +167,8 @@ jobs:
       - name: Query one exact open workflow-create dead letter
         if: >-
           inputs.diagnostic_run_id != '' && inputs.approval_run_id == '' &&
-          inputs.approval_comment_id == ''
+          inputs.approval_comment_id == '' && inputs.replay_dead_letter_id == '' &&
+          inputs.replay_expected_outbox_attempt_count == '' && inputs.replay_reason_code == ''
         env:
           DELIVERY_DIAGNOSTIC_RUN_ID: ${{ inputs.diagnostic_run_id }}
           DELIVERY_OPERATIONS_TOKEN: ${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}
@@ -166,7 +203,8 @@ jobs:
       - name: Observe one exact GitHub repo-write approval comment
         if: >-
           inputs.diagnostic_run_id == '' && inputs.approval_run_id != '' &&
-          inputs.approval_comment_id != ''
+          inputs.approval_comment_id != '' && inputs.replay_dead_letter_id == '' &&
+          inputs.replay_expected_outbox_attempt_count == '' && inputs.replay_reason_code == ''
         env:
           DELIVERY_APPROVAL_RUN_ID: ${{ inputs.approval_run_id }}
           DELIVERY_APPROVAL_COMMENT_ID: ${{ inputs.approval_comment_id }}
@@ -197,4 +235,52 @@ jobs:
               and (.lineageId | test("^approval_lineage_[A-Za-z0-9_-]+$"))
             )
             | {status, approvalId, lineageId, created}
+          ' "$response_file"
+
+      - name: Replay one exact workflow outbox dead letter
+        if: >-
+          inputs.diagnostic_run_id == '' && inputs.approval_run_id == '' &&
+          inputs.approval_comment_id == '' && inputs.replay_dead_letter_id != '' &&
+          inputs.replay_expected_outbox_attempt_count != '' && inputs.replay_reason_code != ''
+        env:
+          DELIVERY_REPLAY_DEAD_LETTER_ID: ${{ inputs.replay_dead_letter_id }}
+          DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT: ${{ inputs.replay_expected_outbox_attempt_count }}
+          DELIVERY_REPLAY_REASON_CODE: ${{ inputs.replay_reason_code }}
+          DELIVERY_OPERATIONS_TOKEN: ${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}
+        run: |
+          set -euo pipefail
+          [[ "$DELIVERY_REPLAY_DEAD_LETTER_ID" =~ ^outbox-dlq-[a-f0-9]{56}$ ]]
+          [[ "$DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT" =~ ^[1-9][0-9]{0,9}$ ]]
+          case "$DELIVERY_REPLAY_REASON_CODE" in
+            operator_retry|upstream_recovered|configuration_fixed) ;;
+            *) exit 2 ;;
+          esac
+          request_file="$RUNNER_TEMP/dead-letter-replay-request.json"
+          response_file="$RUNNER_TEMP/dead-letter-replay-response.json"
+          jq -n \
+            --argjson expectedOutboxAttemptCount "$DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT" \
+            --arg reasonCode "$DELIVERY_REPLAY_REASON_CODE" \
+            '{expectedOutboxAttemptCount:$expectedOutboxAttemptCount,reasonCode:$reasonCode}' \
+            > "$request_file"
+          chmod 600 "$request_file"
+          status="$(curl --silent --show-error --max-time 30 \
+            --url "https://delivery-loop-control-plane.eve55265.workers.dev/v1/dead-letters/$DELIVERY_REPLAY_DEAD_LETTER_ID/replay" \
+            --request POST \
+            --header "Authorization: Bearer $DELIVERY_OPERATIONS_TOKEN" \
+            --header 'Accept: application/json' \
+            --header 'Content-Type: application/json' \
+            --data-binary "@$request_file" \
+            --output "$response_file" \
+            --write-out '%{http_code}')"
+          test "$status" = 202
+          jq -e '
+            select(
+              .accepted == true
+              and .status == "replay_requested"
+              and (.deadLetterId | test("^outbox-dlq-[a-f0-9]{56}$"))
+              and (.outboxId | test("^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$"))
+              and (.replayId | test("^outbox-dlq-replay-[A-Za-z0-9_-]+$"))
+              and (.created | type == "boolean")
+            )
+            | {accepted, deadLetterId, replayId, status, created}
           ' "$response_file"
