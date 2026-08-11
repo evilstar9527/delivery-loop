@@ -173,7 +173,9 @@ type SafeAutomatedReviewProjection = {
 function safeAutomatedReviewProjection(value: unknown): SafeAutomatedReviewProjection | undefined {
   if (value === null || typeof value !== 'object') return undefined;
   const review = value as Record<string, unknown>;
-  const { iteration, status } = review;
+  const { iteration } = review;
+  const rawStatus = review.status;
+  const status = rawStatus === 'changes-requested' ? 'changes_requested' : rawStatus;
   if (
     typeof iteration !== 'number' ||
     !Number.isSafeInteger(iteration) ||
