@@ -509,6 +509,7 @@ export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bi
       return c.json(context);
     } catch (error) {
       if (error instanceof RunnerAttemptError) return runnerError(c, error);
+      if (error instanceof AutomatedReviewError) return automatedReviewError(c, error);
       if (error instanceof AnalysisAttemptError) return analysisError(c, error);
       if (error instanceof ExecutionAttemptError) return executionError(c, error);
       throw error;

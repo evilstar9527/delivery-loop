@@ -424,6 +424,40 @@ async function controlPlaneJson(
   );
 }
 
+async function controlPlaneContextJson(
+  fetchImplementation: typeof globalThis.fetch,
+  config: RunnerConfiguration,
+  token: string,
+): Promise<unknown> {
+  const retryableStatuses = new Set([409, 500, 502, 503, 504]);
+  const url = `${config.controlPlaneUrl}/v1/attempts/${config.attemptId}/context`;
+  for (let request = 1; request <= 3; request += 1) {
+    let response: Response;
+    try {
+      response = await fetchImplementation(url, {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+      });
+    } catch {
+      if (request === 3) throw new AnalysisRunnerError('analysis context request failed');
+      await delay(250 * request);
+      continue;
+    }
+    if (response.status === 200) {
+      return await readJsonResponse(response, [200], 'analysis context');
+    }
+    if (!retryableStatuses.has(response.status) || request === 3) {
+      return await readJsonResponse(response, [200], 'analysis context');
+    }
+    await response.body?.cancel();
+    await delay(250 * request);
+  }
+  throw new AnalysisRunnerError('analysis context request failed');
+}
+
 async function obtainGitHubOidcToken(
   fetchImplementation: typeof globalThis.fetch,
   config: RunnerConfiguration,
@@ -1210,14 +1244,29 @@ export async function runAnalysisAttempt(
       )
       .map(([, value]) => value),
   ]);
-  const rawContext = await controlPlaneJson(
-    fetchImplementation,
-    config,
-    `/v1/attempts/${config.attemptId}/context`,
-    fencing.token,
-    'analysis context',
-    [200],
-  );
+  let rawContext: unknown;
+  try {
+    rawContext = await controlPlaneContextJson(
+      fetchImplementation,
+      config,
+      fencing.token,
+    );
+  } catch (error) {
+    const terminalError = terminalAnalysisRunnerError(error);
+    try {
+      await reportAttemptFailure(
+        fetchImplementation,
+        config,
+        fencing,
+        terminalError.failure!,
+        now(),
+      );
+    } catch {
+      // GitHub fact reconciliation remains the durable fallback when even the
+      // exact failure callback cannot be accepted.
+    }
+    throw terminalError;
+  }
   const automatedReviewContext = AutomatedReviewContextV1Schema.safeParse(rawContext);
   if (automatedReviewContext.success) {
     return await runAutomatedReview(
