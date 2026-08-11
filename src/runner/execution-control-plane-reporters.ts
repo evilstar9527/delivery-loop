@@ -198,31 +198,52 @@ export class ControlPlanePlanRevisionReporter implements PlanRevisionReporter {
   async request(): Promise<PlanRevisionRequestResult> {
     return await this.context.fencing.withAuthorization(async (authorization) => {
       if (!validAuthorization(authorization)) throw new ExecutionControlPlaneReporterError();
-      let response: Response;
-      try {
-        response = await this.fetcher(this.endpoint, {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${authorization.attemptToken}`,
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            expectedVersion: authorization.expectedVersion,
-            leaseGeneration: authorization.leaseGeneration,
-          }),
-          redirect: 'error',
-        });
-      } catch {
-        throw new ExecutionControlPlaneReporterError();
+      const body = JSON.stringify({
+        expectedVersion: authorization.expectedVersion,
+        leaseGeneration: authorization.leaseGeneration,
+      });
+      for (let requestAttempt = 1; requestAttempt <= 2; requestAttempt += 1) {
+        let response: Response;
+        try {
+          response = await this.fetcher(this.endpoint, {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${authorization.attemptToken}`,
+              'content-type': 'application/json',
+            },
+            body,
+            redirect: 'error',
+          });
+        } catch {
+          if (requestAttempt === 1) continue;
+          throw new ExecutionControlPlaneReporterError();
+        }
+        if (response.status === 409 || response.status >= 500) {
+          await response.body?.cancel();
+          if (requestAttempt === 1) continue;
+          throw new ExecutionControlPlaneReporterError();
+        }
+        if (response.status !== 200 && response.status !== 202) {
+          await response.body?.cancel();
+          throw new ExecutionControlPlaneReporterError();
+        }
+        try {
+          const accepted = PlanRevisionResponseSchema.safeParse(
+            await json(response, [200, 202]),
+          );
+          if (!accepted.success) throw new ExecutionControlPlaneReporterError();
+          return {
+            revisionId: accepted.data.revisionId,
+            analysisAttemptId: accepted.data.analysisAttemptId,
+            dispatchOutboxId: accepted.data.dispatchOutboxId,
+            runVersion: accepted.data.runVersion,
+          };
+        } catch {
+          if (requestAttempt === 1) continue;
+          throw new ExecutionControlPlaneReporterError();
+        }
       }
-      const accepted = PlanRevisionResponseSchema.safeParse(await json(response, [200, 202]));
-      if (!accepted.success) throw new ExecutionControlPlaneReporterError();
-      return {
-        revisionId: accepted.data.revisionId,
-        analysisAttemptId: accepted.data.analysisAttemptId,
-        dispatchOutboxId: accepted.data.dispatchOutboxId,
-        runVersion: accepted.data.runVersion,
-      };
+      throw new ExecutionControlPlaneReporterError();
     });
   }
 }

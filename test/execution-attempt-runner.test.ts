@@ -582,6 +582,7 @@ describe('execution Attempt Runner', () => {
     const fixture = await repository();
     const evidence = evidenceReporter();
     const revisions: string[] = [];
+    let agentCalls = 0;
     const runner = new ExecutionAttemptRunner({
       repositoryPath: fixture.path,
       checkoutSha: fixture.checkoutSha,
@@ -590,10 +591,13 @@ describe('execution Attempt Runner', () => {
       targetedCommandRefs: ['test:unit'],
       deliveryPolicy: policy,
       repositoryWriter: writer(fixture.path, fixture.checkoutSha),
-      agent: { apply: async () => ({
-        schemaVersion: '1',
-        action: 'request_replan',
-      }) },
+      agent: { apply: async () => {
+        agentCalls += 1;
+        return {
+          schemaVersion: '1',
+          action: 'request_replan',
+        };
+      } },
       agentInput: { ...agentInput(fixture.path), allowPlanRevision: true },
       planRevisionReporter: {
         request: async () => {
@@ -618,6 +622,7 @@ describe('execution Attempt Runner', () => {
       dispatchOutboxId: 'dispatch_replan_review',
       runVersion: 12,
     });
+    expect(agentCalls).toBe(1);
     expect(revisions).toEqual(['requested']);
     expect(evidence.commands).toEqual([]);
     await expect(exec(
