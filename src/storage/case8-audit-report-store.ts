@@ -8,6 +8,7 @@ import { CorrelationQueryStore } from './correlation-query-store.js';
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$/;
 const REVIEW_ID_PATTERN = /^[0-9]{1,32}$/;
+const AUTOMATED_REVIEW_ID_PATTERN = /^automated_review_[a-f0-9]{52}$/;
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
@@ -708,10 +709,12 @@ interface PlanRevisionAuditRow {
   base_reference_digest: string | null;
   base_comparison_digest: string | null;
   review_delivery_id: string | null;
+  review_source_type: 'github' | 'automated' | null;
   review_repository: string | null;
   review_pr_number: number | null;
   review_id: string | null;
   review_body_digest: string | null;
+  review_result_digest: string | null;
   review_head_sha: string | null;
   review_branch: string | null;
   review_url: string | null;
@@ -1536,21 +1539,34 @@ export class Case8AuditReportStore {
               revisions.body_changed, revisions.base_changed,
               revisions.effects_changed, revisions.activated_at,
               revisions.created_at,
-              COALESCE(base.observation_id, feedback.feedback_id,
+              COALESCE(base.observation_id, feedback.feedback_id, automated.review_id,
                        supplemental.context_id) AS source_record_id,
               base.repository AS base_repository,
               base.base_branch, base.before_sha AS base_before_sha,
               base.after_sha AS base_after_sha, base.ahead_by AS base_ahead_by,
               base.reference_digest AS base_reference_digest,
               base.comparison_digest AS base_comparison_digest,
-              feedback.source_delivery_id AS review_delivery_id,
-              feedback.repository AS review_repository,
-              feedback.github_pr_number AS review_pr_number,
-              feedback.github_review_id AS review_id,
-              feedback.body_digest AS review_body_digest,
-              feedback.source_head_sha AS review_head_sha,
-              feedback.branch AS review_branch,
-              feedback.review_url, feedback.submitted_at AS review_submitted_at,
+              CASE WHEN feedback.feedback_id IS NOT NULL THEN 'github'
+                   WHEN automated.review_id IS NOT NULL THEN 'automated'
+                   ELSE NULL END AS review_source_type,
+              COALESCE(feedback.source_delivery_id,
+                       automated.review_attempt_id) AS review_delivery_id,
+              COALESCE(feedback.repository,
+                       automated.repository) AS review_repository,
+              COALESCE(feedback.github_pr_number,
+                       automated.github_pr_number) AS review_pr_number,
+              COALESCE(feedback.github_review_id,
+                       automated.review_id) AS review_id,
+              COALESCE(feedback.body_digest,
+                       automated.feedback_body_digest) AS review_body_digest,
+              automated.result_digest AS review_result_digest,
+              COALESCE(feedback.source_head_sha,
+                       automated.source_head_sha) AS review_head_sha,
+              COALESCE(feedback.branch, automated.branch) AS review_branch,
+              COALESCE(feedback.review_url,
+                       automated_publication.github_pr_url) AS review_url,
+              COALESCE(feedback.submitted_at,
+                       automated.completed_at) AS review_submitted_at,
               supplemental.event_digest AS context_event_digest,
               supplemental.context_digest,
               next_task.source_system AS context_source_system,
@@ -1579,6 +1595,11 @@ export class Case8AuditReportStore {
        LEFT JOIN github_review_feedbacks AS feedback
          ON revisions.source_kind = 'review_feedback'
         AND source.source_ref = 'd1://github-review-feedbacks/' || feedback.feedback_id
+       LEFT JOIN automated_reviews AS automated
+         ON revisions.source_kind = 'review_feedback'
+        AND source.source_ref = 'd1://automated-reviews/' || automated.review_id
+       LEFT JOIN pull_request_publications AS automated_publication
+         ON automated_publication.publication_id = automated.publication_id
        LEFT JOIN supplemental_context_revisions AS supplemental
          ON revisions.source_kind = 'supplemental_context'
         AND source.source_ref = supplemental.context_ref
@@ -2478,6 +2499,7 @@ export class Case8AuditReportStore {
         };
       } else if (revision.source_kind === 'review_feedback') {
         if (
+          revision.review_source_type === null ||
           revision.review_delivery_id === null || revision.review_id === null ||
           revision.review_repository === null || revision.review_pr_number === null ||
           revision.review_body_digest === null || revision.review_head_sha === null ||
@@ -2485,13 +2507,28 @@ export class Case8AuditReportStore {
           revision.review_submitted_at === null ||
           !ID_PATTERN.test(revision.review_delivery_id) ||
           !Number.isSafeInteger(revision.review_pr_number) || revision.review_pr_number <= 0 ||
-          !REVIEW_ID_PATTERN.test(revision.review_id) ||
           !DIGEST_PATTERN.test(revision.review_body_digest) ||
           !SHA_PATTERN.test(revision.review_head_sha) ||
           safeUrl(revision.review_url) !== revision.review_url ||
           !Number.isFinite(Date.parse(revision.review_submitted_at))
         ) throw new Case8AuditReportError('projection_conflict');
-        const digest = await canonicalSha256({
+        const automated = revision.review_source_type === 'automated';
+        if (
+          automated
+            ? !AUTOMATED_REVIEW_ID_PATTERN.test(revision.review_id) ||
+              revision.review_result_digest === null ||
+              !DIGEST_PATTERN.test(revision.review_result_digest)
+            : !REVIEW_ID_PATTERN.test(revision.review_id) ||
+              revision.review_result_digest !== null
+        ) throw new Case8AuditReportError('projection_conflict');
+        const digest = await canonicalSha256(automated ? {
+          schemaVersion: '1', sourceKind: 'review_feedback',
+          sourceType: 'automated_review', reviewId: revision.review_id,
+          resultDigest: revision.review_result_digest,
+          bodyDigest: revision.review_body_digest,
+          sourceHeadSha: revision.review_head_sha, branch: revision.review_branch,
+          reviewUrl: revision.review_url, submittedAt: revision.review_submitted_at,
+        } : {
           schemaVersion: '1', sourceKind: 'review_feedback',
           feedbackId: revision.source_record_id, githubReviewId: revision.review_id,
           bodyDigest: revision.review_body_digest,
@@ -2501,7 +2538,19 @@ export class Case8AuditReportStore {
         if (digest !== revision.source_digest) {
           throw new Case8AuditReportError('projection_conflict');
         }
-        source = {
+        source = automated ? {
+          kind: 'review_feedback', sourceType: 'automated_review',
+          recordId: revision.source_record_id,
+          digest: revision.source_digest, observedAt: revision.source_observed_at,
+          reviewAttemptId: revision.review_delivery_id,
+          repository: revision.review_repository,
+          pullRequestNumber: revision.review_pr_number,
+          reviewId: revision.review_id,
+          resultDigest: revision.review_result_digest,
+          bodyDigest: revision.review_body_digest,
+          reviewedHeadSha: revision.review_head_sha, branch: revision.review_branch,
+          reviewUrl: revision.review_url,
+        } : {
           kind: 'review_feedback', recordId: revision.source_record_id,
           digest: revision.source_digest, observedAt: revision.source_observed_at,
           deliveryId: revision.review_delivery_id,

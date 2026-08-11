@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AutomatedReviewIdSchema } from './automated-review.js';
 import { TaskEnvelopeSchema, TaskSourceSystemSchema } from './task.js';
 
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
@@ -8,7 +9,7 @@ const BRANCH_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,239}$/;
 
 export const ReviewFeedbackRevisionDataSchema = z.object({
   schemaVersion: z.literal('1'),
-  reviewId: z.string().regex(/^[0-9]+$/),
+  reviewId: z.union([z.string().regex(/^[0-9]+$/), AutomatedReviewIdSchema]),
   body: z.string().min(1).max(65_536),
   bodyDigest: z.string().regex(DIGEST_PATTERN),
   sourceHeadSha: z.string().regex(SHA_PATTERN),

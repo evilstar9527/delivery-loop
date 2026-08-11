@@ -20,9 +20,11 @@ import {
   type GitHubDispatchEffects,
 } from '../../src/outbox/github-dispatcher.js';
 import { ExecutionAttemptContextStore } from '../../src/storage/execution-attempt-store.js';
+import { AnalysisAttemptContextStore } from '../../src/storage/analysis-attempt-store.js';
 import { ExecutionHeadStore } from '../../src/storage/execution-head-store.js';
 import { ExecutionProgressReconciler } from '../../src/reconciliation/execution-progress-reconciler.js';
 import { TaskQueryStore } from '../../src/storage/task-query-store.js';
+import { Case8AuditReportStore } from '../../src/storage/case8-audit-report-store.js';
 
 const RUN_ID = 'run-automated-review';
 const TASK_ID = 'task-automated-review';
@@ -88,6 +90,10 @@ function taskEnvelope(): TaskEnvelope {
 
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM approval_invalidations'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_revision_analysis_retries'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_revisions'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_revision_source_facts'),
     env.DB_CONTROL.prepare('DELETE FROM automated_review_fix_attempts'),
     env.DB_CONTROL.prepare('DELETE FROM automated_reviews'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
@@ -503,6 +509,141 @@ describe('automated review loop', () => {
     expect(await env.DB_CONTROL.prepare(
       `SELECT state FROM runs WHERE run_id = ?`,
     ).bind(RUN_ID).first()).toEqual({ state: 'pull_request_open' });
+  });
+
+  it('turns an automated review_fix replan decision into one readable Plan revision source', async () => {
+    const { authorization, context } = await scheduleAndContext();
+    const completed = await new AutomatedReviewResultStore(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+    ).complete(authorization, {
+      schemaVersion: '1',
+      contextDigest: await automatedReviewContextDigest(context),
+      verdict: 'changes_requested',
+      summary: 'The approved Plan must be revised before this finding can be fixed.',
+      findings: [{
+        severity: 'major',
+        title: 'The requested correction is outside the approved Plan body',
+        body: 'Create a new Plan version before changing the documented behavior.',
+        path: 'docs/Vision.md',
+        line: 38,
+      }],
+    }, new Date(NOW));
+    if (completed.fixAttemptId === undefined) {
+      throw new Error('automated review fix Attempt was not created');
+    }
+    const token = 'automated-review-fix-replan-token';
+    const [tokenDigest, oidcDigest, toolDigest] = await Promise.all([
+      canonicalSha256(token),
+      canonicalSha256('automated-review-fix-replan-oidc'),
+      canonicalSha256('automated-review-fix-replan-tool'),
+    ]);
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'running', version = version + 1,
+         lease_generation = lease_generation + 1, lease_token_digest = ?,
+         lease_expires_at = '2099-01-01T00:00:00.000Z', updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(tokenDigest, NOW, completed.fixAttemptId).run();
+    const fix = await env.DB_CONTROL.prepare(
+      `SELECT version, lease_generation FROM attempts WHERE attempt_id = ?`,
+    ).bind(completed.fixAttemptId).first<{ version: number; lease_generation: number }>();
+    if (fix === null) throw new Error('automated review fix Attempt is unavailable');
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_tokens (
+         token_id, attempt_id, oidc_token_digest, token_digest, tool_token_digest,
+         lease_generation, scopes_json, expires_at, created_at
+       ) VALUES ('token-automated-review-fix-replan', ?, ?, ?, ?, ?, ?,
+                 '2099-01-01T00:00:00.000Z', ?)`,
+    ).bind(
+      completed.fixAttemptId,
+      oidcDigest,
+      tokenDigest,
+      toolDigest,
+      fix.lease_generation,
+      JSON.stringify(EXECUTION_TOOL_ACTIONS),
+      NOW,
+    ).run();
+
+    const responses = await Promise.all(Array.from({ length: 20 }, async () => await SELF.fetch(
+      `https://delivery-loop.test/v1/attempts/${completed.fixAttemptId}/plan-revision`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          expectedVersion: fix.version,
+          leaseGeneration: fix.lease_generation,
+        }),
+      },
+    )));
+    expect(responses.some((response) => response.status === 202)).toBe(true);
+    expect(responses.every((response) => [200, 202, 401, 409].includes(response.status)))
+      .toBe(true);
+    const accepted = responses.find((response) => response.status === 202);
+    if (accepted === undefined) throw new Error('automated review Plan revision was not accepted');
+    const revision = await accepted.json() as {
+      revisionId: string;
+      analysisAttemptId: string;
+      runVersion: number;
+    };
+    expect(revision).toMatchObject({ runVersion: 11 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT source_kind, source_ref FROM plan_revision_source_facts`,
+    ).first()).toEqual({
+      source_kind: 'review_feedback',
+      source_ref: `d1://automated-reviews/${context.review.id}`,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM plan_revision_source_facts`,
+    ).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM plan_revisions`,
+    ).first()).toEqual({ count: 1 });
+    const audit = await new Case8AuditReportStore(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    }).generate(RUN_ID);
+    expect((audit.answers.checks.planRevisions as Array<Record<string, unknown>>)[0]?.source)
+      .toMatchObject({
+        kind: 'review_feedback',
+        sourceType: 'automated_review',
+        recordId: context.review.id,
+        reviewId: context.review.id,
+        reviewedHeadSha: HEAD_SHA,
+      });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state, version FROM runs WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ state: 'planning', version: 11 });
+
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'running', version = 1, lease_generation = 1,
+         lease_expires_at = '2099-01-01T00:00:00.000Z', updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(NOW, revision.analysisAttemptId).run();
+    const revisionContext = await new AnalysisAttemptContextStore(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+    ).get({
+      attemptId: revision.analysisAttemptId,
+      runId: RUN_ID,
+      mode: 'analysis',
+      status: 'running',
+      version: 1,
+      leaseGeneration: 1,
+      leaseExpiresAt: '2099-01-01T00:00:00.000Z',
+      scopes: ['repo:read'],
+    });
+    expect(revisionContext.revisionSource).toMatchObject({
+      kind: 'review_feedback',
+      data: {
+        reviewId: context.review.id,
+        sourceHeadSha: HEAD_SHA,
+        branch: BRANCH,
+      },
+    });
+    expect(revisionContext.revisionSource?.kind === 'review_feedback' &&
+      revisionContext.revisionSource.data.body).toContain('[MAJOR]');
   });
 
   it('serves automated context and replays the same result after token revocation', async () => {
