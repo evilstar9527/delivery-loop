@@ -113,6 +113,7 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM plan_revision_analysis_retries'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revisions'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revision_source_facts'),
+    env.DB_CONTROL.prepare('DELETE FROM automated_review_quota_recovery_slots'),
     env.DB_CONTROL.prepare('DELETE FROM automated_review_fix_attempts'),
     env.DB_CONTROL.prepare('DELETE FROM automated_reviews'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
@@ -292,6 +293,26 @@ async function seed(): Promise<void> {
   ).bind(PUBLICATION_ID, RUN_ID, DRAFT_ID, BRANCH, HEAD_SHA, bodyDigest, NOW, NOW, NOW).run();
 }
 
+async function fillAttemptBudget(limit = 20): Promise<void> {
+  const row = await env.DB_CONTROL.prepare(
+    'SELECT COUNT(*) AS count FROM attempts WHERE run_id = ?',
+  ).bind(RUN_ID).first<{ count: number }>();
+  const count = row?.count ?? 0;
+  if (count > limit) throw new Error('attempt budget is already exceeded');
+  if (count === limit) return;
+  await env.DB_CONTROL.batch(Array.from({ length: limit - count }, (_, index) => {
+    const ordinal = count + index + 1;
+    return env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+         workflow_ref, version, lease_generation, created_at, updated_at
+       ) VALUES (?, ?, ?, 'analysis', 'failed', ?, 'example/delivery-target',
+                 'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                 1, 0, ?, ?)`,
+    ).bind(`attempt-budget-filler-${ordinal}`, RUN_ID, ordinal, BASE_SHA, NOW, NOW);
+  }));
+}
+
 async function startReview(attemptId: string): Promise<RunnerAuthorization> {
   await env.DB_CONTROL.prepare(
     `UPDATE attempts SET status = 'running', version = 1, lease_generation = 1,
@@ -339,6 +360,88 @@ beforeEach(async () => {
 });
 
 describe('automated review loop', () => {
+  it('reserves one bounded run-quota slot for the unique failed review recovery', async () => {
+    const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
+    const scheduled = await scheduler.scheduleRun(RUN_ID, new Date(NOW));
+    if (scheduled === null) throw new Error('automated review was not scheduled');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'running', version = 2, lease_generation = 1,
+           lease_expires_at = '2026-08-08T02:00:30.000Z',
+           github_run_id = '70040', github_head_sha = ?,
+           github_status = 'completed', github_conclusion = 'failure', updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(BASE_SHA, NOW, scheduled.attemptId).run();
+    await fillAttemptBudget();
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM attempts WHERE run_id = ?',
+    ).bind(RUN_ID).first()).toEqual({ count: 20 });
+
+    const recovered = await scheduler.recoverRun(
+      RUN_ID,
+      new Date('2026-08-08T02:02:00.000Z'),
+    );
+    if (recovered === null) throw new Error('automated review recovery was not created');
+    expect(recovered).toMatchObject({ created: true });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM attempts WHERE run_id = ?',
+    ).bind(RUN_ID).first()).toEqual({ count: 21 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM automated_review_quota_recovery_slots
+       WHERE review_id = ? AND root_attempt_id = ? AND replacement_attempt_id = ?`,
+    ).bind(scheduled.reviewId, scheduled.attemptId, recovered.attemptId).first())
+      .toEqual({ count: 1 });
+
+    await expect(env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha,
+         version, lease_generation, created_at, updated_at
+       ) VALUES ('attempt-over-budget-ordinary', ?, 100, 'analysis', 'pending', ?,
+                 0, 0, ?, ?)`,
+    ).bind(RUN_ID, BASE_SHA, NOW, NOW).run()).rejects.toThrow('quota_attempt_exceeded');
+    await expect(env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha,
+         recovered_from_attempt_id, version, lease_generation, created_at, updated_at
+       ) VALUES ('attempt-over-budget-second-recovery', ?, 101, 'analysis', 'pending', ?, ?,
+                 0, 0, ?, ?)`,
+    ).bind(RUN_ID, BASE_SHA, scheduled.attemptId, NOW, NOW).run())
+      .rejects.toThrow('quota_attempt_exceeded');
+  });
+
+  it('does not bypass a repository attempt quota for failed review recovery', async () => {
+    const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
+    const scheduled = await scheduler.scheduleRun(RUN_ID, new Date(NOW));
+    if (scheduled === null) throw new Error('automated review was not scheduled');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'running', version = 2, lease_generation = 1,
+           lease_expires_at = '2026-08-08T02:00:30.000Z',
+           github_run_id = '70041', github_head_sha = ?,
+           github_status = 'completed', github_conclusion = 'failure', updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(BASE_SHA, NOW, scheduled.attemptId).run();
+    await fillAttemptBudget();
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO quota_policies (
+         policy_id, scope_type, scope_key, resource_type, limit_value,
+         window_kind, enabled, created_at, updated_at
+       ) VALUES ('policy-review-recovery-repository-attempt', 'repository',
+                 'example/delivery-target', 'attempt', 20, 'utc_day', 1, ?, ?)`,
+    ).bind(NOW, NOW).run();
+
+    await expect(scheduler.recoverRun(
+      RUN_ID,
+      new Date('2026-08-08T02:02:00.000Z'),
+    )).rejects.toThrow('quota_attempt_exceeded');
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status FROM attempts WHERE attempt_id = ?`,
+    ).bind(scheduled.attemptId).first()).toEqual({ status: 'running' });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts WHERE recovered_from_attempt_id = ?`,
+    ).bind(scheduled.attemptId).first()).toEqual({ count: 0 });
+  });
+
   it('fences one failed exact-head review and creates one D1-only replacement', async () => {
     const scheduled = await new AutomatedReviewScheduler(env.DB_CONTROL)
       .scheduleRun(RUN_ID, new Date(NOW));

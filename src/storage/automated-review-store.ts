@@ -341,6 +341,7 @@ export class AutomatedReviewScheduler {
     const stable = suffix(identity);
     const attemptId = `attempt_auto_review_recovery_${stable}`;
     const outboxId = `dispatch_auto_review_recovery_${stable}`;
+    const quotaSlotId = `auto_review_quota_slot_${stable}`;
     const results = await this.db.batch([
       this.db.prepare(
         `UPDATE attempts
@@ -392,6 +393,73 @@ export class AutomatedReviewScheduler {
         candidate.review_attempt_id,
         nowIso,
       ),
+      this.db.prepare(
+        `INSERT INTO automated_review_quota_recovery_slots (
+           slot_id, run_id, review_id, root_attempt_id, replacement_attempt_id, created_at
+         )
+         SELECT ?, reviews.run_id, reviews.review_id, root.attempt_id, ?, ?
+         FROM automated_reviews AS reviews
+         JOIN attempts AS root ON root.attempt_id = reviews.review_attempt_id
+         JOIN runs ON runs.run_id = reviews.run_id
+         JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
+         JOIN plan_item_progress AS progress
+           ON progress.plan_id = reviews.plan_id AND progress.item_id = reviews.plan_item_id
+         JOIN pull_request_publications AS publications
+           ON publications.publication_id = reviews.publication_id
+         WHERE reviews.review_id = ? AND reviews.status = 'pending'
+           AND root.run_id = reviews.run_id AND root.mode = 'analysis'
+           AND root.status IN ('failed', 'lost') AND root.result_event_id IS NULL
+           AND root.github_status = 'completed' AND root.github_conclusion IS NOT NULL
+           AND root.github_conclusion <> 'success'
+           AND root.base_sha = reviews.source_head_sha
+           AND root.repository = reviews.repository AND root.workflow_ref IS NOT NULL
+           AND runs.state = 'pull_request_open'
+           AND runs.active_plan_id = reviews.plan_id
+           AND runs.active_plan_version = reviews.plan_version
+           AND runs.active_plan_digest = plans.digest AND plans.status = 'active'
+           AND progress.status = 'passed' AND progress.active_attempt_id IS NULL
+           AND publications.status = 'verified'
+           AND publications.run_id = reviews.run_id
+           AND publications.repository = reviews.repository
+           AND publications.github_pr_number = reviews.github_pr_number
+           AND publications.base_branch = reviews.base_branch
+           AND publications.head_branch = reviews.branch
+           AND publications.head_sha = reviews.source_head_sha
+           AND reviews.source_head_sha = (
+             SELECT updates.head_sha
+             FROM attempt_head_updates AS updates
+             JOIN attempts AS head_attempt ON head_attempt.attempt_id = updates.attempt_id
+             WHERE updates.run_id = reviews.run_id
+               AND updates.plan_id = reviews.plan_id
+               AND updates.branch = reviews.branch
+             ORDER BY head_attempt.ordinal DESC, updates.created_at DESC LIMIT 1
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM run_blockers
+             WHERE run_blockers.run_id = reviews.run_id
+               AND run_blockers.resolved_at IS NULL
+           )
+           AND 1 = (
+             SELECT COUNT(*) FROM trusted_effect_approvals AS approval
+             WHERE approval.run_id = reviews.run_id
+               AND approval.task_revision = runs.task_revision
+               AND approval.plan_id = reviews.plan_id
+               AND approval.plan_version = reviews.plan_version
+               AND approval.plan_digest = plans.digest
+               AND approval.base_sha = runs.base_sha
+               AND approval.effect = 'repo_write'
+               AND approval.decision = 'approve' AND approval.expires_at > ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM invalidated_approvals
+                 WHERE invalidated_approvals.approval_id = approval.approval_id
+               )
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM attempts AS replacement
+             WHERE replacement.recovered_from_attempt_id = root.attempt_id
+           )
+         ON CONFLICT DO NOTHING`,
+      ).bind(quotaSlotId, attemptId, nowIso, candidate.review_id, nowIso),
       this.db.prepare(
         `INSERT INTO attempts (
            attempt_id, run_id, ordinal, mode, status, base_sha, repository,
@@ -486,7 +554,7 @@ export class AutomatedReviewScheduler {
     if (persisted === null || persisted.attempt_id !== attemptId) {
       throw new AutomatedReviewError('state_conflict');
     }
-    return this.recoveryResult(persisted, results[3]?.meta.changes === 1);
+    return this.recoveryResult(persisted, results[4]?.meta.changes === 1);
   }
 
   async scheduleRun(runId: string, now = new Date()): Promise<AutomatedReviewScheduleResult | null> {
