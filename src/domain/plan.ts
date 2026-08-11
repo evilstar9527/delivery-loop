@@ -391,6 +391,32 @@ export async function validateExecutionPlanProposal(
       item.verification.evidenceKinds.some((kind) =>
         kind === 'test' || kind === 'lint' || kind === 'build'),
   );
+  const selfVerifyingChanges = plan.items.filter((item) => {
+    const commandRefs = item.verification.commandRefs ?? [];
+    return item.kind === 'change' && item.required && item.effects.includes('repo_write') &&
+      commandRefs.some((ref) => ref.startsWith('test:')) &&
+      commandRefs.some((ref) => ref.startsWith('verify:') && verificationCommandRefs.has(ref)) &&
+      item.verification.evidenceKinds.includes('commit') &&
+      item.verification.evidenceKinds.includes('test');
+  });
+  if (context.requiresRepositoryChange) {
+    for (const [index, item] of plan.items.entries()) {
+      if (
+        item.kind === 'investigation' &&
+        (
+          item.required ||
+          selfVerifyingChanges.some((change) =>
+            dependsTransitivelyOn(change.id, item.id, dependencies))
+        )
+      ) {
+        push(
+          'repository_change_required',
+          `items.${index}`,
+          'repository inspection is completed by analysis and cannot remain as a required execution dependency',
+        );
+      }
+    }
+  }
   let hasRequiredRepositoryChange = false;
   for (const [index, item] of plan.items.entries()) {
     if (item.kind !== 'change' && !item.effects.includes('repo_write')) continue;

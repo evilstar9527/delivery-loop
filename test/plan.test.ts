@@ -172,6 +172,55 @@ describe('ExecutionPlan v1 validation', () => {
   });
 
   it.each([
+    { required: true, changeDependsOnInvestigation: false },
+    { required: false, changeDependsOnInvestigation: true },
+  ])(
+    'rejects an unrunnable investigation in a writable execution graph: %j',
+    async ({ required, changeDependsOnInvestigation }) => {
+      const input = await proposal((body) => {
+        body.items = [
+          {
+            id: 'inspect',
+            kind: 'investigation',
+            title: 'Inspect the current implementation',
+            objective: 'Inspect src/worker.ts before making the approved change.',
+            acceptanceCriteriaIndexes: [0],
+            doneWhen: ['The relevant source behavior is understood.'],
+            verification: {
+              commandRefs: [],
+              evidenceKinds: ['diagnostic'],
+            },
+            effects: ['repo_read'],
+            dependsOn: [],
+            required,
+          },
+          {
+            id: 'change',
+            kind: 'change',
+            title: 'Implement and verify the fix',
+            objective: 'Make the smallest safe change in src/worker.ts and prove it.',
+            acceptanceCriteriaIndexes: [0, 1],
+            doneWhen: ['The committed change passes targeted and required verification.'],
+            verification: {
+              commandRefs: ['test:unit', 'verify:all'],
+              evidenceKinds: ['commit', 'test'],
+            },
+            effects: ['repo_write'],
+            dependsOn: changeDependsOnInvestigation ? ['inspect'] : [],
+            required: true,
+          },
+        ];
+      });
+
+      await expectIssue(input, 'repository_change_required', {
+        ...CONTEXT,
+        requiresRepositoryChange: true,
+        writableRepositoryPaths: ['src/worker.ts'],
+      });
+    },
+  );
+
+  it.each([
     'diagnostic',
     'plan',
     'lint',
