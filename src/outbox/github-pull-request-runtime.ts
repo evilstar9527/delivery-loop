@@ -35,11 +35,12 @@ export function githubPullRequestRuntimeFromEnv(
 
 export async function reconcileGitHubPullRequestsFromEnv(
   env: Bindings,
+  limit = 25,
 ): Promise<GitHubPullRequestBatchResult[]> {
   const runtime = githubPullRequestRuntimeFromEnv(env);
   if (runtime === null) return [];
   return await new GitHubPullRequestReconciler(
     env.DB_CONTROL,
     runtime.client,
-  ).reconcileBatch(25);
+  ).reconcileBatch(limit);
 }

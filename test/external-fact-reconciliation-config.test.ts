@@ -37,15 +37,15 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
     const priorityRelay = worker.indexOf('await relay.relay();', priorityAgentDispatchRelay);
     const priorityPullRequestReconciliation = worker.indexOf(
-      'await reconcileGitHubPullRequestsFromEnv(env);',
-      priorityRelay,
+      'await reconcileGitHubPullRequestsFromEnv(env, 1);',
+      priorityAgentDispatchRelay,
     );
     const priorityAutomatedReviewScheduling = worker.indexOf(
       'await new AutomatedReviewScheduler(env.DB_CONTROL).scheduleBatch(5, scheduledNow());',
       priorityPullRequestReconciliation,
     );
     const priorityReviewRelay = worker.indexOf(
-      'await relay.relay();',
+      "await relay.relayDestination('github_actions', 1);",
       priorityAutomatedReviewScheduling,
     );
     const preparedPlanRevisionRecovery = worker.indexOf(
@@ -68,7 +68,7 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await executionProgress.reconcileReadyAttempts(1);',
       reviewApprovalRecovery,
     );
-    const relay = worker.indexOf('await relay.relay();', priorityReviewRelay + 1);
+    const relay = worker.indexOf('await relay.relay();', workflowDrain);
     const preparedPublicationRecovery = worker.indexOf(
       'await executionProgress.reconcilePreparedPublications(1);',
       priorityExecutionScheduling,
@@ -120,12 +120,15 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(priorityAgentDispatchRelay).toBeGreaterThan(priorityExecutionScheduling);
     expect(priorityAgentDispatchRelay).toBeLessThan(atRiskGitHubReconciliation);
     expect(priorityExecutionScheduling).toBeLessThan(priorityRelay);
-    expect(priorityPullRequestReconciliation).toBeGreaterThan(priorityRelay);
+    expect(priorityPullRequestReconciliation).toBeGreaterThan(priorityAgentDispatchRelay);
     expect(priorityAutomatedReviewScheduling).toBeGreaterThan(
       priorityPullRequestReconciliation,
     );
     expect(priorityReviewRelay).toBeGreaterThan(priorityAutomatedReviewScheduling);
     expect(preparedPlanRevisionRecovery).toBeGreaterThan(priorityExecutionScheduling);
+    expect(priorityPullRequestReconciliation).toBeLessThan(preparedPlanRevisionRecovery);
+    expect(priorityAutomatedReviewScheduling).toBeLessThan(preparedPlanRevisionRecovery);
+    expect(priorityReviewRelay).toBeLessThan(preparedPlanRevisionRecovery);
     expect(preparedPlanRevisionRecovery).toBeLessThan(atRiskGitHubReconciliation);
     expect(preparedPlanRevisionRecovery).toBeLessThan(priorityRelay);
     expect(priorityRelay).toBeLessThan(workflowDrain);
@@ -134,7 +137,9 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(readyAttemptScheduling).toBeGreaterThan(reviewApprovalRecovery);
     expect(atRiskGitHubReconciliation).toBeGreaterThan(priorityExecutionScheduling);
     expect(atRiskGitHubReconciliation).toBeLessThan(priorityRelay);
-    expect(atRiskGitHubReconciliation).toBeLessThan(priorityPullRequestReconciliation);
+    expect(priorityPullRequestReconciliation).toBeLessThan(atRiskGitHubReconciliation);
+    expect(priorityAutomatedReviewScheduling).toBeLessThan(atRiskGitHubReconciliation);
+    expect(priorityReviewRelay).toBeLessThan(atRiskGitHubReconciliation);
     expect(automatedReviewRecovery).toBeGreaterThan(atRiskGitHubReconciliation);
     expect(automatedReviewRecoveryRelay).toBeGreaterThan(automatedReviewRecovery);
     expect(automatedReviewRecoveryRelay).toBeLessThan(executionCompletion);
@@ -144,7 +149,7 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(priorityGitHubBaseReconciliation).toBeLessThan(preparedPublicationRecovery);
     expect(priorityGitHubBaseReconciliation).toBeLessThan(priorityRelay);
     expect(executionFinalization).toBeGreaterThan(priorityGitHubBaseReconciliation);
-    expect(executionFinalization).toBeLessThan(priorityPullRequestReconciliation);
+    expect(priorityPullRequestReconciliation).toBeLessThan(executionFinalization);
     expect(planRevisionAnalysisRecovery).toBeGreaterThan(executionFinalization);
     expect(planRevisionAnalysisRecovery).toBeLessThan(relay);
     expect(reviewAttemptRecovery).toBeLessThan(relay);
@@ -183,7 +188,7 @@ describe('periodic external-fact reconciliation wiring', () => {
       'reconcileGitHubBasesFromEnv(env)',
     );
     expect(worker.slice(priorityPullRequestReconciliation + 1)).not.toContain(
-      'await reconcileGitHubPullRequestsFromEnv(env);',
+      'await reconcileGitHubPullRequestsFromEnv(env, 1);',
     );
     expect(worker.slice(priorityAutomatedReviewScheduling + 1)).not.toContain(
       'await new AutomatedReviewScheduler(env.DB_CONTROL).scheduleBatch(5, scheduledNow());',

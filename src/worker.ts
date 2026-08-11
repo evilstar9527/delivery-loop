@@ -239,6 +239,17 @@ export default {
       // filtering does not bypass D1 fencing; the Queue consumer still reloads
       // the immutable outbox and Attempt before performing any effect.
       await relay.relayDestination('github_actions', 1);
+      // A Draft PR already created by an earlier invocation is the shortest
+      // active-run path to the automated review loop. Observe that exact PR
+      // before stale at-risk Action recovery: on the Free plan, one historical
+      // GitHub GET can otherwise consume the scheduled invocation's CPU budget
+      // every minute and permanently starve the fresh publication. The
+      // publication/run/version fences still select only current verifying
+      // work; review scheduling and this destination-only relay remain D1
+      // idempotent and cannot create a second PR or review for the same head.
+      await reconcileGitHubPullRequestsFromEnv(env, 1);
+      await new AutomatedReviewScheduler(env.DB_CONTROL).scheduleBatch(5, scheduledNow());
+      await relay.relayDestination('github_actions', 1);
       // A re-analysis Runner may already have persisted a validated
       // replacement Plan, its result projection, and the durable signal. This
       // recovery is D1-only, so activate one before any global relay or
@@ -282,16 +293,6 @@ export default {
       // prepared state before the completion path can attempt R2 work again.
       await executionProgress.reconcilePreparedPublications(1);
       await executionProgress.reconcileFinalizations(5);
-      await relay.relay();
-      // A Draft PR created by a previous Cron already has a durable publication
-      // intent, but its GitHub fact still has to be observed before review can
-      // start. Keep that external read and the resulting review dispatch ahead
-      // of lower-priority recovery scans: Free-plan scheduled invocations have
-      // a 10 ms CPU ceiling and may never reach the background half of this
-      // handler. The first relay above remains reserved for newly approved
-      // execution work; this second relay exposes only D1-fenced follow-up work.
-      await reconcileGitHubPullRequestsFromEnv(env);
-      await new AutomatedReviewScheduler(env.DB_CONTROL).scheduleBatch(5, scheduledNow());
       await relay.relay();
       // Free-plan scheduled and Queue invocations have a 10 ms CPU ceiling.
       // Keep a direct workflow-root delivery after the priority relay so a
