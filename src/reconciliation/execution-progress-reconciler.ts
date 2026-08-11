@@ -261,6 +261,34 @@ export class ExecutionProgressReconciler {
            WHERE plan_item_effects.plan_id = plans.plan_id
              AND plan_item_effects.effect = 'repo_write'
          )
+         AND EXISTS (
+           SELECT 1 FROM trusted_effect_approvals AS approval
+           WHERE approval.run_id = runs.run_id
+             AND approval.task_revision = runs.task_revision
+             AND approval.plan_id = plans.plan_id
+             AND approval.plan_version = plans.plan_version
+             AND approval.plan_digest = plans.digest
+             AND approval.base_sha = plans.base_sha
+             AND approval.effect = 'repo_write'
+             AND approval.decision = 'approve'
+             AND approval.expires_at > ?
+             AND NOT EXISTS (
+               SELECT 1 FROM invalidated_approvals
+               WHERE invalidated_approvals.approval_id = approval.approval_id
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM approvals AS rejection
+               WHERE rejection.run_id = approval.run_id
+                 AND rejection.task_revision = approval.task_revision
+                 AND rejection.plan_id = approval.plan_id
+                 AND rejection.plan_version = approval.plan_version
+                 AND rejection.plan_digest = approval.plan_digest
+                 AND rejection.base_sha = approval.base_sha
+                 AND rejection.effect = approval.effect
+                 AND rejection.decision = 'reject'
+                 AND rejection.created_at >= approval.created_at
+             )
+         )
          AND NOT EXISTS (
            SELECT 1 FROM review_approval_recovery_approvals AS recovery
            WHERE recovery.run_id = runs.run_id
@@ -271,7 +299,7 @@ export class ExecutionProgressReconciler {
              )
          )
        ORDER BY runs.updated_at, runs.run_id LIMIT ?`,
-    ).bind(limit).all<{ run_id: string; run_version: number }>();
+    ).bind(nowIso, limit).all<{ run_id: string; run_version: number }>();
     let activated = 0;
     for (const candidate of candidates.results) {
       const result = await this.db.prepare(
