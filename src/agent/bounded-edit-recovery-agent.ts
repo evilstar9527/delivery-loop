@@ -105,12 +105,14 @@ export class BoundedEditRecoveryAgent implements ExecutionAgent {
         failure = new CodexExecutionAdapterError('decision_invalid', 'invalid_output');
         decision = undefined;
       }
-      if (decision !== undefined) return decision;
-      const recoverable = invocation === 1 && !input.allowPlanRevision &&
+      const cleanApplyFix = decision?.action === 'apply_fix' && invocation === 1 &&
+        !input.allowPlanRevision && await this.options.canRecover();
+      if (decision !== undefined && !cleanApplyFix) return decision;
+      const recoverable = cleanApplyFix || invocation === 1 && !input.allowPlanRevision &&
         failure instanceof CodexExecutionAdapterError &&
         failure.kind === 'decision_invalid' &&
         failure.reason === 'no_tool_activity';
-      if (!recoverable || !(await this.options.canRecover())) throw failure;
+      if (!recoverable || (!cleanApplyFix && !(await this.options.canRecover()))) throw failure;
     }
     throw new Error('bounded edit recovery exhausted');
   }

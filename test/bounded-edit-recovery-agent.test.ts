@@ -165,6 +165,80 @@ describe('bounded edit recovery Agent', () => {
     ]);
   });
 
+  it('uses the patch proposal fallback when apply_fix produced no effective workspace diff', async () => {
+    const events: string[] = [];
+    const agent = new BoundedEditRecoveryAgent({
+      agent: meteredApply(async (input) => {
+        events.push(`apply:${input.editTurn}`);
+        input.onUsage?.({
+          inputTokens: 10,
+          cachedInputTokens: 2,
+          outputTokens: 4,
+          reasoningOutputTokens: 1,
+        });
+        if (input.editTurn === 1) {
+          return { schemaVersion: '1', action: 'apply_fix' };
+        }
+        expect(input.patchProposal).toBe(true);
+        return {
+          schemaVersion: '1',
+          action: 'apply_patch',
+          proposal: {
+            schemaVersion: '1',
+            changes: [{
+              path: 'README.md',
+              baseDigest: `sha256:${'a'.repeat(64)}`,
+              content: 'updated\n',
+            }],
+          },
+        };
+      }),
+      beforeInvocation: async (invocation) => {
+        events.push(`before:${invocation}`);
+        return { model: 'gpt-test' };
+      },
+      afterInvocation: async (invocation) => { events.push(`after:${invocation}`); },
+      canRecover: async () => {
+        events.push('clean');
+        return true;
+      },
+    });
+
+    await expect(agent.apply(INPUT)).resolves.toMatchObject({
+      action: 'apply_patch',
+      proposal: { changes: [{ path: 'README.md' }] },
+    });
+    expect(events).toEqual([
+      'before:1', 'apply:1', 'after:1', 'clean',
+      'before:2', 'apply:2', 'after:2',
+    ]);
+  });
+
+  it('keeps apply_fix when the trusted workspace contains a real diff', async () => {
+    let invocations = 0;
+    const agent = new BoundedEditRecoveryAgent({
+      agent: meteredApply(async (input) => {
+        invocations += 1;
+        input.onUsage?.({
+          inputTokens: 10,
+          cachedInputTokens: 2,
+          outputTokens: 4,
+          reasoningOutputTokens: 1,
+        });
+        return { schemaVersion: '1', action: 'apply_fix' };
+      }),
+      beforeInvocation: async () => ({ model: 'gpt-test' }),
+      afterInvocation: async () => undefined,
+      canRecover: async () => false,
+    });
+
+    await expect(agent.apply(INPUT)).resolves.toEqual({
+      schemaVersion: '1',
+      action: 'apply_fix',
+    });
+    expect(invocations).toBe(1);
+  });
+
   it('does not start a third invocation when the patch proposal turn fails', async () => {
     const events: string[] = [];
     const agent = new BoundedEditRecoveryAgent({

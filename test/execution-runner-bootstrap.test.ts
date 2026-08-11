@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
-import { CodexExecutionAdapterError } from '../src/agent/codex-execution-adapter.js';
 import { canonicalSha256 } from '../src/domain/digest.js';
 import { patchContentDigest } from '../src/domain/patch-proposal.js';
 import { taskRevisionDigest, type TaskEnvelope } from '../src/domain/task.js';
@@ -668,7 +667,7 @@ describe('production execution Runner bootstrap', () => {
     expect(await readdir(runnerTemp)).toEqual([]);
   });
 
-  it('recovers one clean zero-tool edit turn through a separately settled patch proposal', async () => {
+  it('recovers one clean no-op apply_fix turn through a separately settled patch proposal', async () => {
     const fixture = await repository();
     const runnerTemp = join(fixture.root, 'runner-temp');
     await mkdir(runnerTemp, { mode: 0o700 });
@@ -978,9 +977,13 @@ describe('production execution Runner bootstrap', () => {
             expect(input.editTurn).toBe(1);
             input.onTranscriptLine?.(JSON.stringify({
               type: 'item.completed',
-              item: { type: 'agent_message', text: 'PUBLIC_FIRST_ZERO_TOOL_TURN' },
+              item: { type: 'file_change', status: 'completed' },
             }));
-            throw new CodexExecutionAdapterError('decision_invalid', 'no_tool_activity');
+            input.onTranscriptLine?.(JSON.stringify({
+              type: 'item.completed',
+              item: { type: 'agent_message', text: 'PUBLIC_FIRST_NO_OP_TURN' },
+            }));
+            return { schemaVersion: '1', action: 'apply_fix' };
           }
           expect(input.editTurn).toBe(2);
           expect(input.patchProposal).toBe(true);
@@ -1023,18 +1026,22 @@ describe('production execution Runner bootstrap', () => {
     expect(failures).toEqual([]);
     expect(agentActivity).toEqual({
       schemaVersion: '1',
-      jsonlEventCount: 2,
+      jsonlEventCount: 3,
       commandExecutionStartedCount: 0,
       commandExecutionCompletedCount: 0,
       fileChangeStartedCount: 0,
-      fileChangeCompletedCount: 0,
+      fileChangeCompletedCount: 1,
       agentMessageCompletedCount: 2,
       turnCompletedCount: 0,
     });
     expect(artifactBody?.content).toBe([
       JSON.stringify({
         type: 'item.completed',
-        item: { type: 'agent_message', text: 'PUBLIC_FIRST_ZERO_TOOL_TURN' },
+        item: { type: 'file_change', status: 'completed' },
+      }),
+      JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'agent_message', text: 'PUBLIC_FIRST_NO_OP_TURN' },
       }),
       JSON.stringify({
         type: 'item.completed',
