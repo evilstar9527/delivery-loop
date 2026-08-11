@@ -202,6 +202,85 @@ describe('GitHub App workflow run reconciliation', () => {
     expect(await reconciler.reconcileBatch(10)).toEqual([]);
   });
 
+  it('prioritizes an active result-reported attempt over historical terminal backlog', async () => {
+    const historicalCreatedAt = '2026-07-20T06:00:00.000Z';
+    const historicalAttemptId = 'attempt-historical-missing-observation';
+    const historicalRunId = 'run-historical-missing-observation';
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO tasks (
+           task_id, source_system, tenant_key, source_task_key, task_revision,
+           task_digest, payload_ref, actor_type, actor_id, target_repository,
+           target_base_branch, target_environment, intent_kind, title, priority,
+           acceptance_criteria_count, allow_repository_write, allow_test_deploy,
+           allow_production_deploy, require_human_approval, created_at, updated_at
+         ) VALUES (
+           'task-historical-missing-observation', 'manual', 'github-reconciler-test',
+           'historical-missing-observation', 'revision-1', ?,
+           'r2://tasks/historical-missing-observation', 'system',
+           'github-reconciler-test', ?, 'main', 'none', 'bug',
+           'Historical terminal attempt', 'p1', 1, 0, 0, 0, 1, ?, ?
+         )`,
+      ).bind(`sha256:${'5'.repeat(64)}`, REPOSITORY, historicalCreatedAt, historicalCreatedAt),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO runs (
+           run_id, task_id, task_revision, task_digest, base_sha,
+           workflow_instance_id, state, version, created_at, updated_at
+         ) VALUES (?, 'task-historical-missing-observation', 'revision-1', ?, ?, ?,
+                   'blocked', 2, ?, ?)`,
+      ).bind(
+        historicalRunId,
+        `sha256:${'5'.repeat(64)}`,
+        BASE_SHA,
+        historicalRunId,
+        historicalCreatedAt,
+        historicalCreatedAt,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, github_run_id, github_head_sha, github_status, version,
+           lease_generation, created_at, updated_at
+         ) VALUES (?, ?, 1, 'analysis', 'lost', ?, ?, ?, '987654321', ?, 'requested',
+                   2, 1, ?, ?)`,
+      ).bind(
+        historicalAttemptId,
+        historicalRunId,
+        BASE_SHA,
+        REPOSITORY,
+        `${REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
+        GITHUB_HEAD_SHA,
+        historicalCreatedAt,
+        historicalCreatedAt,
+      ),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET result_event_id = 'event-fresh-result',
+             result_sequence = 1,
+             result_digest = ?,
+             result_reported_at = ?
+         WHERE attempt_id = ?`,
+      ).bind(`sha256:${'6'.repeat(64)}`, '2026-07-25T06:59:00.000Z', ATTEMPT_ID),
+    ]);
+
+    const client = new FakeRunClient(runFact());
+    expect(await new GitHubRunReconciler(env.DB_CONTROL, client).reconcileBatch(1)).toEqual([
+      { attemptId: ATTEMPT_ID, disposition: 'applied' },
+    ]);
+    expect(client.calls).toEqual([
+      { repository: REPOSITORY, githubRunId: GITHUB_RUN_ID },
+    ]);
+
+    client.fact = runFact({
+      githubRunId: '987654321',
+      displayTitle: `delivery-loop/${historicalAttemptId}`,
+      externalUpdatedAt: '2026-07-20T07:00:00.000Z',
+    });
+    expect(await new GitHubRunReconciler(env.DB_CONTROL, client).reconcileBatch(1)).toEqual([
+      { attemptId: historicalAttemptId, disposition: 'applied' },
+    ]);
+  });
+
   it('does not spend a GitHub request until an active attempt is eligible for stuck fencing', async () => {
     const now = new Date('2026-07-25T07:01:00.000Z');
     const client = new FakeRunClient(runFact());

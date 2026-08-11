@@ -52,7 +52,7 @@ export class GitHubRunReconciler {
     if (!ATTEMPT_ID_PATTERN.test(attemptId)) return 'not_found';
     const candidate = await this.db
       .prepare(
-        `SELECT attempt_id, repository, github_run_id
+        `SELECT attempts.attempt_id, attempts.repository, attempts.github_run_id
          FROM attempts
          WHERE attempt_id = ? AND repository IS NOT NULL AND github_run_id IS NOT NULL
            AND NOT EXISTS (
@@ -83,22 +83,42 @@ export class GitHubRunReconciler {
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
       throw new Error('GitHub reconciliation limit must be between 1 and 100');
     }
+    // A durable Runner result still needs an external GitHub fact, but it must
+    // not sit behind an unbounded terminal backlog when the webhook is lost.
+    // The rank changes only which read-only GET is served first; the shared
+    // observation projector remains the sole authority for external status.
     const candidates = await this.db
       .prepare(
         `SELECT attempt_id, repository, github_run_id
-         FROM attempts
-         WHERE repository IS NOT NULL
-           AND github_run_id IS NOT NULL
+         FROM attempts JOIN runs ON runs.run_id = attempts.run_id
+         WHERE attempts.repository IS NOT NULL
+           AND attempts.github_run_id IS NOT NULL
            AND NOT EXISTS (
              SELECT 1 FROM test_acceptances
              WHERE test_acceptances.attempt_id = attempts.attempt_id
            )
            AND (
-             github_external_updated_at IS NULL
-             OR github_status IS NULL
-             OR github_status <> 'completed'
+             attempts.github_external_updated_at IS NULL
+             OR attempts.github_status IS NULL
+             OR attempts.github_status <> 'completed'
            )
-         ORDER BY COALESCE(github_observed_at, created_at), attempt_id
+         ORDER BY
+           CASE
+             WHEN attempts.status IN ('starting', 'running')
+              AND attempts.result_event_id IS NOT NULL
+              AND runs.state IN (
+                'triaging', 'awaiting_approval', 'planning', 'executing',
+                'verifying', 'awaiting_review', 'deploying'
+              ) THEN 0
+             WHEN attempts.status IN ('starting', 'running')
+              AND runs.state IN (
+                'triaging', 'awaiting_approval', 'planning', 'executing',
+                'verifying', 'awaiting_review', 'deploying'
+              ) THEN 1
+             ELSE 2
+           END,
+           COALESCE(attempts.github_observed_at, attempts.created_at),
+           attempts.attempt_id
          LIMIT ?`,
       )
       .bind(limit)
