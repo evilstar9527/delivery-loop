@@ -963,7 +963,7 @@ GitHub `workflow_run` 外部事实契约：
 - `POST /v1/webhooks/github` 对原始 body 校验 `X-Hub-Signature-256` HMAC-SHA256，只接受 `X-GitHub-Event: workflow_run`；`X-GitHub-Delivery` 与 raw body digest 去重，同 delivery 更换 payload 返回 conflict；
 - Phase 1 只接受 `workflow_dispatch + run_attempt=1`，并同时匹配 D1 的 GitHub run ID、repository、固定 workflow path/ref、base SHA、stable run-name/attempt ID。签名正确但绑定不符的事件只留 reference-only ignored delivery，不改变 Attempt；
 - 投影只保存 status/conclusion、GitHub `updated_at`、本地 observed time 与 delivery digest，不保存原始 webhook。只有严格更新的 `updated_at` 能前进，乱序/同时间冲突不能把 completed 回退；
-- GitHub observation 使用独立 `github_observation_version`，不能递增 Runner heartbeat 使用的 Attempt `version`。外部 conclusion 仍只是核对事实，不直接关闭 Attempt/Run；遗漏 webhook 后续由 App API reconciliation 补齐。
+- GitHub observation 使用独立 `github_observation_version`，不能递增 Runner heartbeat 使用的 Attempt `version`。外部 conclusion 仍只是核对事实，不直接关闭 Attempt/Run；遗漏 webhook 后续由 App API reconciliation 补齐。该补偿在批次`limit`前按固定三档排序：当前active Run的`starting|running + result_event_id!=NULL` Attempt、其他当前active `starting|running` Attempt、历史终态backlog；每档内再按既有观察/创建时间和Attempt ID稳定排序。Runner result只获得补偿GET的服务优先级，不可代替GitHub fact；旧blocked/lost/failed记录仍保留并在没有active候选时继续有界排空，但不能占满窗口而饿死当前主链。
 - scheduled reconciliation 只选择尚无 completed external fact 的 Attempt，以 repo-scoped installation token 调用 `GET /repos/{owner}/{repo}/actions/runs/{run_id}`；API response 必须经过与 webhook 相同的 run/repo/workflow/base/title/run attempt 绑定后才能投影；
 - API observation ID 由 repository/run/fact digest 稳定派生，D1 只保存 canonical fact digest 和 applied/ignored 标量，不保存 response body/token。同 API fact 重复轮询返回 duplicate；API 暂不可用只影响本轮 reconciliation，不把旧事实改成失败。
 
