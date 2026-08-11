@@ -537,6 +537,8 @@ type QuotaOverrideRequestV1 = {
 
 dead-letter API只接受独立`OPERATIONS_TOKEN`，不能用Task intake、Runner或approval token替代。GET query只允许单个`status=open|replay_requested|resolved`和`limit=1..100`并返回`no-store`；响应不含Queue body、outbox payload ref、Task正文、token或raw error。POST strict body为`{expectedOutboxAttemptCount, reasonCode}`，其中reason为`operator_retry|upstream_recovered|configuration_fixed`固定枚举；body没有outbox/kind/destination/payload/effect/actor字段。
 
+受保护main-only GitHub operator可以把该POST作为readiness、dead-letter read、repo-write approval observation之外的第四种互斥模式调用。caller必须固定owner、main、exact workflow SHA、attempt 1与`phase1-readiness` Environment，只发送一次请求；workflow input没有outbox payload、kind、destination或effect，成功日志只保留dead-letter/replay ID、`replay_requested`与created。Environment gate和workflow成功不改变API语义，也不替代控制面对当前dead-letter/outbox attempt count的CAS。
+
 主Queue消费失败调用message retry，Cloudflare配置在3次retry耗尽后转`delivery-loop-workflow-outbox-dlq`。DLQ consumer只接受exact `{outboxId}`和安全message ID/attempt count，回查D1后写immutable dead-letter snapshot再ack；畸形/已删除outbox为无效毒丸ack，D1暂时失败继续retry。open dead letter通过relay/router/processor三层检查冻结原outbox。Replay以dead-letter、当前outbox attempt count和固定operations actor CAS，只创建一个immutable replay ledger，把原outbox恢复pending并清过期lease；不创建第二条outbox或复制payload。相同请求3次返回同一replay ID，后续Queue重复仍由原processor的lease、业务binding和外部API reconciliation收敛；outbox settled后scheduled reconciler把dead letter置resolved。
 
 Draft PR正文准备接口使用控制面Bearer服务认证，Agent run token不可调用；strict body和成功响应为：
