@@ -23,9 +23,16 @@ const TASK_ID = 'task-github-base-observation';
 const PLAN_ID = 'plan-github-base-observation-v1';
 const ANALYSIS_ATTEMPT_ID = 'attempt-github-base-analysis-v1';
 const ACTIVE_ATTEMPT_ID = 'attempt-github-base-active-v1';
+const REVIEW_ATTEMPT_ID = 'attempt-github-base-review-v1';
+const REVIEW_FIX_ATTEMPT_ID = 'attempt-github-base-review-fix-v1';
+const REVIEW_ID = 'review-github-base-v1';
+const PUBLICATION_ID = 'publication-github-base-v1';
+const DRAFT_ID = 'draft-github-base-v1';
+const ITEM_ID = 'change-github-base-v1';
 const REPOSITORY = 'example/delivery-target';
 const BEFORE_SHA = 'a'.repeat(40);
 const AFTER_SHA = 'b'.repeat(40);
+const REVIEW_HEAD_SHA = 'c'.repeat(40);
 const PLAN_DIGEST = `sha256:${'c'.repeat(64)}`;
 const REFERENCE_DIGEST = `sha256:${'d'.repeat(64)}`;
 const COMPARISON_DIGEST = `sha256:${'e'.repeat(64)}`;
@@ -123,6 +130,11 @@ class FakeBaseClient implements GitHubBaseExternalFactClient {
 
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM automated_review_fix_attempts'),
+    env.DB_CONTROL.prepare('DELETE FROM automated_reviews'),
+    env.DB_CONTROL.prepare('DELETE FROM pull_request_publications'),
+    env.DB_CONTROL.prepare('DELETE FROM pull_request_drafts'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_head_updates'),
     env.DB_CONTROL.prepare('DELETE FROM base_conflict_approval_invalidations'),
     env.DB_CONTROL.prepare('DELETE FROM github_base_conflicts'),
     env.DB_CONTROL.prepare('DELETE FROM approval_invalidations'),
@@ -158,6 +170,186 @@ async function reset(): Promise<void> {
   if (objects.objects.length > 0) {
     await env.TASK_OBJECTS.delete(objects.objects.map((object) => object.key));
   }
+}
+
+async function seedActiveAutomatedReview(
+  status: 'pending' | 'approved' | 'changes_requested',
+): Promise<void> {
+  const body = '# Review the current Draft PR head.\n';
+  const bodyDigest = await canonicalSha256(body);
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO plan_items (
+         plan_id, item_id, kind, title, objective, required, position
+       ) VALUES (?, ?, 'change', 'Apply the requested change',
+                 'Apply and verify the requested change.', 1, 0)`,
+    ).bind(PLAN_ID, ITEM_ID),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO evidence (
+         evidence_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+         kind, status, sha, summary, verification_status, observed_at, created_at
+       ) VALUES ('evidence-github-base-review-head', ?, ?, ?, 1, ?, 'commit',
+                 'passed', ?, 'Verified Draft PR head.', 'verified', ?, ?)`,
+    ).bind(RUN_ID, ACTIVE_ATTEMPT_ID, PLAN_ID, ITEM_ID, REVIEW_HEAD_SHA, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `UPDATE runs SET state = 'pull_request_open' WHERE run_id = ?`,
+    ).bind(RUN_ID),
+  ]);
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_head_updates (
+         update_id, evidence_id, run_id, attempt_id, plan_id, plan_version,
+         plan_item_id, lease_generation, parent_sha, head_sha, branch, created_at
+       ) VALUES ('head-github-base-review', 'evidence-github-base-review-head',
+                 ?, ?, ?, 1, ?, 2, ?, ?, 'agent/review/base-race', ?)`,
+    ).bind(RUN_ID, ACTIVE_ATTEMPT_ID, PLAN_ID, ITEM_ID, BEFORE_SHA, REVIEW_HEAD_SHA, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+         workflow_ref, plan_id, plan_version, plan_item_id, head_sha,
+         version, lease_generation, created_at, updated_at
+       ) VALUES (?, ?, 3, 'analysis', 'running', ?, ?,
+                 'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                 ?, 1, ?, ?, 1, 1, ?, ?)`,
+    ).bind(
+      REVIEW_ATTEMPT_ID,
+      RUN_ID,
+      BEFORE_SHA,
+      REPOSITORY,
+      PLAN_ID,
+      ITEM_ID,
+      REVIEW_HEAD_SHA,
+      NOW,
+      NOW,
+    ),
+  ]);
+  await env.DB_CONTROL.prepare(
+    `INSERT INTO pull_request_drafts (
+       draft_id, run_id, run_version, task_id, task_revision, task_digest,
+       plan_id, plan_version, plan_digest, attempt_id, head_update_id,
+       head_sha, branch, body, body_digest, status, created_at
+     ) SELECT ?, runs.run_id, runs.version, tasks.task_id, runs.task_revision,
+              runs.task_digest, ?, 1, ?, ?, 'head-github-base-review', ?,
+              'agent/review/base-race', ?, ?, 'prepared', ?
+       FROM runs JOIN tasks ON tasks.task_id = runs.task_id
+       WHERE runs.run_id = ?`,
+  ).bind(
+    DRAFT_ID,
+    PLAN_ID,
+    PLAN_DIGEST,
+    ACTIVE_ATTEMPT_ID,
+    REVIEW_HEAD_SHA,
+    body,
+    bodyDigest,
+    NOW,
+    RUN_ID,
+  ).run();
+  await env.DB_CONTROL.prepare(
+    `INSERT INTO pull_request_publications (
+       publication_id, run_id, run_version, draft_id, approval_id,
+       repository, base_branch, head_branch, head_sha, title, body_digest,
+       status, github_pr_number, github_pr_url, github_external_updated_at,
+       github_observation_version, created_at, updated_at
+     ) SELECT ?, runs.run_id, runs.version, ?, 'approval-github-base-v1', ?,
+              'main', 'agent/review/base-race', ?, 'Review base race', ?,
+              'verified', 237, 'https://github.com/example/delivery-target/pull/237',
+              ?, 1, ?, ? FROM runs WHERE runs.run_id = ?`,
+  ).bind(
+    PUBLICATION_ID,
+    DRAFT_ID,
+    REPOSITORY,
+    REVIEW_HEAD_SHA,
+    bodyDigest,
+    NOW,
+    NOW,
+    NOW,
+    RUN_ID,
+  ).run();
+  if (status === 'pending') {
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO automated_reviews (
+         review_id, run_id, publication_id, plan_id, plan_version, plan_item_id,
+         prior_attempt_id, review_attempt_id, repository, github_pr_number,
+         base_branch, branch, source_head_sha, iteration, status, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, 237, 'main',
+                 'agent/review/base-race', ?, 1, 'pending', ?, ?)`,
+    ).bind(
+      REVIEW_ID,
+      RUN_ID,
+      PUBLICATION_ID,
+      PLAN_ID,
+      ITEM_ID,
+      ACTIVE_ATTEMPT_ID,
+      REVIEW_ATTEMPT_ID,
+      REPOSITORY,
+      REVIEW_HEAD_SHA,
+      NOW,
+      NOW,
+    ).run();
+    return;
+  }
+  await env.DB_CONTROL.prepare(
+    `INSERT INTO automated_reviews (
+       review_id, run_id, publication_id, plan_id, plan_version, plan_item_id,
+       prior_attempt_id, review_attempt_id, repository, github_pr_number,
+       base_branch, branch, source_head_sha, iteration, status, result_ref,
+       result_digest, feedback_body_digest, blocking_finding_count,
+       minor_finding_count, completed_at, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, 237, 'main',
+               'agent/review/base-race', ?, 1, ?,
+               'r2://automated-reviews/base-race.json', ?, ?, ?, 0, ?, ?, ?)`,
+  ).bind(
+    REVIEW_ID,
+    RUN_ID,
+    PUBLICATION_ID,
+    PLAN_ID,
+    ITEM_ID,
+    ACTIVE_ATTEMPT_ID,
+    REVIEW_ATTEMPT_ID,
+    REPOSITORY,
+    REVIEW_HEAD_SHA,
+    status,
+    `sha256:${'7'.repeat(64)}`,
+    `sha256:${'8'.repeat(64)}`,
+    status === 'approved' ? 0 : 1,
+    NOW,
+    NOW,
+    NOW,
+  ).run();
+  if (status === 'approved') return;
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'completed', version = 2, lease_generation = 2,
+                           updated_at = ? WHERE attempt_id = ?`,
+    ).bind(NOW, REVIEW_ATTEMPT_ID),
+    env.DB_CONTROL.prepare(
+      `UPDATE runs SET state = 'executing' WHERE run_id = ?`,
+    ).bind(RUN_ID),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+         workflow_ref, plan_id, plan_version, plan_item_id, head_branch, head_sha,
+         version, lease_generation, created_at, updated_at
+       ) VALUES (?, ?, 4, 'review_fix', 'running', ?, ?,
+                 'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                 ?, 1, ?, 'agent/review/base-race', ?, 1, 1, ?, ?)`,
+    ).bind(
+      REVIEW_FIX_ATTEMPT_ID,
+      RUN_ID,
+      BEFORE_SHA,
+      REPOSITORY,
+      PLAN_ID,
+      ITEM_ID,
+      REVIEW_HEAD_SHA,
+      NOW,
+      NOW,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO automated_review_fix_attempts (
+         review_id, fix_attempt_id, prior_attempt_id, branch, source_head_sha, created_at
+       ) VALUES (?, ?, ?, 'agent/review/base-race', ?, ?)`,
+    ).bind(REVIEW_ID, REVIEW_FIX_ATTEMPT_ID, ACTIVE_ATTEMPT_ID, REVIEW_HEAD_SHA, NOW),
+  ]);
 }
 
 async function makeTaskWritableBug(): Promise<void> {
@@ -537,6 +729,75 @@ describe('trusted GitHub base SHA resolution', () => {
 });
 
 describe('GitHub base observation reconciliation', () => {
+  it.each(['pending', 'changes_requested'] as const)(
+    'does not start base replanning while the current Plan automated review is %s',
+    async (reviewStatus) => {
+      await seedActiveAutomatedReview(reviewStatus);
+      const runBefore = await env.DB_CONTROL.prepare(
+        `SELECT state, version, base_sha, active_plan_id,
+                active_plan_version, active_plan_digest
+         FROM runs WHERE run_id = ?`,
+      ).bind(RUN_ID).first();
+      const planBefore = await env.DB_CONTROL.prepare(
+        `SELECT status, base_sha, digest FROM execution_plans WHERE plan_id = ?`,
+      ).bind(PLAN_ID).first();
+      const reviewBefore = await env.DB_CONTROL.prepare(
+        `SELECT status, result_ref, result_digest, updated_at
+         FROM automated_reviews WHERE review_id = ?`,
+      ).bind(REVIEW_ID).first();
+
+      const directClient = new FakeBaseClient(fastForwardResult());
+      const direct = new GitHubBaseObservationReconciler(env.DB_CONTROL, directClient, {
+        now: () => new Date(NOW),
+      });
+      expect(await direct.reconcileRun(RUN_ID)).toBe('not_found');
+      expect(directClient.calls).toEqual([]);
+
+      const batchClient = new FakeBaseClient(fastForwardResult());
+      const batch = new GitHubBaseObservationReconciler(env.DB_CONTROL, batchClient, {
+        now: () => new Date(NOW),
+      });
+      expect(await batch.reconcileBatch(10)).toEqual([]);
+      expect(batchClient.calls).toEqual([]);
+      expect(await env.DB_CONTROL.prepare(
+        'SELECT COUNT(*) AS count FROM plan_revisions',
+      ).first()).toEqual({ count: 0 });
+      expect(await env.DB_CONTROL.prepare(
+        'SELECT COUNT(*) AS count FROM github_base_observations',
+      ).first()).toEqual({ count: 0 });
+      expect(await env.DB_CONTROL.prepare(
+        `SELECT state, version, base_sha, active_plan_id,
+                active_plan_version, active_plan_digest
+         FROM runs WHERE run_id = ?`,
+      ).bind(RUN_ID).first()).toEqual(runBefore);
+      expect(await env.DB_CONTROL.prepare(
+        `SELECT status, base_sha, digest FROM execution_plans WHERE plan_id = ?`,
+      ).bind(PLAN_ID).first()).toEqual(planBefore);
+      expect(await env.DB_CONTROL.prepare(
+        `SELECT status, result_ref, result_digest, updated_at
+         FROM automated_reviews WHERE review_id = ?`,
+      ).bind(REVIEW_ID).first()).toEqual(reviewBefore);
+    },
+  );
+
+  it('resumes base observation after the current Plan automated review is approved', async () => {
+    await seedActiveAutomatedReview('approved');
+    const client = new FakeBaseClient(fastForwardResult());
+    const reconciler = new GitHubBaseObservationReconciler(env.DB_CONTROL, client, {
+      now: () => new Date(NOW),
+    });
+
+    expect(await reconciler.reconcileRun(RUN_ID)).toBe('replanning');
+    expect(client.calls).toEqual([{
+      repository: REPOSITORY,
+      baseBranch: 'main',
+      beforeSha: BEFORE_SHA,
+    }]);
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM plan_revisions',
+    ).first()).toEqual({ count: 1 });
+  });
+
   it('converges 20 fast-forward observations to one immutable source fact and re-analysis', async () => {
     await makeTaskWritableBug();
     expect(await seedPriorDiagnosticEvidence()).toBe(DIAGNOSTIC_EVIDENCE_REF);
