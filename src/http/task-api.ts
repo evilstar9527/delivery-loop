@@ -170,7 +170,7 @@ type SafeAutomatedReviewProjection = {
   minorFindingCount?: number;
 };
 
-function safeAutomatedReviewProjection(value: unknown): SafeAutomatedReviewProjection | undefined {
+export function safeAutomatedReviewProjection(value: unknown): SafeAutomatedReviewProjection | undefined {
   if (value === null || typeof value !== 'object') return undefined;
   const review = value as Record<string, unknown>;
   const { iteration, status } = review;

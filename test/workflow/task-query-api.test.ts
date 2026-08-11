@@ -4,7 +4,7 @@ import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { canonicalSha256 } from '../../src/domain/digest.js';
 import type { TaskEnvelope } from '../../src/domain/task.js';
-import { taskApi } from '../../src/http/task-api.js';
+import { safeAutomatedReviewProjection, taskApi } from '../../src/http/task-api.js';
 
 const BASE_URL = 'https://delivery-loop.test';
 const TEST_TOKEN = 'test-task-intake-token';
@@ -397,6 +397,45 @@ describe('safe Task and ExecutionPlan query API', () => {
       evidence: [],
     });
     expect(body).not.toHaveProperty('automatedReview');
+  });
+
+  it('projects only safe automated-review status fields', () => {
+    expect(safeAutomatedReviewProjection(undefined)).toBeUndefined();
+    expect(safeAutomatedReviewProjection(null)).toBeUndefined();
+    expect(safeAutomatedReviewProjection({ iteration: 1, status: 'pending' })).toEqual({
+      iteration: 1,
+      status: 'pending',
+    });
+    expect(safeAutomatedReviewProjection({
+      iteration: 2,
+      status: 'approved',
+      blockingFindingCount: 0,
+      minorFindingCount: 1,
+      summary: 'CANARY_PRIVATE_REVIEW_SUMMARY',
+      findingBody: 'CANARY_PRIVATE_FINDING_BODY',
+      artifactRef: 'r2://private-review',
+    })).toEqual({
+      iteration: 2,
+      status: 'approved',
+      blockingFindingCount: 0,
+      minorFindingCount: 1,
+    });
+    expect(safeAutomatedReviewProjection({ iteration: 3, status: 'changes_requested' })).toEqual({
+      iteration: 3,
+      status: 'changes_requested',
+    });
+    expect(safeAutomatedReviewProjection({
+      iteration: 3,
+      status: 'blocked',
+      blockingFindingCount: 2,
+      minorFindingCount: 3,
+    })).toEqual({
+      iteration: 3,
+      status: 'blocked',
+      blockingFindingCount: 2,
+      minorFindingCount: 3,
+    });
+    expect(safeAutomatedReviewProjection({ iteration: 4, status: 'approved' })).toBeUndefined();
   });
 
   it('fails closed for unauthenticated, invalid, and missing resources', async () => {
