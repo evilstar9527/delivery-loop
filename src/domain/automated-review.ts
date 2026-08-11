@@ -111,10 +111,18 @@ export const AutomatedReviewContextV1Schema = z.object({
 
 export type AutomatedReviewContextV1 = z.infer<typeof AutomatedReviewContextV1Schema>;
 
+const AutomatedReviewDigestAttemptV1Schema = AutomatedReviewContextV1Schema.shape.attempt
+  .omit({ version: true })
+  .strip();
+
 export async function automatedReviewContextDigest(
   context: AutomatedReviewContextV1,
 ): Promise<string> {
-  return await canonicalSha256(AutomatedReviewContextV1Schema.parse(context));
+  const parsed = AutomatedReviewContextV1Schema.parse(context);
+  return await canonicalSha256({
+    ...parsed,
+    attempt: AutomatedReviewDigestAttemptV1Schema.parse(parsed.attempt),
+  });
 }
 
 export function blockingFindingCount(result: AutomatedReviewResultV1): number {

@@ -646,7 +646,7 @@ describe('automated review loop', () => {
       revisionContext.revisionSource.data.body).toContain('[MAJOR]');
   });
 
-  it('serves automated context and replays the same result after token revocation', async () => {
+  it('accepts a review after heartbeat version change and replays it after token revocation', async () => {
     const scheduled = await new AutomatedReviewScheduler(env.DB_CONTROL)
       .scheduleRun(RUN_ID, new Date(NOW));
     if (scheduled === null) throw new Error('automated review was not scheduled');
@@ -683,13 +683,26 @@ describe('automated review loop', () => {
     );
     expect(contextResponse.status).toBe(200);
     const context = AutomatedReviewContextV1Schema.parse(await contextResponse.json());
+    const contextDigest = await automatedReviewContextDigest(context);
+    expect(await automatedReviewContextDigest({
+      ...context,
+      attempt: { ...context.attempt, version: context.attempt.version + 1 },
+    })).toBe(contextDigest);
+    expect(await automatedReviewContextDigest({
+      ...context,
+      attempt: { ...context.attempt, leaseGeneration: context.attempt.leaseGeneration + 1 },
+    })).not.toBe(contextDigest);
     const result = {
       schemaVersion: '1' as const,
-      contextDigest: await automatedReviewContextDigest(context),
+      contextDigest,
       verdict: 'approved' as const,
       summary: 'No blocker or major findings remain.',
       findings: [],
     };
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET version = version + 1, heartbeat_at = ?, updated_at = ?
+       WHERE attempt_id = ? AND status = 'running'`,
+    ).bind(NOW, NOW, scheduled.attemptId).run();
     const submit = async () => await SELF.fetch(
       `https://delivery-loop.test/v1/attempts/${scheduled.attemptId}/automated-review-result`,
       {
