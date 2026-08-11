@@ -334,6 +334,61 @@ export class GitHubCommitApprovalService {
               (recovery.source_kind = 'failed_dependency' AND plans.status = 'blocked')
               OR (recovery.source_kind = 'lost_pre_effect' AND plans.status = 'active')
             ))
+           OR
+           (runs.state = 'pull_request_open' AND plans.status = 'active'
+            AND EXISTS (
+              SELECT 1
+              FROM automated_reviews AS reviews
+              JOIN attempts AS root ON root.attempt_id = reviews.review_attempt_id
+              JOIN plan_item_progress AS progress
+                ON progress.plan_id = reviews.plan_id
+               AND progress.item_id = reviews.plan_item_id
+              JOIN pull_request_publications AS publications
+                ON publications.publication_id = reviews.publication_id
+              WHERE reviews.run_id = runs.run_id AND reviews.plan_id = plans.plan_id
+                AND reviews.plan_version = plans.plan_version
+                AND reviews.status = 'pending'
+                AND root.run_id = runs.run_id AND root.mode = 'analysis'
+                AND root.status IN ('failed', 'lost', 'starting', 'running')
+                AND root.result_event_id IS NULL
+                AND root.github_status = 'completed'
+                AND root.github_conclusion IS NOT NULL
+                AND root.github_conclusion <> 'success'
+                AND (
+                  root.status IN ('failed', 'lost')
+                  OR (root.lease_expires_at IS NOT NULL AND root.lease_expires_at <= ?)
+                )
+                AND root.base_sha = reviews.source_head_sha
+                AND root.repository = reviews.repository
+                AND root.workflow_ref IS NOT NULL
+                AND progress.status = 'passed' AND progress.active_attempt_id IS NULL
+                AND publications.status = 'verified'
+                AND publications.run_id = reviews.run_id
+                AND publications.repository = reviews.repository
+                AND publications.github_pr_number = reviews.github_pr_number
+                AND publications.base_branch = reviews.base_branch
+                AND publications.head_branch = reviews.branch
+                AND publications.head_sha = reviews.source_head_sha
+                AND reviews.source_head_sha = (
+                  SELECT updates.head_sha
+                  FROM attempt_head_updates AS updates
+                  JOIN attempts AS head_attempt
+                    ON head_attempt.attempt_id = updates.attempt_id
+                  WHERE updates.run_id = reviews.run_id
+                    AND updates.plan_id = reviews.plan_id
+                    AND updates.branch = reviews.branch
+                  ORDER BY head_attempt.ordinal DESC, updates.created_at DESC LIMIT 1
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM attempts AS replacement
+                  WHERE replacement.recovered_from_attempt_id = root.attempt_id
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM run_blockers
+                  WHERE run_blockers.run_id = reviews.run_id
+                    AND run_blockers.resolved_at IS NULL
+                )
+            ))
          )
          AND plans.base_sha = runs.base_sha
          AND plans.plan_version = runs.active_plan_version
@@ -344,7 +399,7 @@ export class GitHubCommitApprovalService {
              AND plan_item_effects.effect = 'repo_write'
          )
        LIMIT 1`,
-    ).bind(runId).first<CandidateRow>();
+    ).bind(runId, this.now().toISOString()).first<CandidateRow>();
   }
 
   private templateInput(candidate: CandidateRow) {
