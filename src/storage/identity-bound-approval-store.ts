@@ -787,9 +787,41 @@ export class IdentityBoundApprovalStore {
                       AND updates.branch = reviews.branch
                     ORDER BY head_attempt.ordinal DESC, updates.created_at DESC LIMIT 1
                   )
-                  AND NOT EXISTS (
-                    SELECT 1 FROM attempts AS replacement
-                    WHERE replacement.recovered_from_attempt_id = root.attempt_id
+                  AND (
+                    NOT EXISTS (
+                      SELECT 1 FROM attempts AS replacement
+                      WHERE replacement.recovered_from_attempt_id = root.attempt_id
+                    )
+                    OR (
+                      1 = (
+                        SELECT COUNT(*) FROM attempts AS replacement_count
+                        WHERE replacement_count.recovered_from_attempt_id = root.attempt_id
+                      )
+                      AND EXISTS (
+                        SELECT 1 FROM attempts AS replacement
+                        WHERE replacement.recovered_from_attempt_id = root.attempt_id
+                        AND replacement.run_id = reviews.run_id
+                        AND replacement.mode = 'analysis'
+                        AND replacement.status IN ('failed', 'lost', 'starting', 'running')
+                        AND replacement.result_event_id IS NULL
+                        AND replacement.github_status = 'completed'
+                        AND replacement.github_conclusion IS NOT NULL
+                        AND replacement.github_conclusion <> 'success'
+                        AND (
+                          replacement.status IN ('failed', 'lost')
+                          OR (replacement.lease_expires_at IS NOT NULL
+                              AND replacement.lease_expires_at <= ?)
+                        )
+                        AND replacement.base_sha = reviews.source_head_sha
+                        AND replacement.repository = reviews.repository
+                        AND replacement.workflow_ref IS NOT NULL
+                        AND NOT EXISTS (
+                          SELECT 1
+                          FROM automated_review_replacement_redispatches AS redispatch
+                          WHERE redispatch.replacement_attempt_id = replacement.attempt_id
+                        )
+                      )
+                    )
                   )
                   AND NOT EXISTS (
                     SELECT 1 FROM run_blockers
@@ -805,7 +837,7 @@ export class IdentityBoundApprovalStore {
                AND plan_item_effects.effect = 'repo_write'
            )
          LIMIT 1`,
-      ).bind(input.runId, input.expectedRunVersion, input.planVersion, nowIso)
+      ).bind(input.runId, input.expectedRunVersion, input.planVersion, nowIso, nowIso)
         .first<CandidateRow>();
     }
     const allowedStates = input.effect === 'merge'
