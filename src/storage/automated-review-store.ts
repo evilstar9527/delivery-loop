@@ -117,6 +117,51 @@ interface ContextRow extends ReviewRow {
   latest_head_sha: string | null;
 }
 
+export interface CurrentAutomatedReviewStatus {
+  iteration: number;
+  status: 'pending' | 'approved' | 'changes_requested' | 'blocked';
+  blockingFindingCount?: number;
+  minorFindingCount?: number;
+}
+
+/** Reads the bounded review status only when it belongs to the verified current PR head. */
+export class AutomatedReviewStatusStore {
+  constructor(private readonly db: D1Database) {}
+
+  async current(runId: string): Promise<CurrentAutomatedReviewStatus | null> {
+    const row = await this.db.prepare(
+      `SELECT reviews.iteration, reviews.status, reviews.blocking_finding_count,
+              reviews.minor_finding_count
+       FROM automated_reviews AS reviews
+       JOIN pull_request_publications AS publications
+         ON publications.publication_id = reviews.publication_id
+       JOIN attempt_head_updates AS updates ON updates.update_id = (
+         SELECT candidate.update_id
+         FROM attempt_head_updates AS candidate
+         JOIN attempts AS attempt ON attempt.attempt_id = candidate.attempt_id
+         WHERE candidate.run_id = reviews.run_id
+           AND candidate.plan_id = reviews.plan_id
+           AND candidate.branch = publications.head_branch
+         ORDER BY attempt.ordinal DESC, candidate.created_at DESC LIMIT 1
+       )
+       WHERE reviews.run_id = ? AND publications.status = 'verified'
+         AND reviews.branch = publications.head_branch
+         AND reviews.source_head_sha = updates.head_sha
+       ORDER BY publications.updated_at DESC LIMIT 1`,
+    ).bind(runId).first<Pick<ReviewRow,
+      'iteration' | 'status' | 'blocking_finding_count' | 'minor_finding_count'>>();
+    if (row === null) return null;
+    return {
+      iteration: row.iteration,
+      status: row.status,
+      ...(row.blocking_finding_count === null
+        ? {} : { blockingFindingCount: row.blocking_finding_count }),
+      ...(row.minor_finding_count === null
+        ? {} : { minorFindingCount: row.minor_finding_count }),
+    };
+  }
+}
+
 export interface AutomatedReviewScheduleResult {
   reviewId: string;
   attemptId: string;
