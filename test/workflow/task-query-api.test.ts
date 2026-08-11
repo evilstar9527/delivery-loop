@@ -1,7 +1,7 @@
 /// <reference types="@cloudflare/vitest-pool-workers/types" />
 
 import { env } from 'cloudflare:test';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { canonicalSha256 } from '../../src/domain/digest.js';
 import type { TaskEnvelope } from '../../src/domain/task.js';
 import { taskApi } from '../../src/http/task-api.js';
