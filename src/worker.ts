@@ -246,6 +246,11 @@ export default {
         runningThresholdSeconds: 90,
         now: scheduledNow,
       });
+      // Once GitHub success and the complete verification ledger are durable,
+      // project one Attempt/Item completion before any further external read.
+      // R2-backed Draft creation stays below the base observer so a moved main
+      // cannot race publication authority derived from the old base.
+      await executionProgress.reconcileAttemptCompletions(1);
       // A new protected main invalidates execution and publication authority
       // derived from the old base. Observe one eligible base before prepared
       // Draft recovery or any global relay can consume the scheduled CPU
@@ -255,7 +260,7 @@ export default {
       // but lost CPU before scheduling its D1 publication. Recover that cheap
       // prepared state before the completion path can attempt R2 work again.
       await executionProgress.reconcilePreparedPublications(1);
-      await executionProgress.reconcileObservedCompletions(5);
+      await executionProgress.reconcileFinalizations(5);
       await relay.relay();
       // A Draft PR created by a previous Cron already has a durable publication
       // intent, but its GitHub fact still has to be observed before review can

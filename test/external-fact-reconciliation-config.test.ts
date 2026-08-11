@@ -84,9 +84,13 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await reconcileGitHubBasesFromEnv(env, 1);',
       atRiskGitHubReconciliation,
     );
-    const executionFinalization = worker.indexOf(
-      'await executionProgress.reconcileObservedCompletions(5);',
+    const executionCompletion = worker.indexOf(
+      'await executionProgress.reconcileAttemptCompletions(1);',
       atRiskGitHubReconciliation,
+    );
+    const executionFinalization = worker.indexOf(
+      'await executionProgress.reconcileFinalizations(5);',
+      executionCompletion,
     );
     const detectorEnd = worker.indexOf('}).scan(5);');
     const concurrentStart = worker.indexOf('await Promise.all([', detectorEnd);
@@ -120,10 +124,12 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(atRiskGitHubReconciliation).toBeGreaterThan(priorityExecutionScheduling);
     expect(atRiskGitHubReconciliation).toBeLessThan(priorityRelay);
     expect(atRiskGitHubReconciliation).toBeLessThan(priorityPullRequestReconciliation);
+    expect(executionCompletion).toBeGreaterThan(atRiskGitHubReconciliation);
+    expect(executionCompletion).toBeLessThan(priorityGitHubBaseReconciliation);
     expect(priorityGitHubBaseReconciliation).toBeGreaterThan(atRiskGitHubReconciliation);
     expect(priorityGitHubBaseReconciliation).toBeLessThan(preparedPublicationRecovery);
     expect(priorityGitHubBaseReconciliation).toBeLessThan(priorityRelay);
-    expect(executionFinalization).toBeGreaterThan(atRiskGitHubReconciliation);
+    expect(executionFinalization).toBeGreaterThan(priorityGitHubBaseReconciliation);
     expect(executionFinalization).toBeLessThan(priorityPullRequestReconciliation);
     expect(planRevisionAnalysisRecovery).toBeGreaterThan(executionFinalization);
     expect(planRevisionAnalysisRecovery).toBeLessThan(relay);

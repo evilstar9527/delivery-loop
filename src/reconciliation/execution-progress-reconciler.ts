@@ -125,9 +125,16 @@ export class ExecutionProgressReconciler {
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
       throw new Error('execution progress reconciliation limit must be between 1 and 100');
     }
-    const verifiedItems = await this.verifyCompletedAttempts(limit);
+    const verifiedItems = await this.reconcileAttemptCompletions(limit);
     const finalized = await this.reconcileFinalizations(limit);
     return { verifiedItems, ...finalized };
+  }
+
+  async reconcileAttemptCompletions(limit = 25): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+      throw new Error('execution progress reconciliation limit must be between 1 and 100');
+    }
+    return await this.verifyCompletedAttempts(limit);
   }
 
   async reconcileFinalizations(limit = 25): Promise<ExecutionFinalizationResult> {
