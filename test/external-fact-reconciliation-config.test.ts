@@ -76,6 +76,10 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await reconcileAtRiskGitHubRunsFromEnv(env, {',
       priorityExecutionScheduling,
     );
+    const priorityGitHubBaseReconciliation = worker.indexOf(
+      'await reconcileGitHubBasesFromEnv(env, 1);',
+      atRiskGitHubReconciliation,
+    );
     const executionFinalization = worker.indexOf(
       'await executionProgress.reconcileObservedCompletions(5);',
       atRiskGitHubReconciliation,
@@ -110,6 +114,9 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(atRiskGitHubReconciliation).toBeGreaterThan(priorityExecutionScheduling);
     expect(atRiskGitHubReconciliation).toBeLessThan(priorityRelay);
     expect(atRiskGitHubReconciliation).toBeLessThan(priorityPullRequestReconciliation);
+    expect(priorityGitHubBaseReconciliation).toBeGreaterThan(atRiskGitHubReconciliation);
+    expect(priorityGitHubBaseReconciliation).toBeLessThan(preparedPublicationRecovery);
+    expect(priorityGitHubBaseReconciliation).toBeLessThan(priorityRelay);
     expect(executionFinalization).toBeGreaterThan(atRiskGitHubReconciliation);
     expect(executionFinalization).toBeLessThan(priorityPullRequestReconciliation);
     expect(planRevisionAnalysisRecovery).toBeGreaterThan(executionFinalization);
@@ -145,6 +152,9 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain('relay.relay()');
     expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain(
       'reconcileGitHubPullRequestsFromEnv(env)',
+    );
+    expect(worker.slice(concurrentStart, concurrentEnd)).not.toContain(
+      'reconcileGitHubBasesFromEnv(env)',
     );
     expect(worker.slice(priorityPullRequestReconciliation + 1)).not.toContain(
       'await reconcileGitHubPullRequestsFromEnv(env);',

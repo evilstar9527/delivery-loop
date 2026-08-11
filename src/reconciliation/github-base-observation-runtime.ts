@@ -34,7 +34,8 @@ export function githubBaseObservationReconcilerFromEnv(
 
 export async function reconcileGitHubBasesFromEnv(
   env: Bindings,
+  limit = 25,
 ): Promise<GitHubBaseBatchResult[]> {
   const reconciler = githubBaseObservationReconcilerFromEnv(env);
-  return reconciler === null ? [] : await reconciler.reconcileBatch(25);
+  return reconciler === null ? [] : await reconciler.reconcileBatch(limit);
 }

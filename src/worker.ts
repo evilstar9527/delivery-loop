@@ -240,6 +240,11 @@ export default {
         runningThresholdSeconds: 90,
         now: scheduledNow,
       });
+      // A new protected main invalidates execution and publication authority
+      // derived from the old base. Observe one eligible base before prepared
+      // Draft recovery or any global relay can consume the scheduled CPU
+      // budget; the resulting revision/analysis dispatch remains D1-fenced.
+      await reconcileGitHubBasesFromEnv(env, 1);
       // A prior invocation may have completed the R2-backed immutable Draft
       // but lost CPU before scheduling its D1 publication. Recover that cheap
       // prepared state before the completion path can attempt R2 work again.
@@ -299,7 +304,6 @@ export default {
         reconcileWorkflowInstancesFromEnv(env),
         reconcileGitHubRunsFromEnv(env, 1),
         new FeishuIngressRelay(env.DB_CONTROL, env.FEISHU_INGRESS_QUEUE).relay(),
-        reconcileGitHubBasesFromEnv(env),
         reconcileGitHubMergeGatesFromEnv(env),
         reconcileGitHubMergeStatusesFromEnv(env),
         reconcileGitHubProductionDeploymentStatusesFromEnv(env),

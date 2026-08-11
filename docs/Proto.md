@@ -345,6 +345,8 @@ review、补充上下文或base observation要求改变Plan时，替换流程必
 
 当前本地GitHub review producer/Runner reporter、GitHub base refs+compare scheduled producer、supplemental Task revision producer与三类digest-verified analysis source均已接通；真实飞书/Meegle身份事件、GitHub API/Actions/Workflow re-analysis和新审批仍属后续穿透，完成前不能把本地workerd/fake HTTP冒充外部E2E。
 
+Free-plan scheduled handler在at-risk GitHub终态投影之后可以先观察最多1个base候选，但候选查询与按Run ID重读都必须排除该Run任一`pull_request_publications.status <> 'verified'`，并继续排除进行中的自动review。因此只有完全没有未核验publication的Run能走这个优先入口；`created_unverified`仍先由PR projector核对，不会与base replan竞争Run version。
+
 ## §4. 控制面 API
 
 ### 4.1 外部事件入口
@@ -1086,6 +1088,8 @@ Workflow 必须配置：
 - test acceptance workflow与deployment workflow物理分离，权限固定为`contents:read + id-token:write`且没有`deployments:write`，job Environment固定`test`并checkout exact deployed SHA。Runner只执行test target绑定的`acceptance:*` argv，把无userinfo/query/fragment的HTTPS Environment URL注入`DELIVERY_TEST_BASE_URL`，并从子进程环境移除GitHub/OIDC/控制面身份值；命令失败时仍先上报result再以非零退出令Actions形成外部failure。
 - test rollback workflow与deploy/acceptance物理分离，权限固定为`contents:read + id-token:write`，job Environment固定`test`并checkout exact失败SHA。Runner只执行exact policy的rollback argv，向命令注入固定`test`和受信trigger标量，并移除GitHub/OIDC/rollback ID/SHA/控制面身份值；命令失败仍先上报result再以非零退出形成外部failure。workflow与Runner均没有production Environment、production role或deployment status写权限。
 - production workflow与test workflow物理分离，权限固定为`contents:read + deployments:write + id-token:write`，不启用test cache，job Environment固定`production`并checkout GitHub Deployment中的exact merge SHA。它只接受`environment=production + task=delivery-loop:production`；Runner使用`delivery-loop-production-deploy` audience与`repo:<repository>:environment:production` subject向控制面核对release lineage，要求policy role以`production:`开头，只执行production target固定argv，并从子进程环境移除GitHub/OIDC、全部`DELIVERY_PRODUCTION_*`及`DELIVERY_TEST_*`控制值。真实required reviewer配置属于GitHub外部事实，本地YAML不能替代。
+
+优先调度顺序固定为：批准工作领取、prepared Plan activation、at-risk GitHub Action投影、最多1条满足publication/review双guard的base observation、prepared Draft publication恢复、Observed Completion/full finalization、首个global relay。新base source/revision/analysis dispatch保持既有D1 fencing，未在本轮relay也可由下一分钟恢复。
 
 ## §7. ContextGrant
 

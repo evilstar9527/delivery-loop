@@ -125,6 +125,8 @@ flowchart TB
 - 同一 `target_repo + task_id` 默认只允许一个写 attempt；只读分诊可配置并行。
 - 每分钟watchdog按无进展时间区分四类状态：queued 5分钟、running Attempt heartbeat 90秒、awaiting_review 24小时、deploying 30分钟。阈值命中先写唯一durable incident与白名单结构化告警，再执行固定动作；状态/version前进后自动把incident结案，不能仅靠一次易丢日志表示已处理。running例外仅限受信GitHub `completed/success`、同head completed verification suite及passed commit/test Evidence同时成立的implement/review_fix；它是尚待控制面关门的成功事实，不得被时间扫描覆盖成lost。
 
+Free-plan Cron在at-risk GitHub Action终态投影后、prepared Draft恢复与首个全局relay之前，额外只观察最多1个eligible base，避免末尾全局扫描长期达不到当前Run。这个优先入口在rotating batch与按Run ID直查两层都排除同Run任何`pull_request_publications.status <> 'verified'`，并继续排除`pending|changes_requested`自动review；因此尚未核验的Draft仍先由PR projector消费，base observer不会抢占其Run version。
+
 ### M4. GitHub Dispatcher
 
 真实试点的App installation、D1 dispatch和Action不能由任一单面自证。仓库外`GitHubAppDispatchEvidenceManifestV1`冻结App/installation/repository安全标量、权限/事件、selected inventory digest、Run/Plan/Attempt/outbox、workflow blob和Action/job ID；只读verifier用App JWT、未按repo二次narrowing的installation audit token及控制面用途隔离token实时交叉核对。workflow必须从Action immutable head读取，不能拿当前main或本地文件覆盖历史执行；stable-title inventory与jobs再证明只产生一个analysis Action且execution step未运行。由于GitHub token不暴露签发body，settings页和credential issuance审计仍是“installation只选一个repo”的独立authority，详见[GitHub App 单仓库安装与固定 dispatch 真实验收](GitHubAppDispatchE2E.md)。
@@ -490,6 +492,8 @@ Cron 恢复 `verifying` Run 时，必须在应用有界 `LIMIT` 前先过滤 exa
 Phase 4最终双case试点/E2E-3不再建立汇总状态表。仓库外`DraftPrCasesEvidenceManifestV1`只把既有Task GET、Plan GET、Case 8、GitHub Action/compare和`GitHubPullRequestEvidenceManifestV1`组合成一次只读验收；requirement与bug必须是不同Task/Run/Action/head/branch/PR，Plan中实际存在的全部required Item都必须passed且合计覆盖全部acceptance criteria。小改动允许唯一required change Item同时承担验证，不强制制造空的investigation/verification/delivery Item；额外required Item一旦存在仍必须逐项核对。每条E2E-3只接受一个从Plan base启动的initial implement change Item：Case 8的immutable`claimed_progress_version`证明领取时的ready version，approval/credential/commit/publication按时间和Task/revision/Plan/base/effect/repo lineage交叉绑定；同Attempt只允许一个head update，GitHub compare也必须恰好一个commit。测试Evidence与commit/diff/PR都绑定final head。manifest不能覆盖任一live fact，也不能证明业务语义或“改动足够小”的业务判断；PRD理解、bug根因和diff最小性仍由真人审阅原始材料和diff/test证据。完整边界见[requirement / bug 到 Draft PR 的真实外部证据验收](DraftPrCasesE2E.md)。
 
 Review feedback 复用同一事实边界：signed `changes_requested` delivery 先绑定 review commit、PR head 和控制面 current bot head；applied 才能写私有R2 feedback与review_fix lineage，stale delivery只写ignored fact。replacement Attempt仍从reviewed SHA checkout，在同一PR branch以non-force单commit fast-forward产生新head，并重新执行targeted→required验证。恢复authority不是GitHub Action的`head_sha`：该字段绑定受信workflow ref/Plan base；控制面的Attempt checkout、commit parent和Git compare共同绑定reviewed SHA；commit/ref/PR/checks共同绑定result SHA。`GitHubReviewFeedbackEvidenceManifestV1`直接组合`/plan`、重算后的Case 8、唯一Action job/固定execution steps和GitHub live facts，证明replacement仍属同repository/active Plan/version/Item、commit/test Evidence已verified、Item重新passed且完整check inventory全绿；不建立第二套E2E状态，也不把Runner自报、manifest子集或review正文当状态真源。
+
+同一Run存在未核验PR publication时，PR projector仍必须先于该Run的base observation完成。Free-plan优先base入口可以位于全局PR projector之前，但其batch候选与按ID直查都排除任一非`verified` publication，因此两个入口处理的Run集合互斥；`created_unverified → verified`只能由PR projector推进，不能与base replan竞争Run version。
 
 ### Plan Revision 外部事实边界
 

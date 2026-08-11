@@ -479,6 +479,11 @@ export class GitHubBaseObservationReconciler {
              AND automated_reviews.plan_id = plans.plan_id
              AND automated_reviews.plan_version = plans.plan_version
              AND automated_reviews.status IN ('pending', 'changes_requested')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM pull_request_publications
+           WHERE pull_request_publications.run_id = runs.run_id
+             AND pull_request_publications.status <> 'verified'
          )`;
     const countRow = await this.db.prepare(
       `SELECT COUNT(*) AS count ${predicate}`,
@@ -532,6 +537,11 @@ export class GitHubBaseObservationReconciler {
              AND automated_reviews.plan_id = plans.plan_id
              AND automated_reviews.plan_version = plans.plan_version
              AND automated_reviews.status IN ('pending', 'changes_requested')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM pull_request_publications
+           WHERE pull_request_publications.run_id = runs.run_id
+             AND pull_request_publications.status <> 'verified'
          )`,
     ).bind(runId).first<CandidateRow>();
   }

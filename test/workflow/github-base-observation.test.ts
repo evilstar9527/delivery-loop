@@ -174,6 +174,7 @@ async function reset(): Promise<void> {
 
 async function seedActiveAutomatedReview(
   status: 'pending' | 'approved' | 'changes_requested',
+  publicationStatus: 'created_unverified' | 'verified' = 'verified',
 ): Promise<void> {
   const body = '# Review the current Draft PR head.\n';
   const bodyDigest = await canonicalSha256(body);
@@ -252,7 +253,7 @@ async function seedActiveAutomatedReview(
        github_observation_version, created_at, updated_at
      ) SELECT ?, runs.run_id, runs.version, ?, 'approval-github-base-v1', ?,
               'main', 'agent/review/base-race', ?, 'Review base race', ?,
-              'verified', 237, 'https://github.com/example/delivery-target/pull/237',
+              ?, 237, 'https://github.com/example/delivery-target/pull/237',
               ?, 1, ?, ? FROM runs WHERE runs.run_id = ?`,
   ).bind(
     PUBLICATION_ID,
@@ -260,11 +261,13 @@ async function seedActiveAutomatedReview(
     REPOSITORY,
     REVIEW_HEAD_SHA,
     bodyDigest,
+    publicationStatus,
     NOW,
     NOW,
     NOW,
     RUN_ID,
   ).run();
+  if (publicationStatus === 'created_unverified') return;
   if (status === 'pending') {
     await env.DB_CONTROL.prepare(
       `INSERT INTO automated_reviews (
@@ -729,6 +732,29 @@ describe('trusted GitHub base SHA resolution', () => {
 });
 
 describe('GitHub base observation reconciliation', () => {
+  it('does not race a Draft PR publication that still needs external verification', async () => {
+    await seedActiveAutomatedReview('approved', 'created_unverified');
+    const directClient = new FakeBaseClient(fastForwardResult());
+    const direct = new GitHubBaseObservationReconciler(env.DB_CONTROL, directClient, {
+      now: () => new Date(NOW),
+    });
+    expect(await direct.reconcileRun(RUN_ID)).toBe('not_found');
+    expect(directClient.calls).toEqual([]);
+
+    const batchClient = new FakeBaseClient(fastForwardResult());
+    const batch = new GitHubBaseObservationReconciler(env.DB_CONTROL, batchClient, {
+      now: () => new Date(NOW),
+    });
+    expect(await batch.reconcileBatch(10)).toEqual([]);
+    expect(batchClient.calls).toEqual([]);
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM plan_revisions',
+    ).first()).toEqual({ count: 0 });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM github_base_observations',
+    ).first()).toEqual({ count: 0 });
+  });
+
   it.each(['pending', 'changes_requested'] as const)(
     'does not start base replanning while the current Plan automated review is %s',
     async (reviewStatus) => {
