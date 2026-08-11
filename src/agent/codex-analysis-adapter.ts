@@ -344,6 +344,7 @@ function analysisPrompt(
     ...(requiresRepositoryChange
       ? [
           'Trusted Task policy requires a repository change. Return one self-verifying required change item with repo_write, test:*, verify:*, and commit/test Evidence; an investigation-only Plan will be rejected by the validator.',
+          'Repository inspection is already complete in this analysis turn. Do not emit a required investigation item or make the required change depend on one; encode supporting context as assumptions or Plan-level evidenceRefs instead.',
           'Inspect the exact checkout and name at least one exact tracked, regular, writable repository path in that change item\'s objective or doneWhen. Do not invent a path, use a partial path, or name delivery policy/protected files.',
           'The trusted Runner provides the complete policy-filtered writable path inventory below as one bounded JSON array.',
           'BEGIN_TRUSTED_WRITABLE_REPOSITORY_PATHS_JSON',

@@ -439,6 +439,9 @@ describe('Codex analysis Agent adapter', () => {
 
     expect(observed?.stdin).toContain('Trusted Task policy requires a repository change');
     expect(observed?.stdin).toContain('an investigation-only Plan will be rejected');
+    expect(observed?.stdin).toContain(
+      'Do not emit a required investigation item or make the required change depend on one',
+    );
     expect(observed?.stdin).toContain('name at least one exact tracked, regular, writable repository path');
     expect(observed?.stdin).toContain('BEGIN_TRUSTED_WRITABLE_REPOSITORY_PATHS_JSON');
     expect(observed?.stdin).toContain('["src/request.ts"]');
