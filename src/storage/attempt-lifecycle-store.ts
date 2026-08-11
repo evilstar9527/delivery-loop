@@ -57,6 +57,40 @@ function workflowCancelOutboxId(runId: string): string {
   return `workflow-cancel-${runId}`;
 }
 
+// Fixed internal SQL only. A completed/success execution with a trusted head,
+// completed suite, and passed commit/test facts belongs to the completion
+// projector, even when its Runner heartbeat has already crossed the watchdog
+// threshold. This guard is repeated at candidate selection and mutation CAS so
+// a webhook/API projection racing between them cannot still be fenced.
+const SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL = `NOT (
+  attempts.mode IN ('implement', 'review_fix')
+  AND attempts.github_status = 'completed'
+  AND attempts.github_conclusion = 'success'
+  AND attempts.head_sha IS NOT NULL
+  AND EXISTS (
+    SELECT 1 FROM verification_suites AS suites
+    WHERE suites.attempt_id = attempts.attempt_id
+      AND suites.head_sha = attempts.head_sha
+      AND suites.status = 'completed'
+  )
+  AND EXISTS (
+    SELECT 1 FROM evidence
+    WHERE evidence.attempt_id = attempts.attempt_id
+      AND evidence.sha = attempts.head_sha
+      AND evidence.kind = 'commit'
+      AND evidence.status = 'passed'
+      AND evidence.verification_status IN ('unverified', 'verified')
+  )
+  AND EXISTS (
+    SELECT 1 FROM evidence
+    WHERE evidence.attempt_id = attempts.attempt_id
+      AND evidence.sha = attempts.head_sha
+      AND evidence.kind = 'test'
+      AND evidence.status = 'passed'
+      AND evidence.verification_status IN ('unverified', 'verified')
+  )
+)`;
+
 export class AttemptLifecycleStore {
   constructor(private readonly db: D1Database) {}
 
@@ -270,6 +304,7 @@ export class AttemptStuckDetector {
          WHERE attempts.status IN ('starting', 'running')
            AND attempts.result_event_id IS NULL
            AND attempts.lease_expires_at IS NOT NULL
+           AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
            AND runs.state IN (
              'triaging', 'awaiting_approval', 'planning', 'executing',
              'verifying', 'awaiting_review', 'deploying'
@@ -319,6 +354,7 @@ export class AttemptStuckDetector {
              AND attempts.status = ? AND attempts.version = ?
              AND attempts.lease_generation = ? AND attempts.result_event_id IS NULL
              AND attempts.lease_expires_at IS NOT NULL
+             AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
              AND runs.state = ? AND runs.version = ?
              AND (
                attempts.lease_expires_at <= ?
@@ -349,6 +385,7 @@ export class AttemptStuckDetector {
                lease_token_digest = NULL, lease_expires_at = NULL, updated_at = ?
            WHERE attempt_id = ? AND run_id = ? AND status = ? AND version = ?
              AND lease_generation = ? AND lease_expires_at IS NOT NULL
+             AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
              AND (
                lease_expires_at <= ? OR COALESCE(heartbeat_at, updated_at) <= ?
              )
