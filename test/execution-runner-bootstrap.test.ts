@@ -1217,6 +1217,7 @@ describe('production execution Runner bootstrap', () => {
     let version = 10;
     let headSha = '';
     let failureBody: Record<string, unknown> | undefined;
+    let repairCommand: unknown;
     const fetchImplementation: typeof fetch = async (input, init) => {
       const url = String(input);
       const authorization = new Headers(init?.headers).get('authorization');
@@ -1350,7 +1351,8 @@ describe('production execution Runner bootstrap', () => {
       fetch: fetchImplementation,
       heartbeatIntervalMs: 60_000,
       agent: {
-        apply: async () => {
+        apply: async (input) => {
+          repairCommand = input.repairCommand;
           await writeFile(join(fixture.path, 'value.txt'), 'still-broken\n');
           return { schemaVersion: '1', action: 'apply_fix' };
         },
@@ -1377,6 +1379,14 @@ describe('production execution Runner bootstrap', () => {
     });
     expect(failureBody).not.toHaveProperty('message');
     expect(failureBody).not.toHaveProperty('stack');
+    expect(repairCommand).toEqual({
+      ref: 'test:unit',
+      argv: [
+        'node',
+        '-e',
+        "const fs=require('node:fs');process.exit(fs.readFileSync('value.txt','utf8').trim()==='fixed'?0:7)",
+      ],
+    });
     expect(await readdir(runnerTemp)).toEqual([]);
   });
 });
