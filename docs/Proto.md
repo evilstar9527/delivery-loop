@@ -535,7 +535,7 @@ type QuotaOverrideRequestV1 = {
 
 `GET /v1/correlations`只读由authoritative tables组成的D1 views，不新增producer写放大，也不读取Workflow history或R2正文。成功响应`schemaVersion=1`，以`correlationId=run_id`返回Task/Run、Attempts、GitHub runs、PR、test/production deployments与tool traces；每类最多200条并显式给出`truncated`。只公开ID、枚举状态、SHA、duration、Evidence ID和已移除query/fragment的HTTPS链接，不公开Task/PR正文、payload/artifact ref、token、raw response或错误。成功查询同时输出一条`event=correlation_lookup`白名单结构化日志，包含Run/Task及各类ID（每类最多50个）和计数可推导数组，不含URL或自由文本。
 
-dead-letter API只接受独立`OPERATIONS_TOKEN`，不能用Task intake、Runner或approval token替代。GET query只允许单个`status=open|replay_requested|resolved`和`limit=1..100`并返回`no-store`；响应不含Queue body、outbox payload ref、Task正文、token或raw error。POST strict body为`{expectedOutboxAttemptCount, reasonCode}`，其中reason为`operator_retry|upstream_recovered|configuration_fixed`固定枚举；body没有outbox/kind/destination/payload/effect/actor字段。
+dead-letter API只接受独立`OPERATIONS_TOKEN`，不能用Task intake、Runner或approval token替代。canonical dead-letter ID为`outbox-dlq-`加完整64位小写SHA-256 hex，不能按Run/Task等56位截断ID校验。GET query只允许单个`status=open|replay_requested|resolved`和`limit=1..100`并返回`no-store`；响应不含Queue body、outbox payload ref、Task正文、token或raw error。POST strict body为`{expectedOutboxAttemptCount, reasonCode}`，其中reason为`operator_retry|upstream_recovered|configuration_fixed`固定枚举；body没有outbox/kind/destination/payload/effect/actor字段。
 
 受保护main-only GitHub operator可以把该POST作为readiness、dead-letter read、repo-write approval observation之外的第四种互斥模式调用。caller必须固定owner、main、exact workflow SHA、attempt 1与`phase1-readiness` Environment，只发送一次请求；workflow input没有outbox payload、kind、destination或effect，成功日志只保留dead-letter/replay ID、`replay_requested`与created。Environment gate和workflow成功不改变API语义，也不替代控制面对当前dead-letter/outbox attempt count的CAS。
 

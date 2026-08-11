@@ -249,7 +249,7 @@ jobs:
           DELIVERY_OPERATIONS_TOKEN: ${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}
         run: |
           set -euo pipefail
-          [[ "$DELIVERY_REPLAY_DEAD_LETTER_ID" =~ ^outbox-dlq-[a-f0-9]{56}$ ]]
+          [[ "$DELIVERY_REPLAY_DEAD_LETTER_ID" =~ ^outbox-dlq-[a-f0-9]{64}$ ]]
           [[ "$DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT" =~ ^[1-9][0-9]{0,9}$ ]]
           case "$DELIVERY_REPLAY_REASON_CODE" in
             operator_retry|upstream_recovered|configuration_fixed) ;;
@@ -277,7 +277,7 @@ jobs:
             select(
               .accepted == true
               and .status == "replay_requested"
-              and (.deadLetterId | test("^outbox-dlq-[a-f0-9]{56}$"))
+              and (.deadLetterId | test("^outbox-dlq-[a-f0-9]{64}$"))
               and (.outboxId | test("^[A-Za-z0-9][A-Za-z0-9_-]{0,255}$"))
               and (.replayId | test("^outbox-dlq-replay-[A-Za-z0-9_-]+$"))
               and (.created | type == "boolean")
