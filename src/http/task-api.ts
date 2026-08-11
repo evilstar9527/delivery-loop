@@ -296,6 +296,7 @@ export function taskApi(options: TaskApiOptions = {}): Hono<{ Bindings: Bindings
     const view = await new TaskQueryStore(c.env.DB_CONTROL).getRunPlanStatus(runId);
     if (view === null) return errorResponse(c, 404, 'not_found', 'run not found', false);
     const { automatedReview, ...planView } = view as typeof view & { automatedReview?: unknown };
+    // TaskQueryStore only supplies this lineage when it matches the verified PR head.
     const review = safeAutomatedReviewProjection(automatedReview);
     return c.json(review === undefined ? planView : { ...planView, automatedReview: review });
   });
