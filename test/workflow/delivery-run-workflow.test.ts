@@ -21,7 +21,10 @@ import {
 } from '../../src/storage/execution-plan-store.js';
 import { RunStore } from '../../src/storage/run-store.js';
 import { WorkflowSignalStore } from '../../src/storage/workflow-signal-store.js';
-import type { DeliveryRunWorkflowParams } from '../../src/workflows/delivery-run-workflow.js';
+import {
+  DeliveryRunWorkflow,
+  type DeliveryRunWorkflowParams,
+} from '../../src/workflows/delivery-run-workflow.js';
 
 const NOW = '2026-07-25T00:00:00.000Z';
 const TASK_DIGEST = `sha256:${'1'.repeat(64)}`;
@@ -378,5 +381,42 @@ describe('DeliveryRunWorkflow durable analysis handoff', () => {
     expect(persistedPlan?.status).toBe('active');
     await (await env.DELIVERY_RUN.get(runId)).terminate();
     await instance.waitForStatus('terminated');
+  });
+
+  it('projects only the current automated review without review artifacts', () => {
+    const project = Reflect.get(
+      DeliveryRunWorkflow.prototype,
+      'safeRunOutput',
+    ) as (run: {
+      runId: string;
+      state: 'awaiting_approval';
+      verifiedPrHeadSha?: string;
+      automatedReview?: {
+        prHeadSha: string;
+        iteration: number;
+        status: 'pending' | 'approved' | 'changes_requested' | 'blocked';
+        blockingFindingsCount?: number;
+        minorFindingsCount?: number;
+      };
+    }) => { automatedReview?: Record<string, unknown> };
+    const run = { runId: 'run-review', state: 'awaiting_approval' as const, verifiedPrHeadSha: 'head' };
+
+    expect(project(run)).not.toHaveProperty('automatedReview');
+    expect(project({ ...run, automatedReview: { prHeadSha: 'head', iteration: 1, status: 'pending' } })).toMatchObject({ automatedReview: { iteration: 1, status: 'pending' } });
+    expect(project({ ...run, automatedReview: { prHeadSha: 'head', iteration: 2, status: 'approved', blockingFindingsCount: 0, minorFindingsCount: 1 } })).toMatchObject({ automatedReview: { iteration: 2, status: 'approved', blockingFindingsCount: 0, minorFindingsCount: 1 } });
+    expect(project({ ...run, automatedReview: { prHeadSha: 'head', iteration: 3, status: 'changes_requested' } })).toMatchObject({ automatedReview: { status: 'changes_requested' } });
+    expect(project({ ...run, automatedReview: { prHeadSha: 'head', iteration: 4, status: 'blocked' } })).toMatchObject({ automatedReview: { status: 'blocked' } });
+    const stale = project({ ...run, automatedReview: { prHeadSha: 'older-head', iteration: 5, status: 'approved' } });
+    expect(stale).not.toHaveProperty('automatedReview');
+
+    const rawReview = { prHeadSha: 'head', iteration: 6, status: 'approved' as const, summary: 'secret', findingBody: 'secret', r2Reference: 'r2://secret', taskBody: 'secret', modelOutput: 'secret', credential: 'secret' };
+    expect(project({ ...run, automatedReview: rawReview })).toEqual({
+      runId: 'run-review',
+      state: 'awaiting_approval',
+      activePlanId: null,
+      activePlanVersion: null,
+      activePlanDigest: null,
+      automatedReview: { iteration: 6, status: 'approved' },
+    });
   });
 });
