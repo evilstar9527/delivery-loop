@@ -170,7 +170,24 @@ export class WorkflowOutboxRelay {
   }
 
   async relay(limit = 100, now = new Date()): Promise<number> {
-    const placeholders = this.destinations.map(() => '?').join(', ');
+    return await this.relayDestinations(this.destinations, limit, now);
+  }
+
+  async relayDestination(
+    destination: RelayDestination,
+    limit = 100,
+    now = new Date(),
+  ): Promise<number> {
+    if (!this.destinations.includes(destination)) return 0;
+    return await this.relayDestinations([destination], limit, now);
+  }
+
+  private async relayDestinations(
+    destinations: readonly RelayDestination[],
+    limit: number,
+    now: Date,
+  ): Promise<number> {
+    const placeholders = destinations.map(() => '?').join(', ');
     const { results } = await this.db
       .prepare(
         `SELECT outbox_id
@@ -192,7 +209,7 @@ export class WorkflowOutboxRelay {
          ORDER BY created_at, outbox_id
          LIMIT ?`,
       )
-      .bind(...this.destinations, now.toISOString(), Math.max(1, Math.min(limit, 100)))
+      .bind(...destinations, now.toISOString(), Math.max(1, Math.min(limit, 100)))
       .all<{ outbox_id: string }>();
     if (results.length === 0) return 0;
     await this.queue.sendBatch(

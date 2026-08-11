@@ -224,6 +224,12 @@ export default {
       // and claim one approved Item before any recovery or observation scan can
       // consume the Free-plan 10 ms CPU budget.
       await executionProgress.reconcileScheduling(1);
+      // The claim above may have created the only approved execution dispatch.
+      // Relay one GitHub Actions outbox ID immediately: later GitHub reads and
+      // R2-backed completion can exhaust the same CPU budget. Destination
+      // filtering does not bypass D1 fencing; the Queue consumer still reloads
+      // the immutable outbox and Attempt before performing any effect.
+      await relay.relayDestination('github_actions', 1);
       // A re-analysis Runner may already have persisted a validated
       // replacement Plan, its result projection, and the durable signal. This
       // recovery is D1-only, so activate one before any global relay or
@@ -233,8 +239,8 @@ export default {
       // close its Plan Item. Project stale active runs before even the global
       // relay: that relay scans historical pending outbox rows and can exhaust
       // the same CPU budget before the one exact GitHub GET. The newly claimed
-      // dispatch is already durable in D1 and remains safe for this relay or
-      // the next minute; duplicate Queue delivery remains D1-fenced.
+      // dispatch was already offered to Queue above; duplicate Queue delivery
+      // remains D1-fenced.
       await reconcileAtRiskGitHubRunsFromEnv(env, {
         limit: 5,
         runningThresholdSeconds: 90,

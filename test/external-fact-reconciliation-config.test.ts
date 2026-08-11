@@ -30,7 +30,11 @@ describe('periodic external-fact reconciliation wiring', () => {
     const priorityExecutionScheduling = worker.indexOf(
       'await executionProgress.reconcileScheduling(1);',
     );
-    const priorityRelay = worker.indexOf('await relay.relay();');
+    const priorityAgentDispatchRelay = worker.indexOf(
+      "await relay.relayDestination('github_actions', 1);",
+      priorityExecutionScheduling,
+    );
+    const priorityRelay = worker.indexOf('await relay.relay();', priorityAgentDispatchRelay);
     const priorityPullRequestReconciliation = worker.indexOf(
       'await reconcileGitHubPullRequestsFromEnv(env);',
       priorityRelay,
@@ -98,6 +102,8 @@ describe('periodic external-fact reconciliation wiring', () => {
 
     expect(workflowDrain).toBeGreaterThan(-1);
     expect(priorityExecutionScheduling).toBeGreaterThan(-1);
+    expect(priorityAgentDispatchRelay).toBeGreaterThan(priorityExecutionScheduling);
+    expect(priorityAgentDispatchRelay).toBeLessThan(atRiskGitHubReconciliation);
     expect(priorityExecutionScheduling).toBeLessThan(priorityRelay);
     expect(priorityPullRequestReconciliation).toBeGreaterThan(priorityRelay);
     expect(priorityAutomatedReviewScheduling).toBeGreaterThan(

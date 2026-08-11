@@ -170,6 +170,26 @@ describe('production outbox Queue routing', () => {
     ]);
   });
 
+  it('relays one priority GitHub agent dispatch without touching older destinations', async () => {
+    const queue = new FakeQueue();
+    const relay = new WorkflowOutboxRelay(
+      env.DB_CONTROL,
+      queue as unknown as Queue<WorkflowOutboxMessage>,
+      ['cloudflare_workflows', 'github_actions'],
+    );
+
+    expect(await relay.relayDestination('github_actions', 1, new Date(NOW))).toBe(1);
+    expect(queue.bodies).toEqual([{ outboxId: 'outbox-github-route' }]);
+
+    const unconfigured = new WorkflowOutboxRelay(
+      env.DB_CONTROL,
+      queue as unknown as Queue<WorkflowOutboxMessage>,
+      ['cloudflare_workflows'],
+    );
+    expect(await unconfigured.relayDestination('github_actions', 1, new Date(NOW))).toBe(0);
+    expect(queue.bodies).toEqual([{ outboxId: 'outbox-github-route' }]);
+  });
+
   it('routes by the D1 destination instead of trusting the Queue payload', async () => {
     const workflow = new FakeDestinationProcessor();
     const github = new FakeDestinationProcessor();
