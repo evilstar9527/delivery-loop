@@ -227,6 +227,16 @@ export default {
       // duplicate Queue delivery remains D1-fenced.
       await executionProgress.reconcileScheduling(1);
       await relay.relay();
+      // A Draft PR created by a previous Cron already has a durable publication
+      // intent, but its GitHub fact still has to be observed before review can
+      // start. Keep that external read and the resulting review dispatch ahead
+      // of lower-priority recovery scans: Free-plan scheduled invocations have
+      // a 10 ms CPU ceiling and may never reach the background half of this
+      // handler. The first relay above remains reserved for newly approved
+      // execution work; this second relay exposes only D1-fenced follow-up work.
+      await reconcileGitHubPullRequestsFromEnv(env);
+      await new AutomatedReviewScheduler(env.DB_CONTROL).scheduleBatch(5, scheduledNow());
+      await relay.relay();
       // A re-analysis Runner may have persisted a fully validated replacement
       // Plan and its completion callback before an HTTP response or Workflow
       // signal is observed. Activate one such D1-bound Plan before external
@@ -282,16 +292,6 @@ export default {
           secrets: configuredSecrets(env),
         }),
       }).scan(5);
-      // A created Draft PR is an external fact that must be projected before
-      // base drift can move the same Run into re-planning. Running both in the
-      // background batch lets their Run-version CAS race and can permanently
-      // strand the stable API observation as ignored/observation_race.
-      await reconcileGitHubPullRequestsFromEnv(env);
-      // Review the exact verified PR head before base reconciliation can move
-      // the Run into an unrelated revision. The dispatch remains fenced by the
-      // existing outbox processor and is immediately made visible to Queue.
-      await new AutomatedReviewScheduler(env.DB_CONTROL).scheduleBatch(5, scheduledNow());
-      await relay.relay();
       // Recover missed review webhooks before merge/base readers can race the
       // same pull_request_open Run-version transition.
       await reconcileGitHubReviewFeedbacksFromEnv(env);
