@@ -24,7 +24,7 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(feishuRuntime).toContain('runtime.messageReconciler.reconcileBatch(25)');
   });
 
-  it('activates approved work and relays its dispatch before optional Cron work', () => {
+  it('activates approved work and projects completed Actions before the global relay', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     const workflowDrain = worker.indexOf(').drain(5);');
     const priorityExecutionScheduling = worker.indexOf(
@@ -78,7 +78,7 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
     const atRiskGitHubReconciliation = worker.indexOf(
       'await reconcileAtRiskGitHubRunsFromEnv(env, {',
-      priorityRelay,
+      priorityExecutionScheduling,
     );
     const executionFinalization = worker.indexOf(
       'await executionProgress.reconcileObservedCompletions(5);',
@@ -111,7 +111,8 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(reviewAttemptRecovery).toBeGreaterThan(workflowDrain);
     expect(reviewApprovalRecovery).toBeGreaterThan(reviewAttemptRecovery);
     expect(readyAttemptScheduling).toBeGreaterThan(reviewApprovalRecovery);
-    expect(atRiskGitHubReconciliation).toBeGreaterThan(priorityRelay);
+    expect(atRiskGitHubReconciliation).toBeGreaterThan(priorityExecutionScheduling);
+    expect(atRiskGitHubReconciliation).toBeLessThan(priorityRelay);
     expect(atRiskGitHubReconciliation).toBeLessThan(priorityPullRequestReconciliation);
     expect(executionFinalization).toBeGreaterThan(atRiskGitHubReconciliation);
     expect(executionFinalization).toBeLessThan(priorityPullRequestReconciliation);
