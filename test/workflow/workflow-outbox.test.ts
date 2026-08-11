@@ -210,6 +210,49 @@ describe('Workflow outbox delivery', () => {
     });
   });
 
+  it('prioritizes an eligible Workflow creation ahead of an older cancellation', async () => {
+    const older = await seedRun('scheduled-create-priority-older');
+    const cancelId = 'workflow-cancel-scheduled-create-priority-older';
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE outbox
+         SET delivery_state = 'settled', updated_at = ?
+         WHERE outbox_id = ?`,
+      ).bind('2026-07-25T05:58:00.000Z', older.outboxId),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         ) VALUES (?, ?, 'workflow_cancel', 'cloudflare_workflows', ?, ?,
+                   'pending', ?, ?)`,
+      ).bind(
+        cancelId,
+        older.runId,
+        `d1://runs/${older.runId}`,
+        `workflow-cancel:${older.runId}`,
+        '2026-07-25T05:59:00.000Z',
+        '2026-07-25T05:59:00.000Z',
+      ),
+    ]);
+    const fresh = await seedRun('scheduled-create-priority-fresh');
+    const effects = new FakeWorkflowEffects();
+    const processor = new WorkflowOutboxProcessor(env.DB_CONTROL, effects);
+
+    expect(await processor.drainCreates(1)).toEqual(['settled']);
+    expect(await outbox(cancelId)).toEqual({
+      delivery_state: 'pending',
+      attempt_count: 0,
+      last_error_code: null,
+    });
+    expect(await outbox(fresh.outboxId)).toEqual({
+      delivery_state: 'settled',
+      attempt_count: 1,
+      last_error_code: null,
+    });
+    expect(effects.terminateCalls).toBe(0);
+    expect(effects.createCalls).toBe(1);
+  });
+
   it('settles a stale workflow cancellation after the Run has resumed planning', async () => {
     const seeded = await seedRun('stale-cancel');
     const cancelId = 'workflow-cancel-stale-cancel';

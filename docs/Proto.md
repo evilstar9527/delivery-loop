@@ -318,6 +318,8 @@ deployment:
 
 ### 3.3 Plan Item ready 与 Attempt 领取
 
+Cron顺序前置契约：recovery serving fence放行后、以下execution reconciler之前，控制面必须direct-drain最多1条D1中`queued + base_sha resolved + workflow_create + 非open dead-letter`的root intent。选择条件和limit均由服务端固定，调用方、Task、Queue body或Agent不能提交kind/destination/state/effect；delivery继续复用原outbox pending→delivering→settled lease、dead-letter fence与`run_id` Workflow幂等ID。后置通用Workflow drain仍保留给signal/cancel/reconciliation，但不能成为fresh create的唯一恢复入口。
+
 首次执行 Attempt 只能由控制面 scheduler 创建，遵循以下状态与并发契约：
 
 1. Plan 激活时所有 Item 为 `pending`。scheduler 只在 Run 为 `executing`、`expectedRunVersion` 命中、Plan 是 Run 的 exact active version 且状态为 `active` 时，把所有依赖均为 `passed` 的 `pending` Item 以 CAS 晋升为 `ready`；无依赖的根 Item 可直接晋升。

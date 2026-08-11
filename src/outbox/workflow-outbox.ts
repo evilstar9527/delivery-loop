@@ -284,6 +284,43 @@ export class WorkflowOutboxProcessor {
     return await this.fenced.drain(limit);
   }
 
+  /**
+   * Prioritizes a new Run's root Workflow without letting older cancellation
+   * or signal effects consume the scheduled invocation first. The selected
+   * outbox still goes through the shared lease and effect fencing in deliver().
+   */
+  async drainCreates(limit = 1): Promise<WorkflowOutboxDeliveryResult[]> {
+    const nowIso = this.now().toISOString();
+    const { results } = await this.db.prepare(
+      `SELECT outbox.outbox_id
+       FROM outbox
+       JOIN runs ON runs.run_id = outbox.run_id
+       WHERE outbox.destination = 'cloudflare_workflows'
+         AND outbox.kind = 'workflow_create'
+         AND runs.state = 'queued'
+         AND runs.base_sha IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM outbox_dead_letters
+           WHERE outbox_dead_letters.outbox_id = outbox.outbox_id
+             AND outbox_dead_letters.status = 'open'
+         )
+         AND (
+           outbox.delivery_state = 'pending'
+           OR (
+             outbox.delivery_state = 'delivering'
+             AND outbox.lease_expires_at IS NOT NULL
+             AND outbox.lease_expires_at <= ?
+           )
+         )
+       ORDER BY outbox.created_at, outbox.outbox_id
+       LIMIT ?`,
+    ).bind(nowIso, Math.max(1, Math.min(limit, 100)))
+      .all<{ outbox_id: string }>();
+    const deliveries: WorkflowOutboxDeliveryResult[] = [];
+    for (const row of results) deliveries.push(await this.deliver(row.outbox_id));
+    return deliveries;
+  }
+
   private async perform(
     outbox: FencedOutboxRecord,
   ): Promise<OutboxEffectOutcome | void> {
