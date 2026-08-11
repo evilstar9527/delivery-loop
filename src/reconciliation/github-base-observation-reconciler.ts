@@ -472,7 +472,14 @@ export class GitHubBaseObservationReconciler {
          'awaiting_review', 'ready_to_merge', 'blocked'
        )
          AND runs.base_sha IS NOT NULL
-         AND plans.status = 'active' AND plans.base_sha = runs.base_sha`;
+         AND plans.status = 'active' AND plans.base_sha = runs.base_sha
+         AND NOT EXISTS (
+           SELECT 1 FROM automated_reviews
+           WHERE automated_reviews.run_id = runs.run_id
+             AND automated_reviews.plan_id = plans.plan_id
+             AND automated_reviews.plan_version = plans.plan_version
+             AND automated_reviews.status IN ('pending', 'changes_requested')
+         )`;
     const countRow = await this.db.prepare(
       `SELECT COUNT(*) AS count ${predicate}`,
     ).first<{ count: number }>();
@@ -518,7 +525,14 @@ export class GitHubBaseObservationReconciler {
        FROM runs
        JOIN tasks ON tasks.task_id = runs.task_id
        JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
-       WHERE runs.run_id = ? AND runs.base_sha IS NOT NULL`,
+       WHERE runs.run_id = ? AND runs.base_sha IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM automated_reviews
+           WHERE automated_reviews.run_id = runs.run_id
+             AND automated_reviews.plan_id = plans.plan_id
+             AND automated_reviews.plan_version = plans.plan_version
+             AND automated_reviews.status IN ('pending', 'changes_requested')
+         )`,
     ).bind(runId).first<CandidateRow>();
   }
 
