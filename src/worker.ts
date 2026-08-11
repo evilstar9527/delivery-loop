@@ -222,21 +222,21 @@ export default {
       });
       // An exact human approval is already a durable external fact. Activate
       // and claim one approved Item before any recovery or observation scan can
-      // consume the Free-plan 10 ms CPU budget, then make its fenced dispatch
-      // visible to Queue immediately. The relay includes workflow roots too;
-      // duplicate Queue delivery remains D1-fenced.
+      // consume the Free-plan 10 ms CPU budget.
       await executionProgress.reconcileScheduling(1);
-      await relay.relay();
       // A completed Action is the authority needed to verify Evidence and
-      // close its Plan Item. Project stale active runs immediately after the
-      // priority dispatch relay, before any other external read or recovery
-      // scan can consume the Free-plan 10 ms CPU budget.
+      // close its Plan Item. Project stale active runs before even the global
+      // relay: that relay scans historical pending outbox rows and can exhaust
+      // the same CPU budget before the one exact GitHub GET. The newly claimed
+      // dispatch is already durable in D1 and remains safe for this relay or
+      // the next minute; duplicate Queue delivery remains D1-fenced.
       await reconcileAtRiskGitHubRunsFromEnv(env, {
         limit: 5,
         runningThresholdSeconds: 90,
         now: scheduledNow,
       });
       await executionProgress.reconcileObservedCompletions(5);
+      await relay.relay();
       // A Draft PR created by a previous Cron already has a durable publication
       // intent, but its GitHub fact still has to be observed before review can
       // start. Keep that external read and the resulting review dispatch ahead
