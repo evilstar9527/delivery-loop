@@ -483,6 +483,7 @@ export class GitHubBaseObservationReconciler {
          AND NOT EXISTS (
            SELECT 1 FROM pull_request_publications
            WHERE pull_request_publications.run_id = runs.run_id
+             AND pull_request_publications.run_version = runs.version
              AND pull_request_publications.status <> 'verified'
          )`;
     const countRow = await this.db.prepare(
@@ -541,6 +542,7 @@ export class GitHubBaseObservationReconciler {
          AND NOT EXISTS (
            SELECT 1 FROM pull_request_publications
            WHERE pull_request_publications.run_id = runs.run_id
+             AND pull_request_publications.run_version = runs.version
              AND pull_request_publications.status <> 'verified'
          )`,
     ).bind(runId).first<CandidateRow>();

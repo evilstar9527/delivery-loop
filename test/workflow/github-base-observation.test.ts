@@ -755,6 +755,37 @@ describe('GitHub base observation reconciliation', () => {
     ).first()).toEqual({ count: 0 });
   });
 
+  it('does not let a stale unverified publication block the current Run base', async () => {
+    const makePublicationStale = async (): Promise<void> => {
+      await seedActiveAutomatedReview('approved', 'created_unverified');
+      await env.DB_CONTROL.prepare(
+        `UPDATE runs SET state = 'executing', version = version + 1,
+                         updated_at = ? WHERE run_id = ?`,
+      ).bind(NOW, RUN_ID).run();
+    };
+
+    await makePublicationStale();
+    const directClient = new FakeBaseClient(fastForwardResult());
+    const direct = new GitHubBaseObservationReconciler(env.DB_CONTROL, directClient, {
+      now: () => new Date(NOW),
+    });
+    expect(await direct.reconcileRun(RUN_ID)).toBe('replanning');
+    expect(directClient.calls).toHaveLength(1);
+
+    await reset();
+    await seed();
+    await makePublicationStale();
+    const batchClient = new FakeBaseClient(fastForwardResult());
+    const batch = new GitHubBaseObservationReconciler(env.DB_CONTROL, batchClient, {
+      now: () => new Date(NOW),
+    });
+    expect(await batch.reconcileBatch(10)).toEqual([{
+      runId: RUN_ID,
+      disposition: 'replanning',
+    }]);
+    expect(batchClient.calls).toHaveLength(1);
+  });
+
   it.each(['pending', 'changes_requested'] as const)(
     'does not start base replanning while the current Plan automated review is %s',
     async (reviewStatus) => {

@@ -345,7 +345,7 @@ review、补充上下文或base observation要求改变Plan时，替换流程必
 
 当前本地GitHub review producer/Runner reporter、GitHub base refs+compare scheduled producer、supplemental Task revision producer与三类digest-verified analysis source均已接通；真实飞书/Meegle身份事件、GitHub API/Actions/Workflow re-analysis和新审批仍属后续穿透，完成前不能把本地workerd/fake HTTP冒充外部E2E。
 
-Free-plan scheduled handler在at-risk GitHub终态投影之后可以先观察最多1个base候选，但候选查询与按Run ID重读都必须排除该Run任一`pull_request_publications.status <> 'verified'`，并继续排除进行中的自动review。因此只有完全没有未核验publication的Run能走这个优先入口；`created_unverified`仍先由PR projector核对，不会与base replan竞争Run version。
+Free-plan scheduled handler在at-risk GitHub终态投影之后可以先观察最多1个base候选，但候选查询与按Run ID重读都必须排除`pull_request_publications.run_version = runs.version AND status <> 'verified'`，并继续排除进行中的自动review。因此current `created_unverified`仍先由PR projector核对，不会与base replan竞争Run version；旧Run version留下的pending publication不能再阻塞当前snapshot的base observation。
 
 ## §4. 控制面 API
 
