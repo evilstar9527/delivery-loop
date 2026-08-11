@@ -54,6 +54,10 @@ describe('Codex execution adapter', () => {
       outputFilePath,
       timeoutMs: 60_000,
       allowPlanRevision: false,
+      repairCommand: {
+        ref: 'verify:all',
+        argv: ['pnpm', 'run', 'verify'],
+      },
     })).resolves.toEqual({ schemaVersion: '1', action: 'apply_fix' });
     expect(observed).toMatchObject({ command: 'codex', cwd: workspace });
     expect(observed?.args).toEqual([
@@ -108,6 +112,9 @@ describe('Codex execution adapter', () => {
     expect(observed?.stdin).toContain('request_replan is forbidden');
     expect(observed?.stdin).toContain('at least one completed file_change');
     expect(observed?.stdin).toContain('command_execution remains diagnostic');
+    expect(observed?.stdin).toContain('This is a bounded verification repair Attempt');
+    expect(observed?.stdin).toContain('["pnpm","run","verify"]');
+    expect(observed?.stdin).toContain('fix the first concrete failure');
     expect(await readFile(join(workspace, 'fixed.txt'), 'utf8')).toBe('fixed\n');
   });
 

@@ -16,6 +16,7 @@ import {
 import { EvidenceKindSchema, PlanEffectSchema } from '../domain/plan.js';
 import { AutomatedReviewIdSchema } from '../domain/automated-review.js';
 import { canonicalSha256 } from '../domain/digest.js';
+import { resolveDeliveryCommand } from '../domain/delivery-policy.js';
 import { taskRevisionDigest, TaskEnvelopeSchema } from '../domain/task.js';
 import { EXECUTION_TOOL_ACTIONS, isExactExecutionToolActions } from '../domain/tool-bridge.js';
 import { SecretScanner, isSensitiveFieldName } from '../security/redaction.js';
@@ -1252,6 +1253,19 @@ export async function runExecutionAttempt(
         outputFilePath,
         timeoutMs: AGENT_TIMEOUT_MS,
         allowPlanRevision: context.reviewFeedback !== undefined,
+        ...(context.repair === undefined ? {} : (() => {
+          const command = resolveDeliveryCommand(
+            policy.policy,
+            context.repair.commandRef,
+            config.workspacePath,
+          );
+          return {
+            repairCommand: {
+              ref: command.ref,
+              argv: [command.command, ...command.args],
+            },
+          };
+        })()),
       },
       ...(context.reviewFeedback === undefined ? {} : {
         planRevisionReporter: new ControlPlanePlanRevisionReporter(reporterContext, fetcher),
