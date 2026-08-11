@@ -800,6 +800,164 @@ describe('automated review loop', () => {
     ).bind(`d1://attempts/${replacement.attemptId}`).first()).toEqual({ count: 2 });
   });
 
+  it('serves context and accepts a result from the redispatched replacement generation', async () => {
+    const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
+    const scheduled = await scheduler.scheduleRun(RUN_ID, new Date(NOW));
+    if (scheduled === null) throw new Error('automated review was not scheduled');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'running', version = 2, lease_generation = 1,
+           lease_expires_at = '2026-08-08T02:00:30.000Z',
+           github_run_id = '70048', github_head_sha = ?,
+           github_status = 'completed', github_conclusion = 'failure', updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(BASE_SHA, NOW, scheduled.attemptId).run();
+    const now = new Date('2026-08-08T02:02:00.000Z');
+    const replacement = await scheduler.recoverRun(RUN_ID, now);
+    if (replacement === null) throw new Error('automated review replacement was not created');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'running', version = 2, lease_generation = 1,
+           lease_expires_at = '2026-08-08T02:00:30.000Z',
+           github_run_id = '70049', github_head_sha = ?,
+           github_status = 'completed', github_conclusion = 'failure', updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(BASE_SHA, now.toISOString(), replacement.attemptId).run();
+
+    const redispatch = await scheduler.redispatchRun(RUN_ID, now);
+    if (redispatch === null) throw new Error('automated review redispatch was not created');
+    const effects = new FakeDispatch();
+    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
+      allowedRepositories: ['example/delivery-target'],
+      controlPlaneUrl: 'https://control.delivery.test',
+      now: () => now,
+    }).deliver(redispatch.outboxId)).toBe('settled');
+    expect(effects.lastRequest?.inputs.dispatch_generation).toBe('1');
+
+    const starting = await env.DB_CONTROL.prepare(
+      `SELECT version, lease_generation FROM attempts WHERE attempt_id = ?`,
+    ).bind(replacement.attemptId).first<{ version: number; lease_generation: number }>();
+    if (starting === null) throw new Error('redispatched replacement was not started');
+    const token = 'automated-review-redispatch-token';
+    const [tokenDigest, oidcDigest, toolDigest] = await Promise.all([
+      canonicalSha256(token),
+      canonicalSha256('automated-review-redispatch-oidc'),
+      canonicalSha256('automated-review-redispatch-tool'),
+    ]);
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET status = 'running', version = version + 1, lease_token_digest = ?,
+             lease_expires_at = '2099-01-01T00:00:00.000Z', heartbeat_at = ?, updated_at = ?
+         WHERE attempt_id = ? AND status = 'starting'
+           AND version = ? AND lease_generation = ?`,
+      ).bind(
+        tokenDigest,
+        now.toISOString(),
+        now.toISOString(),
+        replacement.attemptId,
+        starting.version,
+        starting.lease_generation,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_tokens (
+           token_id, attempt_id, oidc_token_digest, token_digest, tool_token_digest,
+           lease_generation, scopes_json, expires_at, created_at
+         ) VALUES ('token-automated-review-redispatch', ?, ?, ?, ?, ?, ?,
+                   '2099-01-01T00:00:00.000Z', ?)`,
+      ).bind(
+        replacement.attemptId,
+        oidcDigest,
+        tokenDigest,
+        toolDigest,
+        starting.lease_generation,
+        JSON.stringify(TRIAGE_TOOL_ACTIONS),
+        now.toISOString(),
+      ),
+    ]);
+
+    const task = taskEnvelope();
+    await env.TASK_OBJECTS.put(`tasks/${TASK_ID}.json`, JSON.stringify(task), {
+      customMetadata: { taskDigest: `sha256:${'0'.repeat(64)}` },
+      httpMetadata: { contentType: 'application/json; charset=utf-8' },
+    });
+    const staleContextResponse = await SELF.fetch(
+      `https://delivery-loop.test/v1/attempts/${replacement.attemptId}/context`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    expect(staleContextResponse.status).toBe(409);
+    await env.TASK_OBJECTS.put(`tasks/${TASK_ID}.json`, JSON.stringify(task), {
+      customMetadata: { taskDigest: await taskRevisionDigest(task) },
+      httpMetadata: { contentType: 'application/json; charset=utf-8' },
+    });
+    const contextResponse = await SELF.fetch(
+      `https://delivery-loop.test/v1/attempts/${replacement.attemptId}/context`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    expect(contextResponse.status).toBe(200);
+    const context = AutomatedReviewContextV1Schema.parse(await contextResponse.json());
+    expect(context.attempt).toMatchObject({
+      id: replacement.attemptId,
+      leaseGeneration: starting.lease_generation,
+    });
+    const reservationDigest = await canonicalSha256({
+      attemptId: replacement.attemptId,
+      kind: 'automated_review',
+      leaseGeneration: starting.lease_generation,
+    });
+    const reservationId =
+      `model_reservation_${reservationDigest.slice('sha256:'.length, 'sha256:'.length + 48)}`;
+    const reservation = await SELF.fetch(
+      `https://delivery-loop.test/v1/attempts/${replacement.attemptId}/model-reservations`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          reservationId,
+          profileId: 'codex-gpt-5p6-terra-medium-tool-loop-20260811',
+          expectedVersion: context.attempt.version,
+          leaseGeneration: context.attempt.leaseGeneration,
+        }),
+      },
+    );
+    expect(reservation.status).toBe(201);
+
+    const result = await SELF.fetch(
+      `https://delivery-loop.test/v1/attempts/${replacement.attemptId}/automated-review-result`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          schemaVersion: '1',
+          contextDigest: await automatedReviewContextDigest(context),
+          verdict: 'approved',
+          summary: 'No blocker or major findings remain.',
+          findings: [],
+        }),
+      },
+    );
+    expect(result.status).toBe(201);
+    expect(await result.json()).toMatchObject({
+      accepted: true,
+      reviewId: scheduled.reviewId,
+      status: 'approved',
+      created: true,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, result_event_id IS NOT NULL AS has_result
+       FROM attempts WHERE attempt_id = ?`,
+    ).bind(replacement.attemptId).first()).toEqual({ status: 'completed', has_result: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts WHERE recovered_from_attempt_id = ?`,
+    ).bind(scheduled.attemptId).first()).toEqual({ count: 1 });
+  });
+
   it('converges one exact-head review and opens one review_fix for a major finding', async () => {
     const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
     const scheduled = await Promise.all(

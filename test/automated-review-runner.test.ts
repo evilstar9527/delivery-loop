@@ -260,6 +260,81 @@ describe('automated review Runner', () => {
     ]);
   });
 
+  it('retries only the read-only context after an exchange consistency conflict', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-review-context-retry-'));
+    const workspace = join(root, 'workspace');
+    const runnerTemp = join(root, 'runner-temp');
+    await Promise.all([mkdir(workspace), mkdir(runnerTemp)]);
+    let contextRequests = 0;
+    let resultRequests = 0;
+    const fetchImplementation: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.startsWith('https://oidc.actions.test/token')) {
+        return Response.json({ value: 'CANARY_REVIEW_OIDC_TOKEN' });
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/exchange`)) {
+        return Response.json({
+          attemptToken: ATTEMPT_TOKEN,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: 'CANARY_REVIEW_TOOL_TOKEN',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/context`)) {
+        contextRequests += 1;
+        return contextRequests === 1
+          ? Response.json({ error: { code: 'conflict' } }, { status: 409 })
+          : Response.json(context());
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/automated-review-result`)) {
+        resultRequests += 1;
+        return Response.json({
+          accepted: true,
+          reviewId: 'review-runner',
+          status: 'approved',
+          created: true,
+        }, { status: 201 });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    };
+    const result = await runAnalysisAttempt({
+      environment: {
+        DELIVERY_SCHEMA_VERSION: '1',
+        DELIVERY_RUN_ID: RUN_ID,
+        DELIVERY_ATTEMPT_ID: ATTEMPT_ID,
+        DELIVERY_TASK_DIGEST: TASK_DIGEST,
+        DELIVERY_BASE_SHA: HEAD_SHA,
+        DELIVERY_ATTEMPT_MODE: 'analysis',
+        DELIVERY_CONTROL_PLANE_URL: 'https://control.delivery.test',
+        ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.actions.test/token',
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'CANARY_ACTIONS_RUNTIME_TOKEN',
+        GITHUB_WORKSPACE: workspace,
+        RUNNER_TEMP: runnerTemp,
+      },
+      fetch: fetchImplementation,
+      reviewAgent: {
+        usesMeteredModel: false,
+        start: async () => ({
+          schemaVersion: '1',
+          contextDigest: await automatedReviewContextDigest(context()),
+          verdict: 'approved',
+          summary: 'No blocker or major findings remain.',
+          findings: [],
+        }),
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+    });
+    expect(result).toEqual({ reviewId: 'review-runner', status: 'approved' });
+    expect(contextRequests).toBe(2);
+    expect(resultRequests).toBe(1);
+  });
+
   it('keeps automated-review provider failures safe and loggable', async () => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-review-runner-failure-'));
     const workspace = join(root, 'workspace');
