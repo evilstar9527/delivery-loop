@@ -224,6 +224,11 @@ export default {
       // and claim one approved Item before any recovery or observation scan can
       // consume the Free-plan 10 ms CPU budget.
       await executionProgress.reconcileScheduling(1);
+      // A re-analysis Runner may already have persisted a validated
+      // replacement Plan, its result projection, and the durable signal. This
+      // recovery is D1-only, so activate one before any global relay or
+      // external observation can starve the next approval boundary.
+      await planRevisionAnalysis.reconcilePreparedPlans(1);
       // A completed Action is the authority needed to verify Evidence and
       // close its Plan Item. Project stale active runs before even the global
       // relay: that relay scans historical pending outbox rows and can exhaust
@@ -251,11 +256,6 @@ export default {
       await reconcileGitHubPullRequestsFromEnv(env);
       await new AutomatedReviewScheduler(env.DB_CONTROL).scheduleBatch(5, scheduledNow());
       await relay.relay();
-      // A re-analysis Runner may have persisted a fully validated replacement
-      // Plan and its completion callback before an HTTP response or Workflow
-      // signal is observed. Activate one such D1-bound Plan before external
-      // scans can consume the Free-plan scheduled CPU budget.
-      await planRevisionAnalysis.reconcilePreparedPlans(1);
       // Free-plan scheduled and Queue invocations have a 10 ms CPU ceiling.
       // Keep a direct workflow-root delivery after the priority relay so a
       // Queue delay cannot strand Task creation, without starving an already

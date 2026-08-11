@@ -45,7 +45,7 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
     const preparedPlanRevisionRecovery = worker.indexOf(
       'await planRevisionAnalysis.reconcilePreparedPlans(1);',
-      priorityReviewRelay,
+      priorityExecutionScheduling,
     );
     const planRevisionAnalysisRecovery = worker.indexOf(
       'await planRevisionAnalysis.reconcileBatch(5);',
@@ -100,9 +100,9 @@ describe('periodic external-fact reconciliation wiring', () => {
       priorityPullRequestReconciliation,
     );
     expect(priorityReviewRelay).toBeGreaterThan(priorityAutomatedReviewScheduling);
-    expect(priorityReviewRelay).toBeLessThan(preparedPlanRevisionRecovery);
-    expect(preparedPlanRevisionRecovery).toBeGreaterThan(priorityReviewRelay);
-    expect(preparedPlanRevisionRecovery).toBeLessThan(workflowDrain);
+    expect(preparedPlanRevisionRecovery).toBeGreaterThan(priorityExecutionScheduling);
+    expect(preparedPlanRevisionRecovery).toBeLessThan(atRiskGitHubReconciliation);
+    expect(preparedPlanRevisionRecovery).toBeLessThan(priorityRelay);
     expect(priorityRelay).toBeLessThan(workflowDrain);
     expect(reviewAttemptRecovery).toBeGreaterThan(workflowDrain);
     expect(reviewApprovalRecovery).toBeGreaterThan(reviewAttemptRecovery);
