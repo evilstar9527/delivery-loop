@@ -12,7 +12,7 @@
     "GITHUB_ALLOWED_REPOSITORIES": "[\"evilstar9527/delivery-loop\"]",
     "GITHUB_OIDC_AUDIENCE": "delivery-loop-control-plane",
     "CONTROL_PLANE_URL": "https://delivery-loop-control-plane.eve55265.workers.dev",
-    "CODEX_MODEL_PROFILE_ID": "codex-gpt-5p6-terra-medium-20260804"
+    "CODEX_MODEL_PROFILE_ID": "codex-gpt-5p6-terra-medium-tool-loop-20260811"
   },
   "observability": {
     "enabled": true,

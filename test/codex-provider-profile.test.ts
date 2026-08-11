@@ -44,20 +44,22 @@ describe('Codex relay provider profile', () => {
       .toEqual(expect.arrayContaining(['model_reasoning_effort="medium"']));
   });
 
-  it('binds the deployed control plane to an immutable Terra/medium relay profile', () => {
+  it('binds the deployed control plane to a cumulative tool-loop Terra/medium profile', () => {
     const wrangler = JSON.parse(readFileSync(
       new URL('../wrangler.jsonc', import.meta.url),
       'utf8',
     )) as { vars?: { CODEX_MODEL_PROFILE_ID?: string } };
 
     expect(wrangler.vars?.CODEX_MODEL_PROFILE_ID)
-      .toBe('codex-gpt-5p6-terra-medium-20260804');
+      .toBe('codex-gpt-5p6-terra-medium-tool-loop-20260811');
 
     const migration = readFileSync(
-      new URL('../migrations/0064_codex_terra_medium_relay_profile.sql', import.meta.url),
+      new URL('../migrations/0073_codex_terra_tool_loop_profile.sql', import.meta.url),
       'utf8',
     );
     expect(migration).toContain('INSERT INTO quota_model_profiles');
     expect(migration).not.toContain('INSERT OR IGNORE');
+    expect(migration).toContain("'codex-gpt-5p6-terra-medium-tool-loop-20260811'");
+    expect(migration).toContain('2000000');
   });
 });
