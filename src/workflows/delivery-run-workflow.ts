@@ -158,19 +158,47 @@ export class DeliveryRunWorkflow extends WorkflowEntrypoint<
     activePlanId?: string;
     activePlanVersion?: number;
     activePlanDigest?: string;
+    verifiedPrHeadSha?: string;
+    automatedReview?: {
+      prHeadSha: string;
+      iteration: number;
+      status: 'pending' | 'approved' | 'changes_requested' | 'blocked';
+      blockingFindingsCount?: number;
+      minorFindingsCount?: number;
+    };
   }): {
     runId: string;
     state: RunState;
     activePlanId: string | null;
     activePlanVersion: number | null;
     activePlanDigest: string | null;
+    automatedReview?: {
+      iteration: number;
+      status: 'pending' | 'approved' | 'changes_requested' | 'blocked';
+      blockingFindingsCount?: number;
+      minorFindingsCount?: number;
+    };
   } {
+    const review =
+      run.automatedReview?.prHeadSha === run.verifiedPrHeadSha
+        ? {
+            iteration: run.automatedReview.iteration,
+            status: run.automatedReview.status,
+            ...(run.automatedReview.blockingFindingsCount === undefined
+              ? {}
+              : { blockingFindingsCount: run.automatedReview.blockingFindingsCount }),
+            ...(run.automatedReview.minorFindingsCount === undefined
+              ? {}
+              : { minorFindingsCount: run.automatedReview.minorFindingsCount }),
+          }
+        : undefined;
     return {
       runId: run.runId,
       state: run.state,
       activePlanId: run.activePlanId ?? null,
       activePlanVersion: run.activePlanVersion ?? null,
       activePlanDigest: run.activePlanDigest ?? null,
+      ...(review === undefined ? {} : { automatedReview: review }),
     };
   }
 }
