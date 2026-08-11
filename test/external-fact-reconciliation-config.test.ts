@@ -64,13 +64,9 @@ describe('periodic external-fact reconciliation wiring', () => {
       reviewApprovalRecovery,
     );
     const relay = worker.indexOf('await relay.relay();', priorityReviewRelay + 1);
-    const priorityFinalization = worker.indexOf(
-      'await executionProgress.reconcileFinalizations(1);',
-      relay,
-    );
     const preparedPublicationRecovery = worker.indexOf(
       'await executionProgress.reconcilePreparedPublications(1);',
-      relay,
+      priorityExecutionScheduling,
     );
     const executionScheduling = worker.indexOf(
       'await executionProgress.reconcileScheduling(5);',
@@ -121,10 +117,9 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(reviewAttemptRecovery).toBeLessThan(relay);
     expect(relay).toBeGreaterThan(priorityRelay);
     expect(workflowDrain).toBeLessThan(relay);
-    expect(preparedPublicationRecovery).toBeGreaterThan(relay);
-    expect(preparedPublicationRecovery).toBeLessThan(priorityFinalization);
-    expect(priorityFinalization).toBeGreaterThan(relay);
-    expect(priorityFinalization).toBeLessThan(executionScheduling);
+    expect(preparedPublicationRecovery).toBeGreaterThan(atRiskGitHubReconciliation);
+    expect(preparedPublicationRecovery).toBeLessThan(executionFinalization);
+    expect(preparedPublicationRecovery).toBeLessThan(priorityRelay);
     expect(executionScheduling).toBeGreaterThan(relay);
     expect(executionFinalization).toBeLessThan(workflowDrain);
     expect(detectorEnd).toBeGreaterThan(-1);
