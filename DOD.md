@@ -352,6 +352,7 @@
 - [x] Agent 修改 workflow、CODEOWNERS、Secret/部署配置等高风险路径时自动停在 `awaiting_approval` 并列出 diff。
 - [x] 先跑与改动相关的定向测试，再跑仓库 required verify；命令、exit code、duration、head SHA 入 Evidence。
 - [x] 每个 required Plan Item 的 doneWhen 都映射到同 plan version/item/head SHA 的已核对 Evidence；required `skipped`、Agent 自报或旧 SHA 证据不能关门。
+  - [x] 已领取execution dispatch在Free-plan CPU fence前投递的本地调度契约：Plan v7 exact OWNER approval已由受保护observer [31502406505](https://github.com/evilstar9527/delivery-loop/actions/runs/31502406505)接受，production D1纯SELECT证明Run自然进入`executing/version 23`并创建唯一current-Plan implement Attempt/outbox；但该outbox连续7分钟保持`pending/attempt_count=0`，GitHub零Action，同时全局有3条历史pending/delivering outbox，证明“claim后先做GitHub/R2、最后global relay”仍可被10ms CPU fence饿死。Cron现于`reconcileScheduling(1)`后、任何prepared Plan/GitHub/R2读取前只relay 1条`github_actions`目的地outbox ID；Queue consumer继续按D1 lease/fencing执行，未配置destination为零effect，其他更老destination不被该优先入口发送。接线与destination隔离测试均先RED后GREEN；真实父项继续未勾，直到受保护发布后同一Attempt自然创建唯一Action并继续Draft PR/review闭环。
 - [ ] 测试失败允许有界修复循环；同失败指纹不重复消耗，达到上限进入 `blocked`。
   - [x] 本地控制面/workerd 穿透：只有同 active Plan/Item/Attempt/head 的真实 failed verification suite/Evidence 能原子创建一个 `review_fix` Attempt和fenced `execution_dispatch`；implement/review_fix共享Watt三次上限，第二次连续同指纹或第三次不同失败进入blocked，20路重放不重复创建，stale dispatch零GitHub effect。
   - [x] 本地真实 Git execution Runner：从repair checkout head创建派生分支，只允许受限Agent编辑工作树，Runner在bot commit前重新核对branch/HEAD、拒绝Agent自建commit，以固定bot单commit、no-force push后按exact新head执行targeted→required verify；只有真实nonzero Evidence触发结构化failure，Agent/Git/head/report错误不冒充测试失败。
