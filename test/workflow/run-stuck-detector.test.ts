@@ -21,6 +21,12 @@ async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM run_stuck_incidents'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
+    env.DB_CONTROL.prepare('DELETE FROM verification_suite_commands'),
+    env.DB_CONTROL.prepare('DELETE FROM evidence'),
+    env.DB_CONTROL.prepare('DELETE FROM verification_suites'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_progress'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_items'),
+    env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
@@ -265,6 +271,171 @@ describe('multi-state durable stuck detector', () => {
       destination: 'cloudflare_workflows',
       delivery_state: 'pending',
     });
+  });
+
+  it('does not fence a successful execution while completion facts await projection', async () => {
+    const runId = 'run-stuck-success-projection';
+    const attemptId = 'attempt-stuck-success-projection';
+    const planId = 'plan-stuck-success-projection';
+    const itemId = 'item-stuck-success-projection';
+    const headSha = 'c'.repeat(40);
+    const nowIso = NOW.toISOString();
+    await seedRun(runId, 'executing', before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running));
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, github_run_id, github_head_sha, github_status,
+           github_conclusion, github_external_updated_at, head_sha, plan_id,
+           plan_version, plan_item_id, version, lease_generation, lease_expires_at,
+           heartbeat_at, created_at, updated_at
+         ) VALUES (?, ?, 1, 'implement', 'running', ?, 'example/delivery-target',
+                   'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                   '70001', ?, 'completed', 'success', ?, ?, ?, 1, ?, 3, 1, ?, ?, ?, ?)`,
+      ).bind(
+        attemptId,
+        runId,
+        BASE_SHA,
+        headSha,
+        nowIso,
+        headSha,
+        planId,
+        itemId,
+        new Date(NOW.getTime() - 1_000).toISOString(),
+        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
+        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
+        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO execution_plans (
+           plan_id, run_id, plan_version, task_revision, base_sha, digest, status,
+           created_by_attempt_id, objective, created_at, updated_at
+         ) VALUES (?, ?, 1, 'revision-1', ?, ?, 'active', ?, 'safe completion projection', ?, ?)`,
+      ).bind(planId, runId, BASE_SHA, DIGEST, attemptId, nowIso, nowIso),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO plan_items (
+           plan_id, item_id, kind, title, objective, required, position
+         ) VALUES (?, ?, 'change', 'safe completion projection', 'safe completion projection', 1, 0)`,
+      ).bind(planId, itemId),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO plan_item_progress (
+           plan_id, item_id, status, active_attempt_id, version, updated_at
+         ) VALUES (?, ?, 'in_progress', ?, 1, ?)`,
+      ).bind(planId, itemId, attemptId, nowIso),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO verification_suites (
+           suite_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+           lease_generation, head_sha, delivery_policy_digest, targeted_command_count,
+           required_command_count, status, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, 1, ?, 1, ?, ?, 1, 1, 'completed', ?, ?)`,
+      ).bind(
+        `suite-${attemptId}`,
+        runId,
+        attemptId,
+        planId,
+        itemId,
+        headSha,
+        DIGEST,
+        nowIso,
+        nowIso,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO evidence (
+           evidence_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+           kind, status, command_ref, exit_code, sha, summary, verification_status,
+           observed_at, created_at
+         ) VALUES (?, ?, ?, ?, 1, ?, 'commit', 'passed', NULL, 0, ?,
+                   'safe commit evidence', 'unverified', ?, ?)`,
+      ).bind(`evidence-commit-${attemptId}`, runId, attemptId, planId, itemId, headSha, nowIso, nowIso),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO evidence (
+           evidence_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+           kind, status, command_ref, exit_code, sha, summary, verification_status,
+           observed_at, created_at
+         ) VALUES (?, ?, ?, ?, 1, ?, 'test', 'passed', 'verify:all', 0, ?,
+                   'safe test evidence', 'unverified', ?, ?)`,
+      ).bind(`evidence-test-${attemptId}`, runId, attemptId, planId, itemId, headSha, nowIso, nowIso),
+      env.DB_CONTROL.prepare(
+        `UPDATE runs SET active_plan_id = ?, active_plan_version = 1,
+                         active_plan_digest = ?, updated_at = ?
+         WHERE run_id = ?`,
+      ).bind(planId, DIGEST, nowIso, runId),
+    ]);
+
+    await expect(new RunStuckDetector(env.DB_CONTROL, {
+      now: () => NOW,
+      sink: () => undefined,
+    }).scan()).resolves.toEqual({ detected: [], resolved: [] });
+
+    // Also cover the narrower CAS race: selection sees an in-progress Action,
+    // then the trusted API projection becomes completed/success immediately
+    // before the watchdog mutation batch executes.
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET github_status = 'in_progress', github_conclusion = NULL,
+           github_external_updated_at = NULL
+       WHERE attempt_id = ?`,
+    ).bind(attemptId).run();
+    let projectedBeforeMutation = false;
+    const racingDb = {
+      prepare: (query: string) => env.DB_CONTROL.prepare(query),
+      batch: async (statements: D1PreparedStatement[]) => {
+        if (!projectedBeforeMutation) {
+          projectedBeforeMutation = true;
+          await env.DB_CONTROL.prepare(
+            `UPDATE attempts
+             SET github_status = 'completed', github_conclusion = 'success',
+                 github_external_updated_at = ?
+             WHERE attempt_id = ?`,
+          ).bind(nowIso, attemptId).run();
+        }
+        return await env.DB_CONTROL.batch(statements);
+      },
+    } as D1Database;
+    await expect(new RunStuckDetector(racingDb, {
+      now: () => NOW,
+      sink: () => undefined,
+    }).scan()).resolves.toEqual({ detected: [], resolved: [] });
+    expect(projectedBeforeMutation).toBe(true);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, version, lease_generation FROM attempts WHERE attempt_id = ?`,
+    ).bind(attemptId).first()).toEqual({
+      status: 'running',
+      version: 3,
+      lease_generation: 1,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state, version FROM runs WHERE run_id = ?`,
+    ).bind(runId).first()).toEqual({ state: 'executing', version: 1 });
+  });
+
+  it('does not trust GitHub success without the matching completion facts', async () => {
+    const runId = 'run-stuck-success-without-evidence';
+    const attemptId = 'attempt-stuck-success-without-evidence';
+    const headSha = 'd'.repeat(40);
+    await seedRun(
+      runId,
+      'executing',
+      before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
+    );
+    await seedRunningAttempt(runId, attemptId);
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET mode = 'implement', github_status = 'completed', github_conclusion = 'success',
+           head_sha = ?, github_external_updated_at = ?
+       WHERE attempt_id = ?`,
+    ).bind(headSha, NOW.toISOString(), attemptId).run();
+
+    const scan = await new RunStuckDetector(env.DB_CONTROL, {
+      now: () => NOW,
+      sink: () => undefined,
+    }).scan();
+    expect(scan.detected).toEqual([
+      expect.objectContaining({ attemptId, action: 'fence_lost_attempt' }),
+    ]);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status FROM attempts WHERE attempt_id = ?`,
+    ).bind(attemptId).first()).toEqual({ status: 'lost' });
   });
 
   it('auto-resolves durable alerts when injected workflow, review, and deployment faults recover', async () => {
