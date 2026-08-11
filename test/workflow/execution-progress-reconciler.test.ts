@@ -538,6 +538,47 @@ describe('execution progress reconciliation', () => {
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
   });
 
+  it('filters an older unapproved awaiting Run before the bounded activation limit', async () => {
+    await seed('approve');
+    await seedOlderUnschedulableRuns(1);
+    const olderAt = new Date(NOW.getTime() - 60 * 60_000).toISOString();
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE runs SET state = 'awaiting_approval', version = 2
+         WHERE run_id = 'run-execution-noise-0' AND state = 'executing'`,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO plan_items (plan_id, item_id, kind, title, objective, required, position)
+         VALUES ('plan-execution-noise-0', 'change', 'change', 'Unapproved change',
+                 'Remain behind the approval gate.', 1, 0)`,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO plan_item_progress (plan_id, item_id, status, version, updated_at)
+         VALUES ('plan-execution-noise-0', 'change', 'pending', 0, ?)`,
+      ).bind(olderAt),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO plan_item_effects (plan_id, item_id, effect)
+         VALUES ('plan-execution-noise-0', 'change', 'repo_write')`,
+      ),
+    ]);
+
+    await expect(new ExecutionProgressReconciler(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+      { now: () => NOW },
+    ).reconcileScheduling(1)).resolves.toEqual({
+      activatedRuns: 1,
+      scheduledAttempts: 1,
+    });
+
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT state, version FROM runs WHERE run_id = ?',
+    ).bind(RUN_ID).first()).toEqual({ state: 'executing', version: 3 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state, version FROM runs WHERE run_id = 'run-execution-noise-0'`,
+    ).first()).toEqual({ state: 'awaiting_approval', version: 2 });
+  });
+
   it('claims an already activated ready Item through the early D1-only path', async () => {
     await seed('approve');
     await env.DB_CONTROL.batch([
