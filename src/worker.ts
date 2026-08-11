@@ -212,6 +212,15 @@ export default {
         await revokeRepoWriteCredentialsFromEnv(env);
         return;
       }
+      const workflowOutbox = new WorkflowOutboxProcessor(
+        env.DB_CONTROL,
+        new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
+      );
+      // A Task accepted with a trusted base already has its unique root
+      // Workflow intent in D1. Deliver one such create before any GitHub/R2
+      // observation: older cancellation or signal effects and the Free-plan
+      // CPU fence must not leave a fresh Run queued without ever being claimed.
+      await workflowOutbox.drainCreates(1);
       const executionProgress = new ExecutionProgressReconciler(
         env.DB_CONTROL,
         env.TASK_OBJECTS,
@@ -288,10 +297,7 @@ export default {
       // Keep a direct workflow-root delivery after the priority relay so a
       // Queue delay cannot strand Task creation, without starving an already
       // approved Run before its first execution dispatch is durable.
-      await new WorkflowOutboxProcessor(
-        env.DB_CONTROL,
-        new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
-      ).drain(5);
+      await workflowOutbox.drain(5);
       // Lost pre-effect review work already has a settled Workflow fence. Its
       // bounded D1-only recovery must run before external scans can consume the
       // Free-plan CPU budget; the new dispatch remains durable for relay.

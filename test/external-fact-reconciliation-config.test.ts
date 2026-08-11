@@ -26,7 +26,8 @@ describe('periodic external-fact reconciliation wiring', () => {
 
   it('activates approved work and projects completed Actions before the global relay', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
-    const workflowDrain = worker.indexOf(').drain(5);');
+    const priorityWorkflowCreateDrain = worker.indexOf('await workflowOutbox.drainCreates(1);');
+    const workflowDrain = worker.indexOf('await workflowOutbox.drain(5);');
     const priorityExecutionScheduling = worker.indexOf(
       'await executionProgress.reconcileScheduling(1);',
     );
@@ -112,8 +113,10 @@ describe('periodic external-fact reconciliation wiring', () => {
       concurrentStart,
     );
 
+    expect(priorityWorkflowCreateDrain).toBeGreaterThan(-1);
     expect(workflowDrain).toBeGreaterThan(-1);
     expect(priorityExecutionScheduling).toBeGreaterThan(-1);
+    expect(priorityWorkflowCreateDrain).toBeLessThan(priorityExecutionScheduling);
     expect(priorityAgentDispatchRelay).toBeGreaterThan(priorityExecutionScheduling);
     expect(priorityAgentDispatchRelay).toBeLessThan(atRiskGitHubReconciliation);
     expect(priorityExecutionScheduling).toBeLessThan(priorityRelay);

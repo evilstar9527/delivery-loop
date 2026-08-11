@@ -96,6 +96,7 @@ flowchart TB
 
 ### M3. Durable Orchestrator + ExecutionPlan
 
+- fresh控制流根节点具有最高有界恢复优先级：recovery serving fence放行后，Cron在任何execution/GitHub/R2工作前只从D1选择最多1条`queued + base_sha resolved + workflow_create + 非open dead-letter` intent，并交给原Workflow fenced processor。它与Queue竞争同一lease、继续用`run_id`作为Cloudflare Workflow幂等ID；下文所述“立即”execution scheduling和后置通用Workflow direct-drain均发生在这个root入口之后。这样历史cancel/signal、poison create或Free-plan 10ms CPU fence不能让fresh Run永久停在`queued + attempt_count 0`，也不增加第二个effect或状态真源。
 - 每个 Run 对应一个 `DeliveryRunWorkflow`，`run_id` 直接作为 Cloudflare Workflow instance id，避免额外映射表。
 - Workflow 依次调度只读分析、计划校验/审批、DoD Item 执行、证据核对、PR/部署；等待外部结果使用 `waitForEvent`，长等待不占 GitHub Runner。
 - 分析 attempt 产出不可静默修改的 `ExecutionPlan` 版本。每个 Item 声明目标、`doneWhen`、验证方式、依赖、effect 和 required 标记；执行状态单独投影到 D1。
