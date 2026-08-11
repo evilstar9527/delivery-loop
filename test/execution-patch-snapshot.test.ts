@@ -98,18 +98,41 @@ describe('execution patch snapshot', () => {
     }
   });
 
-  it('does not downgrade an unsafe candidate to an optional fallback miss', async () => {
+  it('disables the optional fallback for credential-shaped repository content', async () => {
     const root = await repository({
       'src/unsafe.ts': 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz\n',
     });
-    await expect(buildOptionalExecutionPatchSnapshot({
+    const input = {
       repositoryPath: root,
       referencedText: ['Update src/unsafe.ts.'],
       protectedPaths: [],
       runtimeSecrets: [],
-    })).rejects.toMatchObject({
+    };
+    await expect(buildExecutionPatchSnapshot(input)).rejects.toMatchObject({
       name: 'ExecutionPatchSnapshotError',
       kind: 'unsafe_candidate',
+    });
+    await expect(buildOptionalExecutionPatchSnapshot(input)).resolves.toBeUndefined();
+  });
+
+  it('does not downgrade a registered runtime Secret to an optional fallback miss', async () => {
+    const runtimeSecret = 'runtime-secret-canary-123456789';
+    const root = await repository({
+      'src/leaked.ts': `export const leaked = '${runtimeSecret}';\n`,
+    });
+    const input = {
+      repositoryPath: root,
+      referencedText: ['Update src/leaked.ts.'],
+      protectedPaths: [],
+      runtimeSecrets: [runtimeSecret],
+    };
+    await expect(buildExecutionPatchSnapshot(input)).rejects.toMatchObject({
+      name: 'ExecutionPatchSnapshotError',
+      kind: 'runtime_secret_detected',
+    });
+    await expect(buildOptionalExecutionPatchSnapshot(input)).rejects.toMatchObject({
+      name: 'ExecutionPatchSnapshotError',
+      kind: 'runtime_secret_detected',
     });
   });
 
