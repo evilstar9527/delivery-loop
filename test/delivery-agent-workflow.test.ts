@@ -36,11 +36,14 @@ describe('fixed delivery Agent workflow', () => {
     const workflow = parse(source) as DeliveryWorkflow;
     const inputs = workflow.on.workflow_dispatch.inputs;
 
-    expect(workflow['run-name']).toBe('delivery-loop/${{ inputs.attempt_id }}');
+    expect(workflow['run-name']).toBe(
+      "delivery-loop/${{ inputs.attempt_id }}${{ inputs.dispatch_generation && format('/redispatch-{0}', inputs.dispatch_generation) || '' }}",
+    );
     expect(Object.keys(inputs)).toEqual([
       'schema_version',
       'run_id',
       'attempt_id',
+      'dispatch_generation',
       'task_digest',
       'base_sha',
       'checkout_sha',
@@ -56,6 +59,7 @@ describe('fixed delivery Agent workflow', () => {
       schema_version: true,
       run_id: true,
       attempt_id: true,
+      dispatch_generation: false,
       task_digest: true,
       base_sha: true,
       checkout_sha: true,

@@ -1,5 +1,5 @@
 name: Delivery Agent
-run-name: delivery-loop/${{ inputs.attempt_id }}
+run-name: delivery-loop/${{ inputs.attempt_id }}${{ inputs.dispatch_generation && format('/redispatch-{0}', inputs.dispatch_generation) || '' }}
 
 on:
   workflow_dispatch:
@@ -12,6 +12,9 @@ on:
         type: string
       attempt_id:
         required: true
+        type: string
+      dispatch_generation:
+        required: false
         type: string
       task_digest:
         required: true

@@ -1012,6 +1012,7 @@ async function runAutomatedReview(
       const reservationDigest = await canonicalSha256({
         attemptId: config.attemptId,
         kind: 'automated_review',
+        leaseGeneration: fencing.leaseGeneration,
       });
       const reservationId =
         `model_reservation_${reservationDigest.slice('sha256:'.length, 'sha256:'.length + 48)}`;

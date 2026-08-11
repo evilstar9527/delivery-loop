@@ -365,7 +365,8 @@ function deliveryWorkflowContractMatches(workflow: Record<string, unknown>, sour
   const attempt = jobs === null ? null : record(jobs.attempt);
   if (
     workflow.name !== 'Delivery Agent' ||
-    workflow['run-name'] !== 'delivery-loop/${{ inputs.attempt_id }}' ||
+    workflow['run-name'] !==
+      "delivery-loop/${{ inputs.attempt_id }}${{ inputs.dispatch_generation && format('/redispatch-{0}', inputs.dispatch_generation) || '' }}" ||
     triggers === null || !exactKeys(triggers, ['workflow_dispatch']) ||
     dispatch === null || !exactKeys(dispatch, ['inputs']) || inputs === null ||
     permissions === null || !exactKeys(permissions, ['contents', 'id-token']) ||
@@ -381,6 +382,7 @@ function deliveryWorkflowContractMatches(workflow: Record<string, unknown>, sour
     schema_version: true,
     run_id: true,
     attempt_id: true,
+    dispatch_generation: false,
     task_digest: true,
     base_sha: true,
     checkout_sha: true,

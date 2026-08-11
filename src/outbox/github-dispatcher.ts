@@ -389,7 +389,10 @@ export class GitHubActionsApiClient implements GitHubDispatchEffects {
       throw new Error('GitHub workflow run response is invalid');
     }
     const expectedTitle = request.workflowFile === DELIVERY_AGENT_WORKFLOW_FILE
-      ? `delivery-loop/${request.inputs.attempt_id}`
+      ? `delivery-loop/${request.inputs.attempt_id}` +
+        (request.inputs.dispatch_generation === undefined
+          ? ''
+          : `/redispatch-${request.inputs.dispatch_generation}`)
       : request.workflowFile === TEST_ACCEPTANCE_WORKFLOW_FILE
         ? `delivery-loop/acceptance/${request.inputs.acceptance_id}`
         : `delivery-loop/rollback/${request.inputs.rollback_id}`;
@@ -521,6 +524,7 @@ interface DispatchAttemptRow {
   repair_id: string | null;
   review_feedback_id: string | null;
   automated_review_id: string | null;
+  automated_review_redispatch_id: string | null;
   base_rebase_id: string | null;
 }
 
@@ -611,6 +615,8 @@ export class GitHubDispatchOutboxProcessor {
                 attempt_repairs.repair_id,
                 review_feedback_attempts.feedback_id AS review_feedback_id,
                 automated_review_fix_attempts.review_id AS automated_review_id,
+                automated_review_replacement_redispatches.redispatch_id
+                  AS automated_review_redispatch_id,
                 base_rebase_attempts.rebase_id AS base_rebase_id
          FROM attempts
          JOIN runs ON runs.run_id = attempts.run_id
@@ -626,11 +632,14 @@ export class GitHubDispatchOutboxProcessor {
               COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
          LEFT JOIN automated_review_fix_attempts
            ON automated_review_fix_attempts.fix_attempt_id = attempts.attempt_id
+         LEFT JOIN automated_review_replacement_redispatches
+           ON automated_review_replacement_redispatches.replacement_attempt_id = attempts.attempt_id
+          AND automated_review_replacement_redispatches.outbox_id = ?
          LEFT JOIN base_rebase_attempts
            ON base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
          WHERE attempts.attempt_id = ? AND attempts.run_id = ?`,
       )
-      .bind(attemptId, outbox.runId)
+      .bind(outbox.outboxId, attemptId, outbox.runId)
       .first<DispatchAttemptRow>();
     if (attempt === null) throw new OutboxEffectError('attempt_missing');
     if (attempt.repository === null || !this.allowedRepositories.has(attempt.repository)) {
@@ -686,6 +695,7 @@ export class GitHubDispatchOutboxProcessor {
       mode: attempt.mode,
     };
     if (this.modelProfileId !== undefined) inputs.model_profile_id = this.modelProfileId;
+    if (attempt.automated_review_redispatch_id !== null) inputs.dispatch_generation = '1';
     if (attempt.plan_version !== null) inputs.plan_version = String(attempt.plan_version);
     if (attempt.plan_item_id !== null) inputs.plan_item_id = attempt.plan_item_id;
     const quota = new QuotaControlStore(this.db);
