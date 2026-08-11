@@ -93,6 +93,7 @@ interface ReviewRow {
 }
 
 interface ContextRow extends ReviewRow {
+  active_review_attempt_id: string;
   attempt_status: string;
   attempt_version: number;
   attempt_lease_generation: number;
@@ -117,6 +118,10 @@ interface ContextRow extends ReviewRow {
   latest_head_sha: string | null;
 }
 
+interface AttemptBoundReviewRow extends ReviewRow {
+  active_review_attempt_id: string;
+}
+
 export interface AutomatedReviewScheduleResult {
   reviewId: string;
   attemptId: string;
@@ -125,6 +130,19 @@ export interface AutomatedReviewScheduleResult {
   headSha: string;
   iteration: number;
   created: boolean;
+}
+
+interface ReviewRecoveryCandidateRow extends ReviewRow {
+  root_attempt_version: number;
+  root_lease_generation: number;
+}
+
+interface ReviewRecoveryRow {
+  review_id: string;
+  run_id: string;
+  source_head_sha: string;
+  iteration: number;
+  attempt_id: string;
 }
 
 export interface AutomatedReviewCompletionResult {
@@ -262,6 +280,213 @@ export class AutomatedReviewScheduler {
       if (result !== null) results.push(result);
     }
     return results;
+  }
+
+  async recoverFailedBatch(
+    limit = 5,
+    now = new Date(),
+  ): Promise<AutomatedReviewScheduleResult[]> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 25) {
+      throw new Error('automated review limit must be between 1 and 25');
+    }
+    const rows = await this.db.prepare(
+      `SELECT reviews.run_id
+       FROM automated_reviews AS reviews
+       JOIN attempts AS root ON root.attempt_id = reviews.review_attempt_id
+       JOIN runs ON runs.run_id = reviews.run_id
+       WHERE reviews.status = 'pending' AND runs.state = 'pull_request_open'
+         AND root.run_id = reviews.run_id AND root.mode = 'analysis'
+         AND root.status IN ('failed', 'lost', 'starting', 'running')
+         AND root.result_event_id IS NULL
+         AND root.github_status = 'completed'
+         AND root.github_conclusion IS NOT NULL
+         AND root.github_conclusion <> 'success'
+         AND (
+           root.status IN ('failed', 'lost')
+           OR (root.lease_expires_at IS NOT NULL AND root.lease_expires_at <= ?)
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM attempts AS replacement
+           WHERE replacement.recovered_from_attempt_id = reviews.review_attempt_id
+         )
+       ORDER BY root.updated_at, reviews.review_id LIMIT ?`,
+    ).bind(now.toISOString(), limit).all<{ run_id: string }>();
+    const results: AutomatedReviewScheduleResult[] = [];
+    for (const row of rows.results) {
+      const result = await this.recoverRun(row.run_id, now);
+      if (result !== null) results.push(result);
+    }
+    return results;
+  }
+
+  async recoverRun(
+    runId: string,
+    now = new Date(),
+  ): Promise<AutomatedReviewScheduleResult | null> {
+    if (!ID_PATTERN.test(runId) || !Number.isFinite(now.getTime())) {
+      throw new AutomatedReviewError('invalid_request');
+    }
+    const existing = await this.existingRecovery(runId);
+    if (existing !== null) return this.recoveryResult(existing, false);
+    const nowIso = now.toISOString();
+    const candidate = await this.recoveryCandidate(runId, nowIso);
+    if (candidate === null) return null;
+    const identity = await canonicalSha256({
+      schemaVersion: '1',
+      kind: 'automated_review_recovery',
+      reviewId: candidate.review_id,
+      rootAttemptId: candidate.review_attempt_id,
+      sourceHeadSha: candidate.source_head_sha,
+    });
+    const stable = suffix(identity);
+    const attemptId = `attempt_auto_review_recovery_${stable}`;
+    const outboxId = `dispatch_auto_review_recovery_${stable}`;
+    const results = await this.db.batch([
+      this.db.prepare(
+        `UPDATE attempts
+         SET status = 'lost', version = version + 1,
+             lease_generation = lease_generation + 1,
+             lease_token_digest = NULL, lease_expires_at = NULL, updated_at = ?
+         WHERE attempt_id = ? AND run_id = ?
+           AND mode = 'analysis' AND status IN ('starting', 'running')
+           AND version = ? AND lease_generation = ? AND result_event_id IS NULL
+           AND github_status = 'completed' AND github_conclusion IS NOT NULL
+           AND github_conclusion <> 'success' AND lease_expires_at IS NOT NULL
+           AND lease_expires_at <= ?
+           AND EXISTS (
+             SELECT 1 FROM automated_reviews
+             WHERE review_id = ? AND review_attempt_id = attempts.attempt_id
+               AND status = 'pending'
+           )`,
+      ).bind(
+        nowIso,
+        candidate.review_attempt_id,
+        candidate.run_id,
+        candidate.root_attempt_version,
+        candidate.root_lease_generation,
+        nowIso,
+        candidate.review_id,
+      ),
+      this.db.prepare(
+        `UPDATE attempt_tokens SET revoked_at = ?
+         WHERE attempt_id = ? AND revoked_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM attempts
+             WHERE attempt_id = ? AND status IN ('failed', 'lost')
+           )`,
+      ).bind(nowIso, candidate.review_attempt_id, candidate.review_attempt_id),
+      this.db.prepare(
+        `INSERT INTO attempt_revocations (
+           revocation_id, run_id, attempt_id, reason, revoked_lease_generation,
+           attempt_version, occurred_at, created_at
+         )
+         SELECT ?, run_id, attempt_id, 'heartbeat_timeout', ?, version, ?, ?
+         FROM attempts
+         WHERE attempt_id = ? AND status = 'lost' AND updated_at = ?
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        `revoke_auto_review_recovery_${stable}`,
+        candidate.root_lease_generation,
+        nowIso,
+        nowIso,
+        candidate.review_attempt_id,
+        nowIso,
+      ),
+      this.db.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, recovered_from_attempt_id, version, lease_generation,
+           created_at, updated_at
+         )
+         SELECT ?, root.run_id,
+                (SELECT COALESCE(MAX(existing.ordinal), 0) + 1
+                 FROM attempts AS existing WHERE existing.run_id = root.run_id),
+                'analysis', 'pending', root.base_sha, root.repository,
+                root.workflow_ref, root.attempt_id, 0, 0, ?, ?
+         FROM attempts AS root
+         JOIN automated_reviews AS reviews ON reviews.review_attempt_id = root.attempt_id
+         JOIN runs ON runs.run_id = reviews.run_id
+         JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
+         JOIN plan_item_progress AS progress
+           ON progress.plan_id = reviews.plan_id AND progress.item_id = reviews.plan_item_id
+         JOIN pull_request_publications AS publications
+           ON publications.publication_id = reviews.publication_id
+         WHERE reviews.review_id = ? AND reviews.status = 'pending'
+           AND root.run_id = reviews.run_id AND root.mode = 'analysis'
+           AND root.status IN ('failed', 'lost') AND root.result_event_id IS NULL
+           AND root.base_sha = reviews.source_head_sha
+           AND root.repository = reviews.repository AND root.workflow_ref IS NOT NULL
+           AND runs.state = 'pull_request_open'
+           AND runs.active_plan_id = reviews.plan_id
+           AND runs.active_plan_version = reviews.plan_version
+           AND runs.active_plan_digest = plans.digest AND plans.status = 'active'
+           AND progress.status = 'passed' AND progress.active_attempt_id IS NULL
+           AND publications.status = 'verified'
+           AND publications.run_id = reviews.run_id
+           AND publications.repository = reviews.repository
+           AND publications.github_pr_number = reviews.github_pr_number
+           AND publications.base_branch = reviews.base_branch
+           AND publications.head_branch = reviews.branch
+           AND publications.head_sha = reviews.source_head_sha
+           AND reviews.source_head_sha = (
+             SELECT updates.head_sha
+             FROM attempt_head_updates AS updates
+             JOIN attempts AS head_attempt ON head_attempt.attempt_id = updates.attempt_id
+             WHERE updates.run_id = reviews.run_id
+               AND updates.plan_id = reviews.plan_id
+               AND updates.branch = reviews.branch
+             ORDER BY head_attempt.ordinal DESC, updates.created_at DESC LIMIT 1
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM run_blockers
+             WHERE run_blockers.run_id = reviews.run_id
+               AND run_blockers.resolved_at IS NULL
+           )
+           AND 1 = (
+             SELECT COUNT(*) FROM trusted_effect_approvals AS approval
+             WHERE approval.run_id = reviews.run_id
+               AND approval.task_revision = runs.task_revision
+               AND approval.plan_id = reviews.plan_id
+               AND approval.plan_version = reviews.plan_version
+               AND approval.plan_digest = plans.digest
+               AND approval.base_sha = runs.base_sha
+               AND approval.effect = 'repo_write'
+               AND approval.decision = 'approve' AND approval.expires_at > ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM invalidated_approvals
+                 WHERE invalidated_approvals.approval_id = approval.approval_id
+               )
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM attempts AS replacement
+             WHERE replacement.recovered_from_attempt_id = root.attempt_id
+           )
+         ON CONFLICT DO NOTHING`,
+      ).bind(attemptId, nowIso, nowIso, candidate.review_id, nowIso),
+      this.db.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         )
+         SELECT ?, run_id, 'analysis_dispatch', 'github_actions', ?, ?, 'pending', ?, ?
+         FROM attempts WHERE attempt_id = ? AND status = 'pending'
+           AND recovered_from_attempt_id = ?
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        outboxId,
+        `d1://attempts/${attemptId}`,
+        `automated-review-recovery:${candidate.review_id}`,
+        nowIso,
+        nowIso,
+        attemptId,
+        candidate.review_attempt_id,
+      ),
+    ]);
+    const persisted = await this.existingRecovery(runId);
+    if (persisted === null || persisted.attempt_id !== attemptId) {
+      throw new AutomatedReviewError('state_conflict');
+    }
+    return this.recoveryResult(persisted, results[3]?.meta.changes === 1);
   }
 
   async scheduleRun(runId: string, now = new Date()): Promise<AutomatedReviewScheduleResult | null> {
@@ -465,6 +690,111 @@ export class AutomatedReviewScheduler {
       SHA_PATTERN.test(row.current_head_sha);
   }
 
+  private async recoveryCandidate(
+    runId: string,
+    nowIso: string,
+  ): Promise<ReviewRecoveryCandidateRow | null> {
+    return await this.db.prepare(
+      `SELECT reviews.*, root.version AS root_attempt_version,
+              root.lease_generation AS root_lease_generation
+       FROM automated_reviews AS reviews
+       JOIN attempts AS root ON root.attempt_id = reviews.review_attempt_id
+       JOIN runs ON runs.run_id = reviews.run_id
+       JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
+       JOIN plan_item_progress AS progress
+         ON progress.plan_id = reviews.plan_id AND progress.item_id = reviews.plan_item_id
+       JOIN pull_request_publications AS publications
+         ON publications.publication_id = reviews.publication_id
+       WHERE reviews.run_id = ? AND reviews.status = 'pending'
+         AND root.run_id = reviews.run_id AND root.mode = 'analysis'
+         AND root.status IN ('failed', 'lost', 'starting', 'running')
+         AND root.result_event_id IS NULL
+         AND root.github_status = 'completed'
+         AND root.github_conclusion IS NOT NULL
+         AND root.github_conclusion <> 'success'
+         AND (
+           root.status IN ('failed', 'lost')
+           OR (root.lease_expires_at IS NOT NULL AND root.lease_expires_at <= ?)
+         )
+         AND root.base_sha = reviews.source_head_sha
+         AND root.repository = reviews.repository AND root.workflow_ref IS NOT NULL
+         AND runs.state = 'pull_request_open'
+         AND runs.active_plan_id = reviews.plan_id
+         AND runs.active_plan_version = reviews.plan_version
+         AND runs.active_plan_digest = plans.digest AND plans.status = 'active'
+         AND progress.status = 'passed' AND progress.active_attempt_id IS NULL
+         AND publications.status = 'verified'
+         AND publications.run_id = reviews.run_id
+         AND publications.repository = reviews.repository
+         AND publications.github_pr_number = reviews.github_pr_number
+         AND publications.base_branch = reviews.base_branch
+         AND publications.head_branch = reviews.branch
+         AND publications.head_sha = reviews.source_head_sha
+         AND reviews.source_head_sha = (
+           SELECT updates.head_sha
+           FROM attempt_head_updates AS updates
+           JOIN attempts AS head_attempt ON head_attempt.attempt_id = updates.attempt_id
+           WHERE updates.run_id = reviews.run_id
+             AND updates.plan_id = reviews.plan_id
+             AND updates.branch = reviews.branch
+           ORDER BY head_attempt.ordinal DESC, updates.created_at DESC LIMIT 1
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM run_blockers
+           WHERE run_blockers.run_id = reviews.run_id
+             AND run_blockers.resolved_at IS NULL
+         )
+         AND 1 = (
+           SELECT COUNT(*) FROM trusted_effect_approvals AS approval
+           WHERE approval.run_id = reviews.run_id
+             AND approval.task_revision = runs.task_revision
+             AND approval.plan_id = reviews.plan_id
+             AND approval.plan_version = reviews.plan_version
+             AND approval.plan_digest = plans.digest
+             AND approval.base_sha = runs.base_sha
+             AND approval.effect = 'repo_write'
+             AND approval.decision = 'approve' AND approval.expires_at > ?
+             AND NOT EXISTS (
+               SELECT 1 FROM invalidated_approvals
+               WHERE invalidated_approvals.approval_id = approval.approval_id
+             )
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM attempts AS replacement
+           WHERE replacement.recovered_from_attempt_id = root.attempt_id
+         )
+       ORDER BY root.updated_at, reviews.review_id LIMIT 1`,
+    ).bind(runId, nowIso, nowIso).first<ReviewRecoveryCandidateRow>();
+  }
+
+  private async existingRecovery(runId: string): Promise<ReviewRecoveryRow | null> {
+    return await this.db.prepare(
+      `SELECT reviews.review_id, reviews.run_id, reviews.source_head_sha,
+              reviews.iteration, replacement.attempt_id
+       FROM automated_reviews AS reviews
+       JOIN attempts AS replacement
+         ON replacement.recovered_from_attempt_id = reviews.review_attempt_id
+       WHERE reviews.run_id = ? AND reviews.status = 'pending'
+       ORDER BY replacement.ordinal DESC LIMIT 1`,
+    ).bind(runId).first<ReviewRecoveryRow>();
+  }
+
+  private recoveryResult(
+    row: ReviewRecoveryRow,
+    created: boolean,
+  ): AutomatedReviewScheduleResult {
+    const identity = row.attempt_id.slice('attempt_auto_review_recovery_'.length);
+    return {
+      reviewId: row.review_id,
+      attemptId: row.attempt_id,
+      outboxId: `dispatch_auto_review_recovery_${identity}`,
+      runId: row.run_id,
+      headSha: row.source_head_sha,
+      iteration: row.iteration,
+      created,
+    };
+  }
+
   private async byHead(publicationId: string, headSha: string): Promise<ReviewRow | null> {
     return await this.db.prepare(
       `SELECT * FROM automated_reviews WHERE publication_id = ? AND source_head_sha = ?`,
@@ -502,7 +832,7 @@ export class AutomatedReviewContextStore {
       schemaVersion: '1',
       kind: 'automated_review',
       attempt: {
-        id: row.review_attempt_id,
+        id: row.active_review_attempt_id,
         runId: row.run_id,
         mode: 'analysis',
         version: row.attempt_version,
@@ -544,7 +874,7 @@ export class AutomatedReviewContextStore {
 
   private async row(attemptId: string): Promise<ContextRow | null> {
     return await this.db.prepare(
-      `SELECT reviews.*,
+      `SELECT reviews.*, attempts.attempt_id AS active_review_attempt_id,
               attempts.status AS attempt_status, attempts.version AS attempt_version,
               attempts.lease_generation AS attempt_lease_generation,
               attempts.base_sha AS attempt_base_sha,
@@ -569,7 +899,7 @@ export class AutomatedReviewContextStore {
                ORDER BY head_attempt.ordinal DESC, updates.created_at DESC
                LIMIT 1) AS latest_head_sha
        FROM automated_reviews AS reviews
-       JOIN attempts ON attempts.attempt_id = reviews.review_attempt_id
+       JOIN attempts ON attempts.attempt_id = ?
        JOIN runs ON runs.run_id = reviews.run_id
        JOIN tasks ON tasks.task_id = runs.task_id
        JOIN execution_plans AS plans ON plans.plan_id = reviews.plan_id
@@ -577,13 +907,15 @@ export class AutomatedReviewContextStore {
          ON items.plan_id = reviews.plan_id AND items.item_id = reviews.plan_item_id
        JOIN plan_item_progress AS progress
          ON progress.plan_id = reviews.plan_id AND progress.item_id = reviews.plan_item_id
-       WHERE reviews.review_attempt_id = ?`,
+       WHERE reviews.review_attempt_id = attempts.attempt_id
+          OR reviews.review_attempt_id = attempts.recovered_from_attempt_id`,
     ).bind(attemptId).first<ContextRow>();
   }
 
   private assertRow(row: ContextRow, authorization: RunnerAuthorization): void {
     if (
-      authorization.mode !== 'analysis' || row.review_attempt_id !== authorization.attemptId ||
+      authorization.mode !== 'analysis' ||
+      row.active_review_attempt_id !== authorization.attemptId ||
       row.run_id !== authorization.runId || row.attempt_status !== 'running' ||
       row.attempt_version !== authorization.version ||
       row.attempt_lease_generation !== authorization.leaseGeneration ||
@@ -710,6 +1042,18 @@ export class AutomatedReviewResultStore {
              completed_at = ?, updated_at = ?
          WHERE review_id = ? AND review_attempt_id = ? AND status = 'pending'
            AND source_head_sha = ?
+           AND EXISTS (
+             SELECT 1 FROM attempts AS active_attempt
+             WHERE active_attempt.attempt_id = ?
+               AND active_attempt.run_id = automated_reviews.run_id
+               AND active_attempt.mode = 'analysis' AND active_attempt.status = 'running'
+               AND active_attempt.version = ?
+               AND active_attempt.lease_generation = ?
+               AND (
+                 active_attempt.attempt_id = automated_reviews.review_attempt_id
+                 OR active_attempt.recovered_from_attempt_id = automated_reviews.review_attempt_id
+               )
+           )
            AND (? <> 'changes_requested' OR EXISTS (
              SELECT 1
              FROM runs
@@ -755,6 +1099,9 @@ export class AutomatedReviewResultStore {
         row.review_id,
         row.review_attempt_id,
         row.source_head_sha,
+        row.active_review_attempt_id,
+        authorization.version,
+        authorization.leaseGeneration,
         terminalStatus,
         row.plan_item_id,
         nowIso,
@@ -769,8 +1116,11 @@ export class AutomatedReviewResultStore {
            AND version = ? AND lease_generation = ?
            AND EXISTS (
              SELECT 1 FROM automated_reviews
-             WHERE review_id = ? AND review_attempt_id = attempts.attempt_id
-               AND result_digest = ?
+             WHERE review_id = ? AND result_digest = ?
+               AND (
+                 review_attempt_id = attempts.attempt_id
+                 OR review_attempt_id = attempts.recovered_from_attempt_id
+               )
            )`,
       ).bind(
         `automated_review_result_${suffix(resultDigest)}`,
@@ -778,7 +1128,7 @@ export class AutomatedReviewResultStore {
         resultDigest,
         nowIso,
         nowIso,
-        row.review_attempt_id,
+        row.active_review_attempt_id,
         row.run_id,
         authorization.version,
         authorization.leaseGeneration,
@@ -794,9 +1144,9 @@ export class AutomatedReviewResultStore {
            )`,
       ).bind(
         nowIso,
-        row.review_attempt_id,
+        row.active_review_attempt_id,
         authorization.leaseGeneration,
-        row.review_attempt_id,
+        row.active_review_attempt_id,
         resultDigest,
       ),
       this.db.prepare(
@@ -808,10 +1158,10 @@ export class AutomatedReviewResultStore {
          FROM attempts WHERE attempt_id = ? AND status = 'completed' AND result_digest = ?
          ON CONFLICT DO NOTHING`,
       ).bind(
-        `revoke_auto_review_${row.review_attempt_id}_${authorization.leaseGeneration}`,
+        `revoke_auto_review_${row.active_review_attempt_id}_${authorization.leaseGeneration}`,
         nowIso,
         nowIso,
-        row.review_attempt_id,
+        row.active_review_attempt_id,
         resultDigest,
       ),
     ];
@@ -966,12 +1316,12 @@ export class AutomatedReviewResultStore {
       );
     }
     await this.db.batch(statements);
-    const persisted = await this.review(row.review_attempt_id);
+    const persisted = await this.review(row.active_review_attempt_id);
     if (persisted === null || persisted.result_digest !== resultDigest ||
       persisted.status !== terminalStatus) throw new AutomatedReviewError('state_conflict');
     const attempt = await this.db.prepare(
       `SELECT status, result_digest FROM attempts WHERE attempt_id = ?`,
-    ).bind(row.review_attempt_id).first<{ status: string; result_digest: string | null }>();
+    ).bind(row.active_review_attempt_id).first<{ status: string; result_digest: string | null }>();
     if (attempt?.status !== 'completed' || attempt.result_digest !== resultDigest) {
       throw new AutomatedReviewError('state_conflict');
     }
@@ -1027,9 +1377,13 @@ export class AutomatedReviewResultStore {
     };
   }
 
-  private async review(attemptId: string): Promise<ReviewRow | null> {
+  private async review(attemptId: string): Promise<AttemptBoundReviewRow | null> {
     return await this.db.prepare(
-      `SELECT * FROM automated_reviews WHERE review_attempt_id = ?`,
-    ).bind(attemptId).first<ReviewRow>();
+      `SELECT reviews.*, attempts.attempt_id AS active_review_attempt_id
+       FROM automated_reviews AS reviews
+       JOIN attempts ON attempts.attempt_id = ?
+       WHERE reviews.review_attempt_id = attempts.attempt_id
+          OR reviews.review_attempt_id = attempts.recovered_from_attempt_id`,
+    ).bind(attemptId).first<AttemptBoundReviewRow>();
   }
 }
