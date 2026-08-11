@@ -262,7 +262,20 @@ describe('GitHub-hosted base readiness workflow', () => {
         '${{ secrets.DELIVERY_LOOP_BASE_READINESS_OPERATIONS_TOKEN }}',
     });
     expect(replayStep?.run).toContain(
-      '[[ "$DELIVERY_REPLAY_DEAD_LETTER_ID" =~ ^outbox-dlq-[a-f0-9]{56}$ ]]',
+      '[[ "$DELIVERY_REPLAY_DEAD_LETTER_ID" =~ ^outbox-dlq-[a-f0-9]{64}$ ]]',
+    );
+    const deadLetterIdPattern = replayStep?.run?.match(
+      /DEAD_LETTER_ID" =~ (\^outbox-dlq-.+?\$) \]\]/,
+    )?.[1];
+    expect(deadLetterIdPattern).toBe('^outbox-dlq-[a-f0-9]{64}$');
+    expect(new RegExp(deadLetterIdPattern!).test(
+      'outbox-dlq-27f2c9a58bf7be9ae6c44dbe8b23b2587aefeba609edbacc5e1b326502709ecf',
+    )).toBe(true);
+    expect(new RegExp(deadLetterIdPattern!).test(
+      `outbox-dlq-${'a'.repeat(56)}`,
+    )).toBe(false);
+    expect(replayStep?.run).toContain(
+      '(.deadLetterId | test("^outbox-dlq-[a-f0-9]{64}$"))',
     );
     expect(replayStep?.run).toContain(
       '[[ "$DELIVERY_REPLAY_EXPECTED_OUTBOX_ATTEMPT_COUNT" =~ ^[1-9][0-9]{0,9}$ ]]',
