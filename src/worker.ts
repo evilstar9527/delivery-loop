@@ -246,6 +246,15 @@ export default {
         runningThresholdSeconds: 90,
         now: scheduledNow,
       });
+      // A read-only automated review runs while the business Run remains at
+      // pull_request_open, outside the generic execution stuck states. Once
+      // GitHub has authoritatively projected a failed Action and its lease is
+      // expired, fence the root Attempt and create one head-bound replacement
+      // entirely in D1. Relay only when that bounded recovery found work.
+      if ((await new AutomatedReviewScheduler(env.DB_CONTROL)
+        .recoverFailedBatch(1, scheduledNow())).length > 0) {
+        await relay.relayDestination('github_actions', 1);
+      }
       // Once GitHub success and the complete verification ledger are durable,
       // project one Attempt/Item completion before any further external read.
       // R2-backed Draft creation stays below the base observer so a moved main

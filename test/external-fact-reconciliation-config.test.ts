@@ -80,6 +80,14 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await reconcileAtRiskGitHubRunsFromEnv(env, {',
       priorityExecutionScheduling,
     );
+    const automatedReviewRecovery = worker.indexOf(
+      '.recoverFailedBatch(1, scheduledNow())',
+      atRiskGitHubReconciliation,
+    );
+    const automatedReviewRecoveryRelay = worker.indexOf(
+      "await relay.relayDestination('github_actions', 1);",
+      automatedReviewRecovery,
+    );
     const priorityGitHubBaseReconciliation = worker.indexOf(
       'await reconcileGitHubBasesFromEnv(env, 1);',
       atRiskGitHubReconciliation,
@@ -124,6 +132,9 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(atRiskGitHubReconciliation).toBeGreaterThan(priorityExecutionScheduling);
     expect(atRiskGitHubReconciliation).toBeLessThan(priorityRelay);
     expect(atRiskGitHubReconciliation).toBeLessThan(priorityPullRequestReconciliation);
+    expect(automatedReviewRecovery).toBeGreaterThan(atRiskGitHubReconciliation);
+    expect(automatedReviewRecoveryRelay).toBeGreaterThan(automatedReviewRecovery);
+    expect(automatedReviewRecoveryRelay).toBeLessThan(executionCompletion);
     expect(executionCompletion).toBeGreaterThan(atRiskGitHubReconciliation);
     expect(executionCompletion).toBeLessThan(priorityGitHubBaseReconciliation);
     expect(priorityGitHubBaseReconciliation).toBeGreaterThan(atRiskGitHubReconciliation);

@@ -156,9 +156,23 @@ export class GitHubRunReconciler {
        WHERE attempts.status IN ('starting', 'running')
          AND attempts.result_event_id IS NULL
          AND attempts.lease_expires_at IS NOT NULL
-         AND runs.state IN (
-           'triaging', 'awaiting_approval', 'planning', 'executing',
-           'verifying', 'awaiting_review', 'deploying'
+         AND (
+           runs.state IN (
+             'triaging', 'awaiting_approval', 'planning', 'executing',
+             'verifying', 'awaiting_review', 'deploying'
+           )
+           OR (
+             runs.state = 'pull_request_open' AND attempts.mode = 'analysis'
+             AND EXISTS (
+               SELECT 1 FROM automated_reviews AS reviews
+               WHERE reviews.status = 'pending'
+                 AND reviews.run_id = attempts.run_id
+                 AND (
+                   reviews.review_attempt_id = attempts.attempt_id
+                   OR reviews.review_attempt_id = attempts.recovered_from_attempt_id
+                 )
+             )
+           )
          )
          AND (
            attempts.lease_expires_at <= ?

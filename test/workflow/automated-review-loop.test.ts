@@ -18,6 +18,7 @@ import { EXECUTION_TOOL_ACTIONS, TRIAGE_TOOL_ACTIONS } from '../../src/domain/to
 import {
   GitHubDispatchOutboxProcessor,
   type GitHubDispatchEffects,
+  type GitHubDispatchRequest,
 } from '../../src/outbox/github-dispatcher.js';
 import { ExecutionAttemptContextStore } from '../../src/storage/execution-attempt-store.js';
 import { AnalysisAttemptContextStore } from '../../src/storage/analysis-attempt-store.js';
@@ -25,6 +26,11 @@ import { ExecutionHeadStore } from '../../src/storage/execution-head-store.js';
 import { ExecutionProgressReconciler } from '../../src/reconciliation/execution-progress-reconciler.js';
 import { TaskQueryStore } from '../../src/storage/task-query-store.js';
 import { Case8AuditReportStore } from '../../src/storage/case8-audit-report-store.js';
+import {
+  GitHubRunReconciler,
+  type GitHubRunExternalFactClient,
+} from '../../src/reconciliation/github-run-reconciler.js';
+import type { GitHubWorkflowRunFact } from '../../src/storage/github-run-observation-store.js';
 
 const RUN_ID = 'run-automated-review';
 const TASK_ID = 'task-automated-review';
@@ -43,14 +49,27 @@ const NOW = '2026-08-08T02:00:00.000Z';
 
 class FakeDispatch implements GitHubDispatchEffects {
   requests = 0;
+  lastRequest: GitHubDispatchRequest | null = null;
 
-  async ensureDispatch() {
+  async ensureDispatch(request: GitHubDispatchRequest) {
     this.requests += 1;
+    this.lastRequest = request;
     return {
       disposition: 'created' as const,
       githubRunId: '70042',
       githubHeadSha: BASE_SHA,
     };
+  }
+}
+
+class FakeReviewRunClient implements GitHubRunExternalFactClient {
+  calls = 0;
+
+  constructor(private readonly fact: GitHubWorkflowRunFact) {}
+
+  async getWorkflowRun(): Promise<GitHubWorkflowRunFact> {
+    this.calls += 1;
+    return this.fact;
   }
 }
 
@@ -320,6 +339,203 @@ beforeEach(async () => {
 });
 
 describe('automated review loop', () => {
+  it('fences one failed exact-head review and creates one D1-only replacement', async () => {
+    const scheduled = await new AutomatedReviewScheduler(env.DB_CONTROL)
+      .scheduleRun(RUN_ID, new Date(NOW));
+    if (scheduled === null) throw new Error('automated review was not scheduled');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'running', version = 2, lease_generation = 1,
+           lease_expires_at = '2026-08-08T02:00:30.000Z',
+           heartbeat_at = '2026-08-08T02:00:00.000Z',
+           github_run_id = '70043', github_head_sha = ?, github_status = 'requested',
+           github_observed_at = ?, updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(BASE_SHA, NOW, NOW, scheduled.attemptId).run();
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_tokens (
+         token_id, attempt_id, oidc_token_digest, token_digest, tool_token_digest,
+         lease_generation, scopes_json, expires_at, created_at
+       ) VALUES ('token-review-recovery', ?, ?, ?, ?, 1, ?,
+                 '2026-08-08T03:00:00.000Z', ?)`,
+    ).bind(
+      scheduled.attemptId,
+      await canonicalSha256('review-recovery-oidc'),
+      await canonicalSha256('review-recovery-attempt'),
+      await canonicalSha256('review-recovery-tool'),
+      JSON.stringify(TRIAGE_TOOL_ACTIONS),
+      NOW,
+    ).run();
+    const externalUpdatedAt = '2026-08-08T02:01:00.000Z';
+    const client = new FakeReviewRunClient({
+      repository: 'example/delivery-target',
+      githubRunId: '70043',
+      event: 'workflow_dispatch',
+      status: 'completed',
+      conclusion: 'failure',
+      headSha: BASE_SHA,
+      headBranch: 'main',
+      workflowPath: '.github/workflows/delivery-agent.yml@refs/heads/main',
+      displayTitle: `delivery-loop/${scheduled.attemptId}`,
+      runAttempt: 1,
+      externalUpdatedAt,
+    });
+    const now = new Date('2026-08-08T02:02:00.000Z');
+    expect(await new GitHubRunReconciler(env.DB_CONTROL, client, { now: () => now })
+      .reconcileAtRiskBatch(5, 90)).toEqual([
+      { attemptId: scheduled.attemptId, disposition: 'applied' },
+    ]);
+    expect(client.calls).toBe(1);
+
+    const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
+    const recovered = await Promise.all(
+      Array.from({ length: 20 }, () => scheduler.recoverRun(RUN_ID, now)),
+    );
+    const replacements = recovered.filter((entry) => entry !== null);
+    expect(replacements).toHaveLength(20);
+    expect(replacements.filter((entry) => entry.created)).toHaveLength(1);
+    expect(new Set(replacements.map((entry) => entry.reviewId))).toEqual(
+      new Set([scheduled.reviewId]),
+    );
+    expect(new Set(replacements.map((entry) => entry.attemptId))).toHaveLength(1);
+    const replacement = replacements[0]!;
+    expect(replacement.attemptId).not.toBe(scheduled.attemptId);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, lease_generation FROM attempts WHERE attempt_id = ?`,
+    ).bind(scheduled.attemptId).first()).toEqual({ status: 'lost', lease_generation: 2 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT revoked_at IS NOT NULL AS revoked FROM attempt_tokens WHERE attempt_id = ?`,
+    ).bind(scheduled.attemptId).first()).toEqual({ revoked: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, recovered_from_attempt_id FROM attempts WHERE attempt_id = ?`,
+    ).bind(replacement.attemptId).first()).toEqual({
+      status: 'pending',
+      recovered_from_attempt_id: scheduled.attemptId,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state, version FROM runs WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ state: 'pull_request_open', version: 9 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM automated_reviews WHERE review_id = ?
+         AND review_attempt_id = ? AND status = 'pending'`,
+    ).bind(scheduled.reviewId, scheduled.attemptId).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox WHERE kind = 'analysis_dispatch'`,
+    ).first()).toEqual({ count: 2 });
+
+    const replacementOutbox = await env.DB_CONTROL.prepare(
+      `SELECT outbox_id FROM outbox
+       WHERE kind = 'analysis_dispatch' AND payload_ref = ?`,
+    ).bind(`d1://attempts/${replacement.attemptId}`).first<{ outbox_id: string }>();
+    if (replacementOutbox === null) {
+      throw new Error('automated review replacement dispatch was not created');
+    }
+    const replacementEffects = new FakeDispatch();
+    const replacementProcessor = new GitHubDispatchOutboxProcessor(
+      env.DB_CONTROL,
+      replacementEffects,
+      {
+        allowedRepositories: ['example/delivery-target'],
+        controlPlaneUrl: 'https://control.delivery.test',
+        now: () => now,
+      },
+    );
+    expect(await replacementProcessor.deliver(replacementOutbox.outbox_id)).toBe('settled');
+    expect(await replacementProcessor.deliver(replacementOutbox.outbox_id)).toBe('settled');
+    expect(replacementEffects.requests).toBe(1);
+    expect(replacementEffects.lastRequest).toEqual({
+      repository: 'example/delivery-target',
+      workflowFile: '.github/workflows/delivery-agent.yml',
+      ref: 'refs/heads/main',
+      inputs: {
+        schema_version: '1',
+        run_id: RUN_ID,
+        attempt_id: replacement.attemptId,
+        task_digest: expect.any(String),
+        base_sha: HEAD_SHA,
+        checkout_sha: HEAD_SHA,
+        control_plane_url: 'https://control.delivery.test',
+        mode: 'analysis',
+      },
+    });
+
+    const authorization = await startReview(replacement.attemptId);
+    const context = await new AutomatedReviewContextStore(env.DB_CONTROL, env.TASK_OBJECTS)
+      .get(authorization);
+    if (context === null) throw new Error('replacement review context was not created');
+    expect(context.attempt.id).toBe(replacement.attemptId);
+    const result = await new AutomatedReviewResultStore(env.DB_CONTROL, env.TASK_OBJECTS)
+      .complete(authorization, {
+        schemaVersion: '1',
+        contextDigest: await automatedReviewContextDigest(context),
+        verdict: 'approved',
+        summary: 'No blocker or major findings remain.',
+        findings: [],
+      }, now);
+    expect(result).toEqual({
+      reviewId: scheduled.reviewId,
+      status: 'approved',
+      created: true,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status FROM attempts WHERE attempt_id = ?`,
+    ).bind(replacement.attemptId).first()).toEqual({ status: 'completed' });
+  });
+
+  it('does not recover a review from Runner failure state without a terminal GitHub fact', async () => {
+    const scheduled = await new AutomatedReviewScheduler(env.DB_CONTROL)
+      .scheduleRun(RUN_ID, new Date(NOW));
+    if (scheduled === null) throw new Error('automated review was not scheduled');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'failed', version = 3, lease_generation = 2,
+           github_run_id = '70044', github_head_sha = ?, github_status = 'requested',
+           updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(BASE_SHA, NOW, scheduled.attemptId).run();
+    expect(await new AutomatedReviewScheduler(env.DB_CONTROL)
+      .recoverRun(RUN_ID, new Date('2026-08-08T02:02:00.000Z'))).toBeNull();
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts WHERE recovered_from_attempt_id = ?`,
+    ).bind(scheduled.attemptId).first()).toEqual({ count: 0 });
+  });
+
+  it('does not create a second replacement when the unique replacement also fails', async () => {
+    const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
+    const scheduled = await scheduler.scheduleRun(RUN_ID, new Date(NOW));
+    if (scheduled === null) throw new Error('automated review was not scheduled');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'running', version = 2, lease_generation = 1,
+           lease_expires_at = '2026-08-08T02:00:30.000Z',
+           github_run_id = '70045', github_head_sha = ?,
+           github_status = 'completed', github_conclusion = 'failure', updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(BASE_SHA, NOW, scheduled.attemptId).run();
+    const now = new Date('2026-08-08T02:02:00.000Z');
+    const replacement = await scheduler.recoverRun(RUN_ID, now);
+    if (replacement === null) throw new Error('automated review replacement was not created');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'failed', github_run_id = '70046', github_head_sha = ?,
+           github_status = 'completed', github_conclusion = 'failure', updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(BASE_SHA, now.toISOString(), replacement.attemptId).run();
+
+    expect(await scheduler.recoverFailedBatch(5, now)).toEqual([]);
+    expect(await scheduler.recoverRun(RUN_ID, now)).toEqual({
+      ...replacement,
+      created: false,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts WHERE recovered_from_attempt_id = ?`,
+    ).bind(scheduled.attemptId).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox
+       WHERE kind = 'analysis_dispatch' AND payload_ref = ?`,
+    ).bind(`d1://attempts/${replacement.attemptId}`).first()).toEqual({ count: 1 });
+  });
+
   it('converges one exact-head review and opens one review_fix for a major finding', async () => {
     const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
     const scheduled = await Promise.all(
