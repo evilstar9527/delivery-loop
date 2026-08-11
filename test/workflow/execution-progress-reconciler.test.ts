@@ -687,6 +687,35 @@ describe('execution progress reconciliation', () => {
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
   });
 
+  it('projects a successful Action before opening the R2-backed Draft path', async () => {
+    await seed('approve');
+    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
+      now: () => NOW,
+    });
+    await reconciler.reconcileScheduling(25);
+    const attempt = await env.DB_CONTROL.prepare(
+      `SELECT attempt_id FROM attempts WHERE run_id = ? AND mode = 'implement'`,
+    ).bind(RUN_ID).first<{ attempt_id: string }>();
+    if (attempt === null) throw new Error('initial execution Attempt was not scheduled');
+    await simulateSuccessfulAction(attempt.attempt_id);
+
+    expect(await reconciler.reconcileAttemptCompletions(1)).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status FROM attempts WHERE attempt_id = ?`,
+    ).bind(attempt.attempt_id).first()).toEqual({ status: 'completed' });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status FROM plan_item_progress WHERE plan_id = ? AND item_id = 'change'`,
+    ).bind(PLAN_ID).first()).toEqual({ status: 'passed' });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM pull_request_drafts WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 0 });
+
+    expect(await reconciler.reconcileFinalizations(1)).toEqual({
+      preparedDrafts: 1,
+      scheduledPublications: 1,
+    });
+  });
+
   it('schedules an already prepared Draft without reopening the Task object', async () => {
     await seed('approve');
     const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
