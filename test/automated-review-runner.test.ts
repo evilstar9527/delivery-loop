@@ -8,6 +8,7 @@ import {
 } from '../src/domain/automated-review.js';
 import { TRIAGE_TOOL_ACTIONS } from '../src/domain/tool-bridge.js';
 import { CodexReviewAdapterError } from '../src/agent/codex-review-adapter.js';
+import { canonicalSha256 } from '../src/domain/digest.js';
 import { runAnalysisAttempt } from '../src/runner/analysis-runner.js';
 import type { AnalysisRunnerError } from '../src/runner/analysis-runner.js';
 
@@ -63,6 +64,124 @@ function context() {
 }
 
 describe('automated review Runner', () => {
+  it('binds model reservation identity to the review lease generation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-review-quota-'));
+    const workspace = join(root, 'workspace');
+    const runnerTemp = join(root, 'runner-temp');
+    await Promise.all([mkdir(workspace), mkdir(runnerTemp)]);
+    let reservationBody: { reservationId: string } | undefined;
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('https://oidc.actions.test/token')) {
+        return Response.json({ value: 'CANARY_REVIEW_OIDC_TOKEN' });
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/exchange`)) {
+        return Response.json({
+          attemptToken: ATTEMPT_TOKEN,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: 'CANARY_REVIEW_TOOL_TOKEN',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/context`)) {
+        return Response.json(context());
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/model-reservations`)) {
+        reservationBody = JSON.parse(String(init?.body)) as { reservationId: string };
+        return Response.json({
+          reservationId: reservationBody.reservationId,
+          attemptId: ATTEMPT_ID,
+          runId: RUN_ID,
+          provider: 'openai',
+          model: 'gpt-test-metered',
+          reservedTokens: 1_000,
+          reservedCostMicrousd: 1_000,
+          expiresAt: '2099-01-01T00:10:00.000Z',
+          overrideId: null,
+          disposition: 'created',
+        }, { status: 201 });
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/model-usage`)) {
+        const body = JSON.parse(String(init?.body)) as {
+          reservationId: string;
+          usageId: string;
+        };
+        return Response.json({
+          usageId: body.usageId,
+          reservationId: body.reservationId,
+          totalTokens: 15,
+          costMicrousd: 1,
+          disposition: 'created',
+        }, { status: 201 });
+      }
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/automated-review-result`)) {
+        return Response.json({
+          accepted: true,
+          reviewId: 'review-runner',
+          status: 'approved',
+          created: true,
+        }, { status: 201 });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    };
+    await runAnalysisAttempt({
+      environment: {
+        DELIVERY_SCHEMA_VERSION: '1',
+        DELIVERY_RUN_ID: RUN_ID,
+        DELIVERY_ATTEMPT_ID: ATTEMPT_ID,
+        DELIVERY_TASK_DIGEST: TASK_DIGEST,
+        DELIVERY_BASE_SHA: HEAD_SHA,
+        DELIVERY_ATTEMPT_MODE: 'analysis',
+        DELIVERY_MODEL_PROFILE_ID: 'profile-review-test',
+        DELIVERY_CONTROL_PLANE_URL: 'https://control.delivery.test',
+        ACTIONS_ID_TOKEN_REQUEST_URL: 'https://oidc.actions.test/token',
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'CANARY_ACTIONS_RUNTIME_TOKEN',
+        GITHUB_WORKSPACE: workspace,
+        RUNNER_TEMP: runnerTemp,
+      },
+      fetch: fetchImplementation,
+      reviewAgent: {
+        usesMeteredModel: true,
+        start: async (input) => {
+          input.onUsage?.({
+            inputTokens: 10,
+            cachedInputTokens: 5,
+            outputTokens: 5,
+            reasoningOutputTokens: 2,
+          });
+          return {
+            schemaVersion: '1',
+            contextDigest: await automatedReviewContextDigest(context()),
+            verdict: 'approved',
+            summary: 'No blocker or major findings remain.',
+            findings: [],
+          };
+        },
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+    });
+    const expected = await canonicalSha256({
+      attemptId: ATTEMPT_ID,
+      kind: 'automated_review',
+      leaseGeneration: 3,
+    });
+    const nextGeneration = await canonicalSha256({
+      attemptId: ATTEMPT_ID,
+      kind: 'automated_review',
+      leaseGeneration: 4,
+    });
+    expect(reservationBody?.reservationId).toBe(
+      `model_reservation_${expected.slice('sha256:'.length, 'sha256:'.length + 48)}`,
+    );
+    expect(expected).not.toBe(nextGeneration);
+  });
+
   it('uses the existing analysis bootstrap and submits one read-only review result', async () => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-review-runner-'));
     const workspace = join(root, 'workspace');

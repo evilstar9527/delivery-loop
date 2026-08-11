@@ -109,10 +109,13 @@ function taskEnvelope(): TaskEnvelope {
 
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare("DELETE FROM quota_policies WHERE scope_key <> '*'"),
     env.DB_CONTROL.prepare('DELETE FROM approval_invalidations'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revision_analysis_retries'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revisions'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revision_source_facts'),
+    env.DB_CONTROL.prepare('DELETE FROM automated_review_replacement_redispatches'),
+    env.DB_CONTROL.prepare('DELETE FROM automated_review_loop_quota_slots'),
     env.DB_CONTROL.prepare('DELETE FROM automated_review_quota_recovery_slots'),
     env.DB_CONTROL.prepare('DELETE FROM automated_review_fix_attempts'),
     env.DB_CONTROL.prepare('DELETE FROM automated_reviews'),
@@ -409,6 +412,56 @@ describe('automated review loop', () => {
       .rejects.toThrow('quota_attempt_exceeded');
   });
 
+  it('keeps the bounded review_fix loop reachable after quota recovery', async () => {
+    const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
+    const scheduled = await scheduler.scheduleRun(RUN_ID, new Date(NOW));
+    if (scheduled === null) throw new Error('automated review was not scheduled');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'running', version = 2, lease_generation = 1,
+           lease_expires_at = '2026-08-08T02:00:30.000Z',
+           github_run_id = '70039', github_head_sha = ?,
+           github_status = 'completed', github_conclusion = 'failure', updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(BASE_SHA, NOW, scheduled.attemptId).run();
+    await fillAttemptBudget();
+    const recovered = await scheduler.recoverRun(
+      RUN_ID,
+      new Date('2026-08-08T02:02:00.000Z'),
+    );
+    if (recovered === null) throw new Error('automated review recovery was not created');
+    const authorization = await startReview(recovered.attemptId);
+    const context = await new AutomatedReviewContextStore(env.DB_CONTROL, env.TASK_OBJECTS)
+      .get(authorization);
+    if (context === null) throw new Error('automated review context was not created');
+
+    const result = await new AutomatedReviewResultStore(env.DB_CONTROL, env.TASK_OBJECTS)
+      .complete(authorization, {
+        schemaVersion: '1',
+        contextDigest: await automatedReviewContextDigest(context),
+        verdict: 'changes_requested',
+        summary: 'One correctness issue must be fixed.',
+        findings: [{
+          severity: 'major',
+          title: 'Preserve the exact compare-and-set boundary',
+          body: 'The write must remain bound to the current immutable review snapshot.',
+          path: 'src/example.ts',
+          line: 42,
+        }],
+      }, new Date('2026-08-08T02:02:10.000Z'));
+    expect(result).toMatchObject({ status: 'changes_requested', created: true });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts WHERE run_id = ? AND mode = 'review_fix'`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM attempts WHERE run_id = ?',
+    ).bind(RUN_ID).first()).toEqual({ count: 22 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM automated_review_loop_quota_slots
+       WHERE source_review_id = ? AND attempt_mode = 'review_fix' AND slot_kind = 'review_fix'`,
+    ).bind(scheduled.reviewId).first()).toEqual({ count: 1 });
+  });
+
   it('does not bypass a repository attempt quota for failed review recovery', async () => {
     const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
     const scheduled = await scheduler.scheduleRun(RUN_ID, new Date(NOW));
@@ -440,6 +493,48 @@ describe('automated review loop', () => {
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM attempts WHERE recovered_from_attempt_id = ?`,
     ).bind(scheduled.attemptId).first()).toEqual({ count: 0 });
+  });
+
+  it.each([
+    ['tenant', 'automated-review'],
+    ['repository', 'example/delivery-target'],
+    ['user', 'owner'],
+  ] as const)('does not bypass the %s attempt quota with a loop slot', async (scope, key) => {
+    const scheduled = await new AutomatedReviewScheduler(env.DB_CONTROL)
+      .scheduleRun(RUN_ID, new Date(NOW));
+    if (scheduled === null) throw new Error('automated review was not scheduled');
+    await fillAttemptBudget();
+    const overBudgetAttemptId = `attempt-loop-scope-${scope}`;
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO quota_policies (
+           policy_id, scope_type, scope_key, resource_type, limit_value,
+           window_kind, enabled, created_at, updated_at
+         ) VALUES (?, ?, ?, 'attempt', 20, 'utc_day', 1, ?, ?)`,
+      ).bind(`policy-loop-scope-${scope}`, scope, key, NOW, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO automated_review_loop_quota_slots (
+           slot_id, run_id, source_review_id, attempt_id,
+           attempt_mode, slot_kind, created_at
+         ) VALUES (?, ?, ?, ?, 'review_fix', 'review_fix', ?)`,
+      ).bind(
+        `slot-loop-scope-${scope}`,
+        RUN_ID,
+        scheduled.reviewId,
+        overBudgetAttemptId,
+        NOW,
+      ),
+    ]);
+
+    await expect(env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+         workflow_ref, version, lease_generation, created_at, updated_at
+       ) VALUES (?, ?, 21, 'review_fix', 'pending', ?, 'example/delivery-target',
+                 'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                 0, 0, ?, ?)`,
+    ).bind(overBudgetAttemptId, RUN_ID, BASE_SHA, NOW, NOW).run())
+      .rejects.toThrow('quota_attempt_exceeded');
   });
 
   it('fences one failed exact-head review and creates one D1-only replacement', async () => {
@@ -603,7 +698,7 @@ describe('automated review loop', () => {
     ).bind(scheduled.attemptId).first()).toEqual({ count: 0 });
   });
 
-  it('does not create a second replacement when the unique replacement also fails', async () => {
+  it('re-arms one failed replacement once without creating another Attempt', async () => {
     const scheduler = new AutomatedReviewScheduler(env.DB_CONTROL);
     const scheduled = await scheduler.scheduleRun(RUN_ID, new Date(NOW));
     if (scheduled === null) throw new Error('automated review was not scheduled');
@@ -620,23 +715,89 @@ describe('automated review loop', () => {
     if (replacement === null) throw new Error('automated review replacement was not created');
     await env.DB_CONTROL.prepare(
       `UPDATE attempts
-       SET status = 'failed', github_run_id = '70046', github_head_sha = ?,
+       SET status = 'running', version = 3, lease_generation = 2,
+           lease_expires_at = '2026-08-08T02:00:30.000Z',
+           github_run_id = '70046', github_head_sha = ?,
            github_status = 'completed', github_conclusion = 'failure', updated_at = ?
        WHERE attempt_id = ? AND status = 'pending'`,
     ).bind(BASE_SHA, now.toISOString(), replacement.attemptId).run();
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_tokens (
+         token_id, attempt_id, oidc_token_digest, token_digest, tool_token_digest,
+         lease_generation, scopes_json, expires_at, created_at
+       ) VALUES ('token-review-replacement', ?, ?, ?, ?, 2, ?,
+                 '2026-08-08T03:00:00.000Z', ?)`,
+    ).bind(
+      replacement.attemptId,
+      await canonicalSha256('review-replacement-oidc'),
+      await canonicalSha256('review-replacement-attempt'),
+      await canonicalSha256('review-replacement-tool'),
+      JSON.stringify(TRIAGE_TOOL_ACTIONS),
+      NOW,
+    ).run();
 
-    expect(await scheduler.recoverFailedBatch(5, now)).toEqual([]);
-    expect(await scheduler.recoverRun(RUN_ID, now)).toEqual({
-      ...replacement,
-      created: false,
+    const redispatched = await Promise.all(
+      Array.from({ length: 20 }, () => scheduler.redispatchRun(RUN_ID, now)),
+    );
+    const redispatches = redispatched.filter((entry) => entry !== null);
+    expect(redispatches).toHaveLength(20);
+    expect(redispatches.filter((entry) => entry.created)).toHaveLength(1);
+    expect(new Set(redispatches.map((entry) => entry.attemptId))).toEqual(
+      new Set([replacement.attemptId]),
+    );
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, version, lease_generation, github_run_id, github_status
+       FROM attempts WHERE attempt_id = ?`,
+    ).bind(replacement.attemptId).first()).toEqual({
+      status: 'pending',
+      version: 4,
+      lease_generation: 3,
+      github_run_id: null,
+      github_status: null,
     });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT revoked_at IS NOT NULL AS revoked FROM attempt_tokens WHERE attempt_id = ?`,
+    ).bind(replacement.attemptId).first()).toEqual({ revoked: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM automated_review_replacement_redispatches
+       WHERE review_id = ? AND replacement_attempt_id = ?`,
+    ).bind(scheduled.reviewId, replacement.attemptId).first()).toEqual({ count: 1 });
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM attempts WHERE recovered_from_attempt_id = ?`,
     ).bind(scheduled.attemptId).first()).toEqual({ count: 1 });
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM outbox
        WHERE kind = 'analysis_dispatch' AND payload_ref = ?`,
-    ).bind(`d1://attempts/${replacement.attemptId}`).first()).toEqual({ count: 1 });
+    ).bind(`d1://attempts/${replacement.attemptId}`).first()).toEqual({ count: 2 });
+
+    const effects = new FakeDispatch();
+    const redispatch = redispatches[0]!;
+    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
+      allowedRepositories: ['example/delivery-target'],
+      controlPlaneUrl: 'https://control.delivery.test',
+      now: () => now,
+    }).deliver(redispatch.outboxId)).toBe('settled');
+    expect(effects.requests).toBe(1);
+    expect(effects.lastRequest?.inputs.dispatch_generation).toBe('1');
+
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'failed', github_run_id = '70047', github_head_sha = ?,
+           github_status = 'completed', github_conclusion = 'failure', updated_at = ?
+       WHERE attempt_id = ? AND status = 'starting'`,
+    ).bind(BASE_SHA, now.toISOString(), replacement.attemptId).run();
+    expect(await scheduler.redispatchFailedReplacementsBatch(5, now)).toEqual([]);
+    expect(await scheduler.redispatchRun(RUN_ID, now)).toEqual({
+      ...redispatch,
+      created: false,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, github_run_id FROM attempts WHERE attempt_id = ?`,
+    ).bind(replacement.attemptId).first()).toEqual({ status: 'failed', github_run_id: '70047' });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox
+       WHERE kind = 'analysis_dispatch' AND payload_ref = ?`,
+    ).bind(`d1://attempts/${replacement.attemptId}`).first()).toEqual({ count: 2 });
   });
 
   it('converges one exact-head review and opens one review_fix for a major finding', async () => {
@@ -1270,11 +1431,21 @@ describe('automated review loop', () => {
     expect(await env.DB_CONTROL.prepare(
       `SELECT state FROM runs WHERE run_id = ?`,
     ).bind(RUN_ID).first()).toEqual({ state: 'pull_request_open' });
-    expect(await new AutomatedReviewScheduler(env.DB_CONTROL)
-      .scheduleRun(RUN_ID, new Date(NOW))).toMatchObject({
+    await fillAttemptBudget();
+    const nextReview = await new AutomatedReviewScheduler(env.DB_CONTROL)
+      .scheduleRun(RUN_ID, new Date(NOW));
+    expect(nextReview).toMatchObject({
         iteration: 2,
         headSha: fixedHead,
         created: true,
       });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 21 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM automated_review_loop_quota_slots
+       WHERE source_review_id = 'review-completed-fix'
+         AND attempt_mode = 'analysis' AND slot_kind = 'next_review'`,
+    ).first()).toEqual({ count: 1 });
   });
 });

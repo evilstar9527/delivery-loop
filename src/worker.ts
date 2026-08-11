@@ -251,8 +251,11 @@ export default {
       // GitHub has authoritatively projected a failed Action and its lease is
       // expired, fence the root Attempt and create one head-bound replacement
       // entirely in D1. Relay only when that bounded recovery found work.
-      if ((await new AutomatedReviewScheduler(env.DB_CONTROL)
-        .recoverFailedBatch(1, scheduledNow())).length > 0) {
+      const automatedReviews = new AutomatedReviewScheduler(env.DB_CONTROL);
+      const redispatched = await automatedReviews
+        .redispatchFailedReplacementsBatch(1, scheduledNow());
+      if (redispatched.length > 0 ||
+        (await automatedReviews.recoverFailedBatch(1, scheduledNow())).length > 0) {
         await relay.relayDestination('github_actions', 1);
       }
       // Once GitHub success and the complete verification ledger are durable,

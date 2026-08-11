@@ -145,6 +145,15 @@ interface ReviewRecoveryRow {
   attempt_id: string;
 }
 
+interface ReviewRedispatchCandidateRow extends ReviewRecoveryRow {
+  replacement_attempt_version: number;
+  replacement_lease_generation: number;
+}
+
+interface ReviewRedispatchRow extends ReviewRecoveryRow {
+  outbox_id: string;
+}
+
 export interface AutomatedReviewCompletionResult {
   reviewId: string;
   status: 'approved' | 'changes_requested' | 'blocked';
@@ -317,6 +326,240 @@ export class AutomatedReviewScheduler {
       if (result !== null) results.push(result);
     }
     return results;
+  }
+
+  async redispatchFailedReplacementsBatch(
+    limit = 5,
+    now = new Date(),
+  ): Promise<AutomatedReviewScheduleResult[]> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 25) {
+      throw new Error('automated review limit must be between 1 and 25');
+    }
+    const rows = await this.db.prepare(
+      `SELECT reviews.run_id
+       FROM automated_reviews AS reviews
+       JOIN attempts AS root ON root.attempt_id = reviews.review_attempt_id
+       JOIN attempts AS replacement
+         ON replacement.recovered_from_attempt_id = root.attempt_id
+       JOIN runs ON runs.run_id = reviews.run_id
+       WHERE reviews.status = 'pending' AND runs.state = 'pull_request_open'
+         AND replacement.mode = 'analysis'
+         AND replacement.status IN ('failed', 'lost', 'starting', 'running')
+         AND replacement.result_event_id IS NULL
+         AND replacement.github_status = 'completed'
+         AND replacement.github_conclusion IS NOT NULL
+         AND replacement.github_conclusion <> 'success'
+         AND (
+           replacement.status IN ('failed', 'lost')
+           OR (replacement.lease_expires_at IS NOT NULL
+               AND replacement.lease_expires_at <= ?)
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM automated_review_replacement_redispatches AS redispatch
+           WHERE redispatch.replacement_attempt_id = replacement.attempt_id
+         )
+       ORDER BY replacement.updated_at, reviews.review_id LIMIT ?`,
+    ).bind(now.toISOString(), limit).all<{ run_id: string }>();
+    const results: AutomatedReviewScheduleResult[] = [];
+    for (const row of rows.results) {
+      const result = await this.redispatchRun(row.run_id, now);
+      if (result !== null) results.push(result);
+    }
+    return results;
+  }
+
+  async redispatchRun(
+    runId: string,
+    now = new Date(),
+  ): Promise<AutomatedReviewScheduleResult | null> {
+    if (!ID_PATTERN.test(runId) || !Number.isFinite(now.getTime())) {
+      throw new AutomatedReviewError('invalid_request');
+    }
+    const existing = await this.existingRedispatch(runId);
+    if (existing !== null) return this.redispatchResult(existing, false);
+    const nowIso = now.toISOString();
+    const candidate = await this.redispatchCandidate(runId, nowIso);
+    if (candidate === null) return null;
+    const identity = await canonicalSha256({
+      schemaVersion: '1',
+      kind: 'automated_review_replacement_redispatch',
+      reviewId: candidate.review_id,
+      replacementAttemptId: candidate.attempt_id,
+      sourceHeadSha: candidate.source_head_sha,
+    });
+    const stable = suffix(identity);
+    const redispatchId = `auto_review_redispatch_${stable}`;
+    const outboxId = `redispatch_auto_review_recovery_${stable}`;
+    const revocationId = `revoke_auto_review_redispatch_${stable}`;
+    const nextVersion = candidate.replacement_attempt_version + 1;
+    const nextLeaseGeneration = candidate.replacement_lease_generation + 1;
+    const results = await this.db.batch([
+      this.db.prepare(
+        `INSERT INTO automated_review_replacement_redispatches (
+           redispatch_id, run_id, review_id, replacement_attempt_id, outbox_id, created_at
+         )
+         SELECT ?, reviews.run_id, reviews.review_id, replacement.attempt_id, ?, ?
+         FROM automated_reviews AS reviews
+         JOIN attempts AS root ON root.attempt_id = reviews.review_attempt_id
+         JOIN attempts AS replacement
+           ON replacement.recovered_from_attempt_id = root.attempt_id
+         JOIN runs ON runs.run_id = reviews.run_id
+         JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
+         JOIN plan_item_progress AS progress
+           ON progress.plan_id = reviews.plan_id AND progress.item_id = reviews.plan_item_id
+         JOIN pull_request_publications AS publications
+           ON publications.publication_id = reviews.publication_id
+         WHERE reviews.review_id = ? AND reviews.status = 'pending'
+           AND replacement.attempt_id = ? AND replacement.mode = 'analysis'
+           AND replacement.status IN ('failed', 'lost', 'starting', 'running')
+           AND replacement.version = ? AND replacement.lease_generation = ?
+           AND replacement.result_event_id IS NULL
+           AND replacement.github_status = 'completed'
+           AND replacement.github_conclusion IS NOT NULL
+           AND replacement.github_conclusion <> 'success'
+           AND (
+             replacement.status IN ('failed', 'lost')
+             OR (replacement.lease_expires_at IS NOT NULL
+                 AND replacement.lease_expires_at <= ?)
+           )
+           AND replacement.base_sha = reviews.source_head_sha
+           AND replacement.repository = reviews.repository
+           AND replacement.workflow_ref IS NOT NULL
+           AND runs.state = 'pull_request_open'
+           AND runs.active_plan_id = reviews.plan_id
+           AND runs.active_plan_version = reviews.plan_version
+           AND runs.active_plan_digest = plans.digest AND plans.status = 'active'
+           AND progress.status = 'passed' AND progress.active_attempt_id IS NULL
+           AND publications.status = 'verified'
+           AND publications.run_id = reviews.run_id
+           AND publications.repository = reviews.repository
+           AND publications.github_pr_number = reviews.github_pr_number
+           AND publications.base_branch = reviews.base_branch
+           AND publications.head_branch = reviews.branch
+           AND publications.head_sha = reviews.source_head_sha
+           AND NOT EXISTS (
+             SELECT 1 FROM run_blockers
+             WHERE run_blockers.run_id = reviews.run_id
+               AND run_blockers.resolved_at IS NULL
+           )
+           AND 1 = (
+             SELECT COUNT(*) FROM trusted_effect_approvals AS approval
+             WHERE approval.run_id = reviews.run_id
+               AND approval.task_revision = runs.task_revision
+               AND approval.plan_id = reviews.plan_id
+               AND approval.plan_version = reviews.plan_version
+               AND approval.plan_digest = plans.digest
+               AND approval.base_sha = runs.base_sha
+               AND approval.effect = 'repo_write'
+               AND approval.decision = 'approve' AND approval.expires_at > ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM invalidated_approvals
+                 WHERE invalidated_approvals.approval_id = approval.approval_id
+               )
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM automated_review_replacement_redispatches AS existing
+             WHERE existing.replacement_attempt_id = replacement.attempt_id
+           )
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        redispatchId,
+        outboxId,
+        nowIso,
+        candidate.review_id,
+        candidate.attempt_id,
+        candidate.replacement_attempt_version,
+        candidate.replacement_lease_generation,
+        nowIso,
+        nowIso,
+      ),
+      this.db.prepare(
+        `UPDATE attempts
+         SET status = 'pending', version = version + 1,
+             lease_generation = lease_generation + 1,
+             lease_token_digest = NULL, lease_expires_at = NULL, heartbeat_at = NULL,
+             github_run_id = NULL, github_head_sha = NULL, github_status = NULL,
+             github_conclusion = NULL, github_observed_at = NULL,
+             github_external_updated_at = NULL, updated_at = ?
+         WHERE attempt_id = ? AND run_id = ? AND mode = 'analysis'
+           AND status IN ('failed', 'lost', 'starting', 'running')
+           AND version = ? AND lease_generation = ? AND result_event_id IS NULL
+           AND github_status = 'completed' AND github_conclusion IS NOT NULL
+           AND github_conclusion <> 'success'
+           AND EXISTS (
+             SELECT 1 FROM automated_review_replacement_redispatches AS redispatch
+             WHERE redispatch.redispatch_id = ?
+               AND redispatch.replacement_attempt_id = attempts.attempt_id
+           )`,
+      ).bind(
+        nowIso,
+        candidate.attempt_id,
+        candidate.run_id,
+        candidate.replacement_attempt_version,
+        candidate.replacement_lease_generation,
+        redispatchId,
+      ),
+      this.db.prepare(
+        `UPDATE attempt_tokens SET revoked_at = ?
+         WHERE attempt_id = ? AND lease_generation = ? AND revoked_at IS NULL
+           AND EXISTS (
+             SELECT 1 FROM attempts
+             WHERE attempt_id = ? AND status = 'pending'
+               AND version = ? AND lease_generation = ?
+           )`,
+      ).bind(
+        nowIso,
+        candidate.attempt_id,
+        candidate.replacement_lease_generation,
+        candidate.attempt_id,
+        nextVersion,
+        nextLeaseGeneration,
+      ),
+      this.db.prepare(
+        `INSERT INTO attempt_revocations (
+           revocation_id, run_id, attempt_id, reason, revoked_lease_generation,
+           attempt_version, occurred_at, created_at
+         )
+         SELECT ?, run_id, attempt_id, 'heartbeat_timeout', ?, version, ?, ?
+         FROM attempts
+         WHERE attempt_id = ? AND status = 'pending'
+           AND version = ? AND lease_generation = ?
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        revocationId,
+        candidate.replacement_lease_generation,
+        nowIso,
+        nowIso,
+        candidate.attempt_id,
+        nextVersion,
+        nextLeaseGeneration,
+      ),
+      this.db.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         )
+         SELECT redispatch.outbox_id, attempts.run_id, 'analysis_dispatch',
+                'github_actions', ?, ?, 'pending', ?, ?
+         FROM automated_review_replacement_redispatches AS redispatch
+         JOIN attempts ON attempts.attempt_id = redispatch.replacement_attempt_id
+         WHERE redispatch.redispatch_id = ? AND attempts.status = 'pending'
+           AND attempts.version = ? AND attempts.lease_generation = ?
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        `d1://attempts/${candidate.attempt_id}`,
+        `automated-review-recovery-redispatch:${candidate.review_id}`,
+        nowIso,
+        nowIso,
+        redispatchId,
+        nextVersion,
+        nextLeaseGeneration,
+      ),
+    ]);
+    const persisted = await this.existingRedispatch(runId);
+    if (persisted === null || persisted.attempt_id !== candidate.attempt_id ||
+      persisted.outbox_id !== outboxId) throw new AutomatedReviewError('state_conflict');
+    return this.redispatchResult(persisted, results[0]?.meta.changes === 1);
   }
 
   async recoverRun(
@@ -576,8 +819,42 @@ export class AutomatedReviewScheduler {
     const reviewId = AutomatedReviewIdSchema.parse(`automated_review_${stable}`);
     const attemptId = `attempt_auto_review_${stable}`;
     const outboxId = `dispatch_auto_review_${stable}`;
+    const quotaSlotId = `auto_review_loop_quota_next_${stable}`;
     const nowIso = now.toISOString();
     const batch = await this.db.batch([
+      this.db.prepare(
+        `INSERT INTO automated_review_loop_quota_slots (
+           slot_id, run_id, source_review_id, attempt_id,
+           attempt_mode, slot_kind, created_at
+         )
+         SELECT ?, runs.run_id, source_review.review_id, ?,
+                'analysis', 'next_review', ?
+         FROM runs
+         JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
+         JOIN plan_item_progress AS progress
+           ON progress.plan_id = plans.plan_id AND progress.item_id = ?
+         JOIN automated_review_fix_attempts AS fixes ON fixes.fix_attempt_id = ?
+         JOIN automated_reviews AS source_review ON source_review.review_id = fixes.review_id
+         WHERE runs.run_id = ? AND runs.state = 'pull_request_open' AND runs.version = ?
+           AND runs.active_plan_version = ? AND runs.active_plan_digest = ?
+           AND plans.status = 'active' AND progress.status = 'passed'
+           AND progress.active_attempt_id IS NULL
+           AND source_review.status = 'changes_requested'
+           AND source_review.run_id = runs.run_id
+           AND source_review.plan_id = plans.plan_id
+           AND source_review.plan_version = plans.plan_version
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        quotaSlotId,
+        attemptId,
+        nowIso,
+        candidate.plan_item_id,
+        candidate.prior_attempt_id,
+        candidate.run_id,
+        candidate.run_version,
+        candidate.plan_version,
+        candidate.plan_digest,
+      ),
       this.db.prepare(
         `INSERT INTO attempts (
            attempt_id, run_id, ordinal, mode, status, base_sha, repository,
@@ -681,7 +958,7 @@ export class AutomatedReviewScheduler {
       runId: candidate.run_id,
       headSha: candidate.current_head_sha,
       iteration: candidate.iteration,
-      created: batch[1]?.meta.changes === 1,
+      created: batch[2]?.meta.changes === 1,
     };
   }
 
@@ -835,6 +1112,80 @@ export class AutomatedReviewScheduler {
     ).bind(runId, nowIso, nowIso).first<ReviewRecoveryCandidateRow>();
   }
 
+  private async redispatchCandidate(
+    runId: string,
+    nowIso: string,
+  ): Promise<ReviewRedispatchCandidateRow | null> {
+    return await this.db.prepare(
+      `SELECT reviews.review_id, reviews.run_id, reviews.source_head_sha,
+              reviews.iteration, replacement.attempt_id,
+              replacement.version AS replacement_attempt_version,
+              replacement.lease_generation AS replacement_lease_generation
+       FROM automated_reviews AS reviews
+       JOIN attempts AS root ON root.attempt_id = reviews.review_attempt_id
+       JOIN attempts AS replacement
+         ON replacement.recovered_from_attempt_id = root.attempt_id
+       JOIN runs ON runs.run_id = reviews.run_id
+       JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
+       JOIN plan_item_progress AS progress
+         ON progress.plan_id = reviews.plan_id AND progress.item_id = reviews.plan_item_id
+       JOIN pull_request_publications AS publications
+         ON publications.publication_id = reviews.publication_id
+       WHERE reviews.run_id = ? AND reviews.status = 'pending'
+         AND replacement.mode = 'analysis'
+         AND replacement.status IN ('failed', 'lost', 'starting', 'running')
+         AND replacement.result_event_id IS NULL
+         AND replacement.github_status = 'completed'
+         AND replacement.github_conclusion IS NOT NULL
+         AND replacement.github_conclusion <> 'success'
+         AND (
+           replacement.status IN ('failed', 'lost')
+           OR (replacement.lease_expires_at IS NOT NULL
+               AND replacement.lease_expires_at <= ?)
+         )
+         AND replacement.base_sha = reviews.source_head_sha
+         AND replacement.repository = reviews.repository
+         AND replacement.workflow_ref IS NOT NULL
+         AND runs.state = 'pull_request_open'
+         AND runs.active_plan_id = reviews.plan_id
+         AND runs.active_plan_version = reviews.plan_version
+         AND runs.active_plan_digest = plans.digest AND plans.status = 'active'
+         AND progress.status = 'passed' AND progress.active_attempt_id IS NULL
+         AND publications.status = 'verified'
+         AND publications.run_id = reviews.run_id
+         AND publications.repository = reviews.repository
+         AND publications.github_pr_number = reviews.github_pr_number
+         AND publications.base_branch = reviews.base_branch
+         AND publications.head_branch = reviews.branch
+         AND publications.head_sha = reviews.source_head_sha
+         AND NOT EXISTS (
+           SELECT 1 FROM run_blockers
+           WHERE run_blockers.run_id = reviews.run_id
+             AND run_blockers.resolved_at IS NULL
+         )
+         AND 1 = (
+           SELECT COUNT(*) FROM trusted_effect_approvals AS approval
+           WHERE approval.run_id = reviews.run_id
+             AND approval.task_revision = runs.task_revision
+             AND approval.plan_id = reviews.plan_id
+             AND approval.plan_version = reviews.plan_version
+             AND approval.plan_digest = plans.digest
+             AND approval.base_sha = runs.base_sha
+             AND approval.effect = 'repo_write'
+             AND approval.decision = 'approve' AND approval.expires_at > ?
+             AND NOT EXISTS (
+               SELECT 1 FROM invalidated_approvals
+               WHERE invalidated_approvals.approval_id = approval.approval_id
+             )
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM automated_review_replacement_redispatches AS redispatch
+           WHERE redispatch.replacement_attempt_id = replacement.attempt_id
+         )
+       ORDER BY replacement.updated_at, reviews.review_id LIMIT 1`,
+    ).bind(runId, nowIso, nowIso).first<ReviewRedispatchCandidateRow>();
+  }
+
   private async existingRecovery(runId: string): Promise<ReviewRecoveryRow | null> {
     return await this.db.prepare(
       `SELECT reviews.review_id, reviews.run_id, reviews.source_head_sha,
@@ -847,6 +1198,21 @@ export class AutomatedReviewScheduler {
     ).bind(runId).first<ReviewRecoveryRow>();
   }
 
+  private async existingRedispatch(runId: string): Promise<ReviewRedispatchRow | null> {
+    return await this.db.prepare(
+      `SELECT reviews.review_id, reviews.run_id, reviews.source_head_sha,
+              reviews.iteration, replacement.attempt_id, redispatch.outbox_id
+       FROM automated_reviews AS reviews
+       JOIN attempts AS replacement
+         ON replacement.recovered_from_attempt_id = reviews.review_attempt_id
+       JOIN automated_review_replacement_redispatches AS redispatch
+         ON redispatch.review_id = reviews.review_id
+        AND redispatch.replacement_attempt_id = replacement.attempt_id
+       WHERE reviews.run_id = ? AND reviews.status = 'pending'
+       ORDER BY replacement.ordinal DESC LIMIT 1`,
+    ).bind(runId).first<ReviewRedispatchRow>();
+  }
+
   private recoveryResult(
     row: ReviewRecoveryRow,
     created: boolean,
@@ -856,6 +1222,21 @@ export class AutomatedReviewScheduler {
       reviewId: row.review_id,
       attemptId: row.attempt_id,
       outboxId: `dispatch_auto_review_recovery_${identity}`,
+      runId: row.run_id,
+      headSha: row.source_head_sha,
+      iteration: row.iteration,
+      created,
+    };
+  }
+
+  private redispatchResult(
+    row: ReviewRedispatchRow,
+    created: boolean,
+  ): AutomatedReviewScheduleResult {
+    return {
+      reviewId: row.review_id,
+      attemptId: row.attempt_id,
+      outboxId: row.outbox_id,
       runId: row.run_id,
       headSha: row.source_head_sha,
       iteration: row.iteration,
@@ -1235,6 +1616,45 @@ export class AutomatedReviewResultStore {
     ];
     if (terminalStatus === 'changes_requested') {
       statements.push(
+        this.db.prepare(
+          `INSERT INTO automated_review_loop_quota_slots (
+             slot_id, run_id, source_review_id, attempt_id,
+             attempt_mode, slot_kind, created_at
+           )
+           SELECT ?, reviews.run_id, reviews.review_id, ?,
+                  'review_fix', 'review_fix', ?
+           FROM automated_reviews AS reviews
+           JOIN runs ON runs.run_id = reviews.run_id
+           JOIN plan_item_progress AS progress
+             ON progress.plan_id = reviews.plan_id AND progress.item_id = reviews.plan_item_id
+           WHERE reviews.review_id = ? AND reviews.status = 'changes_requested'
+             AND reviews.result_digest = ? AND runs.state = 'pull_request_open'
+             AND progress.status = 'passed' AND progress.active_attempt_id IS NULL
+             AND 1 = (
+               SELECT COUNT(*) FROM trusted_effect_approvals AS approval
+               JOIN execution_plans AS plans ON plans.plan_id = reviews.plan_id
+               WHERE approval.run_id = reviews.run_id
+                 AND approval.task_revision = runs.task_revision
+                 AND approval.plan_id = reviews.plan_id
+                 AND approval.plan_version = reviews.plan_version
+                 AND approval.plan_digest = plans.digest
+                 AND approval.base_sha = runs.base_sha
+                 AND approval.effect = 'repo_write' AND approval.decision = 'approve'
+                 AND approval.expires_at > ?
+                 AND NOT EXISTS (
+                   SELECT 1 FROM invalidated_approvals
+                   WHERE invalidated_approvals.approval_id = approval.approval_id
+                 )
+             )
+           ON CONFLICT DO NOTHING`,
+        ).bind(
+          `auto_review_loop_quota_fix_${suffix(resultDigest)}`,
+          fixAttemptId,
+          nowIso,
+          row.review_id,
+          resultDigest,
+          nowIso,
+        ),
         this.db.prepare(
           `INSERT INTO attempts (
              attempt_id, run_id, ordinal, mode, status, base_sha, repository,
