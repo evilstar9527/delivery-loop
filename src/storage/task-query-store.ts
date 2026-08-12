@@ -1216,6 +1216,14 @@ export class TaskQueryStore {
          AND reviews.plan_id = ?
          AND reviews.plan_version = ?
          AND publications.status = 'verified'
+         AND publications.publication_id = (
+           SELECT current.publication_id
+           FROM pull_request_publications AS current
+           WHERE current.run_id = reviews.run_id
+             AND current.status = 'verified'
+           ORDER BY current.created_at DESC, current.publication_id DESC
+           LIMIT 1
+         )
        ORDER BY reviews.iteration DESC, reviews.created_at DESC, reviews.review_id DESC
        LIMIT 1`,
     ).bind(runId, activePlanId, activePlanVersion).first<AutomatedReviewProjectionRow>();
