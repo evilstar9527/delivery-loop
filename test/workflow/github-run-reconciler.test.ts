@@ -310,6 +310,89 @@ describe('GitHub App workflow run reconciliation', () => {
     ]);
   });
 
+  it('projects current execution before an older active-run backlog entry', async () => {
+    const now = new Date('2026-07-25T07:01:00.000Z');
+    const oldRunId = 'run-old-active-backlog';
+    const oldAttemptId = 'attempt-old-active-backlog';
+    const oldGitHubRunId = '987654321';
+    const oldUpdatedAt = '2026-07-20T06:00:00.000Z';
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE runs SET state = 'executing' WHERE run_id = ?`,
+      ).bind(RUN_ID),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET mode = 'implement', lease_expires_at = ?, heartbeat_at = ?, updated_at = ?
+         WHERE attempt_id = ?`,
+      ).bind(
+        '2026-07-25T07:00:59.000Z',
+        '2026-07-25T06:59:00.000Z',
+        '2026-07-25T06:59:00.000Z',
+        ATTEMPT_ID,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO tasks (
+           task_id, source_system, tenant_key, source_task_key, task_revision,
+           task_digest, payload_ref, actor_type, actor_id, target_repository,
+           target_base_branch, target_environment, intent_kind, title, priority,
+           acceptance_criteria_count, allow_repository_write, allow_test_deploy,
+           allow_production_deploy, require_human_approval, created_at, updated_at
+         ) VALUES (
+           'task-old-active-backlog', 'manual', 'github-reconciler-test',
+           'old-active-backlog', 'revision-1', ?, 'r2://tasks/old-active-backlog',
+           'system', 'github-reconciler-test', ?, 'main', 'none', 'bug',
+           'Old active backlog', 'p1', 1, 0, 0, 0, 1, ?, ?
+         )`,
+      ).bind(`sha256:${'7'.repeat(64)}`, REPOSITORY, oldUpdatedAt, oldUpdatedAt),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO runs (
+           run_id, task_id, task_revision, task_digest, base_sha,
+           workflow_instance_id, state, version, created_at, updated_at
+         ) VALUES (?, 'task-old-active-backlog', 'revision-1', ?, ?, ?,
+                   'planning', 2, ?, ?)`,
+      ).bind(
+        oldRunId,
+        `sha256:${'7'.repeat(64)}`,
+        BASE_SHA,
+        oldRunId,
+        oldUpdatedAt,
+        oldUpdatedAt,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, github_run_id, github_head_sha, github_status,
+           version, lease_generation, lease_expires_at, heartbeat_at,
+           created_at, updated_at
+         ) VALUES (?, ?, 1, 'analysis', 'running', ?, ?, ?, ?, ?, 'requested',
+                   2, 1, ?, ?, ?, ?)`,
+      ).bind(
+        oldAttemptId,
+        oldRunId,
+        BASE_SHA,
+        REPOSITORY,
+        `${REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
+        oldGitHubRunId,
+        GITHUB_HEAD_SHA,
+        oldUpdatedAt,
+        oldUpdatedAt,
+        oldUpdatedAt,
+        oldUpdatedAt,
+      ),
+    ]);
+
+    const client = new FakeRunClient(runFact());
+    const reconciler = new GitHubRunReconciler(env.DB_CONTROL, client, {
+      now: () => now,
+    });
+    expect(await reconciler.reconcileAtRiskBatch(1, 90)).toEqual([
+      { attemptId: ATTEMPT_ID, disposition: 'applied' },
+    ]);
+    expect(client.calls).toEqual([
+      { repository: REPOSITORY, githubRunId: GITHUB_RUN_ID },
+    ]);
+  });
+
   it('uses only a short installation token to read and strictly parse a workflow run', async () => {
     const requests: Array<{ url: string; authorization: string | null }> = [];
     const client = new GitHubActionsApiClient(

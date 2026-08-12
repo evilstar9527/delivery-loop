@@ -178,7 +178,15 @@ export class GitHubRunReconciler {
            attempts.lease_expires_at <= ?
            OR COALESCE(attempts.heartbeat_at, attempts.updated_at) <= ?
          )
-       ORDER BY COALESCE(attempts.heartbeat_at, attempts.updated_at), attempts.attempt_id
+       ORDER BY
+         CASE
+           WHEN runs.state IN ('executing', 'verifying')
+            AND attempts.mode IN ('implement', 'review_fix') THEN 0
+           WHEN runs.state IN ('triaging', 'awaiting_approval', 'planning') THEN 1
+           WHEN runs.state IN ('awaiting_review', 'deploying') THEN 2
+           ELSE 3
+         END,
+         COALESCE(attempts.heartbeat_at, attempts.updated_at), attempts.attempt_id
        LIMIT ?`,
     ).bind(nowIso, heartbeatCutoff, limit).all<AtRiskCandidate>();
     const reconcilable = candidates.results.filter((candidate) =>
