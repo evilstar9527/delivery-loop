@@ -27,6 +27,7 @@ const HEAD_SHA = 'b'.repeat(40);
 const PLAN_DIGEST = `sha256:${'c'.repeat(64)}`;
 const TARGET: TestDeploymentTarget = {
   repository: 'example/repo',
+  provider: 'github_actions',
   environment: 'test',
   workflowPath: '.github/workflows/delivery-test-deploy.yml',
   oidcAudience: 'delivery-loop-test-deploy',

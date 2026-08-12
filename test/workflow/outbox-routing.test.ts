@@ -329,6 +329,22 @@ describe('production outbox Queue routing', () => {
         roleRef: 'test:delivery-loop-deployer',
       }]),
     })).not.toBeNull();
+    const yunxiaoRuntime = githubTestDeploymentRuntimeFromEnv({
+      ...base,
+      TOOL_BRIDGE: { fetch: async () => new Response('{}') } as unknown as Fetcher,
+      TEST_DEPLOY_TARGETS_JSON: JSON.stringify([{
+        repository: 'example/repo',
+        provider: 'yunxiao_pipeline',
+        environment: 'test',
+        workflowPath: '.github/workflows/delivery-test-deploy.yml',
+        oidcAudience: 'delivery-loop-test-deploy',
+        roleRef: 'test:yunxiao-pipeline',
+        organizationId: 'organization-1',
+        pipelineId: '5186274',
+        repositoryUrl: 'https://github.com/example/repo.git',
+      }]),
+    });
+    expect(yunxiaoRuntime?.destination).toBe('yunxiao_pipelines');
     expect(githubTestAcceptanceRuntimeFromEnv({
       ...appBindings,
       CONTROL_PLANE_URL: 'https://control.example.test',

@@ -6,14 +6,37 @@ import {
 
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const TEST_ROLE_PATTERN = /^test:[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/;
+const PIPELINE_ID_PATTERN = /^[0-9]{1,32}$/;
+const YUNXIAO_REPOSITORY_URL_PATTERN = /^https:\/\/[A-Za-z0-9.-]+\/[A-Za-z0-9_./-]+\.git$/;
 
 export const TestDeploymentTargetSchema = z.object({
   repository: z.string().regex(REPOSITORY_PATTERN),
+  provider: z.enum(['github_actions', 'yunxiao_pipeline']).default('github_actions'),
   environment: z.literal('test'),
   workflowPath: z.literal(TEST_DEPLOYMENT_WORKFLOW_PATH),
   oidcAudience: z.literal(TEST_DEPLOYMENT_OIDC_AUDIENCE),
   roleRef: z.string().regex(TEST_ROLE_PATTERN),
-}).strict();
+  organizationId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/).optional(),
+  pipelineId: z.string().regex(PIPELINE_ID_PATTERN).optional(),
+  repositoryUrl: z.string().regex(YUNXIAO_REPOSITORY_URL_PATTERN).optional(),
+}).strict().superRefine((target, context) => {
+  if (target.provider === 'yunxiao_pipeline') {
+    if (target.organizationId === undefined) {
+      context.addIssue({ code: 'custom', path: ['organizationId'], message: 'Yunxiao organizationId is required' });
+    }
+    if (target.pipelineId === undefined) {
+      context.addIssue({ code: 'custom', path: ['pipelineId'], message: 'Yunxiao pipelineId is required' });
+    }
+    if (target.repositoryUrl === undefined) {
+      context.addIssue({ code: 'custom', path: ['repositoryUrl'], message: 'Yunxiao repositoryUrl is required' });
+    }
+  } else if (
+    target.organizationId !== undefined || target.pipelineId !== undefined ||
+    target.repositoryUrl !== undefined
+  ) {
+    context.addIssue({ code: 'custom', path: ['provider'], message: 'Yunxiao fields require yunxiao_pipeline provider' });
+  }
+});
 
 const TestDeploymentTargetsSchema = z.array(TestDeploymentTargetSchema)
   .min(1)

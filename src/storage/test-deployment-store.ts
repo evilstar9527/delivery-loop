@@ -70,6 +70,7 @@ interface CandidateRow {
   has_deployment_external_fact: number;
   done_when_count: number;
   ref_sha: string | null;
+  ref_branch: string | null;
   ref_verified: number;
 }
 
@@ -96,6 +97,10 @@ interface ExistingRow {
   environment: string;
   oidc_audience: string;
   role_ref: string;
+  provider: 'github_actions' | 'yunxiao_pipeline';
+  provider_pipeline_id: string | null;
+  provider_repository_url: string | null;
+  provider_source_ref: string | null;
 }
 
 /** Atomically claims one deployment-only Plan Item and records its durable effect intent. */
@@ -221,12 +226,13 @@ export class TestDeploymentStore {
            deployment_id, run_id, run_version, plan_id, plan_version, plan_digest,
            plan_item_id, attempt_id, approval_id, repository, base_branch,
            base_sha, ref_sha, workflow_path, environment, oidc_audience,
-           role_ref, status, created_at, updated_at
+           role_ref, provider, provider_pipeline_id, provider_repository_url,
+           provider_source_ref, status, created_at, updated_at
          )
          SELECT ?, runs.run_id, runs.version, plans.plan_id, plans.plan_version,
                 plans.digest, items.item_id, attempts.attempt_id, approvals.approval_id,
                 tasks.target_repository, tasks.target_base_branch, runs.base_sha,
-                attempts.head_sha, ?, 'test', ?, ?, 'scheduled', ?, ?
+                attempts.head_sha, ?, 'test', ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?
          FROM attempts
          JOIN runs ON runs.run_id = attempts.run_id
          JOIN tasks ON tasks.task_id = runs.task_id
@@ -270,6 +276,10 @@ export class TestDeploymentStore {
         target.workflowPath,
         target.oidcAudience,
         target.roleRef,
+        target.provider,
+        target.pipelineId ?? null,
+        target.repositoryUrl ?? null,
+        candidate.ref_branch,
         nowIso,
         nowIso,
         approval.approval_id,
@@ -284,7 +294,9 @@ export class TestDeploymentStore {
            outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
            delivery_state, created_at, updated_at
          )
-         SELECT ?, run_id, 'test_deploy', 'github_deployments', ?, ?,
+         SELECT ?, run_id, 'test_deploy',
+                CASE WHEN provider = 'yunxiao_pipeline' THEN 'yunxiao_pipelines'
+                     ELSE 'github_deployments' END, ?, ?,
                 'pending', ?, ?
          FROM test_deployments WHERE deployment_id = ?
          ON CONFLICT DO NOTHING`,
@@ -326,7 +338,8 @@ export class TestDeploymentStore {
       candidate.has_test_deploy_effect !== 1 || candidate.command_ref_count !== 0 ||
       candidate.has_deployment_evidence_kind !== 1 ||
       candidate.has_deployment_external_fact !== 1 || candidate.done_when_count < 1 ||
-      candidate.ref_sha === null || candidate.ref_verified !== 1
+      candidate.ref_sha === null || candidate.ref_verified !== 1 ||
+      (target.provider === 'yunxiao_pipeline' && candidate.ref_branch === null)
     ) throw new TestDeploymentStoreError('policy_denied');
   }
 
@@ -378,6 +391,12 @@ export class TestDeploymentStore {
                  AND attempts.mode IN ('implement', 'review_fix')
                  AND attempts.status = 'completed' AND attempts.head_sha IS NOT NULL
                ORDER BY attempts.ordinal DESC LIMIT 1) AS ref_sha,
+              (SELECT attempts.head_branch FROM attempts
+               WHERE attempts.run_id = runs.run_id AND attempts.plan_id = plans.plan_id
+                 AND attempts.plan_version = plans.plan_version
+                 AND attempts.mode IN ('implement', 'review_fix')
+                 AND attempts.status = 'completed' AND attempts.head_sha IS NOT NULL
+               ORDER BY attempts.ordinal DESC LIMIT 1) AS ref_branch,
               EXISTS (
                 SELECT 1 FROM plan_item_verifications
                 WHERE plan_item_verifications.run_id = runs.run_id
@@ -433,11 +452,15 @@ export class TestDeploymentStore {
               deployments.plan_id, deployments.plan_version, deployments.plan_item_id,
               deployments.approval_id, deployments.ref_sha, deployments.repository,
               deployments.workflow_path, deployments.environment,
-              deployments.oidc_audience, deployments.role_ref, outbox.outbox_id
+              deployments.oidc_audience, deployments.role_ref,
+              deployments.provider, deployments.provider_pipeline_id,
+              deployments.provider_repository_url, deployments.provider_source_ref,
+              outbox.outbox_id
        FROM test_deployments AS deployments
        LEFT JOIN outbox
          ON outbox.payload_ref = 'd1://test-deployments/' || deployments.deployment_id
-        AND outbox.kind = 'test_deploy' AND outbox.destination = 'github_deployments'
+        AND outbox.kind = 'test_deploy'
+        AND outbox.destination IN ('github_deployments', 'yunxiao_pipelines')
        WHERE deployments.deployment_id = ?`,
     ).bind(deploymentId).first<ExistingRow>();
   }
@@ -451,7 +474,10 @@ export class TestDeploymentStore {
     if (
       row.outbox_id !== expectedOutboxId || row.repository !== target.repository ||
       row.workflow_path !== target.workflowPath || row.environment !== target.environment ||
-      row.oidc_audience !== target.oidcAudience || row.role_ref !== target.roleRef
+      row.oidc_audience !== target.oidcAudience || row.role_ref !== target.roleRef ||
+      row.provider !== target.provider || row.provider_pipeline_id !== (target.pipelineId ?? null)
+      || row.provider_repository_url !== (target.repositoryUrl ?? null)
+      || (target.provider === 'yunxiao_pipeline' && row.provider_source_ref === null)
     ) throw new TestDeploymentStoreError('state_conflict');
     return {
       deploymentId: row.deployment_id,
