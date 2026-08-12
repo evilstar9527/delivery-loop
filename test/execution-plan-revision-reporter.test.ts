@@ -19,6 +19,63 @@ function fencing(): MutableExecutionReporterAuthorization {
 }
 
 describe('execution Plan revision reporter', () => {
+  it('converges after two transient admission failures with the exact same fenced request', async () => {
+    const requests: Array<{ authorization: string | null; body: string }> = [];
+    let calls = 0;
+    const reporter = new ControlPlanePlanRevisionReporter({
+      controlPlaneUrl: 'https://control.delivery.test',
+      attemptId: 'attempt-review-plan-revision',
+      fencing: fencing(),
+    }, async (_input, init) => {
+      calls += 1;
+      requests.push({
+        authorization: new Headers(init?.headers).get('authorization'),
+        body: String(init?.body),
+      });
+      if (calls <= 2) {
+        return Response.json({ code: 'temporary' }, {
+          status: 503,
+          headers: { 'cache-control': 'no-store' },
+        });
+      }
+      return Response.json({
+        accepted: true,
+        revisionId: 'plan_revision_review',
+        analysisAttemptId: 'attempt_replan_review',
+        dispatchOutboxId: 'dispatch_replan_review',
+        created: true,
+        runVersion: 12,
+      }, { status: 202, headers: { 'cache-control': 'no-store' } });
+    });
+
+    await expect(reporter.request()).resolves.toMatchObject({
+      revisionId: 'plan_revision_review',
+      runVersion: 12,
+    });
+    expect(calls).toBe(3);
+    expect(requests).toEqual([requests[0], requests[0], requests[0]]);
+  });
+
+  it('stops after three transient admission failures', async () => {
+    let calls = 0;
+    const reporter = new ControlPlanePlanRevisionReporter({
+      controlPlaneUrl: 'https://control.delivery.test',
+      attemptId: 'attempt-review-plan-revision',
+      fencing: fencing(),
+    }, async () => {
+      calls += 1;
+      return Response.json({ code: 'temporary' }, {
+        status: 503,
+        headers: { 'cache-control': 'no-store' },
+      });
+    });
+
+    await expect(reporter.request()).rejects.toBeInstanceOf(
+      ExecutionControlPlaneReporterError,
+    );
+    expect(calls).toBe(3);
+  });
+
   it.each([
     ['transport', null],
     ['conflict', 409],
