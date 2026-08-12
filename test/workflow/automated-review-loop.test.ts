@@ -111,6 +111,8 @@ async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare("DELETE FROM quota_policies WHERE scope_key <> '*'"),
     env.DB_CONTROL.prepare('DELETE FROM approval_invalidations'),
+    env.DB_CONTROL.prepare('DELETE FROM review_approval_recoveries'),
+    env.DB_CONTROL.prepare('DELETE FROM review_approval_recovery_approvals'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revision_analysis_retries'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revisions'),
     env.DB_CONTROL.prepare('DELETE FROM plan_revision_source_facts'),
@@ -127,6 +129,7 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM attempt_head_updates'),
     env.DB_CONTROL.prepare('DELETE FROM evidence'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
+    env.DB_CONTROL.prepare('DELETE FROM github_write_credentials'),
     env.DB_CONTROL.prepare('DELETE FROM approvals'),
     env.DB_CONTROL.prepare('DELETE FROM plan_item_evidence_kinds'),
     env.DB_CONTROL.prepare('DELETE FROM plan_item_command_refs'),
@@ -1494,6 +1497,158 @@ describe('automated review loop', () => {
     });
     expect(revisionContext.revisionSource?.kind === 'review_feedback' &&
       revisionContext.revisionSource.data.body).toContain('[MAJOR]');
+  });
+
+  it('admits the same automated review replan from a recovered fix replacement', async () => {
+    const { authorization, context } = await scheduleAndContext();
+    const completed = await new AutomatedReviewResultStore(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+    ).complete(authorization, {
+      schemaVersion: '1',
+      contextDigest: await automatedReviewContextDigest(context),
+      verdict: 'changes_requested',
+      summary: 'The approved Plan must be revised before this finding can be fixed.',
+      findings: [{
+        severity: 'major',
+        title: 'The requested correction is outside the approved Plan body',
+        body: 'Create a new Plan version before changing the documented behavior.',
+        path: 'docs/Vision.md',
+        line: 38,
+      }],
+    }, new Date(NOW));
+    if (completed.fixAttemptId === undefined) {
+      throw new Error('automated review fix Attempt was not created');
+    }
+    const replacementAttemptId = 'attempt-automated-review-fix-recovered-replan';
+    const token = 'automated-review-fix-recovered-replan-token';
+    const [tokenDigest, oidcDigest, toolDigest] = await Promise.all([
+      canonicalSha256(token),
+      canonicalSha256('automated-review-fix-recovered-replan-oidc'),
+      canonicalSha256('automated-review-fix-recovered-replan-tool'),
+    ]);
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts SET status = 'failed', version = 2, lease_generation = 2,
+             lease_token_digest = NULL, lease_expires_at = NULL, updated_at = ?
+         WHERE attempt_id = ? AND status = 'pending'`,
+      ).bind(NOW, completed.fixAttemptId),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, plan_id, plan_version, plan_item_id,
+           claimed_progress_version, head_sha, recovered_from_attempt_id,
+           version, lease_generation, lease_token_digest, lease_expires_at,
+           created_at, updated_at
+         )
+         SELECT ?, run_id, ordinal + 1, mode, 'running', base_sha, repository,
+                workflow_ref, plan_id, plan_version, plan_item_id,
+                claimed_progress_version + 1, head_sha, attempt_id,
+                1, 1, ?, '2099-01-01T00:00:00.000Z', ?, ?
+         FROM attempts WHERE attempt_id = ?`,
+      ).bind(replacementAttemptId, tokenDigest, NOW, NOW, completed.fixAttemptId),
+      env.DB_CONTROL.prepare(
+        `UPDATE plan_item_progress SET active_attempt_id = ?, version = version + 1,
+             updated_at = ? WHERE plan_id = ? AND item_id = ?
+             AND active_attempt_id = ? AND status = 'in_progress'`,
+      ).bind(replacementAttemptId, NOW, PLAN_ID, ITEM_ID, completed.fixAttemptId),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_tokens (
+           token_id, attempt_id, oidc_token_digest, token_digest, tool_token_digest,
+           lease_generation, scopes_json, expires_at, created_at
+         ) VALUES ('token-automated-review-fix-recovered-replan', ?, ?, ?, ?, 1, ?,
+                   '2099-01-01T00:00:00.000Z', ?)`,
+      ).bind(
+        replacementAttemptId,
+        oidcDigest,
+        tokenDigest,
+        toolDigest,
+        JSON.stringify(EXECUTION_TOOL_ACTIONS),
+        NOW,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO approvals (
+           approval_id, run_id, task_revision, plan_id, plan_version, plan_digest,
+           base_sha, effect, actor_id, decision, nonce_digest, expires_at, created_at
+         ) VALUES ('approval-automated-review-fix-recovered-replan', ?, 'revision-1',
+                   ?, 1, ?, ?, 'repo_write', 'user:owner', 'approve', ?,
+                   '2099-01-01T00:00:00.000Z', ?)`,
+      ).bind(
+        RUN_ID,
+        PLAN_ID,
+        PLAN_DIGEST,
+        BASE_SHA,
+        `sha256:${'9'.repeat(64)}`,
+        NOW,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO github_write_credentials (
+           credential_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+           approval_id, repository, lease_generation, status,
+           authorization_expires_at, created_at, updated_at
+         ) VALUES ('credential-automated-review-fix-recovered-replan', ?, ?, ?, 1, ?,
+                   'approval-automated-review-fix-recovered-replan',
+                   'example/delivery-target', 1, 'active',
+                   '2099-01-01T00:00:00.000Z', ?, ?)`,
+      ).bind(RUN_ID, replacementAttemptId, PLAN_ID, ITEM_ID, NOW, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO review_approval_recovery_approvals (
+           recovery_approval_id, run_id, plan_id, plan_version, plan_item_id,
+           failed_attempt_id, root_review_attempt_id, approval_id, created_at, source_kind
+         ) VALUES ('recovery-approval-automated-review-fix-replan', ?, ?, 1, ?, ?, ?,
+                   'approval-automated-review-fix-recovered-replan', ?,
+                   'automated_fix_failed_pre_effect')`,
+      ).bind(
+        RUN_ID,
+        PLAN_ID,
+        ITEM_ID,
+        completed.fixAttemptId,
+        completed.fixAttemptId,
+        NOW,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO review_approval_recoveries (
+           recovery_id, recovery_approval_id, run_id, plan_id, plan_version,
+           plan_item_id, failed_attempt_id, root_review_attempt_id, approval_id,
+           replacement_attempt_id, created_at, source_kind
+         ) VALUES ('recovery-automated-review-fix-replan',
+                   'recovery-approval-automated-review-fix-replan', ?, ?, 1, ?, ?, ?,
+                   'approval-automated-review-fix-recovered-replan', ?, ?,
+                   'automated_fix_failed_pre_effect')`,
+      ).bind(
+        RUN_ID,
+        PLAN_ID,
+        ITEM_ID,
+        completed.fixAttemptId,
+        completed.fixAttemptId,
+        replacementAttemptId,
+        NOW,
+      ),
+    ]);
+
+    const response = await SELF.fetch(
+      `https://delivery-loop.test/v1/attempts/${replacementAttemptId}/plan-revision`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ expectedVersion: 1, leaseGeneration: 1 }),
+      },
+    );
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toMatchObject({
+      accepted: true,
+      created: true,
+      runVersion: 11,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT source_kind, source_ref FROM plan_revision_source_facts`,
+    ).first()).toEqual({
+      source_kind: 'review_feedback',
+      source_ref: `d1://automated-reviews/${context.review.id}`,
+    });
   });
 
   it('accepts a review after heartbeat version change and replays it after token revocation', async () => {

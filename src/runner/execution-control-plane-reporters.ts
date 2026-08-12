@@ -202,7 +202,7 @@ export class ControlPlanePlanRevisionReporter implements PlanRevisionReporter {
         expectedVersion: authorization.expectedVersion,
         leaseGeneration: authorization.leaseGeneration,
       });
-      for (let requestAttempt = 1; requestAttempt <= 2; requestAttempt += 1) {
+      for (let requestAttempt = 1; requestAttempt <= 3; requestAttempt += 1) {
         let response: Response;
         try {
           response = await this.fetcher(this.endpoint, {
@@ -215,12 +215,12 @@ export class ControlPlanePlanRevisionReporter implements PlanRevisionReporter {
             redirect: 'error',
           });
         } catch {
-          if (requestAttempt === 1) continue;
+          if (requestAttempt < 3) continue;
           throw new ExecutionControlPlaneReporterError();
         }
         if (response.status === 409 || response.status >= 500) {
           await response.body?.cancel();
-          if (requestAttempt === 1) continue;
+          if (requestAttempt < 3) continue;
           throw new ExecutionControlPlaneReporterError();
         }
         if (response.status !== 200 && response.status !== 202) {
@@ -239,7 +239,7 @@ export class ControlPlanePlanRevisionReporter implements PlanRevisionReporter {
             runVersion: accepted.data.runVersion,
           };
         } catch {
-          if (requestAttempt === 1) continue;
+          if (requestAttempt < 3) continue;
           throw new ExecutionControlPlaneReporterError();
         }
       }
