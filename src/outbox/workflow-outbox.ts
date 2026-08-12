@@ -149,6 +149,7 @@ export type RelayDestination =
   | 'github_actions'
   | 'github_api'
   | 'github_deployments'
+  | 'yunxiao_pipelines'
   | 'github_production_deployments'
   | 'github_acceptance'
   | 'github_test_rollback'

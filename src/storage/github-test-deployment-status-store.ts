@@ -80,6 +80,7 @@ interface ProjectionRow {
   attempt_version: number;
   lease_generation: number;
   attested: number;
+  provider: 'github_actions' | 'yunxiao_pipeline';
 }
 
 function validExternalUrl(value: string | null): boolean {
@@ -243,7 +244,7 @@ export class GitHubTestDeploymentStatusStore {
       );
       return disposition;
     }
-    if (fact.state === 'success' && projection.attested !== 1) {
+    if (fact.state === 'success' && projection.provider === 'github_actions' && projection.attested !== 1) {
       throw new GitHubTestDeploymentStatusError('attestation_required');
     }
     if (fact.state === 'in_progress') {
@@ -339,7 +340,10 @@ export class GitHubTestDeploymentStatusStore {
          )
          SELECT ?, run_id, attempt_id, plan_id, plan_version, plan_item_id,
                 'deployment', 'passed', ref_sha, external_url,
-                'Signed GitHub test deployment succeeded', 'unverified', ?, ?
+                CASE WHEN provider = 'yunxiao_pipeline'
+                     THEN 'Verified Yunxiao test deployment succeeded'
+                     ELSE 'Signed GitHub test deployment succeeded' END,
+                'unverified', ?, ?
          FROM test_deployments
          WHERE deployment_id = ? AND status = 'succeeded'
            AND external_state = 'success' AND external_updated_at = ?
@@ -416,8 +420,12 @@ export class GitHubTestDeploymentStatusStore {
            evidence_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
            kind, status, sha, external_url, summary, verification_status,
            observed_at, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, 'deployment', 'failed', ?, ?,
-                   'Signed GitHub test deployment failed', 'verified', ?, ?)
+         ) SELECT ?, ?, ?, ?, ?, ?, 'deployment', 'failed', ?, ?,
+                  CASE WHEN provider = 'yunxiao_pipeline'
+                       THEN 'Verified Yunxiao test deployment failed'
+                       ELSE 'Signed GitHub test deployment failed' END,
+                  'verified', ?, ?
+           FROM test_deployments WHERE deployment_id = ?
          ON CONFLICT DO NOTHING`,
       ).bind(
         evidenceId,
@@ -430,6 +438,7 @@ export class GitHubTestDeploymentStatusStore {
         fact.environmentUrl,
         fact.externalUpdatedAt,
         observedAt,
+        row.deployment_id,
       ),
       this.db.prepare(
         `UPDATE test_deployments SET evidence_id = ?, updated_at = ?
@@ -489,6 +498,7 @@ export class GitHubTestDeploymentStatusStore {
               progress.active_attempt_id AS progress_active_attempt_id,
               attempts.status AS attempt_status, attempts.version AS attempt_version,
               attempts.lease_generation,
+              deployments.provider,
               EXISTS (SELECT 1 FROM test_deployment_oidc_attestations
                       WHERE deployment_id = deployments.deployment_id) AS attested
        FROM test_deployments AS deployments

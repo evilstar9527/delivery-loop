@@ -28,6 +28,7 @@ export class OutboxDestinationRouter {
     private readonly githubProductionDeploymentProcessor: DestinationOutboxProcessor | null = null,
     private readonly githubTestRollbackProcessor: DestinationOutboxProcessor | null = null,
     private readonly feishuCardProcessor: DestinationOutboxProcessor | null = null,
+    private readonly yunxiaoPipelineProcessor: DestinationOutboxProcessor | null = null,
   ) {}
 
   async deliver(outboxId: string): Promise<OutboxRouteResult> {
@@ -61,6 +62,10 @@ export class OutboxDestinationRouter {
         return this.githubDeploymentProcessor === null
           ? 'unconfigured'
           : await this.githubDeploymentProcessor.deliver(outboxId);
+      case 'yunxiao_pipelines':
+        return this.yunxiaoPipelineProcessor === null
+          ? 'unconfigured'
+          : await this.yunxiaoPipelineProcessor.deliver(outboxId);
       case 'github_acceptance':
         return this.githubAcceptanceProcessor === null
           ? 'unconfigured'

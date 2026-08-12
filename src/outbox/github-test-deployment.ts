@@ -23,7 +23,12 @@ export interface GitHubTestDeploymentRequest {
   deploymentId: string;
   repository: string;
   refSha: string;
+  sourceRef?: string;
+  repositoryUrl?: string;
   environment: 'test';
+  runId?: string;
+  attemptId?: string;
+  deliveryAttempt?: number;
 }
 
 export interface GitHubTestDeploymentResult {
@@ -202,6 +207,7 @@ export interface TestDeploymentOutboxProcessorOptions {
   generateLeaseToken?: () => string;
   outboxLeaseMs?: number;
   attemptLeaseMs?: number;
+  destination?: 'github_deployments' | 'yunxiao_pipelines';
 }
 
 interface DeploymentRow {
@@ -216,6 +222,8 @@ interface DeploymentRow {
   approval_id: string;
   repository: string;
   ref_sha: string;
+  provider_repository_url: string | null;
+  provider_source_ref: string | null;
   status: string;
   run_state: string;
   run_current_version: number;
@@ -239,6 +247,7 @@ export class TestDeploymentOutboxProcessor {
   private readonly fenced: FencedOutboxProcessor;
   private readonly now: () => Date;
   private readonly attemptLeaseMs: number;
+  private readonly destination: 'github_deployments' | 'yunxiao_pipelines';
 
   constructor(
     private readonly db: D1Database,
@@ -247,9 +256,10 @@ export class TestDeploymentOutboxProcessor {
   ) {
     this.now = options.now ?? (() => new Date());
     this.attemptLeaseMs = options.attemptLeaseMs ?? 60 * 60_000;
+    this.destination = options.destination ?? 'github_deployments';
     this.fenced = new FencedOutboxProcessor(
       db,
-      'github_deployments',
+      this.destination,
       async (outbox) => await this.perform(outbox),
       {
         ...(options.now === undefined ? {} : { now: options.now }),
@@ -313,12 +323,26 @@ export class TestDeploymentOutboxProcessor {
     }
     // The Deployment may exist even when its create response is lost. Retain
     // the reservation until reconciliation/terminal state instead of undercounting.
-    const result: GitHubTestDeploymentResult = await this.effects.ensureTestDeployment({
+    const request: GitHubTestDeploymentRequest = {
       deploymentId: deployment.deployment_id,
       repository: deployment.repository,
       refSha: deployment.ref_sha,
       environment: 'test',
-    });
+      ...(this.destination === 'yunxiao_pipelines'
+        ? {
+          runId: deployment.run_id,
+          attemptId: deployment.attempt_id,
+          ...(deployment.provider_source_ref === null
+            ? {}
+            : { sourceRef: deployment.provider_source_ref }),
+          ...(deployment.provider_repository_url === null
+            ? {}
+            : { repositoryUrl: deployment.provider_repository_url }),
+          deliveryAttempt: outbox.attemptCount,
+        }
+        : {}),
+    };
+    const result: GitHubTestDeploymentResult = await this.effects.ensureTestDeployment(request);
     if (!/^[0-9]+$/.test(result.githubDeploymentId)) {
       throw new OutboxEffectError('github_deployment_id_invalid');
     }
@@ -327,7 +351,9 @@ export class TestDeploymentOutboxProcessor {
     await this.db.batch([
       this.db.prepare(
         `UPDATE test_deployments
-         SET status = 'created_unverified', github_deployment_id = ?, updated_at = ?
+         SET status = 'created_unverified', github_deployment_id = ?,
+             provider_run_id = CASE WHEN provider = 'yunxiao_pipeline' THEN ? ELSE provider_run_id END,
+             updated_at = ?
          WHERE deployment_id = ? AND status = 'scheduled'
            AND github_deployment_id IS NULL
            AND EXISTS (
@@ -370,7 +396,7 @@ export class TestDeploymentOutboxProcessor {
                          AND newer.approval_id > approvals.approval_id))
                )
            )`,
-      ).bind(result.githubDeploymentId, nowIso, deploymentId, nowIso),
+      ).bind(result.githubDeploymentId, result.githubDeploymentId, nowIso, deploymentId, nowIso),
       this.db.prepare(
         `UPDATE attempts
          SET status = 'running', version = 1, lease_generation = 1,
@@ -405,7 +431,9 @@ export class TestDeploymentOutboxProcessor {
       `SELECT deployments.deployment_id, deployments.run_id, deployments.run_version,
               deployments.plan_id, deployments.plan_version, deployments.plan_digest,
               deployments.plan_item_id, deployments.attempt_id, deployments.approval_id,
-              deployments.repository, deployments.ref_sha, deployments.status,
+              deployments.repository, deployments.ref_sha,
+              deployments.provider_repository_url, deployments.provider_source_ref,
+              deployments.status,
               runs.state AS run_state, runs.version AS run_current_version,
               runs.active_plan_id, runs.active_plan_version, runs.active_plan_digest,
               plans.status AS plan_status, progress.status AS progress_status,

@@ -192,7 +192,7 @@ export default {
     const destinations: RelayDestination[] = ['cloudflare_workflows'];
     if (githubDispatch !== null) destinations.push('github_actions');
     if (githubPullRequests !== null) destinations.push('github_api');
-    if (githubTestDeployments !== null) destinations.push('github_deployments');
+    if (githubTestDeployments !== null) destinations.push(githubTestDeployments.destination);
     if (githubTestAcceptances !== null) destinations.push('github_acceptance');
     if (githubTestRollbacks !== null) destinations.push('github_test_rollback');
     if (githubProductionDeployments !== null) {
@@ -399,11 +399,14 @@ export default {
       workflowProcessor,
       githubDispatchProcessorFromEnv(env),
       githubPullRequests?.processor ?? null,
-      githubTestDeployments?.processor ?? null,
+      githubTestDeployments?.destination === 'github_deployments'
+        ? githubTestDeployments.processor : null,
       githubTestAcceptances?.processor ?? null,
       githubProductionDeployments?.processor ?? null,
       githubTestRollbacks?.processor ?? null,
       feishuCards?.processor ?? null,
+      githubTestDeployments?.destination === 'yunxiao_pipelines'
+        ? githubTestDeployments.processor : null,
     );
     await consumeOutboxBatch(batch, router);
   },
