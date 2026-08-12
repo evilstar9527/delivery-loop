@@ -5079,3 +5079,10 @@
 - 发布后验证：`curl -fsS -i https://delivery-loop-control-plane.eve55265.workers.dev/healthz`返回HTTP 200，body为`{"ok":true,"service":"delivery-loop-control-plane"}`；Cloudflare deployment inventory复读同一version/message。发布流程未调用Tool Bridge create、未创建Task/Action/pipeline run、未执行D1 repair、Workflow restart/recreate、Secret/credential修改、rotation或rollback。
 - 验证边界：typecheck、变更文件ESLint、Node adapter 8 tests、workerd test-deployment/routing 14 tests、Worker dry-run、573-file Secret scan、docs links与`git diff --check`通过。完整`pnpm run verify`后续受既有Git子进程测试27个5秒超时影响（12 files/849 passed），不将该次尝试记作全量通过；发布使用的Worker bundle dry-run和线上healthz均成功。
 - 遗留：真实端到端仍需一个受控Task/ExecutionPlan和test_deploy approval，才能让控制面自然创建唯一云效run并轮询测试环境结果；本轮没有触发该业务副作用。
+
+## Round 433 — 2026-08-12
+- 目标：解决并更新 PR #277 `Codex/yunxiao control plane` 与最新`origin/main`的冲突。
+- 冲突处理：PR原先为`CONFLICTING/DIRTY`，base=`ff868e86b300a374e5dd76d3bbe40eb95b0c5d5f`。按受保护rebase流程先fetch并评估重叠文件；rebase保留main最新PAT provider/runtime secret/reconciliation实现，同时保留Yunxiao provider、0078、独立outbox和exact SHA校验。未覆盖用户`.revision31~33`文件。
+- 交付：branch rebase后head=`f8224ee6288b99ffd57c907980df66c770bbb685`，使用`git push --force-with-lease`更新`origin/codex/yunxiao-control-plane`，PR #277已恢复`MERGEABLE/CLEAN`。
+- 验证：`pnpm run typecheck`、变更文件ESLint、Node PAT/Yunxiao 2 files/10 tests、workerd test-deployment/routing 2 files/14 tests、`git diff --check`均exit 0；required GitHub CI [31605543119](https://github.com/evilstar9527/delivery-loop/actions/runs/31605543119) / job [94143418476](https://github.com/evilstar9527/delivery-loop/actions/runs/31605543119/job/94143418476) completed/success（4m51s）。
+- 边界：本轮没有merge PR、生产发布、D1 repair、Task/Action/云效run、Secret/credential修改或rollback；PR仍等待后续合并决策。
