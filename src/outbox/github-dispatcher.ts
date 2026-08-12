@@ -631,7 +631,8 @@ export class GitHubDispatchOutboxProcessor {
            ON review_feedback_attempts.review_attempt_id =
               COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
          LEFT JOIN automated_review_fix_attempts
-           ON automated_review_fix_attempts.fix_attempt_id = attempts.attempt_id
+           ON automated_review_fix_attempts.fix_attempt_id =
+              COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
          LEFT JOIN automated_review_replacement_redispatches
            ON automated_review_replacement_redispatches.replacement_attempt_id = attempts.attempt_id
           AND automated_review_replacement_redispatches.outbox_id = ?
@@ -845,7 +846,8 @@ export class GitHubDispatchOutboxProcessor {
                          FROM automated_review_fix_attempts AS automated_fix
                          JOIN automated_reviews AS automated_review
                            ON automated_review.review_id = automated_fix.review_id
-                         WHERE automated_fix.fix_attempt_id = attempts.attempt_id
+                         WHERE automated_fix.fix_attempt_id =
+                               COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
                            AND automated_review.run_id = attempts.run_id
                            AND automated_review.plan_id = attempts.plan_id
                            AND automated_review.plan_version = attempts.plan_version

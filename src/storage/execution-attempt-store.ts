@@ -527,7 +527,9 @@ export class ExecutionAttemptContextStore {
        JOIN automated_reviews AS reviews ON reviews.review_id = fixes.review_id
        JOIN pull_request_publications AS publications
          ON publications.publication_id = reviews.publication_id
-       WHERE fixes.fix_attempt_id = ?
+       JOIN attempts AS requested_attempt ON requested_attempt.attempt_id = ?
+       WHERE fixes.fix_attempt_id =
+             COALESCE(requested_attempt.recovered_from_attempt_id, requested_attempt.attempt_id)
          AND reviews.run_id = ? AND reviews.plan_id = ?
          AND reviews.plan_version = ? AND reviews.plan_item_id = ?
          AND reviews.status = 'changes_requested'`,

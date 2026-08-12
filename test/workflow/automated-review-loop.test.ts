@@ -122,6 +122,8 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
     env.DB_CONTROL.prepare('DELETE FROM pull_request_publications'),
     env.DB_CONTROL.prepare('DELETE FROM pull_request_drafts'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_done_when_evidence'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_verifications'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_head_updates'),
     env.DB_CONTROL.prepare('DELETE FROM evidence'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
@@ -1101,6 +1103,179 @@ describe('automated review loop', () => {
       headSha: fixedHead,
       branch: BRANCH,
     }, new Date(NOW))).toMatchObject({ headSha: fixedHead, branch: BRANCH, created: true });
+  });
+
+  it('resolves an automated review_fix replacement through its immutable root lineage', async () => {
+    const { authorization, context } = await scheduleAndContext();
+    const completed = await new AutomatedReviewResultStore(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+    ).complete(authorization, {
+      schemaVersion: '1',
+      contextDigest: await automatedReviewContextDigest(context),
+      verdict: 'changes_requested',
+      summary: 'One root-bound fix is required.',
+      findings: [{
+        severity: 'major',
+        title: 'Preserve the immutable source lineage',
+        body: 'A replacement must consume the same automated review feedback.',
+        path: 'src/example.ts',
+        line: 42,
+      }],
+    }, new Date(NOW));
+    if (completed.fixAttemptId === undefined) {
+      throw new Error('automated review fix Attempt was not created');
+    }
+    const rootAttemptId = completed.fixAttemptId;
+    const replacementAttemptId = 'attempt-automated-fix-pre-effect-replacement';
+    const replacementOutboxId = 'dispatch-automated-fix-pre-effect-replacement';
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `DELETE FROM outbox WHERE payload_ref = ? AND kind = 'execution_dispatch'`,
+      ).bind(`d1://attempts/${rootAttemptId}`),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET status = 'failed', github_status = 'completed', github_conclusion = 'failure',
+             version = version + 1, lease_generation = lease_generation + 1, updated_at = ?
+         WHERE attempt_id = ? AND status = 'pending'`,
+      ).bind(NOW, rootAttemptId),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, plan_id, plan_version, plan_item_id,
+           claimed_progress_version, head_sha, recovered_from_attempt_id,
+           version, lease_generation, created_at, updated_at
+         )
+         SELECT ?, run_id, ordinal + 1, mode, 'pending', base_sha, repository,
+                workflow_ref, plan_id, plan_version, plan_item_id,
+                claimed_progress_version + 1, head_sha, attempt_id,
+                0, 0, ?, ?
+         FROM attempts WHERE attempt_id = ?`,
+      ).bind(replacementAttemptId, NOW, NOW, rootAttemptId),
+      env.DB_CONTROL.prepare(
+        `UPDATE plan_item_progress
+         SET active_attempt_id = ?, version = version + 1, updated_at = ?
+         WHERE plan_id = ? AND item_id = ? AND active_attempt_id = ?`,
+      ).bind(replacementAttemptId, NOW, PLAN_ID, ITEM_ID, rootAttemptId),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         ) VALUES (?, ?, 'execution_dispatch', 'github_actions', ?, ?, 'pending', ?, ?)`,
+      ).bind(
+        replacementOutboxId,
+        RUN_ID,
+        `d1://attempts/${replacementAttemptId}`,
+        `execution-automated-fix-replacement:${rootAttemptId}`,
+        NOW,
+        NOW,
+      ),
+    ]);
+
+    const effects = new FakeDispatch();
+    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
+      allowedRepositories: ['example/delivery-target'],
+      controlPlaneUrl: 'https://control.delivery.test',
+      now: () => new Date(NOW),
+    }).deliver(replacementOutboxId)).toBe('settled');
+    expect(effects.requests).toBe(1);
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'running', version = version + 1,
+         lease_expires_at = '2099-01-01T00:00:00.000Z', updated_at = ?
+       WHERE attempt_id = ? AND status = 'starting'`,
+    ).bind(NOW, replacementAttemptId).run();
+    const replacement = await env.DB_CONTROL.prepare(
+      `SELECT version, lease_generation FROM attempts WHERE attempt_id = ?`,
+    ).bind(replacementAttemptId).first<{ version: number; lease_generation: number }>();
+    if (replacement === null) throw new Error('replacement Attempt is unavailable');
+    const replacementAuthorization: RunnerAuthorization = {
+      attemptId: replacementAttemptId,
+      runId: RUN_ID,
+      mode: 'review_fix',
+      status: 'running',
+      version: replacement.version,
+      leaseGeneration: replacement.lease_generation,
+      leaseExpiresAt: '2099-01-01T00:00:00.000Z',
+      scopes: [...EXECUTION_TOOL_ACTIONS],
+    };
+    const replacementContext = await new ExecutionAttemptContextStore(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+    ).get(replacementAuthorization);
+    expect(replacementContext.reviewFeedback).toMatchObject({
+      reviewId: completed.reviewId,
+      sourceHeadSha: HEAD_SHA,
+      branch: BRANCH,
+    });
+
+    const fixedHead = '7'.repeat(40);
+    expect(await new ExecutionHeadStore(env.DB_CONTROL).record(replacementAuthorization, {
+      expectedVersion: replacement.version,
+      leaseGeneration: replacement.lease_generation,
+      parentSha: HEAD_SHA,
+      headSha: fixedHead,
+      branch: BRANCH,
+    }, new Date(NOW))).toMatchObject({ headSha: fixedHead, branch: BRANCH, created: true });
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO evidence (
+           evidence_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+           kind, status, command_ref, exit_code, sha, summary,
+           verification_status, observed_at, created_at
+         ) VALUES ('evidence-automated-fix-replacement-test', ?, ?, ?, 1, ?, 'test',
+                   'passed', 'verify:all', 0, ?, 'Verified replacement test.',
+                   'verified', ?, ?)`,
+      ).bind(RUN_ID, replacementAttemptId, PLAN_ID, ITEM_ID, fixedHead, NOW, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO plan_item_verifications (
+           verification_id, run_id, plan_id, plan_version, plan_item_id,
+           attempt_id, head_sha, progress_version, evidence_set_digest, status, created_at
+         )
+         SELECT 'verification-automated-fix-replacement', ?, ?, 1, ?, ?, ?,
+                progress.version, ?, 'passed', ?
+         FROM plan_item_progress AS progress
+         WHERE progress.plan_id = ? AND progress.item_id = ?
+           AND progress.active_attempt_id = ?`,
+      ).bind(
+        RUN_ID,
+        PLAN_ID,
+        ITEM_ID,
+        replacementAttemptId,
+        fixedHead,
+        `sha256:${'8'.repeat(64)}`,
+        NOW,
+        PLAN_ID,
+        ITEM_ID,
+        replacementAttemptId,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO plan_item_done_when_evidence (
+           verification_id, plan_id, item_id, done_when_position,
+           evidence_position, evidence_id
+         )
+         VALUES ('verification-automated-fix-replacement', ?, ?, 0, 0,
+                 'evidence-automated-fix-replacement-test')`,
+      ).bind(PLAN_ID, ITEM_ID),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts SET status = 'completed', head_sha = ?, head_branch = ?,
+             version = version + 1, updated_at = ? WHERE attempt_id = ?`,
+      ).bind(fixedHead, BRANCH, NOW, replacementAttemptId),
+      env.DB_CONTROL.prepare(
+        `UPDATE plan_item_progress SET status = 'passed', active_attempt_id = NULL,
+             version = version + 1, updated_at = ? WHERE plan_id = ? AND item_id = ?`,
+      ).bind(NOW, PLAN_ID, ITEM_ID),
+    ]);
+    expect(await new AutomatedReviewScheduler(env.DB_CONTROL)
+      .resumeFixedRuns(1, new Date(NOW))).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state FROM runs WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ state: 'pull_request_open' });
+    expect(await new AutomatedReviewScheduler(env.DB_CONTROL)
+      .scheduleRun(RUN_ID, new Date(NOW))).toMatchObject({
+        iteration: 2,
+        headSha: fixedHead,
+        created: true,
+      });
   });
 
   it('completes an approved review without creating a write Attempt', async () => {

@@ -652,6 +652,7 @@ export class ExecutionProgressReconciler {
            AND attempts.mode IN ('implement', 'review_fix')
          ORDER BY attempts.ordinal DESC, candidate.created_at DESC LIMIT 1
        )
+       JOIN attempts AS latest_attempt ON latest_attempt.attempt_id = latest.attempt_id
        WHERE runs.state IN ('executing', 'verifying')
          AND runs.active_plan_version = plans.plan_version
          AND runs.active_plan_digest = plans.digest
@@ -671,7 +672,8 @@ export class ExecutionProgressReconciler {
          )
          AND NOT EXISTS (
            SELECT 1 FROM automated_review_fix_attempts
-           WHERE automated_review_fix_attempts.fix_attempt_id = latest.attempt_id
+           WHERE automated_review_fix_attempts.fix_attempt_id =
+                 COALESCE(latest_attempt.recovered_from_attempt_id, latest_attempt.attempt_id)
          )
          AND EXISTS (
            SELECT 1 FROM trusted_effect_approvals AS approval

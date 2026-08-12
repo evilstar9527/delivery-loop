@@ -255,6 +255,13 @@ export default {
       // recovery is D1-only, so activate one before any global relay or
       // external observation can starve the next approval boundary.
       await planRevisionAnalysis.reconcilePreparedPlans(1);
+      // A fresh identity-bound approval may already have fenced an exact
+      // pre-effect review failure and made its unique replacement ready. This
+      // recovery is D1-only; create and relay one replacement before a stale
+      // GitHub observation can consume the Free-plan scheduled CPU budget.
+      if ((await recoverApprovedGitHubReviewFeedbacksFromEnv(env)).length > 0) {
+        await relay.relayDestination('github_actions', 1);
+      }
       // A completed Action is the authority needed to verify Evidence and
       // close its Plan Item. Project stale active runs before even the global
       // relay: that relay scans historical pending outbox rows and can exhaust
@@ -303,9 +310,6 @@ export default {
       // bounded D1-only recovery must run before external scans can consume the
       // Free-plan CPU budget; the new dispatch remains durable for relay.
       await recoverLostGitHubReviewFeedbacksFromEnv(env);
-      // A fresh OWNER approval resumes only its immutable failed-review
-      // lineage. Generic initial scheduling explicitly excludes this Run.
-      await recoverApprovedGitHubReviewFeedbacksFromEnv(env);
       // A Run already activated by an exact approval has no remaining external
       // read dependency. Claim one ready Item before higher-cost observation
       // work can exhaust the Free-plan scheduled CPU budget; the resulting

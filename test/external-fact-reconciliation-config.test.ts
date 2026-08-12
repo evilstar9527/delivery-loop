@@ -61,12 +61,16 @@ describe('periodic external-fact reconciliation wiring', () => {
       workflowDrain,
     );
     const reviewApprovalRecovery = worker.indexOf(
-      'await recoverApprovedGitHubReviewFeedbacksFromEnv(env);',
-      reviewAttemptRecovery,
+      'await recoverApprovedGitHubReviewFeedbacksFromEnv(env)',
+      preparedPlanRevisionRecovery,
+    );
+    const reviewApprovalRecoveryRelay = worker.indexOf(
+      "await relay.relayDestination('github_actions', 1);",
+      reviewApprovalRecovery,
     );
     const readyAttemptScheduling = worker.indexOf(
       'await executionProgress.reconcileReadyAttempts(1);',
-      reviewApprovalRecovery,
+      reviewAttemptRecovery,
     );
     const relay = worker.indexOf('await relay.relay();', workflowDrain);
     const preparedPublicationRecovery = worker.indexOf(
@@ -131,10 +135,13 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(priorityReviewRelay).toBeLessThan(preparedPlanRevisionRecovery);
     expect(preparedPlanRevisionRecovery).toBeLessThan(atRiskGitHubReconciliation);
     expect(preparedPlanRevisionRecovery).toBeLessThan(priorityRelay);
+    expect(reviewApprovalRecovery).toBeGreaterThan(preparedPlanRevisionRecovery);
+    expect(reviewApprovalRecovery).toBeLessThan(atRiskGitHubReconciliation);
+    expect(reviewApprovalRecoveryRelay).toBeGreaterThan(reviewApprovalRecovery);
+    expect(reviewApprovalRecoveryRelay).toBeLessThan(atRiskGitHubReconciliation);
     expect(priorityRelay).toBeLessThan(workflowDrain);
     expect(reviewAttemptRecovery).toBeGreaterThan(workflowDrain);
-    expect(reviewApprovalRecovery).toBeGreaterThan(reviewAttemptRecovery);
-    expect(readyAttemptScheduling).toBeGreaterThan(reviewApprovalRecovery);
+    expect(readyAttemptScheduling).toBeGreaterThan(reviewAttemptRecovery);
     expect(atRiskGitHubReconciliation).toBeGreaterThan(priorityExecutionScheduling);
     expect(atRiskGitHubReconciliation).toBeLessThan(priorityRelay);
     expect(priorityPullRequestReconciliation).toBeLessThan(atRiskGitHubReconciliation);
@@ -175,7 +182,7 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await recoverLostGitHubReviewFeedbacksFromEnv(env);',
     );
     expect(worker.slice(reviewApprovalRecovery + 1)).not.toContain(
-      'await recoverApprovedGitHubReviewFeedbacksFromEnv(env);',
+      'await recoverApprovedGitHubReviewFeedbacksFromEnv(env)',
     );
     expect(worker.slice(relay, atRiskGitHubReconciliation)).not.toContain(
       'reconcileGitHubRunsFromEnv(env',

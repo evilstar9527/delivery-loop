@@ -462,15 +462,6 @@ export class GitHubReviewApprovalRecoveryReconciler {
           AND approval.effect = 'repo_write'
           AND approval.decision = 'approve'
           AND approval.expires_at > ?
-         JOIN review_feedback_attempts AS review_lineage
-           ON review_lineage.review_attempt_id = recovery.root_review_attempt_id
-         JOIN github_review_feedbacks AS feedback
-           ON feedback.feedback_id = review_lineage.feedback_id
-          AND feedback.run_id = recovery.run_id
-          AND feedback.plan_id = recovery.plan_id
-          AND feedback.plan_version = recovery.plan_version
-          AND feedback.plan_item_id = recovery.plan_item_id
-          AND feedback.source_head_sha = failed.head_sha
          WHERE recovery.recovery_approval_id = ?
            AND recovery.plan_version = failed.plan_version
            AND runs.state = 'awaiting_approval'
@@ -486,6 +477,17 @@ export class GitHubReviewApprovalRecoveryReconciler {
            AND (
              (
                recovery.source_kind = 'failed_dependency'
+               AND EXISTS (
+                 SELECT 1 FROM review_feedback_attempts AS review_lineage
+                 JOIN github_review_feedbacks AS feedback
+                   ON feedback.feedback_id = review_lineage.feedback_id
+                 WHERE review_lineage.review_attempt_id = recovery.root_review_attempt_id
+                   AND feedback.run_id = recovery.run_id
+                   AND feedback.plan_id = recovery.plan_id
+                   AND feedback.plan_version = recovery.plan_version
+                   AND feedback.plan_item_id = recovery.plan_item_id
+                   AND feedback.source_head_sha = failed.head_sha
+               )
                AND failed.status = 'failed'
                AND EXISTS (
                  SELECT 1 FROM attempt_failures
@@ -510,6 +512,17 @@ export class GitHubReviewApprovalRecoveryReconciler {
              OR
              (
                recovery.source_kind = 'lost_pre_effect'
+               AND EXISTS (
+                 SELECT 1 FROM review_feedback_attempts AS review_lineage
+                 JOIN github_review_feedbacks AS feedback
+                   ON feedback.feedback_id = review_lineage.feedback_id
+                 WHERE review_lineage.review_attempt_id = recovery.root_review_attempt_id
+                   AND feedback.run_id = recovery.run_id
+                   AND feedback.plan_id = recovery.plan_id
+                   AND feedback.plan_version = recovery.plan_version
+                   AND feedback.plan_item_id = recovery.plan_item_id
+                   AND feedback.source_head_sha = failed.head_sha
+               )
                AND failed.status = 'lost'
                AND failed.github_status = 'completed'
                AND failed.github_conclusion IS NOT NULL
@@ -544,12 +557,79 @@ export class GitHubReviewApprovalRecoveryReconciler {
                    AND incident.resolution_code = 'attempt_fenced'
                )
              )
+             OR
+             (
+               recovery.source_kind = 'automated_fix_failed_pre_effect'
+               AND failed.status = 'failed'
+               AND failed.github_status = 'completed'
+               AND failed.github_conclusion IS NOT NULL
+               AND failed.github_conclusion <> 'success'
+               AND failed.recovered_from_attempt_id IS NULL
+               AND EXISTS (
+                 SELECT 1 FROM attempt_failures AS failure
+                 WHERE failure.attempt_id = failed.attempt_id
+                   AND failure.failure_class = 'unknown'
+                   AND failure.failure_code = 'unknown_failure'
+                   AND failure.failure_site = 'external_reconciliation'
+                   AND failure.needed_human_input = 'manual_investigation'
+               )
+               AND EXISTS (
+                 SELECT 1
+                 FROM automated_review_fix_attempts AS fixes
+                 JOIN automated_reviews AS review ON review.review_id = fixes.review_id
+                 JOIN pull_request_publications AS publication
+                   ON publication.publication_id = review.publication_id
+                 WHERE fixes.fix_attempt_id = failed.attempt_id
+                   AND review.status = 'changes_requested'
+                   AND review.run_id = recovery.run_id
+                   AND review.plan_id = recovery.plan_id
+                   AND review.plan_version = recovery.plan_version
+                   AND review.plan_item_id = recovery.plan_item_id
+                   AND review.repository = failed.repository
+                   AND review.source_head_sha = failed.head_sha
+                   AND fixes.source_head_sha = review.source_head_sha
+                   AND fixes.branch = review.branch
+                   AND publication.status = 'verified'
+                   AND publication.run_id = recovery.run_id
+                   AND publication.repository = review.repository
+                   AND publication.github_pr_number = review.github_pr_number
+                   AND publication.base_branch = review.base_branch
+                   AND publication.head_branch = review.branch
+                   AND publication.head_sha = review.source_head_sha
+                   AND review.source_head_sha = (
+                     SELECT updates.head_sha
+                     FROM attempt_head_updates AS updates
+                     JOIN attempts AS head_attempt
+                       ON head_attempt.attempt_id = updates.attempt_id
+                     WHERE updates.run_id = recovery.run_id
+                       AND updates.plan_id = recovery.plan_id
+                       AND updates.branch = review.branch
+                     ORDER BY head_attempt.ordinal DESC, updates.created_at DESC LIMIT 1
+                   )
+               )
+               AND (
+                 SELECT COUNT(*) FROM github_write_credentials
+                 WHERE github_write_credentials.attempt_id = failed.attempt_id
+               ) = 1
+               AND EXISTS (
+                 SELECT 1 FROM github_write_credentials
+                 WHERE github_write_credentials.attempt_id = failed.attempt_id
+                   AND github_write_credentials.status IN ('revoked', 'expired')
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM attempts AS replacement
+                 WHERE replacement.recovered_from_attempt_id = failed.attempt_id
+               )
+             )
            )
-           AND EXISTS (
-             SELECT 1 FROM outbox AS cancel
-             WHERE cancel.run_id = recovery.run_id
-               AND cancel.kind = 'workflow_cancel'
-               AND cancel.delivery_state = 'settled'
+           AND (
+             recovery.source_kind = 'automated_fix_failed_pre_effect'
+             OR EXISTS (
+               SELECT 1 FROM outbox AS cancel
+               WHERE cancel.run_id = recovery.run_id
+                 AND cancel.kind = 'workflow_cancel'
+                 AND cancel.delivery_state = 'settled'
+             )
            )
            AND NOT EXISTS (
              SELECT 1 FROM run_blockers

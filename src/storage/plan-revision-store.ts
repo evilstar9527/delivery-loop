@@ -483,7 +483,8 @@ export class PlanRevisionStore {
          )
          AND NOT EXISTS (
            SELECT 1 FROM automated_review_fix_attempts
-           WHERE automated_review_fix_attempts.fix_attempt_id = attempts.attempt_id
+           WHERE automated_review_fix_attempts.fix_attempt_id =
+                 COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
          )
          AND feedback.source_head_sha = (
            SELECT candidate_updates.head_sha
@@ -1568,7 +1569,8 @@ export class PlanRevisionStore {
               (SELECT COUNT(*) FROM review_feedback_attempts AS exact_lineage
                WHERE exact_lineage.review_attempt_id = attempts.attempt_id) AS lineage_count,
               (SELECT COUNT(*) FROM automated_review_fix_attempts AS opposite_lineage
-               WHERE opposite_lineage.fix_attempt_id = attempts.attempt_id)
+               WHERE opposite_lineage.fix_attempt_id =
+                     COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id))
                 AS opposite_lineage_count,
               (SELECT COUNT(*) FROM attempt_repairs
                WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id) AS repair_count
@@ -1596,7 +1598,7 @@ export class PlanRevisionStore {
               reviews.source_head_sha, reviews.branch,
               publication.github_pr_url AS review_url,
               reviews.completed_at AS submitted_at,
-              fixes.fix_attempt_id AS review_attempt_id,
+              attempts.attempt_id AS review_attempt_id,
               attempts.run_id AS attempt_run_id, attempts.mode AS attempt_mode,
               attempts.status AS attempt_status, attempts.version AS attempt_version,
               attempts.lease_generation AS attempt_lease_generation,
@@ -1625,15 +1627,19 @@ export class PlanRevisionStore {
                ORDER BY candidate_attempt.ordinal DESC, candidate_updates.created_at DESC
                LIMIT 1) AS current_branch_head_sha,
               (SELECT COUNT(*) FROM automated_review_fix_attempts AS exact_lineage
-               WHERE exact_lineage.fix_attempt_id = attempts.attempt_id) AS lineage_count,
+               WHERE exact_lineage.fix_attempt_id =
+                     COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id))
+                AS lineage_count,
               (SELECT COUNT(*) FROM review_feedback_attempts AS opposite_lineage
-               WHERE opposite_lineage.review_attempt_id = attempts.attempt_id)
+               WHERE opposite_lineage.review_attempt_id =
+                     COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id))
                 AS opposite_lineage_count,
               (SELECT COUNT(*) FROM attempt_repairs
                WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id) AS repair_count
        FROM attempts
        JOIN automated_review_fix_attempts AS fixes
-         ON fixes.fix_attempt_id = attempts.attempt_id
+         ON fixes.fix_attempt_id =
+            COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
        JOIN automated_reviews AS reviews ON reviews.review_id = fixes.review_id
        JOIN runs ON runs.run_id = reviews.run_id
        JOIN execution_plans AS plans ON plans.plan_id = reviews.plan_id
@@ -1670,7 +1676,8 @@ export class PlanRevisionStore {
               'review_feedback', ?, runs.base_sha, reviews.completed_at, ?
        FROM attempts
        JOIN automated_review_fix_attempts AS fixes
-         ON fixes.fix_attempt_id = attempts.attempt_id
+         ON fixes.fix_attempt_id =
+            COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
        JOIN automated_reviews AS reviews ON reviews.review_id = fixes.review_id
        JOIN runs ON runs.run_id = reviews.run_id
        JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
@@ -1709,10 +1716,12 @@ export class PlanRevisionStore {
          AND publication.head_branch = reviews.branch
          AND publication.head_sha = reviews.source_head_sha
          AND (SELECT COUNT(*) FROM automated_review_fix_attempts AS exact_lineage
-              WHERE exact_lineage.fix_attempt_id = attempts.attempt_id) = 1
+              WHERE exact_lineage.fix_attempt_id =
+                    COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)) = 1
          AND NOT EXISTS (
            SELECT 1 FROM review_feedback_attempts
-           WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
+           WHERE review_feedback_attempts.review_attempt_id =
+                 COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
          )
          AND NOT EXISTS (
            SELECT 1 FROM attempt_repairs

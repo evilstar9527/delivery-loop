@@ -176,18 +176,20 @@ export class AutomatedReviewScheduler {
     const candidates = await this.db.prepare(
       `SELECT runs.run_id, runs.version AS run_version, plans.plan_id,
               plans.plan_version, plans.digest AS plan_digest,
-              fixes.fix_attempt_id, updates.head_sha
+              fix_attempt.attempt_id AS fix_attempt_id, updates.head_sha
        FROM runs
        JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
-       JOIN automated_review_fix_attempts AS fixes ON fixes.fix_attempt_id = (
+       JOIN attempts AS fix_attempt ON fix_attempt.attempt_id = (
          SELECT attempt_id FROM attempts
          WHERE attempts.run_id = runs.run_id AND attempts.mode = 'review_fix'
            AND attempts.status = 'completed'
          ORDER BY attempts.ordinal DESC LIMIT 1
        )
+       JOIN automated_review_fix_attempts AS fixes
+         ON fixes.fix_attempt_id =
+            COALESCE(fix_attempt.recovered_from_attempt_id, fix_attempt.attempt_id)
        JOIN automated_reviews AS reviews ON reviews.review_id = fixes.review_id
-       JOIN attempts ON attempts.attempt_id = fixes.fix_attempt_id
-       JOIN attempt_head_updates AS updates ON updates.attempt_id = fixes.fix_attempt_id
+       JOIN attempt_head_updates AS updates ON updates.attempt_id = fix_attempt.attempt_id
        JOIN pull_request_publications AS publications
          ON publications.publication_id = reviews.publication_id
        WHERE runs.state = 'executing' AND plans.status = 'active'
@@ -198,8 +200,8 @@ export class AutomatedReviewScheduler {
          AND reviews.plan_version = plans.plan_version
          AND reviews.source_head_sha = fixes.source_head_sha
          AND updates.parent_sha = fixes.source_head_sha
-         AND updates.branch = fixes.branch AND attempts.head_sha = updates.head_sha
-         AND attempts.head_branch = updates.branch
+         AND updates.branch = fixes.branch AND fix_attempt.head_sha = updates.head_sha
+         AND fix_attempt.head_branch = updates.branch
          AND publications.status = 'verified'
          AND publications.head_branch = fixes.branch
          AND NOT EXISTS (
@@ -233,7 +235,8 @@ export class AutomatedReviewScheduler {
            AND EXISTS (
              SELECT 1 FROM attempts
              JOIN automated_review_fix_attempts AS fixes
-               ON fixes.fix_attempt_id = attempts.attempt_id
+               ON fixes.fix_attempt_id =
+                  COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
              JOIN automated_reviews AS reviews ON reviews.review_id = fixes.review_id
              JOIN attempt_head_updates AS updates ON updates.attempt_id = attempts.attempt_id
              WHERE attempts.attempt_id = ? AND attempts.status = 'completed'
@@ -833,7 +836,10 @@ export class AutomatedReviewScheduler {
          JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
          JOIN plan_item_progress AS progress
            ON progress.plan_id = plans.plan_id AND progress.item_id = ?
-         JOIN automated_review_fix_attempts AS fixes ON fixes.fix_attempt_id = ?
+         JOIN attempts AS fixed_attempt ON fixed_attempt.attempt_id = ?
+         JOIN automated_review_fix_attempts AS fixes
+           ON fixes.fix_attempt_id =
+              COALESCE(fixed_attempt.recovered_from_attempt_id, fixed_attempt.attempt_id)
          JOIN automated_reviews AS source_review ON source_review.review_id = fixes.review_id
          WHERE runs.run_id = ? AND runs.state = 'pull_request_open' AND runs.version = ?
            AND runs.active_plan_version = ? AND runs.active_plan_digest = ?

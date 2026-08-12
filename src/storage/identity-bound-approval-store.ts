@@ -132,7 +132,11 @@ interface CandidateRow {
   recovery_root_attempt_id: string | null;
   recovery_plan_item_id: string | null;
   recovery_blocker_id: string | null;
-  recovery_source_kind: 'failed_dependency' | 'lost_pre_effect' | null;
+  recovery_source_kind:
+    | 'failed_dependency'
+    | 'lost_pre_effect'
+    | 'automated_fix_failed_pre_effect'
+    | null;
 }
 
 interface AcceptedRow {
@@ -425,6 +429,7 @@ export class IdentityBoundApprovalStore {
       candidate.recovery_plan_item_id !== null &&
       candidate.recovery_source_kind !== null &&
       (candidate.recovery_source_kind === 'lost_pre_effect' ||
+        candidate.recovery_source_kind === 'automated_fix_failed_pre_effect' ||
         candidate.recovery_blocker_id !== null)
     ) {
       const recoveryApprovalId = `review_recovery_approval_${this.suffix(
@@ -460,6 +465,8 @@ export class IdentityBoundApprovalStore {
              AND recovery.source_kind = ?
              AND (
                (recovery.source_kind = 'lost_pre_effect' AND recovery.blocker_id IS NULL)
+               OR (recovery.source_kind = 'automated_fix_failed_pre_effect'
+                   AND recovery.blocker_id IS NULL)
                OR recovery.blocker_id = ?
              )
            ON CONFLICT DO NOTHING`,
@@ -505,6 +512,8 @@ export class IdentityBoundApprovalStore {
                  AND (
                    (source_kind = 'failed_dependency' AND execution_plans.status = 'blocked')
                    OR (source_kind = 'lost_pre_effect' AND execution_plans.status = 'active')
+                   OR (source_kind = 'automated_fix_failed_pre_effect'
+                       AND execution_plans.status = 'active')
                  )
              )
              AND NOT EXISTS (
@@ -536,6 +545,8 @@ export class IdentityBoundApprovalStore {
                  AND (
                    (source_kind = 'failed_dependency' AND plan_item_progress.status = 'blocked')
                    OR (source_kind = 'lost_pre_effect' AND plan_item_progress.status = 'in_progress')
+                   OR (source_kind = 'automated_fix_failed_pre_effect'
+                       AND plan_item_progress.status = 'in_progress')
                  )
              )
              AND EXISTS (
@@ -552,12 +563,18 @@ export class IdentityBoundApprovalStore {
         ),
         this.db.prepare(
           `UPDATE runs SET state = 'awaiting_approval', version = version + 1, updated_at = ?
-           WHERE run_id = ? AND state = 'blocked' AND version = ?
+           WHERE run_id = ? AND state IN ('blocked', 'executing') AND version = ?
              AND active_plan_id = ? AND active_plan_version = ?
              AND EXISTS (
                SELECT 1 FROM review_approval_recovery_approvals
                WHERE recovery_approval_id = ? AND run_id = runs.run_id
                  AND failed_attempt_id = ? AND approval_id = ?
+                 AND (
+                   (source_kind IN ('failed_dependency', 'lost_pre_effect')
+                    AND runs.state = 'blocked')
+                   OR (source_kind = 'automated_fix_failed_pre_effect'
+                       AND runs.state = 'executing')
+                 )
              )
              AND EXISTS (
                SELECT 1 FROM execution_plans
@@ -740,6 +757,10 @@ export class IdentityBoundApprovalStore {
                 (recovery.source_kind = 'failed_dependency' AND plans.status = 'blocked')
                 OR (recovery.source_kind = 'lost_pre_effect' AND plans.status = 'active')
               ))
+             OR
+             (runs.state = 'executing' AND recovery.failed_attempt_id IS NOT NULL
+              AND recovery.source_kind = 'automated_fix_failed_pre_effect'
+              AND plans.status = 'active')
              OR
              (runs.state = 'pull_request_open' AND plans.status = 'active'
               AND EXISTS (
