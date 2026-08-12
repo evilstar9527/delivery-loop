@@ -5070,3 +5070,12 @@
 - 验证：初次`pnpm run verify`在补强前exit 0（Node 140 files/872 tests，workerd 62 files/435 tests，15 workflows/17 jobs，573文件Secret scan与docs links全绿）；补强后`pnpm run typecheck`、定向ESLint、Node Yunxiao/GitHub adapter 2 files/6 tests、workerd deployment/routing 2 files/14 tests及`git diff --check`均exit 0。最终全量见本轮后续记录。
 - 最终验证：补强后`pnpm run typecheck`、变更文件ESLint、Node adapter 2 files/8 tests、workerd test-deployment/routing 2 files/14 tests、Worker dry-run、573-file Secret scan、docs links及`git diff --check`均exit 0。本轮再次尝试`pnpm run verify`时，既有Git子进程/CLI边界测试出现27个5秒超时（12 files/849 passed/27 timed out），不是本轮Yunxiao断言失败；同命令在本轮改动前已记录为Node 140/872、workerd 62/435全绿，故不把本次基础设施超时覆盖为全量通过。
 - 边界/遗留：未真实发布控制面、未应用0078、未创建fresh Task/Action/pipeline run、未验证测试URL或部署后acceptance，因此Phase 5真实外部项保持未勾。`wrangler.jsonc`包含用户此前PAT切换改动并新增pipeline target，未单独覆盖或删除其余修改。
+
+## Round 432 — 2026-08-12
+- 目标：将Round 431的云效控制面实现推送远程分支并发布线上；不创建Task、GitHub Action或云效pipeline run。
+- 远程交付：分支`codex/yunxiao-control-plane`提交`6ecb4906fce21882ca588e049155a302bb8c8a7c`，已推送至`origin/codex/yunxiao-control-plane`。`.revision31~33`用户仓库外/工作树文件未提交。
+- 生产D1：显式固定account=`b8488957e88658039d2a38fb8f160514`，远端migration inventory发布前仅有`0078_yunxiao_test_deployments.sql`；执行`wrangler d1 migrations apply DB_CONTROL --remote`成功（9 commands），随后inventory为`No migrations to apply`。
+- Worker发布：exact branch commit `6ecb490`执行一次`wrangler deploy --strict --message "yunxiao-control-plane 6ecb490"`；Cloudflare deployment/version=`2d4f7227-4c66-4855-8c20-53a3143128b1`，`2026-08-12T14:09:28.085Z`创建，100%流量。Wrangler识别Workflow、Queue、D1、R2和Tool Bridge bindings；生产环境变量包含`TEST_DEPLOY_TARGETS_JSON`指向pipeline `5186274`。
+- 发布后验证：`curl -fsS -i https://delivery-loop-control-plane.eve55265.workers.dev/healthz`返回HTTP 200，body为`{"ok":true,"service":"delivery-loop-control-plane"}`；Cloudflare deployment inventory复读同一version/message。发布流程未调用Tool Bridge create、未创建Task/Action/pipeline run、未执行D1 repair、Workflow restart/recreate、Secret/credential修改、rotation或rollback。
+- 验证边界：typecheck、变更文件ESLint、Node adapter 8 tests、workerd test-deployment/routing 14 tests、Worker dry-run、573-file Secret scan、docs links与`git diff --check`通过。完整`pnpm run verify`后续受既有Git子进程测试27个5秒超时影响（12 files/849 passed），不将该次尝试记作全量通过；发布使用的Worker bundle dry-run和线上healthz均成功。
+- 遗留：真实端到端仍需一个受控Task/ExecutionPlan和test_deploy approval，才能让控制面自然创建唯一云效run并轮询测试环境结果；本轮没有触发该业务副作用。
