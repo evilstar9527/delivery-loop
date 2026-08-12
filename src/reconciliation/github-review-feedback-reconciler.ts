@@ -561,9 +561,6 @@ export class GitHubReviewApprovalRecoveryReconciler {
              (
                recovery.source_kind = 'automated_fix_failed_pre_effect'
                AND failed.status = 'failed'
-               AND failed.github_status = 'completed'
-               AND failed.github_conclusion IS NOT NULL
-               AND failed.github_conclusion <> 'success'
                AND failed.recovered_from_attempt_id IS NULL
                AND EXISTS (
                  SELECT 1 FROM attempt_failures AS failure

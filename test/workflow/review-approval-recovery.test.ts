@@ -403,7 +403,7 @@ async function convertToAutomatedReviewFixFailure(
     env.DB_CONTROL.prepare(
       `UPDATE attempts
        SET status = 'failed', recovered_from_attempt_id = NULL,
-           github_status = 'completed', github_conclusion = 'failure',
+           github_status = 'in_progress', github_conclusion = NULL,
            head_sha = ?, version = 4, lease_generation = 2, updated_at = ?
        WHERE attempt_id = ?`,
     ).bind(HEAD_SHA, NOW, FAILED_ATTEMPT_ID),

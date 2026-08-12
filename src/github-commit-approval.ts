@@ -310,7 +310,7 @@ export class GitHubCommitApprovalService {
        FROM runs
        JOIN tasks ON tasks.task_id = runs.task_id
        JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
-       LEFT JOIN review_approval_recovery_candidates AS recovery
+       LEFT JOIN review_approval_recovery_candidates_v2 AS recovery
          ON recovery.run_id = runs.run_id
         AND recovery.run_version = runs.version
         AND recovery.plan_id = plans.plan_id
