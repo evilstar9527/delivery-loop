@@ -450,7 +450,7 @@ export class IdentityBoundApprovalStore {
                   recovery.plan_item_id, recovery.failed_attempt_id,
                   recovery.root_review_attempt_id, approvals.approval_id, ?,
                   recovery.source_kind
-           FROM review_approval_recovery_candidates AS recovery
+           FROM review_approval_recovery_candidates_v2 AS recovery
            JOIN approvals ON approvals.approval_id = ?
             AND approvals.run_id = recovery.run_id
             AND approvals.plan_id = recovery.plan_id
@@ -731,7 +731,7 @@ export class IdentityBoundApprovalStore {
          FROM runs
          JOIN tasks ON tasks.task_id = runs.task_id
          JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
-         LEFT JOIN review_approval_recovery_candidates AS recovery
+         LEFT JOIN review_approval_recovery_candidates_v2 AS recovery
            ON recovery.run_id = runs.run_id
           AND recovery.run_version = runs.version
           AND recovery.plan_id = plans.plan_id
