@@ -336,6 +336,10 @@ export class GitHubCommitApprovalService {
               OR (recovery.source_kind = 'lost_pre_effect' AND plans.status = 'active')
             ))
            OR
+           (runs.state = 'executing' AND recovery.failed_attempt_id IS NOT NULL
+            AND recovery.source_kind = 'automated_fix_failed_pre_effect'
+            AND plans.status = 'active')
+           OR
            (runs.state = 'pull_request_open' AND plans.status = 'active'
             AND EXISTS (
               SELECT 1

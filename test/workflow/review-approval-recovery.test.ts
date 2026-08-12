@@ -44,6 +44,9 @@ class FakeCommentClient implements GitHubCommitApprovalClient {
 
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM automated_review_replacement_redispatches'),
+    env.DB_CONTROL.prepare('DELETE FROM automated_review_fix_attempts'),
+    env.DB_CONTROL.prepare('DELETE FROM automated_reviews'),
     env.DB_CONTROL.prepare('DELETE FROM review_approval_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM review_approval_recovery_approvals'),
     env.DB_CONTROL.prepare('DELETE FROM approval_lineages'),
@@ -84,7 +87,12 @@ async function reset(): Promise<void> {
   ]);
 }
 
-async function seedBlockedReviewCredentialFailure(): Promise<void> {
+async function seedBlockedReviewCredentialFailure(
+  shape: 'human_blocked' | 'automated_executing' = 'human_blocked',
+): Promise<void> {
+  const runState = shape === 'human_blocked' ? 'blocked' : 'executing';
+  const planStatus = shape === 'human_blocked' ? 'blocked' : 'active';
+  const progressStatus = shape === 'human_blocked' ? 'blocked' : 'in_progress';
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare(
       `INSERT INTO tasks (
@@ -102,8 +110,11 @@ async function seedBlockedReviewCredentialFailure(): Promise<void> {
          run_id, task_id, task_revision, task_digest, base_sha,
          workflow_instance_id, state, version, active_plan_id,
          active_plan_version, active_plan_digest, created_at, updated_at
-       ) VALUES (?, ?, '1', ?, ?, ?, 'blocked', 10, ?, 1, ?, ?, ?)` ,
-    ).bind(RUN_ID, TASK_ID, TASK_DIGEST, BASE_SHA, RUN_ID, PLAN_ID, PLAN_DIGEST, NOW, NOW),
+       ) VALUES (?, ?, '1', ?, ?, ?, ?, 10, ?, 1, ?, ?, ?)` ,
+    ).bind(
+      RUN_ID, TASK_ID, TASK_DIGEST, BASE_SHA, RUN_ID, runState, PLAN_ID,
+      PLAN_DIGEST, NOW, NOW,
+    ),
     env.DB_CONTROL.prepare(
       `INSERT INTO attempts (
          attempt_id, run_id, ordinal, mode, status, base_sha, repository,
@@ -116,8 +127,10 @@ async function seedBlockedReviewCredentialFailure(): Promise<void> {
       `INSERT INTO execution_plans (
          plan_id, run_id, plan_version, task_revision, base_sha, digest, status,
          created_by_attempt_id, objective, created_at, updated_at
-       ) VALUES (?, ?, 1, '1', ?, ?, 'blocked', ?, 'Apply exact review feedback.', ?, ?)` ,
-    ).bind(PLAN_ID, RUN_ID, BASE_SHA, PLAN_DIGEST, ANALYSIS_ATTEMPT_ID, NOW, NOW),
+       ) VALUES (?, ?, 1, '1', ?, ?, ?, ?, 'Apply exact review feedback.', ?, ?)` ,
+    ).bind(
+      PLAN_ID, RUN_ID, BASE_SHA, PLAN_DIGEST, planStatus, ANALYSIS_ATTEMPT_ID, NOW, NOW,
+    ),
     env.DB_CONTROL.prepare(
       `INSERT INTO attempts (
          attempt_id, run_id, ordinal, mode, status, base_sha, repository,
@@ -186,8 +199,8 @@ async function seedBlockedReviewCredentialFailure(): Promise<void> {
     env.DB_CONTROL.prepare(
       `INSERT INTO plan_item_progress (
          plan_id, item_id, status, active_attempt_id, version, updated_at
-       ) VALUES (?, ?, 'blocked', ?, 6, ?)` ,
-    ).bind(PLAN_ID, ITEM_ID, FAILED_ATTEMPT_ID, NOW),
+       ) VALUES (?, ?, ?, ?, 6, ?)` ,
+    ).bind(PLAN_ID, ITEM_ID, progressStatus, FAILED_ATTEMPT_ID, NOW),
   ]);
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare(
@@ -370,6 +383,95 @@ async function convertToLostPreEffectReplacement(
   ]);
 }
 
+async function convertToAutomatedReviewFixFailure(
+  credentialStatus: 'active' | 'revoked' | 'expired' = 'revoked',
+): Promise<void> {
+  await reset();
+  await seedBlockedReviewCredentialFailure('automated_executing');
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM review_feedback_attempts'),
+    env.DB_CONTROL.prepare('DELETE FROM github_review_feedbacks'),
+    env.DB_CONTROL.prepare('DELETE FROM github_review_webhook_deliveries'),
+    env.DB_CONTROL.prepare('DELETE FROM run_blockers'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_failure_paths'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_failures'),
+    env.DB_CONTROL.prepare(
+      `UPDATE plan_item_progress
+       SET status = 'in_progress', active_attempt_id = ?, version = 6, updated_at = ?
+       WHERE plan_id = ? AND item_id = ?`,
+    ).bind(FAILED_ATTEMPT_ID, NOW, PLAN_ID, ITEM_ID),
+    env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'failed', recovered_from_attempt_id = NULL,
+           github_status = 'completed', github_conclusion = 'failure',
+           head_sha = ?, version = 4, lease_generation = 2, updated_at = ?
+       WHERE attempt_id = ?`,
+    ).bind(HEAD_SHA, NOW, FAILED_ATTEMPT_ID),
+  ]);
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO automated_reviews (
+         review_id, run_id, publication_id, plan_id, plan_version, plan_item_id,
+         prior_attempt_id, review_attempt_id, repository, github_pr_number,
+         base_branch, branch, source_head_sha, iteration, status, result_ref,
+         result_digest, feedback_body_digest, blocking_finding_count,
+         minor_finding_count, completed_at, created_at, updated_at
+       ) VALUES ('automated-review-fix-recovery', ?, 'publication-review-recovery', ?, 1, ?,
+                 ?, ?, ?, 209, 'main', ?, ?, 1, 'changes_requested',
+                 'r2://automated-reviews/recovery.json', ?, ?, 1, 0, ?, ?, ?)`,
+    ).bind(
+      RUN_ID,
+      PLAN_ID,
+      ITEM_ID,
+      PRIOR_ATTEMPT_ID,
+      ANALYSIS_ATTEMPT_ID,
+      REPOSITORY,
+      BRANCH,
+      HEAD_SHA,
+      FEEDBACK_DIGEST,
+      `sha256:${'6'.repeat(64)}`,
+      NOW,
+      NOW,
+      NOW,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO automated_review_fix_attempts (
+         review_id, fix_attempt_id, prior_attempt_id, branch, source_head_sha, created_at
+       ) VALUES ('automated-review-fix-recovery', ?, ?, ?, ?, ?)`,
+    ).bind(FAILED_ATTEMPT_ID, PRIOR_ATTEMPT_ID, BRANCH, HEAD_SHA, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_failures (
+         failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+         retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+         failure_site, needed_human_input, scope_attempt_count,
+         consecutive_fingerprint_count, revoked_lease_generation, occurred_at, created_at
+       ) VALUES ('failure-automated-review-fix-recovery', ?, ?, 4,
+                 'event-automated-review-fix-recovery', 1, ?, ?, 'unknown',
+                 'unknown_failure', 'external_reconciliation', 'manual_investigation',
+                 1, 1, 2, ?, ?)`,
+    ).bind(RUN_ID, FAILED_ATTEMPT_ID, FAILURE_SCOPE_DIGEST, FAILURE_FINGERPRINT, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO github_write_credentials (
+         credential_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+         approval_id, repository, lease_generation, status, revoked_at,
+         authorization_expires_at, created_at, updated_at
+       ) VALUES ('credential-automated-review-fix-recovery', ?, ?, ?, 1, ?,
+                 'approval-review-recovery-old', ?, 2, ?, ?, ?, ?, ?)`,
+    ).bind(
+      RUN_ID,
+      FAILED_ATTEMPT_ID,
+      PLAN_ID,
+      ITEM_ID,
+      REPOSITORY,
+      credentialStatus,
+      credentialStatus === 'revoked' ? NOW : null,
+      credentialStatus === 'active' ? '2099-01-01T00:00:00.000Z' : NOW,
+      NOW,
+      NOW,
+    ),
+  ]);
+}
+
 function commentFact(body: string, commentId = 219): GitHubCommitApprovalFact {
   return {
     schemaVersion: '1',
@@ -392,6 +494,169 @@ beforeEach(async () => {
 });
 
 describe('review repo-write approval recovery', () => {
+  it('creates one fresh-approval replacement for an automated review fix that failed pre-effect', async () => {
+    await convertToAutomatedReviewFixFailure();
+    const client = new FakeCommentClient();
+    const service = new GitHubCommitApprovalService(
+      env.DB_CONTROL,
+      client,
+      () => new Date(NOW),
+    );
+    const template = await service.template(RUN_ID);
+    expect(template.commentBody).toBe(githubCommitApprovalBody({
+      runId: RUN_ID,
+      runVersion: 10,
+      planId: PLAN_ID,
+      planVersion: 1,
+      planDigest: PLAN_DIGEST,
+      baseSha: BASE_SHA,
+    }));
+    client.fact = commentFact(template.commentBody, 221);
+
+    const decisions = await Promise.all(
+      Array.from({ length: 20 }, async () => await service.approve(RUN_ID, 221)),
+    );
+    expect(decisions.filter((decision) => decision.created)).toHaveLength(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state, version FROM runs WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ state: 'awaiting_approval', version: 11 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, active_attempt_id, version FROM plan_item_progress
+       WHERE plan_id = ? AND item_id = ?`,
+    ).bind(PLAN_ID, ITEM_ID).first()).toEqual({
+      status: 'ready', active_attempt_id: null, version: 7,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT source_kind, failed_attempt_id, root_review_attempt_id
+       FROM review_approval_recovery_approvals WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({
+      source_kind: 'automated_fix_failed_pre_effect',
+      failed_attempt_id: FAILED_ATTEMPT_ID,
+      root_review_attempt_id: FAILED_ATTEMPT_ID,
+    });
+    await expect(service.template(RUN_ID)).rejects.toMatchObject({ code: 'state_conflict' });
+
+    const reconciler = new GitHubReviewApprovalRecoveryReconciler(
+      env.DB_CONTROL,
+      () => new Date(NOW),
+    );
+    const recovered = await Promise.all(
+      Array.from({ length: 20 }, async () => await reconciler.reconcileBatch()),
+    );
+    expect(recovered.flat().filter((result) => result.created)).toHaveLength(1);
+    const lineage = await env.DB_CONTROL.prepare(
+      `SELECT source_kind, failed_attempt_id, root_review_attempt_id, replacement_attempt_id
+       FROM review_approval_recoveries WHERE failed_attempt_id = ?`,
+    ).bind(FAILED_ATTEMPT_ID).first<{
+      source_kind: string;
+      failed_attempt_id: string;
+      root_review_attempt_id: string;
+      replacement_attempt_id: string;
+    }>();
+    expect(lineage).toMatchObject({
+      source_kind: 'automated_fix_failed_pre_effect',
+      failed_attempt_id: FAILED_ATTEMPT_ID,
+      root_review_attempt_id: FAILED_ATTEMPT_ID,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, recovered_from_attempt_id FROM attempts WHERE attempt_id = ?`,
+    ).bind(lineage?.replacement_attempt_id).first()).toEqual({
+      status: 'pending', recovered_from_attempt_id: FAILED_ATTEMPT_ID,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts WHERE recovered_from_attempt_id = ?`,
+    ).bind(FAILED_ATTEMPT_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox WHERE kind = 'execution_dispatch'
+       AND payload_ref = ?`,
+    ).bind(`d1://attempts/${lineage?.replacement_attempt_id}`).first()).toEqual({ count: 1 });
+  });
+
+  it.each([
+    'active_credential',
+    'head_update',
+    'verification',
+    'existing_replacement',
+  ] as const)('rejects unsafe automated review fix recovery evidence: %s', async (kind) => {
+    await convertToAutomatedReviewFixFailure(
+      kind === 'active_credential' ? 'active' : 'revoked',
+    );
+    if (kind === 'head_update') {
+      await env.DB_CONTROL.batch([
+        env.DB_CONTROL.prepare(
+          `INSERT INTO evidence (
+             evidence_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+             kind, status, sha, summary, verification_status, observed_at, created_at
+           ) VALUES ('evidence-automated-recovery-unsafe', ?, ?, ?, 1, ?, 'commit',
+                     'passed', ?, 'Unexpected automated fix effect.', 'unverified', ?, ?)`,
+        ).bind(RUN_ID, FAILED_ATTEMPT_ID, PLAN_ID, ITEM_ID, '7'.repeat(40), NOW, NOW),
+        env.DB_CONTROL.prepare(
+          `INSERT INTO attempt_head_updates (
+             update_id, evidence_id, run_id, attempt_id, plan_id, plan_version,
+             plan_item_id, lease_generation, parent_sha, head_sha, branch, created_at
+           ) VALUES ('head-automated-recovery-unsafe',
+                     'evidence-automated-recovery-unsafe', ?, ?, ?, 1,
+                     ?, 2, ?, ?, ?, ?)`,
+        ).bind(
+          RUN_ID,
+          FAILED_ATTEMPT_ID,
+          PLAN_ID,
+          ITEM_ID,
+          HEAD_SHA,
+          '7'.repeat(40),
+          BRANCH,
+          NOW,
+        ),
+      ]);
+    }
+    if (kind === 'verification') {
+      await env.DB_CONTROL.prepare(
+        `INSERT INTO verification_suites (
+           suite_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+           lease_generation, head_sha, delivery_policy_digest,
+           targeted_command_count, required_command_count, status, created_at, updated_at
+         ) VALUES ('suite-automated-recovery-unsafe', ?, ?, ?, 1, ?, 2, ?, ?, 1, 1,
+                   'failed', ?, ?)`,
+      ).bind(
+        RUN_ID,
+        FAILED_ATTEMPT_ID,
+        PLAN_ID,
+        ITEM_ID,
+        HEAD_SHA,
+        `sha256:${'7'.repeat(64)}`,
+        NOW,
+        NOW,
+      ).run();
+    }
+    if (kind === 'existing_replacement') {
+      await env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, plan_id, plan_version, plan_item_id, head_sha,
+           recovered_from_attempt_id, version, lease_generation, created_at, updated_at
+         ) VALUES ('attempt-existing-automated-fix-replacement', ?, 5, 'review_fix', 'pending',
+                   ?, ?, ?, ?, 1, ?, ?, ?, 0, 0, ?, ?)`,
+      ).bind(
+        RUN_ID,
+        BASE_SHA,
+        REPOSITORY,
+        WORKFLOW_REF,
+        PLAN_ID,
+        ITEM_ID,
+        HEAD_SHA,
+        FAILED_ATTEMPT_ID,
+        NOW,
+        NOW,
+      ).run();
+    }
+    const service = new GitHubCommitApprovalService(
+      env.DB_CONTROL,
+      new FakeCommentClient(),
+      () => new Date(NOW),
+    );
+    await expect(service.template(RUN_ID)).rejects.toMatchObject({ code: 'state_conflict' });
+  });
+
   it('reopens one exact blocked review failure and creates one approval-bound replacement', async () => {
     const client = new FakeCommentClient();
     const service = new GitHubCommitApprovalService(

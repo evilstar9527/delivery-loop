@@ -241,7 +241,8 @@ export class ExecutionHeadStore {
                      FROM automated_review_fix_attempts AS automated_fix
                      JOIN automated_reviews AS automated_review
                        ON automated_review.review_id = automated_fix.review_id
-                     WHERE automated_fix.fix_attempt_id = attempts.attempt_id
+                     WHERE automated_fix.fix_attempt_id =
+                           COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
                        AND automated_review.source_head_sha = attempts.head_sha
                        AND automated_review.branch = ?
                        AND automated_review.status = 'changes_requested'
@@ -398,7 +399,8 @@ export class ExecutionHeadStore {
        LEFT JOIN review_feedback_attempts
          ON review_feedback_attempts.review_attempt_id = attempts.attempt_id
        LEFT JOIN automated_review_fix_attempts
-         ON automated_review_fix_attempts.fix_attempt_id = attempts.attempt_id
+         ON automated_review_fix_attempts.fix_attempt_id =
+            COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
        LEFT JOIN automated_reviews
          ON automated_reviews.review_id = automated_review_fix_attempts.review_id
        LEFT JOIN base_rebase_attempts
