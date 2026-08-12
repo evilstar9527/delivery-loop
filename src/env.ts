@@ -21,6 +21,10 @@ export interface Bindings {
   GITHUB_APP_ID?: string;
   GITHUB_APP_INSTALLATION_ID?: string;
   GITHUB_APP_PRIVATE_KEY?: string;
+  /** `app` (default for legacy App config) or `pat`. */
+  GITHUB_AUTH_MODE?: string;
+  GITHUB_PAT?: string;
+  GITHUB_PAT_EXPIRES_AT?: string;
   GITHUB_ALLOWED_REPOSITORIES?: string;
   GITHUB_API_BASE_URL?: string;
   GITHUB_CREDENTIAL_ENCRYPTION_KEY?: string;

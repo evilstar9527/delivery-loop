@@ -405,3 +405,8 @@ Round 203针对Round 202真实`credential_transport_unavailable`补齐installati
 Round 273把Round 272的`request_failed`与实际Worker运行时契约对齐。仓库锁定的`workerd@1.20260701.1`本地穿透证明`new Request(..., { redirect: 'error' })`抛`TypeError`而`manual`可构造；Cloudflare `workerd`源码固定commit[`05e868985ed7496ee7e162c22bce4f8a3f206038`](https://github.com/cloudflare/workerd/blob/05e868985ed7496ee7e162c22bce4f8a3f206038/src/workerd/api/http.c%2B%2B#L537-L541)也明确说明edge不实现`error`、应使用`manual`并检查响应状态。production provider因此使用`manual`，不跟随3xx，并把所有非201在不读取body的前提下按既有固定stage拒绝；一次POST、10秒timeout、零retry和Secret-safe日志边界不变。
 
 Round 270以Cloudflare `api-schemas`固定commit`791663f57e4312d14bfef614efef61dea72a12a9`和Round 269同一production event的Dashboard只读字段为authority，裁决transport evidence v1的两项错误冻结：OpenAPI中的`$metadata.type`不是enum，生产值为`cf-worker`；同一event没有`traceId`，但`$metadata.requestId`、`$metadata.rayId`与`$workers.requestId`相同且Dashboard以该16位值作为调用identity。官方query results同时定义`view=invocations`按request ID聚合同次调用事件。因此v2保留events discovery，把formal第二次查询从不存在的trace join改为invocation join；Watt没有Cloudflare telemetry event/invocation schema或本项目manifest可复制，仍只复用既有有界I/O、安全错误与0/1/2纪律。
+### GitHub PAT 兼容配置
+
+Worker 通过 `GITHUB_AUTH_MODE=pat` 选择 PAT provider。必须同时配置 Worker Secret `GITHUB_PAT` 和 JSON 数组变量 `GITHUB_ALLOWED_REPOSITORIES`；可选 `GITHUB_PAT_EXPIRES_AT`（RFC 3339）用于到期前 fail-closed。PAT 模式与 App 凭证互斥，不能同时存在。切换只影响 GitHub credential provider，不改变 Task/Run/Plan、approval、outbox、CAS、审计或 Runner 恢复协议。
+
+PAT 是个人/组织用户身份，GitHub 不会按本项目的 `getInstallationToken`、`getPullRequestToken` 等方法真正拆分权限，也不能通过 installation-token DELETE 撤销。因此建议使用 fine-grained PAT、仅授予目标仓库和所需权限、设置上游过期时间，并在 Worker 外部轮换 Secret。PAT 只进 GitHub REST `Authorization` header 和 Runner 进程内的 Git Basic `x-access-token` 认证，禁止进入 D1、R2、workflow payload、PR、日志、artifact 或模型上下文。

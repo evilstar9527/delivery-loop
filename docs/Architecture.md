@@ -603,3 +603,6 @@ E2E-6不新增权限表、Prompt Injection状态机或第二套平台parser。�
 挑战Task被持久化为不可信数据并正常产生只读Plan，不是入口按字符串拒绝。authority始终从D1 Task policy、active Plan effect、Attempt mode/fencing和broker catalog派生；Agent文本无法修改这些字段。跨repo probe也不获得目标repo credential，只把GitHub OIDC交给目标attestation入口，由server-side repository/workflow/SHA/subject/environment binding在写attestation前拒绝。
 
 组合verifier没有可注入component verifier seam；测试通过module mock隔离I/O，但CLI与库调用始终执行生产authority。真实关门还要求仓库外人工identity/release review，模块mock、本地fake和summary不能成为平台事实。操作步骤见[权限与Prompt Injection真实外部证据验收](PermissionInjectionE2E.md)。
+### GitHub credential provider
+
+所有 GitHub REST、Actions、PR、deployment、merge observation 和 repo-write credential 请求都依赖统一 provider 接口。生产默认 provider 是按仓库收窄的 GitHub App installation token；在需要迁移或第三方组织限制时，可显式设置 `GITHUB_AUTH_MODE=pat`，由同一运行时注入 `GitHubPatTokenProvider`。这不会改变 D1 状态机或授权边界，也不会把 PAT 变成可撤销的短期 installation token；线上应优先使用 fine-grained、短期 PAT，并以 `GITHUB_PAT_EXPIRES_AT` 做控制面 fail-closed 过期保护。

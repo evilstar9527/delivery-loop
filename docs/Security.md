@@ -20,7 +20,8 @@
 
 ### 3.1 GitHub
 
-- 使用 GitHub App，不使用个人 PAT 作为长期机器身份。
+- 默认使用 GitHub App，不使用个人 PAT 作为长期机器身份。受控兼容模式可通过 `GITHUB_AUTH_MODE=pat` 使用一个 Worker Secret `GITHUB_PAT`；该模式只复用相同的 repository allowlist、approval、outbox、CAS、审计和 runner fencing，GitHub 本身不会提供 App installation token 的真实 scope 隔离、短期签发或撤销能力。
+- PAT 模式只允许二选一：`GITHUB_PAT` + `GITHUB_ALLOWED_REPOSITORIES`（可选 `GITHUB_PAT_EXPIRES_AT`）；不能与 `GITHUB_APP_ID`、`GITHUB_APP_INSTALLATION_ID` 或 `GITHUB_APP_PRIVATE_KEY` 混用。PAT 仅在 Worker 进程内存中使用，不能进入 D1、R2、dispatch payload、PR、日志、artifact 或 Agent prompt。GitHub REST 继续使用 `Authorization: Bearer`，Git Smart HTTP 继续使用 `x-access-token` Basic 形式。
 - 默认 App 权限：metadata read、contents read；仅已批准实现 attempt 获取 contents write / pull requests write 的 installation token。
 - Actions workflow 的 `GITHUB_TOKEN` 显式声明 permissions；不使用 `write-all`。
 - 当前试点仓库为public，因此Runner边界固定为literal `ubuntu-latest` GitHub-hosted job；`pnpm run verify:workflow-runners`对完整workflow inventory fail-closed，拒绝`self-hosted`、标签数组、matrix/repository variable/expression、未受审hosted标签和job级reusable workflow。不得把本机、持久VM或共享宿主注册到该public repository来绕过provider网络问题。未来如需self-hosted，必须先取得owner对机器、费用和注册权限的独立批准并升级本契约；最低边界是一job一机的clean JIT/`--ephemeral` disposable VM/container、专用runner group/label、外送保存runner application logs、任务后自动deregister并销毁，不得复用工作站或宿主Secret。独立private execution repository是另一种需要重新设计App installation、OIDC、immutable checkout和证据绑定的方案，不能由repository variable静默切换。

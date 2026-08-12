@@ -8,6 +8,7 @@ export function configuredSecrets(env: Partial<Bindings>): string[] {
     env.APPROVAL_ADAPTER_TOKEN,
     env.GITHUB_WEBHOOK_SECRET,
     env.GITHUB_APP_PRIVATE_KEY,
+    env.GITHUB_PAT,
     env.GITHUB_CREDENTIAL_ENCRYPTION_KEY,
     env.FEISHU_APP_SECRET,
     env.FEISHU_EVENT_ENCRYPT_KEY,
