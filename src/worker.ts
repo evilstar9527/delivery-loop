@@ -247,7 +247,9 @@ export default {
       // before any GitHub GET: a Free-plan scheduled invocation can otherwise
       // exhaust its CPU budget on external observation before reaching the
       // background recovery section every minute.
-      if (await initialAnalysis.reconcileToolBridgeTransportFailures(1) > 0) {
+      if (await initialAnalysis.reconcileToolBridgeScopeFailures(1) > 0) {
+        await relay.relayDestination('github_actions', 1);
+      } else if (await initialAnalysis.reconcileToolBridgeTransportFailures(1) > 0) {
         await relay.relayDestination('github_actions', 1);
       } else if (await initialAnalysis.reconcileToolBridgeFailures(1) > 0) {
         await relay.relayDestination('github_actions', 1);

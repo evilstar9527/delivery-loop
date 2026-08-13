@@ -44,8 +44,14 @@ interface ToolBridgeTransportCandidateRow extends CapacityCandidateRow {
   logs_trace_id: string;
 }
 
+interface ToolBridgeScopeCandidateRow extends CapacityCandidateRow {
+  transport_recovery_id: string;
+  logs_trace_id: string;
+}
+
 const TIPSY_SLS_PROVIDER_POLICY_VERSION = 1;
 const TIPSY_SLS_TRANSPORT_POLICY_VERSION = 2;
+const TIPSY_SLS_CREDENTIAL_POLICY_VERSION = 3;
 
 export interface InitialAnalysisReconcilerOptions {
   now?: () => Date;
@@ -77,18 +83,23 @@ export class InitialAnalysisReconciler {
     const adapterRecovered = await this.reconcileInventoryAdapterFailures(retryRemaining);
     const finalRemaining = retryRemaining - adapterRecovered;
     if (finalRemaining === 0) return activated + capacityRecovered + adapterRecovered;
-    const transportRecovered = await this.reconcileToolBridgeTransportFailures(finalRemaining);
-    const providerRemaining = finalRemaining - transportRecovered;
+    const scopeRecovered = await this.reconcileToolBridgeScopeFailures(finalRemaining);
+    const transportRemaining = finalRemaining - scopeRecovered;
+    if (transportRemaining === 0) {
+      return activated + capacityRecovered + adapterRecovered + scopeRecovered;
+    }
+    const transportRecovered = await this.reconcileToolBridgeTransportFailures(transportRemaining);
+    const providerRemaining = transportRemaining - transportRecovered;
     if (providerRemaining === 0) {
-      return activated + capacityRecovered + adapterRecovered + transportRecovered;
+      return activated + capacityRecovered + adapterRecovered + scopeRecovered + transportRecovered;
     }
     const toolBridgeRecovered = await this.reconcileToolBridgeFailures(providerRemaining);
     const ordinaryRemaining = providerRemaining - toolBridgeRecovered;
     if (ordinaryRemaining === 0) {
-      return activated + capacityRecovered + adapterRecovered + transportRecovered +
+      return activated + capacityRecovered + adapterRecovered + scopeRecovered + transportRecovered +
         toolBridgeRecovered;
     }
-    return activated + capacityRecovered + adapterRecovered + transportRecovered +
+    return activated + capacityRecovered + adapterRecovered + scopeRecovered + transportRecovered +
       toolBridgeRecovered +
       await this.reconcileFailedAttempts(ordinaryRemaining);
   }
@@ -434,6 +445,72 @@ export class InitialAnalysisReconciler {
     let recovered = 0;
     for (const candidate of result.results) {
       if (await this.scheduleToolBridgeTransportRecovery(candidate)) recovered += 1;
+    }
+    return recovered;
+  }
+
+  /** Re-arms the exact transport replacement hidden by the stale leaf-only SK scope. */
+  async reconcileToolBridgeScopeFailures(limit = 5): Promise<number> {
+    this.assertLimit(limit);
+    const result = await this.db.prepare(
+      `SELECT runs.run_id, failures.failure_id,
+              failed.attempt_id AS failed_attempt_id, blockers.blocker_id,
+              transport.recovery_id AS transport_recovery_id,
+              traces.trace_id AS logs_trace_id,
+              current_retry.retry_sequence + 1 AS retry_sequence
+       FROM runs
+       JOIN initial_analysis_retries AS current_retry
+         ON current_retry.run_id = runs.run_id
+        AND NOT EXISTS (
+          SELECT 1 FROM initial_analysis_retries AS later
+          WHERE later.run_id = current_retry.run_id
+            AND later.retry_sequence > current_retry.retry_sequence
+        )
+       JOIN attempts AS failed ON failed.attempt_id = current_retry.retry_attempt_id
+       JOIN initial_analysis_tool_bridge_transport_recoveries AS transport
+         ON transport.run_id = runs.run_id
+        AND transport.replacement_attempt_id = failed.attempt_id
+        AND transport.transport_policy_version = ?
+       JOIN attempt_failures AS failures
+         ON failures.attempt_id = failed.attempt_id AND failures.run_id = runs.run_id
+       JOIN run_blockers AS blockers
+         ON blockers.run_id = runs.run_id AND blockers.resolved_at IS NULL
+        AND blockers.retry_scope_digest = failures.retry_scope_digest
+        AND blockers.fingerprint_digest = failures.fingerprint_digest
+       JOIN tool_call_traces AS traces
+         ON traces.attempt_id = failed.attempt_id AND traces.run_id = runs.run_id
+        AND traces.tool_path = 'logs/search' AND traces.action = 'logs:read'
+        AND traces.effect = 'read' AND traces.result_category = 'upstream_error'
+       WHERE runs.state = 'blocked' AND runs.active_plan_id IS NULL
+         AND failed.mode = 'analysis' AND failed.status = 'failed'
+         AND failed.base_sha = runs.base_sha
+         AND failures.failure_class = 'tool_error'
+         AND failures.failure_code = 'tool_unavailable'
+         AND failures.failure_site = 'tool_logs_search'
+         AND failures.needed_human_input = 'resolve_external_dependency'
+         AND blockers.reason IN ('external_dependency', 'attempt_limit', 'repeated_fingerprint')
+         AND blockers.needed_human_input = 'resolve_external_dependency'
+         AND NOT EXISTS (SELECT 1 FROM execution_plans WHERE run_id = runs.run_id)
+         AND NOT EXISTS (SELECT 1 FROM plan_revisions WHERE run_id = runs.run_id)
+         AND NOT EXISTS (SELECT 1 FROM automated_reviews WHERE run_id = runs.run_id)
+         AND (SELECT COUNT(*) FROM tool_call_traces WHERE attempt_id = failed.attempt_id) = 1
+         AND EXISTS (SELECT 1 FROM quota_model_reservations WHERE attempt_id = failed.attempt_id)
+         AND EXISTS (SELECT 1 FROM model_usage WHERE attempt_id = failed.attempt_id)
+         AND NOT EXISTS (SELECT 1 FROM evidence WHERE attempt_id = failed.attempt_id)
+         AND NOT EXISTS (
+           SELECT 1 FROM initial_analysis_tool_bridge_scope_recoveries AS recovery
+           WHERE recovery.run_id = runs.run_id
+              OR recovery.transport_recovery_id = transport.recovery_id
+              OR recovery.blocker_id = blockers.blocker_id
+              OR recovery.failure_id = failures.failure_id
+              OR recovery.failed_attempt_id = failed.attempt_id
+              OR recovery.logs_trace_id = traces.trace_id
+         )
+       ORDER BY failures.created_at, runs.run_id LIMIT ?`,
+    ).bind(TIPSY_SLS_TRANSPORT_POLICY_VERSION, limit).all<ToolBridgeScopeCandidateRow>();
+    let recovered = 0;
+    for (const candidate of result.results) {
+      if (await this.scheduleToolBridgeScopeRecovery(candidate)) recovered += 1;
     }
     return recovered;
   }
@@ -1145,6 +1222,143 @@ export class InitialAnalysisReconciler {
       ).bind(
         outboxId, `d1://attempts/${attemptId}`,
         `analysis-tool-transport-recovery:${candidate.failure_id}`,
+        nowIso, nowIso, recoveryId,
+      ),
+    ]);
+    return results.every((result) => result.meta.changes === 1);
+  }
+
+  private async scheduleToolBridgeScopeRecovery(
+    candidate: ToolBridgeScopeCandidateRow,
+  ): Promise<boolean> {
+    const identity = await canonicalSha256({
+      schemaVersion: '1',
+      kind: 'initial_analysis_tool_bridge_tipsy_namespace_scope',
+      credentialPolicyVersion: TIPSY_SLS_CREDENTIAL_POLICY_VERSION,
+      runId: candidate.run_id,
+      transportRecoveryId: candidate.transport_recovery_id,
+      blockerId: candidate.blocker_id,
+      failureId: candidate.failure_id,
+      failedAttemptId: candidate.failed_attempt_id,
+      logsTraceId: candidate.logs_trace_id,
+    });
+    const suffix = stableSuffix(identity);
+    const recoveryId = `initial_analysis_tool_scope_${suffix}`;
+    const retryId = `initial_analysis_retry_${suffix}`;
+    const attemptId = `analysis_retry_${suffix}`;
+    const outboxId = `dispatch_initial_analysis_retry_${suffix}`;
+    const nowIso = this.now().toISOString();
+    const results = await this.db.batch([
+      this.db.prepare(
+        `INSERT INTO initial_analysis_tool_bridge_scope_recoveries (
+           recovery_id, run_id, transport_recovery_id, blocker_id, failure_id,
+           failed_attempt_id, logs_trace_id, replacement_attempt_id,
+           credential_policy_version, created_at
+         )
+         SELECT ?, runs.run_id, transport.recovery_id, blockers.blocker_id,
+                failures.failure_id, failed.attempt_id, traces.trace_id, ?, ?, ?
+         FROM runs
+         JOIN attempts AS failed ON failed.attempt_id = ? AND failed.run_id = runs.run_id
+         JOIN initial_analysis_tool_bridge_transport_recoveries AS transport
+           ON transport.recovery_id = ? AND transport.run_id = runs.run_id
+          AND transport.replacement_attempt_id = failed.attempt_id
+          AND transport.transport_policy_version = ?
+         JOIN attempt_failures AS failures
+           ON failures.failure_id = ? AND failures.attempt_id = failed.attempt_id
+         JOIN run_blockers AS blockers
+           ON blockers.blocker_id = ? AND blockers.run_id = runs.run_id
+          AND blockers.resolved_at IS NULL
+          AND blockers.retry_scope_digest = failures.retry_scope_digest
+          AND blockers.fingerprint_digest = failures.fingerprint_digest
+         JOIN tool_call_traces AS traces
+           ON traces.trace_id = ? AND traces.attempt_id = failed.attempt_id
+          AND traces.run_id = runs.run_id
+         WHERE runs.run_id = ? AND runs.state = 'blocked'
+           AND runs.active_plan_id IS NULL
+           AND failed.mode = 'analysis' AND failed.status = 'failed'
+           AND failed.base_sha = runs.base_sha
+           AND failures.failure_class = 'tool_error'
+           AND failures.failure_code = 'tool_unavailable'
+           AND failures.failure_site = 'tool_logs_search'
+           AND failures.needed_human_input = 'resolve_external_dependency'
+           AND blockers.reason IN ('external_dependency', 'attempt_limit', 'repeated_fingerprint')
+           AND blockers.needed_human_input = 'resolve_external_dependency'
+           AND traces.tool_path = 'logs/search' AND traces.action = 'logs:read'
+           AND traces.effect = 'read' AND traces.result_category = 'upstream_error'
+           AND (SELECT COUNT(*) FROM tool_call_traces WHERE attempt_id = failed.attempt_id) = 1
+           AND EXISTS (SELECT 1 FROM quota_model_reservations WHERE attempt_id = failed.attempt_id)
+           AND EXISTS (SELECT 1 FROM model_usage WHERE attempt_id = failed.attempt_id)
+           AND NOT EXISTS (SELECT 1 FROM evidence WHERE attempt_id = failed.attempt_id)
+           AND NOT EXISTS (SELECT 1 FROM execution_plans WHERE run_id = runs.run_id)
+           AND NOT EXISTS (SELECT 1 FROM plan_revisions WHERE run_id = runs.run_id)
+           AND NOT EXISTS (SELECT 1 FROM automated_reviews WHERE run_id = runs.run_id)
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        recoveryId, attemptId, TIPSY_SLS_CREDENTIAL_POLICY_VERSION, nowIso,
+        candidate.failed_attempt_id, candidate.transport_recovery_id,
+        TIPSY_SLS_TRANSPORT_POLICY_VERSION, candidate.failure_id,
+        candidate.blocker_id, candidate.logs_trace_id, candidate.run_id,
+      ),
+      this.db.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, version, lease_generation, created_at, updated_at
+         )
+         SELECT recovery.replacement_attempt_id, failed.run_id,
+                (SELECT COALESCE(MAX(existing.ordinal), 0) + 1
+                 FROM attempts AS existing WHERE existing.run_id = failed.run_id),
+                'analysis', 'pending', failed.base_sha, failed.repository,
+                failed.workflow_ref, 0, 0, ?, ?
+         FROM initial_analysis_tool_bridge_scope_recoveries AS recovery
+         JOIN attempts AS failed ON failed.attempt_id = recovery.failed_attempt_id
+         JOIN runs ON runs.run_id = recovery.run_id
+         WHERE recovery.recovery_id = ? AND runs.state = 'blocked'
+           AND failed.status = 'failed' ON CONFLICT DO NOTHING`,
+      ).bind(nowIso, nowIso, recoveryId),
+      this.db.prepare(
+        `INSERT INTO initial_analysis_retries (
+           retry_id, run_id, failure_id, failed_attempt_id,
+           retry_attempt_id, retry_sequence, created_at
+         )
+         SELECT ?, recovery.run_id, recovery.failure_id, recovery.failed_attempt_id,
+                attempts.attempt_id, ?, ?
+         FROM initial_analysis_tool_bridge_scope_recoveries AS recovery
+         JOIN attempts ON attempts.attempt_id = recovery.replacement_attempt_id
+          AND attempts.status = 'pending'
+         WHERE recovery.recovery_id = ? ON CONFLICT DO NOTHING`,
+      ).bind(retryId, candidate.retry_sequence, nowIso, recoveryId),
+      this.db.prepare(
+        `UPDATE run_blockers SET resolved_at = ?,
+             resolution_code = 'analysis_tool_bridge_tipsy_namespace_scope_v3'
+         WHERE blocker_id = ? AND run_id = ? AND resolved_at IS NULL
+           AND EXISTS (SELECT 1 FROM initial_analysis_retries
+                       WHERE retry_id = ? AND retry_attempt_id = ?)`,
+      ).bind(nowIso, candidate.blocker_id, candidate.run_id, retryId, attemptId),
+      this.db.prepare(
+        `UPDATE runs SET state = 'planning', version = version + 1, updated_at = ?
+         WHERE run_id = ? AND state = 'blocked' AND active_plan_id IS NULL
+           AND EXISTS (
+             SELECT 1 FROM initial_analysis_tool_bridge_scope_recoveries AS recovery
+             JOIN run_blockers AS blocker ON blocker.blocker_id = recovery.blocker_id
+             WHERE recovery.recovery_id = ? AND blocker.resolved_at = ?
+               AND blocker.resolution_code = 'analysis_tool_bridge_tipsy_namespace_scope_v3'
+           )`,
+      ).bind(nowIso, candidate.run_id, recoveryId, nowIso),
+      this.db.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         )
+         SELECT ?, recovery.run_id, 'analysis_dispatch', 'github_actions', ?, ?,
+                'pending', ?, ?
+         FROM initial_analysis_tool_bridge_scope_recoveries AS recovery
+         JOIN attempts ON attempts.attempt_id = recovery.replacement_attempt_id
+         JOIN runs ON runs.run_id = recovery.run_id
+         WHERE recovery.recovery_id = ? AND runs.state = 'planning'
+           AND attempts.status = 'pending' ON CONFLICT DO NOTHING`,
+      ).bind(
+        outboxId, `d1://attempts/${attemptId}`,
+        `analysis-tool-scope-recovery:${candidate.failure_id}`,
         nowIso, nowIso, recoveryId,
       ),
     ]);
