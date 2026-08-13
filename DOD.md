@@ -574,8 +574,10 @@ E2E 必须脚本化到可重跑的最大程度；飞书人工批准步骤可以�
   migration 0082只恢复已有模型usage、唯一`logs/search=upstream_error`、零Evidence/Plan且直接来自
   0081 marker的同一Run，20路并发只创建ordinal 6。production adapter/0082/control Worker已发布，
   但真实Cron先暴露分阶段接线漏掉该reconciler；首次接线经PR #285发布后又证明后台位置仍受
-  Free Worker CPU fence饿死。把纯D1 recovery前移到任何GitHub GET之前的优先级修复已本地
-  RED/GREEN，尚待受保护交付和再次发布，不能冒充active Plan或backend PR。
+  Free Worker CPU fence饿死。PR #286把纯D1 recovery前移到任何GitHub GET之前后，production
+  exact guard证明第五次失败的blocker reason为`attempt_limit`而非`external_dependency`；仅接受
+  这两个已知reason的production-shape修复已17/17 RED/GREEN，尚待受保护交付和再次发布，不能
+  冒充active Plan或backend PR。
 
 ## 10. 外部前置与人工决策
 
