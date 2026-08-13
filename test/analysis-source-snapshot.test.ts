@@ -70,7 +70,7 @@ describe('analysis source snapshot', () => {
     })).toBe(false);
   });
 
-  it('rejects missing matches, symlinks, runtime Secrets, and oversized inventories', async () => {
+  it('supports the production target inventory while rejecting missing matches, symlinks, Secrets, and oversized inventories', async () => {
     const missing = await repository({ 'src/other.ts': 'export const other = true;\n' });
     await expect(buildAnalysisSourceSnapshot({
       repositoryPath: missing,
@@ -97,8 +97,22 @@ describe('analysis source snapshot', () => {
       runtimeSecrets: [secret],
     })).rejects.toBeInstanceOf(AnalysisSourceSnapshotError);
 
+    const productionSizedFiles = Object.fromEntries(Array.from(
+      { length: 2_216 },
+      (_, index) => [
+        `src/file-${index}.ts`,
+        `export const event = '${index === 0 ? 'bounded_event' : `unrelated_${index}`}';\n`,
+      ],
+    ));
+    const productionSized = await repository(productionSizedFiles);
+    await expect(buildAnalysisSourceSnapshot({
+      repositoryPath: productionSized,
+      diagnosticContext: { source: { event: 'bounded_event' } },
+      runtimeSecrets: [],
+    })).resolves.toMatchObject({ schemaVersion: '1', matches: expect.any(Array) });
+
     const oversizedFiles = Object.fromEntries(Array.from(
-      { length: 2_001 },
+      { length: 5_001 },
       (_, index) => [`src/file-${index}.ts`, "export const event = 'bounded_event';\n"],
     ));
     const oversized = await repository(oversizedFiles);

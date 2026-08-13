@@ -2,11 +2,12 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { z } from 'zod';
 import type { DiagnosticRootCauseV1Schema } from '../domain/diagnostic-evidence.js';
+import { ANALYSIS_REPOSITORY_MAX_TRACKED_PATHS } from
+  '../domain/analysis-repository-inventory.js';
 import { patchPathIsSafe } from '../domain/patch-proposal.js';
 import { SecretScanner } from '../security/redaction.js';
 import { executeGitCommand } from './git-repository-writer.js';
 
-const MAX_TRACKED_FILES = 2_000;
 const MAX_SOURCE_FILE_BYTES = 256 * 1_024;
 const MAX_SCANNED_BYTES = 16 * 1_024 * 1_024;
 const MAX_CONTEXT_NODES = 10_000;
@@ -96,7 +97,7 @@ export async function buildAnalysisSourceSnapshot(input: {
   const paths = listed.stdout.endsWith('\0')
     ? listed.stdout.slice(0, -1).split('\0')
     : listed.stdout === '' ? [] : listed.stdout.split('\0');
-  if (paths.length < 1 || paths.length > MAX_TRACKED_FILES) {
+  if (paths.length < 1 || paths.length > ANALYSIS_REPOSITORY_MAX_TRACKED_PATHS) {
     throw new AnalysisSourceSnapshotError();
   }
 
