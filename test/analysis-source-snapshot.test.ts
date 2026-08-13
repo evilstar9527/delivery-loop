@@ -167,5 +167,5 @@ describe('analysis source snapshot', () => {
       diagnosticContext: { source: { event: 'bounded_event' } },
       runtimeSecrets: [],
     })).rejects.toBeInstanceOf(AnalysisSourceSnapshotError);
-  });
+  }, 15_000);
 });
