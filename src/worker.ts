@@ -243,6 +243,13 @@ export default {
       // filtering does not bypass D1 fencing; the Queue consumer still reloads
       // the immutable outbox and Attempt before performing any effect.
       await relay.relayDestination('github_actions', 1);
+      // This D1-only recovery binds one exact blocked analysis lineage. Run it
+      // before any GitHub GET: a Free-plan scheduled invocation can otherwise
+      // exhaust its CPU budget on external observation before reaching the
+      // background recovery section every minute.
+      if (await initialAnalysis.reconcileToolBridgeFailures(1) > 0) {
+        await relay.relayDestination('github_actions', 1);
+      }
       // A Draft PR already created by an earlier invocation is the shortest
       // active-run path to the automated review loop. Observe that exact PR
       // before stale at-risk Action recovery: on the Free plan, one historical
@@ -326,13 +333,6 @@ export default {
       await new AutomatedReviewScheduler(env.DB_CONTROL).resumeFixedRuns(5, scheduledNow());
       await initialAnalysis.reconcileCapacityFailures(1);
       await initialAnalysis.reconcileInventoryAdapterFailures(1);
-      // A retired analysis log provider can leave the latest adapter attempt
-      // blocked after its one real read. Re-arm that exact lineage before the
-      // ordinary retry scan, then offer its durable dispatch immediately so
-      // the Free-plan CPU fence cannot starve the replacement indefinitely.
-      if (await initialAnalysis.reconcileToolBridgeFailures(1) > 0) {
-        await relay.relayDestination('github_actions', 1);
-      }
       await initialAnalysis.reconcileFailedAttempts(5);
       await planRevisionAnalysis.reconcileBatch(5);
       // Relay every remaining durable effect, then activate and schedule more
