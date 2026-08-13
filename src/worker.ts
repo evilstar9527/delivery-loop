@@ -326,6 +326,13 @@ export default {
       await new AutomatedReviewScheduler(env.DB_CONTROL).resumeFixedRuns(5, scheduledNow());
       await initialAnalysis.reconcileCapacityFailures(1);
       await initialAnalysis.reconcileInventoryAdapterFailures(1);
+      // A retired analysis log provider can leave the latest adapter attempt
+      // blocked after its one real read. Re-arm that exact lineage before the
+      // ordinary retry scan, then offer its durable dispatch immediately so
+      // the Free-plan CPU fence cannot starve the replacement indefinitely.
+      if (await initialAnalysis.reconcileToolBridgeFailures(1) > 0) {
+        await relay.relayDestination('github_actions', 1);
+      }
       await initialAnalysis.reconcileFailedAttempts(5);
       await planRevisionAnalysis.reconcileBatch(5);
       // Relay every remaining durable effect, then activate and schedule more
