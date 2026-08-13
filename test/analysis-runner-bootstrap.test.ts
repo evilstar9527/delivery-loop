@@ -619,6 +619,7 @@ describe('analysis Runner bootstrap', () => {
       heartbeatObserved = resolvePromise;
     });
     const relevantOrder: string[] = [];
+    const modelAccountingOrder: string[] = [];
     let planBody: unknown;
     let evidenceBody: DiagnosticEvidenceV1 | undefined;
     let reservationCount = 0;
@@ -665,7 +666,8 @@ describe('analysis Runner bootstrap', () => {
       }
       if (url.endsWith('/model-reservations')) {
         reservationCount += 1;
-        expect(authorization).toBe(`Bearer ${INITIAL_TOKEN}`);
+        modelAccountingOrder.push(`reserve-${reservationCount}`);
+        expect([`Bearer ${INITIAL_TOKEN}`, `Bearer ${ROTATED_TOKEN}`]).toContain(authorization);
         const body = JSON.parse(String(init?.body)) as { reservationId: string };
         return Response.json({
           reservationId: body.reservationId,
@@ -720,6 +722,7 @@ describe('analysis Runner bootstrap', () => {
       }
       if (url.endsWith('/model-usage')) {
         usageCount += 1;
+        modelAccountingOrder.push(`usage-${usageCount}`);
         expect(authorization).toBe(`Bearer ${ROTATED_TOKEN}`);
         const body = JSON.parse(String(init?.body)) as {
           reservationId: string;
@@ -768,12 +771,23 @@ describe('analysis Runner bootstrap', () => {
 
     const agent = {
       usesMeteredModel: true as const,
+      admitsEachModelInvocation: true as const,
       async start(input: CodexAnalysisStartInput): Promise<ExecutionPlanV1> {
         expect(JSON.stringify(input)).not.toContain(INITIAL_TOKEN);
         expect(JSON.stringify(input)).not.toContain(INITIAL_TOOL_TOKEN);
         expect(input.diagnostic).toBeDefined();
         await heartbeatDone;
         const diagnostic = input.diagnostic!;
+        const recordUsage = async () => {
+          await input.onModelInvocation?.();
+          input.onUsage?.({
+            inputTokens: 100,
+            cachedInputTokens: 60,
+            outputTokens: 20,
+            reasoningOutputTokens: 5,
+          });
+        };
+        await recordUsage();
         for (const path of [
           diagnostic.mediationContextFilePath,
           diagnostic.logRequestOutputFilePath,
@@ -791,25 +805,20 @@ describe('analysis Runner bootstrap', () => {
             path: '/v1/chat',
           },
         });
+        await recordUsage();
         expect(logs).toMatchObject({ entries: [{ requestTraceId: 'safe-request-trace' }] });
         const trace = await diagnostic.mediation.getTrace({
           schemaVersion: '1',
           arguments: { requestTraceId: 'safe-request-trace' },
         });
+        await recordUsage();
         expect(trace).toMatchObject({ spans: [{ outcome: 'stale-cache' }] });
         await diagnostic.mediation.finish({
           summary: 'A stale cache branch returns the previous response.',
           confidence: 'high',
           codeRefs: [{ path: 'src/cache.ts', line: 42 }],
         });
-        for (let index = 0; index < 4; index += 1) {
-          input.onUsage?.({
-            inputTokens: 100,
-            cachedInputTokens: 60,
-            outputTokens: 20,
-            reasoningOutputTokens: 5,
-          });
-        }
+        await recordUsage();
         return await proposedPlan(input, diagnosticPlanContent());
       },
     };
@@ -835,6 +844,10 @@ describe('analysis Runner bootstrap', () => {
     });
     expect(reservationCount).toBe(4);
     expect(usageCount).toBe(4);
+    expect(modelAccountingOrder).toEqual([
+      'reserve-1', 'usage-1', 'reserve-2', 'usage-2',
+      'reserve-3', 'usage-3', 'reserve-4', 'usage-4',
+    ]);
     expect(relevantOrder).toEqual(['logs/search', 'traces/get', 'diagnostic-evidence', 'plan']);
     expect(planBody).toEqual(expectedContent);
     expect(evidenceBody).toMatchObject({
@@ -2074,6 +2087,102 @@ describe('analysis Runner bootstrap', () => {
       leaseGeneration: 3,
     });
     expect(JSON.stringify(eventBodies)).not.toContain('CANARY_AMBIGUOUS_FAILURE_CALLBACK');
+    expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
+    expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
+  });
+
+  it('reports model quota denial as a fixed policy failure before starting the Agent', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-quota-denial-'));
+    const environment = await runnerEnvironment(root);
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(environment.GITHUB_WORKSPACE!, { recursive: true });
+    await mkdir(environment.RUNNER_TEMP!, { recursive: true });
+    let agentStarted = false;
+    let failureBody: unknown;
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('https://oidc.actions.test/token')) {
+        return Response.json({ value: OIDC_TOKEN });
+      }
+      if (url.endsWith('/exchange')) {
+        return Response.json({
+          attemptToken: INITIAL_TOKEN,
+          expiresAt: '2026-07-25T00:05:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: INITIAL_TOOL_TOKEN,
+            expiresAt: '2026-07-25T00:05:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith('/context')) {
+        return Response.json({
+          schemaVersion: '1',
+          attempt: {
+            id: ATTEMPT_ID, runId: RUN_ID, mode: 'analysis', version: 7,
+            leaseGeneration: 3, baseSha: BASE_SHA,
+          },
+          task: taskEnvelope(),
+          planPolicy: {
+            version: 1,
+            allowedEffects: ['repo_read'],
+            allowedCommandRefs: ['policy:inspect'],
+          },
+        });
+      }
+      if (url.endsWith('/model-reservations')) {
+        return Response.json({
+          error: { code: 'rate_limited', message: 'CANARY_QUOTA_DETAIL' },
+        }, { status: 429 });
+      }
+      if (url.endsWith('/events')) {
+        failureBody = JSON.parse(String(init?.body)) as unknown;
+        return Response.json({ accepted: true }, { status: 202 });
+      }
+      throw new Error(`unexpected quota denial fake request: ${url}`);
+    };
+
+    const promise = runAnalysisAttempt({
+      environment,
+      fetch: fetchImplementation,
+      agent: {
+        usesMeteredModel: true,
+        admitsEachModelInvocation: true,
+        async start(input) {
+          await input.onModelInvocation?.();
+          agentStarted = true;
+          return await proposedPlan(input, planContent());
+        },
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+      now: () => new Date('2026-07-25T00:01:00.000Z'),
+    });
+
+    await expect(promise).rejects.toMatchObject({
+      name: 'AnalysisRunnerError',
+      failure: {
+        failureCode: 'tool_policy_denied',
+        failureSite: 'external_reconciliation',
+        attemptedPaths: ['external_reconciliation'],
+        neededHumanInput: 'approve_policy_change',
+      },
+      analysisFailure: {
+        kind: 'runner_internal_failure',
+        stage: 'model_reservation',
+      },
+    } satisfies Partial<AnalysisRunnerError>);
+    expect(agentStarted).toBe(false);
+    expect(failureBody).toMatchObject({
+      type: 'attempt_failed',
+      failureCode: 'tool_policy_denied',
+      failureSite: 'external_reconciliation',
+      attemptedPaths: ['external_reconciliation'],
+      neededHumanInput: 'approve_policy_change',
+    });
+    expect(JSON.stringify(failureBody)).not.toContain('CANARY_QUOTA_DETAIL');
     expect(await readdir(environment.GITHUB_WORKSPACE!)).toEqual([]);
     expect(await readdir(environment.RUNNER_TEMP!)).toEqual([]);
   });

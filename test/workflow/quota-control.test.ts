@@ -327,6 +327,30 @@ describe('durable multi-dimensional quota control', () => {
     ).resolves.toMatchObject({ attemptId: third, disposition: 'created' });
   });
 
+  it('releases unused model reservations as soon as their Attempt is terminal', async () => {
+    const run = await seedRun('terminal-model-reservation');
+    const attempt = await seedAttempt(run.runId, 'terminal-model-reservation', 1);
+    const profileId = await seedModelProfile('terminal-release');
+    const store = new QuotaControlStore(env.DB_CONTROL);
+    const reservation = await store.reserveModelCall({
+      reservationId: 'model_reservation_terminal_release',
+      attemptId: attempt,
+      profileId,
+      occurredAt: NOW.toISOString(),
+    });
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'failed', updated_at = ? WHERE attempt_id = ?`,
+    ).bind(LATER.toISOString(), attempt).run();
+
+    await expect(store.reconcile(LATER)).resolves.toMatchObject({ model: 1 });
+    await expect(env.DB_CONTROL.prepare(
+      `SELECT status, usage_id FROM quota_model_reservations WHERE reservation_id = ?`,
+    ).bind(reservation.reservationId).first()).resolves.toEqual({
+      status: 'released',
+      usage_id: null,
+    });
+  });
+
   it('re-arms a released stable concurrency reservation before an outbox retry', async () => {
     const run = await seedRun('concurrency-rearm');
     const first = await seedAttempt(run.runId, 'concurrency-rearm-first', 1);

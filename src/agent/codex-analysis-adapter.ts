@@ -72,6 +72,8 @@ export interface CodexAnalysisStartInput {
   identity: AnalysisPlanIdentity;
   validation: ExecutionPlanValidationContext;
   model?: string;
+  /** Admits the immediately following model process; called once per real invocation. */
+  onModelInvocation?: () => Promise<string | undefined>;
   onUsage?: (usage: CodexModelUsage) => void;
   /** Runner-owned fixed codes from one rejected proposal; never raw Plan/error text. */
   correctionIssueCodes?: readonly ExecutionPlanValidationIssueCode[];
@@ -130,6 +132,7 @@ export const CODEX_ANALYSIS_FAILURE_STAGES = [
   'diagnostic_trace_mediation',
   'diagnostic_root_cause',
   'diagnostic_plan',
+  'model_reservation',
   'plan_validation',
   'runner_boundary',
 ] as const;
@@ -489,6 +492,7 @@ function safeMediationContext(
 /** Official `codex exec` adapter constrained to analysis-only, read-only structured output. */
 export class CodexAnalysisAdapter {
   readonly usesMeteredModel = true as const;
+  readonly admitsEachModelInvocation = true as const;
   private readonly outputSchemaPath: string;
   private readonly command: string;
   private readonly execute: CommandExecutor;
@@ -855,6 +859,7 @@ export class CodexAnalysisAdapter {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
       throw new CodexAnalysisAdapterError('process_timeout', stage);
     }
+    const invocationModel = (await input.onModelInvocation?.()) ?? input.model;
     const usage = new CodexUsageAccumulator();
     const providerFailure = new AnalysisProviderJsonlFailureProjector();
     let result: CommandExecutionResult;
@@ -867,7 +872,7 @@ export class CodexAnalysisAdapter {
           '--ignore-user-config',
           '--color',
           'never',
-          ...(input.model === undefined ? [] : ['--json', '--model', input.model]),
+          ...(invocationModel === undefined ? [] : ['--json', '--model', invocationModel]),
           '--sandbox',
           'read-only',
           '-c',
@@ -890,7 +895,7 @@ export class CodexAnalysisAdapter {
         cwd: workspacePath,
         stdin: prompt,
         timeoutMs,
-        ...(input.model === undefined
+        ...(invocationModel === undefined
           ? {}
           : {
               onStdoutLine: (line: string) => {
@@ -919,7 +924,7 @@ export class CodexAnalysisAdapter {
           : stderrCode,
       );
     }
-    if (input.model !== undefined) {
+    if (invocationModel !== undefined) {
       const measured = usage.result();
       if (measured === null) throw new CodexAnalysisAdapterError('usage_invalid', stage);
       try {

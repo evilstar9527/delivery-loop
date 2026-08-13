@@ -649,8 +649,20 @@ export class QuotaControlStore {
          )`,
       ).bind(nowIso, nowIso, nowIso, nowIso),
       this.db.prepare(
-        `UPDATE quota_model_reservations SET status = 'expired', updated_at = ?
-         WHERE status = 'reserved' AND expires_at <= ?`,
+        `UPDATE quota_model_reservations
+         SET status = CASE WHEN EXISTS (
+               SELECT 1 FROM attempts
+               WHERE attempt_id = quota_model_reservations.attempt_id
+                 AND status IN ('completed', 'failed', 'cancelled', 'lost')
+             ) THEN 'released' ELSE 'expired' END,
+             updated_at = ?
+         WHERE status = 'reserved' AND (
+           expires_at <= ? OR EXISTS (
+             SELECT 1 FROM attempts
+             WHERE attempt_id = quota_model_reservations.attempt_id
+               AND status IN ('completed', 'failed', 'cancelled', 'lost')
+           )
+         )`,
       ).bind(nowIso, nowIso),
     ]);
     return {

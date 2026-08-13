@@ -560,6 +560,9 @@ E2E 必须脚本化到可重跑的最大程度；飞书人工批准步骤可以�
 - [x] 本地契约区分executor Action identity与业务repository/checkout identity；dispatch payload
   无Secret/正文，私有checkout token仅进入checkout step，OIDC/observation与业务write authority
   分离。验收命令与输出见`PROGRESS.md`最新Round。
+- [x] BUG四阶段analysis按真实模型调用逐次`reserve → settle`，不在首轮前占用四个最大窗口；
+  terminal Attempt未结算reservation由既有Cron释放，429以固定policy failure安全归类。定向测试
+  与production只读quota事实见`PROGRESS.md`最新Round。
 
 ## 10. 外部前置与人工决策
 

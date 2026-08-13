@@ -223,6 +223,7 @@ interface MutableFencing {
 
 export interface AnalysisAgent {
   readonly usesMeteredModel?: boolean;
+  readonly admitsEachModelInvocation?: boolean;
   start(input: CodexAnalysisStartInput): Promise<ExecutionPlanV1>;
 }
 
@@ -279,6 +280,12 @@ export class AnalysisRunnerError extends Error {
   ) {
     super(message);
     this.name = 'AnalysisRunnerError';
+  }
+}
+
+class ControlPlaneResponseError extends AnalysisRunnerError {
+  constructor(readonly operation: string, readonly status: number) {
+    super(`${operation} failed with status ${status}`);
   }
 }
 
@@ -370,7 +377,7 @@ async function readJsonResponse(
 ): Promise<unknown> {
   if (!expectedStatuses.includes(response.status)) {
     await response.body?.cancel();
-    throw new AnalysisRunnerError(`${operation} failed with status ${response.status}`);
+    throw new ControlPlaneResponseError(operation, response.status);
   }
   let text: string;
   try {
@@ -403,6 +410,13 @@ async function fetchJson(
   }
   return await readJsonResponse(response, expectedStatuses, operation);
 }
+
+const MODEL_QUOTA_FAILURE: AnalysisRunnerFailure = {
+  failureCode: 'tool_policy_denied',
+  failureSite: 'external_reconciliation',
+  attemptedPaths: ['external_reconciliation'],
+  neededHumanInput: 'approve_policy_change',
+};
 
 async function controlPlaneJson(
   fetchImplementation: typeof globalThis.fetch,
@@ -1365,8 +1379,51 @@ export async function runAnalysisAttempt(
     workspaceContextRemoved = true;
   };
   const usesMeteredModel = options.agent === undefined || options.agent.usesMeteredModel === true;
-  const reserveModelInvocation = async (invocation: number): Promise<void> => {
-    if (!usesMeteredModel) return;
+  const admitsEachModelInvocation = options.agent === undefined ||
+    options.agent.admitsEachModelInvocation === true;
+  let settledModelReservations = 0;
+  const settleMeasuredModelUsages = async (): Promise<void> => {
+    while (settledModelReservations < measuredUsages.length) {
+      const modelReservation = modelReservations[settledModelReservations];
+      const usage = measuredUsages[settledModelReservations];
+      if (modelReservation === undefined || usage === undefined) {
+        throw new AnalysisRunnerError('analysis Agent usage is unavailable');
+      }
+      const usageDigest = await canonicalSha256({
+        reservationId: modelReservation.reservationId,
+        attemptId: config.attemptId,
+      });
+      const usageId = `model_usage_${usageDigest.slice(
+        'sha256:'.length,
+        'sha256:'.length + 54,
+      )}`;
+      const rawUsage = await requestLock.run(async () => await controlPlaneJson(
+        fetchImplementation,
+        config,
+        `/v1/attempts/${config.attemptId}/model-usage`,
+        fencing.token,
+        'model usage settlement',
+        [200, 201],
+        {
+          reservationId: modelReservation.reservationId,
+          usageId,
+          expectedVersion: fencing.version,
+          leaseGeneration: fencing.leaseGeneration,
+          ...usage,
+        },
+      ));
+      const parsedUsage = ModelUsageResponseSchema.safeParse(rawUsage);
+      if (
+        !parsedUsage.success ||
+        parsedUsage.data.usageId !== usageId ||
+        parsedUsage.data.reservationId !== modelReservation.reservationId
+      ) throw new AnalysisRunnerError('model usage settlement response is invalid');
+      settledModelReservations += 1;
+    }
+  };
+  const reserveModelInvocation = async (invocation: number): Promise<string | undefined> => {
+    if (!usesMeteredModel) return undefined;
+    await settleMeasuredModelUsages();
     if (!Number.isSafeInteger(invocation) || invocation !== modelReservations.length + 1) {
       throw new AnalysisRunnerError('analysis model invocation order is invalid');
     }
@@ -1379,20 +1436,36 @@ export async function runAnalysisAttempt(
     });
     const reservationId =
       `model_reservation_${reservationDigest.slice('sha256:'.length, 'sha256:'.length + 48)}`;
-    const rawReservation = await requestLock.run(async () => await controlPlaneJson(
-      fetchImplementation,
-      config,
-      `/v1/attempts/${config.attemptId}/model-reservations`,
-      fencing.token,
-      'model quota reservation',
-      [200, 201],
-      {
-        reservationId,
-        profileId: config.modelProfileId,
-        expectedVersion: fencing.version,
-        leaseGeneration: fencing.leaseGeneration,
-      },
-    ));
+    let rawReservation: unknown;
+    try {
+      rawReservation = await requestLock.run(async () => await controlPlaneJson(
+        fetchImplementation,
+        config,
+        `/v1/attempts/${config.attemptId}/model-reservations`,
+        fencing.token,
+        'model quota reservation',
+        [200, 201],
+        {
+          reservationId,
+          profileId: config.modelProfileId,
+          expectedVersion: fencing.version,
+          leaseGeneration: fencing.leaseGeneration,
+        },
+      ));
+    } catch (error) {
+      if (
+        error instanceof ControlPlaneResponseError &&
+        error.operation === 'model quota reservation' &&
+        error.status === 429
+      ) {
+        throw new AnalysisRunnerError(
+          'analysis model quota is unavailable',
+          MODEL_QUOTA_FAILURE,
+          { kind: 'runner_internal_failure', stage: 'model_reservation' },
+        );
+      }
+      throw error;
+    }
     const parsedReservation = ModelReservationResponseSchema.safeParse(rawReservation);
     if (
       !parsedReservation.success ||
@@ -1404,10 +1477,11 @@ export async function runAnalysisAttempt(
           parsedReservation.data.model !== modelReservations[0].model))
     ) throw new AnalysisRunnerError('model quota reservation response is invalid');
     modelReservations.push(parsedReservation.data);
+    return parsedReservation.data.model;
   };
 
   try {
-    if (usesMeteredModel) {
+    if (usesMeteredModel && !admitsEachModelInvocation) {
       const invocationCount = diagnosticMediation === null ? 1 : 4;
       for (let invocation = 1; invocation <= invocationCount; invocation += 1) {
         await reserveModelInvocation(invocation);
@@ -1563,16 +1637,18 @@ export async function runAnalysisAttempt(
     let validatedLocalPlan: ExecutionPlanV1 | undefined;
     let agentError: unknown;
     let correctionIssueCodes: readonly ExecutionPlanValidationIssueCode[] | undefined;
-    let correctionReserved = false;
+    let correctionAdmitted = false;
     const analysisDeadline = Date.now() + ANALYSIS_TIMEOUT_MS;
     const admitPlanCorrection = async (
       issueCodes: readonly ExecutionPlanValidationIssueCode[],
     ): Promise<void> => {
-      if (correctionReserved || issueCodes.length === 0) {
+      if (correctionAdmitted || issueCodes.length === 0) {
         throw new AnalysisRunnerError('analysis Plan correction admission is invalid');
       }
-      correctionReserved = true;
-      await reserveModelInvocation(modelReservations.length + 1);
+      correctionAdmitted = true;
+      if (!admitsEachModelInvocation) {
+        await reserveModelInvocation(modelReservations.length + 1);
+      }
     };
     try {
       for (const pass of [1, 2] as const) {
@@ -1591,17 +1667,30 @@ export async function runAnalysisAttempt(
           ...(canCorrectInitialPlan && correctionIssueCodes === undefined
             ? { onPlanCorrection: admitPlanCorrection }
             : {}),
-          ...(modelReservations[0] === undefined
-            ? {}
-            : {
-                model: modelReservations[0].model,
+          ...(usesMeteredModel && admitsEachModelInvocation
+            ? {
+                onModelInvocation: async () =>
+                  await reserveModelInvocation(modelReservations.length + 1),
                 onUsage: (usage: CodexModelUsage) => {
                   if (measuredUsages.length >= modelReservations.length) {
                     throw new Error('too many model usage results');
                   }
                   measuredUsages.push(usage);
                 },
-              }),
+              }
+            : usesMeteredModel
+              ? {
+                  ...(modelReservations[0] === undefined
+                    ? {}
+                    : { model: modelReservations[0].model }),
+                  onUsage: (usage: CodexModelUsage) => {
+                    if (measuredUsages.length >= modelReservations.length) {
+                      throw new Error('too many model usage results');
+                    }
+                    measuredUsages.push(usage);
+                  },
+                }
+              : {}),
           ...(diagnosticMediation === null
             ? {}
             : {
@@ -1626,7 +1715,7 @@ export async function runAnalysisAttempt(
             !(error instanceof ExecutionPlanValidationError)
           ) throw error;
           correctionIssueCodes = [...new Set(error.issues.map((issue) => issue.code))].sort();
-          if (!correctionReserved) await admitPlanCorrection(correctionIssueCodes);
+          if (!correctionAdmitted) await admitPlanCorrection(correctionIssueCodes);
         }
       }
     } catch (error) {
@@ -1646,38 +1735,7 @@ export async function runAnalysisAttempt(
       ) {
         throw new AnalysisRunnerError('analysis Agent usage is unavailable');
       }
-      for (const [index, usage] of measuredUsages.entries()) {
-        const modelReservation = modelReservations[index]!;
-        const usageDigest = await canonicalSha256({
-          reservationId: modelReservation.reservationId,
-          attemptId: config.attemptId,
-        });
-        const usageId = `model_usage_${usageDigest.slice(
-          'sha256:'.length,
-          'sha256:'.length + 54,
-        )}`;
-        const rawUsage = await requestLock.run(async () => await controlPlaneJson(
-          fetchImplementation,
-          config,
-          `/v1/attempts/${config.attemptId}/model-usage`,
-          fencing.token,
-          'model usage settlement',
-          [200, 201],
-          {
-            reservationId: modelReservation.reservationId,
-            usageId,
-            expectedVersion: fencing.version,
-            leaseGeneration: fencing.leaseGeneration,
-            ...usage,
-          },
-        ));
-        const parsedUsage = ModelUsageResponseSchema.safeParse(rawUsage);
-        if (
-          !parsedUsage.success ||
-          parsedUsage.data.usageId !== usageId ||
-          parsedUsage.data.reservationId !== modelReservation.reservationId
-        ) throw new AnalysisRunnerError('model usage settlement response is invalid');
-      }
+      await settleMeasuredModelUsages();
     }
     if (agentError !== undefined) {
       if (agentError instanceof AnalysisRunnerError) throw agentError;
