@@ -475,8 +475,13 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     providerFailure.includes('this.observedFailure ? GENERIC_PROVIDER_PROCESS_FAILURE : null') &&
     sourceSnapshot.includes("args: ['ls-files', '-z']") &&
     sourceSnapshot.includes('ANALYSIS_REPOSITORY_MAX_TRACKED_PATHS') &&
+    sourceSnapshot.includes('ANALYSIS_REPOSITORY_MAX_TRACKED_PATH_BYTES') &&
     sourceSnapshot.includes("'../domain/analysis-repository-inventory.js'") &&
     sourceSnapshot.includes('paths.length > ANALYSIS_REPOSITORY_MAX_TRACKED_PATHS') &&
+    sourceSnapshot.includes('maxOutputBytes: ANALYSIS_REPOSITORY_MAX_TRACKED_PATH_BYTES') &&
+    sourceSnapshot.includes('MAX_CONTEXT_STRING_BYTES = 256 * 1_024') &&
+    sourceSnapshot.includes('MAX_MATCHES_PER_CANDIDATE = 50') &&
+    sourceSnapshot.includes('isCodeShapedToken(') &&
     sourceSnapshot.includes('MAX_SCANNED_BYTES = 16 * 1_024 * 1_024') &&
     sourceSnapshot.includes('MAX_SNAPSHOT_BYTES = 12 * 1_024') &&
     sourceSnapshot.includes('new SecretScanner({ secrets: [...input.runtimeSecrets] })') &&

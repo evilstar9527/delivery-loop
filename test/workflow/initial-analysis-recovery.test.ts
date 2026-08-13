@@ -61,6 +61,7 @@ const task: TaskEnvelope = {
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM workflow_signals'),
+    env.DB_CONTROL.prepare('DELETE FROM initial_analysis_plaintext_source_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_source_snapshot_capacity_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_tool_bridge_secret_value_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_tool_bridge_scope_recoveries'),
@@ -732,6 +733,74 @@ async function seedSourceSnapshotCapacityBlocked(): Promise<string> {
   return recovery.replacement_attempt_id;
 }
 
+async function seedPlaintextSourceBlocked(): Promise<string> {
+  await seedSourceSnapshotCapacityBlocked();
+  const reconciler = new InitialAnalysisReconciler(env.DB_CONTROL, {
+    now: () => new Date(NOW),
+  });
+  expect(await reconciler.reconcileSourceSnapshotCapacityFailures(1)).toBe(1);
+  const recovery = await env.DB_CONTROL.prepare(
+    `SELECT recovery_id, replacement_attempt_id
+     FROM initial_analysis_source_snapshot_capacity_recoveries WHERE run_id = ?`,
+  ).bind(RUN_ID).first<{ recovery_id: string; replacement_attempt_id: string }>();
+  if (recovery === null) throw new Error('missing source snapshot capacity replacement');
+  const scopeDigest = `sha256:${'4'.repeat(64)}`;
+  const fingerprintDigest = `sha256:${'5'.repeat(64)}`;
+  const profile = 'codex-gpt-5p6-terra-medium-tool-loop-20260811';
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'failed', version = 3, lease_generation = 2,
+                           updated_at = ? WHERE attempt_id = ?`,
+    ).bind(NOW, recovery.replacement_attempt_id),
+    env.DB_CONTROL.prepare(
+      `UPDATE runs SET state = 'blocked', version = 16, updated_at = ? WHERE run_id = ?`,
+    ).bind(NOW, RUN_ID),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_failures (
+         failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+         retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+         failure_site, needed_human_input, scope_attempt_count,
+         consecutive_fingerprint_count, revoked_lease_generation,
+         occurred_at, created_at
+       ) VALUES ('failure-plaintext-source', ?, ?, 10, 'event-plaintext-source', 1,
+                 ?, ?, 'invalid_output', 'invalid_agent_output', 'agent_output',
+                 'manual_investigation', 10, 2, 2, ?, ?)`,
+    ).bind(RUN_ID, recovery.replacement_attempt_id, scopeDigest, fingerprintDigest, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO run_blockers (
+         blocker_id, run_id, reason, retry_scope_digest, fingerprint_digest,
+         attempt_count, consecutive_fingerprint_count, needed_human_input, created_at
+       ) VALUES ('blocker-plaintext-source', ?, 'attempt_limit', ?, ?,
+                 10, 2, 'manual_investigation', ?)`,
+    ).bind(RUN_ID, scopeDigest, fingerprintDigest, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO tool_call_traces VALUES
+       ('tooltrace-plaintext-logs', ?, ?, 'logs/search', 'logs:read', 'read', 3002, 'success', ?),
+       ('tooltrace-plaintext-request', ?, ?, 'traces/get', 'trace:read', 'read', 2783, 'success', ?)`,
+    ).bind(
+      RUN_ID, recovery.replacement_attempt_id, NOW,
+      RUN_ID, recovery.replacement_attempt_id, NOW,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO quota_model_reservations (
+         reservation_id, attempt_id, run_id, profile_id, reserved_tokens,
+         reserved_cost_microusd, status, expires_at, created_at, updated_at
+       ) VALUES ('reservation-plaintext-source', ?, ?, ?, 1, 1, 'settled',
+                 '2026-08-13T03:00:00.000Z', ?, ?)`,
+    ).bind(recovery.replacement_attempt_id, RUN_ID, profile, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO model_usage (
+         usage_id, at, provider, model, run_id, attempt_id, tenant_key,
+         repository, principal, input_tokens, cached_input_tokens, output_tokens,
+         reasoning_output_tokens, cost_microusd, source_digest, created_at
+       ) VALUES ('usage-plaintext-source', ?, 'delivery_loop_relay', 'gpt-5.6-terra',
+                 ?, ?, 'initial-analysis-recovery', 'example/delivery-target',
+                 'service:delivery-loop', 1, 0, 1, 1, 1, ?, ?)`,
+    ).bind(NOW, RUN_ID, recovery.replacement_attempt_id, `sha256:${'6'.repeat(64)}`, NOW),
+  ]);
+  return recovery.replacement_attempt_id;
+}
+
 function validPlan(attemptId: string): ExecutionPlanBodyV1 {
   return {
     schemaVersion: '1',
@@ -762,6 +831,46 @@ function validPlan(attemptId: string): ExecutionPlanBodyV1 {
 beforeEach(reset);
 
 describe('initial analysis recovery', () => {
+  it('converges the exact plaintext source failure to one replacement', async () => {
+    const failedAttemptId = await seedPlaintextSourceBlocked();
+    const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    });
+    const results = await Promise.all(Array.from(
+      { length: 20 },
+      async () => await reconciler().reconcilePlaintextSourceFailures(5),
+    ));
+    expect(results.reduce((sum, count) => sum + count, 0)).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT recovery.failed_attempt_id, recovery.logs_trace_id,
+              recovery.request_trace_id, recovery.source_policy_version,
+              attempts.ordinal, attempts.status, retries.retry_sequence,
+              blockers.resolution_code, runs.state, outbox.delivery_state
+       FROM initial_analysis_plaintext_source_recoveries AS recovery
+       JOIN attempts ON attempts.attempt_id = recovery.replacement_attempt_id
+       JOIN initial_analysis_retries AS retries ON retries.retry_attempt_id = recovery.replacement_attempt_id
+       JOIN run_blockers AS blockers ON blockers.blocker_id = recovery.blocker_id
+       JOIN runs ON runs.run_id = recovery.run_id
+       JOIN outbox ON outbox.payload_ref = 'd1://attempts/' || recovery.replacement_attempt_id`,
+    ).first()).toMatchObject({
+      failed_attempt_id: failedAttemptId,
+      logs_trace_id: 'tooltrace-plaintext-logs',
+      request_trace_id: 'tooltrace-plaintext-request',
+      source_policy_version: 3,
+      ordinal: 11,
+      status: 'pending',
+      retry_sequence: 10,
+      resolution_code: 'analysis_plaintext_source_v3',
+      state: 'planning',
+      delivery_state: 'pending',
+    });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM tasks').first())
+      .toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM runs').first())
+      .toEqual({ count: 1 });
+    expect(await reconciler().reconcilePlaintextSourceFailures(5)).toBe(0);
+  });
+
   it('converges the exact stale source snapshot capacity failure to one replacement', async () => {
     const failedAttemptId = await seedSourceSnapshotCapacityBlocked();
     const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {

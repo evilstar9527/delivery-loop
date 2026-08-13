@@ -573,6 +573,10 @@ E2E 必须脚本化到可重跑的最大程度；飞书人工批准步骤可以�
   production规模能生成有界源码证据，5001-file仍fail-closed。0086只恢复已完成成功
   `logs/search + traces/get`、零Evidence/Plan且直接来自verified credential replacement的exact lineage；
   20路并发只创建同Run唯一ordinal 10，不创建第二Task/Run或重跑旧Action。
+- [x] source snapshot复用256 KiB Git path输出预算，并从Tool Bridge单层plaintext中有界提取
+  code-shaped token；exact backend SHA的70,655-byte inventory和真实11,571-char SLS返回可生成8个
+  source refs，高频候选超过50 match即丢弃。0087只恢复直接来自0086且重复同一failure fingerprint、
+  两个tool trace均success、零Evidence/Plan的exact lineage；20路并发只创建同Run唯一ordinal 11。
 - [x] 业务日志provider与exact external-dependency recovery本地契约：`logs/search/traces/get`固定代理
   组织Tool Bridge的Tipsy生产SLS只读工具，Agent不能选择gateway/tool/logstore/env/window/limit；
   migration 0082只恢复已有模型usage、唯一`logs/search=upstream_error`、零Evidence/Plan且直接来自

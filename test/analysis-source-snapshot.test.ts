@@ -70,6 +70,52 @@ describe('analysis source snapshot', () => {
     })).toBe(false);
   });
 
+  it('extracts bounded code candidates from a Tool Bridge plaintext result', async () => {
+    const root = await repository({
+      'src/chat/name.go': [
+        'package chat',
+        'func normalizeCharacterName() string {',
+        '  return "multi_role_character_name"',
+        '}',
+      ].join('\n'),
+    });
+    const snapshot = await buildAnalysisSourceSnapshot({
+      repositoryPath: root,
+      diagnosticContext: {
+        trace: {
+          result: {
+            result: `${'unrelated telemetry '.repeat(500)} ` +
+              'handler normalizeCharacterName emitted multi_role_character_name',
+          },
+        },
+      },
+      runtimeSecrets: [],
+    });
+    expect(snapshot.matches).toEqual([{
+      path: 'src/chat/name.go',
+      line: 3,
+      excerpt: 'return "multi_role_character_name"',
+    }, {
+      path: 'src/chat/name.go',
+      line: 2,
+      excerpt: 'func normalizeCharacterName() string {',
+    }]);
+
+    await expect(buildAnalysisSourceSnapshot({
+      repositoryPath: root,
+      diagnosticContext: { result: 'x'.repeat(256 * 1_024 + 1) },
+      runtimeSecrets: [],
+    })).rejects.toBeInstanceOf(AnalysisSourceSnapshotError);
+
+    await expect(buildAnalysisSourceSnapshot({
+      repositoryPath: root,
+      diagnosticContext: {
+        result: Array.from({ length: 1_001 }, (_, index) => `candidate_${index}`).join(' '),
+      },
+      runtimeSecrets: [],
+    })).rejects.toBeInstanceOf(AnalysisSourceSnapshotError);
+  });
+
   it('supports the production target inventory while rejecting missing matches, symlinks, Secrets, and oversized inventories', async () => {
     const missing = await repository({ 'src/other.ts': 'export const other = true;\n' });
     await expect(buildAnalysisSourceSnapshot({
