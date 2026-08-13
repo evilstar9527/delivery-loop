@@ -129,6 +129,7 @@ const ContextResponseSchema = z
         allowedCommandRefs: z.array(z.string().min(1).max(200)).max(100),
         verificationCommandRefs: z.array(z.string().min(1).max(200)).max(100).default([]),
         requiresRepositoryChange: z.boolean().default(false),
+        requiresTestDeployment: z.boolean().default(false),
       })
       .strict(),
   })
@@ -1480,15 +1481,19 @@ export async function runAnalysisAttempt(
       verificationCommandRefs: context.planPolicy.verificationCommandRefs,
       allowedEffects: context.planPolicy.allowedEffects,
       requiresRepositoryChange: context.planPolicy.requiresRepositoryChange,
+      requiresTestDeployment: context.planPolicy.requiresTestDeployment,
     };
     const trustedPlanPolicy = deriveAnalysisPlanPolicy(
       context.task.intent.kind,
       context.task.policy.allowRepositoryWrite,
+      context.task.policy.allowTestDeploy,
+      context.task.target.environment,
     );
     const isUniqueSubset = (actual: readonly string[], trusted: readonly string[]): boolean =>
       new Set(actual).size === actual.length && actual.every((value) => trusted.includes(value));
     if (
       validationBase.requiresRepositoryChange !== trustedPlanPolicy.requiresRepositoryChange ||
+      validationBase.requiresTestDeployment !== trustedPlanPolicy.requiresTestDeployment ||
       !isUniqueSubset(
         context.planPolicy.allowedEffects,
         trustedPlanPolicy.allowedEffects,

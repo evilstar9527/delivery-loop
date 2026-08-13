@@ -106,6 +106,8 @@ export interface ExecutionPlanValidationContext {
   allowedEffects: readonly PlanEffect[];
   /** Trusted Task/policy classification; never derived from Agent-authored Plan text. */
   requiresRepositoryChange: boolean;
+  /** Trusted test-target classification; requires a separately schedulable delivery Item. */
+  requiresTestDeployment?: boolean;
   /**
    * Runner-owned, policy-filtered tracked paths. When present, writable Items
    * must name one exactly so execution can materialize its bounded fallback.
@@ -129,6 +131,7 @@ export type ExecutionPlanValidationIssueCode =
   | 'verification_required_after_change'
   | 'evidence_kind_not_producible'
   | 'external_fact_not_producible'
+  | 'test_deployment_contract_required'
   | 'duplicate_value'
   | 'acceptance_criterion_out_of_range'
   | 'run_mismatch'
@@ -309,6 +312,7 @@ export async function validateExecutionPlanProposal(
   const itemIds = new Set<string>();
   const allowedCommandRefs = new Set(context.allowedCommandRefs);
   const allowedEffects = new Set(context.allowedEffects);
+  let hasRequiredTestDeployment = false;
   for (const [index, item] of plan.items.entries()) {
     const itemPath = `items.${index}`;
     if (!ITEM_ID_PATTERN.test(item.id)) {
@@ -485,6 +489,37 @@ export async function validateExecutionPlanProposal(
       'repository_change_required',
       'items',
       'trusted task policy requires one self-verifying required repository change',
+    );
+  }
+
+  for (const [index, item] of plan.items.entries()) {
+    if (!item.effects.includes('test_deploy')) continue;
+    const commandRefs = item.verification.commandRefs ?? [];
+    const externalFacts = item.verification.externalFacts ?? [];
+    const validTestDeployment =
+      item.kind === 'delivery' &&
+      item.required &&
+      item.effects.length === 1 &&
+      commandRefs.length === 0 &&
+      item.verification.evidenceKinds.length === 1 &&
+      item.verification.evidenceKinds[0] === 'deployment' &&
+      externalFacts.length === 1 &&
+      externalFacts[0] === 'deployment' &&
+      selfVerifyingChanges.some((change) => item.dependsOn.includes(change.id));
+    if (validTestDeployment) hasRequiredTestDeployment = true;
+    if (!validTestDeployment) {
+      push(
+        'test_deployment_contract_required',
+        `items.${index}`,
+        'test deployment must be a required delivery item with only deployment Evidence/external fact and a direct self-verifying change dependency',
+      );
+    }
+  }
+  if (context.requiresTestDeployment === true && !hasRequiredTestDeployment) {
+    push(
+      'test_deployment_contract_required',
+      'items',
+      'trusted test-target policy requires one separately schedulable test deployment item',
     );
   }
 

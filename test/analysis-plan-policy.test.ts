@@ -8,6 +8,7 @@ describe('deriveAnalysisPlanPolicy', () => {
       const policy = deriveAnalysisPlanPolicy(intentKind, true);
 
       expect(policy.requiresRepositoryChange).toBe(true);
+      expect(policy.requiresTestDeployment).toBe(false);
       expect(policy.allowedEffects).toContain('repo_write');
       expect(policy.allowedCommandRefs).toEqual(
         expect.arrayContaining(['test:unit', 'verify:all']),
@@ -22,8 +23,30 @@ describe('deriveAnalysisPlanPolicy', () => {
       const policy = deriveAnalysisPlanPolicy(intentKind, false);
 
       expect(policy.requiresRepositoryChange).toBe(false);
+      expect(policy.requiresTestDeployment).toBe(false);
       expect(policy.allowedEffects).not.toContain('repo_write');
       expect(policy.verificationCommandRefs).toEqual([]);
     },
   );
+
+  it('allows and requires test_deploy only for a writable test target with explicit authority', () => {
+    const policy = deriveAnalysisPlanPolicy('bug', true, true, 'test');
+
+    expect(policy.allowedEffects).toContain('test_deploy');
+    expect(policy.requiresTestDeployment).toBe(true);
+  });
+
+  it.each([
+    { allowRepositoryWrite: false, allowTestDeploy: true, environment: 'test' as const },
+    { allowRepositoryWrite: true, allowTestDeploy: false, environment: 'test' as const },
+    { allowRepositoryWrite: true, allowTestDeploy: true, environment: 'none' as const },
+    { allowRepositoryWrite: true, allowTestDeploy: true, environment: 'production' as const },
+  ])('denies test_deploy outside the exact writable test-target contract: $environment', (input) => {
+    const policy = deriveAnalysisPlanPolicy(
+      'bug', input.allowRepositoryWrite, input.allowTestDeploy, input.environment,
+    );
+
+    expect(policy.allowedEffects).not.toContain('test_deploy');
+    expect(policy.requiresTestDeployment).toBe(false);
+  });
 });

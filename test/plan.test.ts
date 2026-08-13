@@ -124,14 +124,84 @@ describe('ExecutionPlan v1 validation', () => {
       ],
       verificationCommandRefs: ['verify:all'],
       requiresRepositoryChange: true,
+      requiresTestDeployment: false,
     });
     expect(deriveAnalysisPlanPolicy('requirement', false)).toMatchObject({
       allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic'],
       requiresRepositoryChange: false,
+      requiresTestDeployment: false,
     });
     expect(deriveAnalysisPlanPolicy('bug', true)).toMatchObject({
       allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write'],
       requiresRepositoryChange: true,
+      requiresTestDeployment: false,
+    });
+  });
+
+  it('accepts a self-verifying change followed by a separately schedulable test deployment', async () => {
+    const input = await proposal((body) => {
+      body.items = [
+        {
+          id: 'change',
+          kind: 'change',
+          title: 'Implement and verify the fix',
+          objective: 'Make the smallest safe change in src/worker.ts and prove it.',
+          acceptanceCriteriaIndexes: [0, 1],
+          doneWhen: ['The committed change passes targeted and required verification.'],
+          verification: {
+            commandRefs: ['test:unit', 'verify:all'],
+            evidenceKinds: ['commit', 'test'],
+          },
+          effects: ['repo_write'],
+          dependsOn: [],
+          required: true,
+        },
+        {
+          id: 'deploy-test',
+          kind: 'delivery',
+          title: 'Deploy the verified head to test',
+          objective: 'Deploy the exact verified commit to the test environment.',
+          acceptanceCriteriaIndexes: [0, 1],
+          doneWhen: ['The deployment provider verifies success for the exact commit.'],
+          verification: {
+            commandRefs: [],
+            evidenceKinds: ['deployment'],
+            externalFacts: ['deployment'],
+          },
+          effects: ['test_deploy'],
+          dependsOn: ['change'],
+          required: true,
+        },
+      ];
+    });
+
+    await expect(validateExecutionPlanProposal(input, {
+      ...CONTEXT,
+      allowedEffects: ['repo_read', 'repo_write', 'test_deploy'],
+      requiresRepositoryChange: true,
+      requiresTestDeployment: true,
+      writableRepositoryPaths: ['src/worker.ts'],
+    })).resolves.toEqual(input);
+  });
+
+  it('rejects a test-target Plan that omits its required deployment Item', async () => {
+    const input = await proposal((body) => {
+      body.items = [{
+        id: 'change', kind: 'change', title: 'Implement and verify the fix',
+        objective: 'Make the smallest safe change in src/worker.ts and prove it.',
+        acceptanceCriteriaIndexes: [0, 1],
+        doneWhen: ['The committed change passes targeted and required verification.'],
+        verification: { commandRefs: ['test:unit', 'verify:all'], evidenceKinds: ['commit', 'test'] },
+        effects: ['repo_write'], dependsOn: [], required: true,
+      }];
+    });
+
+    await expectIssue(input, 'test_deployment_contract_required', {
+      ...CONTEXT,
+      allowedEffects: ['repo_read', 'repo_write', 'test_deploy'],
+      requiresRepositoryChange: true,
+      requiresTestDeployment: true,
+      writableRepositoryPaths: ['src/worker.ts'],
     });
   });
   it('accepts a complete proposal and returns its canonical digest unchanged', async () => {

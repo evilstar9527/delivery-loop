@@ -92,6 +92,14 @@ function writableRequirementValidationContext(): ExecutionPlanValidationContext 
   };
 }
 
+function writableTestDeploymentValidationContext(): ExecutionPlanValidationContext {
+  return {
+    ...writableRequirementValidationContext(),
+    allowedEffects: ['repo_read', 'repo_write', 'test_deploy'],
+    requiresTestDeployment: true,
+  };
+}
+
 function validContent(): Record<string, unknown> {
   return {
     objective: 'Identify the cause and produce a source-backed execution plan.',
@@ -139,6 +147,22 @@ function writableRequirementContent(): Record<string, unknown> {
         required: true,
       },
     ],
+  };
+}
+
+function writableTestDeploymentContent(): Record<string, unknown> {
+  const content = writableRequirementContent();
+  const items = content.items as Array<Record<string, unknown>>;
+  return {
+    ...content,
+    items: [...items, {
+      id: 'deploy-test', kind: 'delivery', title: 'Deploy the verified head to test',
+      objective: 'Deploy the exact verified commit to the test environment.',
+      acceptanceCriteriaIndexes: [0],
+      doneWhen: ['The deployment provider verifies success for the exact commit.'],
+      verification: { commandRefs: [], evidenceKinds: ['deployment'], externalFacts: ['deployment'] },
+      effects: ['test_deploy'], dependsOn: ['implement-request'], required: true,
+    }],
   };
 }
 
@@ -456,6 +480,42 @@ describe('Codex analysis Agent adapter', () => {
       },
       required: true,
     }]);
+  });
+
+  it('announces the separate schedulable test-deployment contract', async () => {
+    const paths = await tempInput();
+    let observed: CommandExecutionRequest | undefined;
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async (request): Promise<CommandExecutionResult> => {
+        observed = request;
+        await writeFile(
+          paths.outputFile,
+          JSON.stringify(agentOutput(writableTestDeploymentContent())),
+        );
+        return { exitCode: 0 };
+      },
+    });
+
+    const plan = await adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-writable-test-deploy-v1', runId: 'run-codex-analysis', version: 1,
+        taskRevision: 'revision-1', baseSha: BASE_SHA, attemptId: 'attempt-test-deploy',
+      },
+      validation: writableTestDeploymentValidationContext(),
+    });
+
+    expect(observed?.stdin).toContain('Trusted Task policy allows a test deployment');
+    expect(observed?.stdin).toContain('effects must be exactly ["test_deploy"]');
+    expect(observed?.stdin).toContain('Do not add a post-deployment acceptance Item');
+    expect(plan.items[1]).toMatchObject({
+      kind: 'delivery', effects: ['test_deploy'], dependsOn: ['implement-request'],
+      verification: { commandRefs: [], evidenceKinds: ['deployment'], externalFacts: ['deployment'] },
+    });
   });
 
   it('runs non-interactively in a read-only ephemeral sandbox and injects trusted identity/digest', async () => {

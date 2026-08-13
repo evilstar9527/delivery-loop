@@ -17,16 +17,21 @@ export interface AnalysisPlanPolicy {
   allowedCommandRefs: readonly string[];
   verificationCommandRefs: readonly string[];
   requiresRepositoryChange: boolean;
+  requiresTestDeployment: boolean;
 }
 
 /** Derives the Plan proposal ceiling from trusted Task classification, never Task prose. */
 export function deriveAnalysisPlanPolicy(
   intentKind: 'requirement' | 'bug',
   allowRepositoryWrite: boolean,
+  allowTestDeploy = false,
+  targetEnvironment: 'none' | 'test' | 'production' = 'none',
 ): AnalysisPlanPolicy {
+  const allowsTestDeployment =
+    allowRepositoryWrite && allowTestDeploy && targetEnvironment === 'test';
   return {
     allowedEffects: allowRepositoryWrite
-      ? [...ANALYSIS_READ_EFFECTS, 'repo_write']
+      ? [...ANALYSIS_READ_EFFECTS, 'repo_write', ...(allowsTestDeployment ? ['test_deploy' as const] : [])]
       : ANALYSIS_READ_EFFECTS,
     allowedCommandRefs: allowRepositoryWrite
       ? [...ANALYSIS_READ_COMMAND_REFS, ...ANALYSIS_PILOT_CHANGE_COMMAND_REFS]
@@ -37,5 +42,6 @@ export function deriveAnalysisPlanPolicy(
     // A writable intake is an execution request regardless of whether it began
     // as a PRD or a bug report. Read-only bug intake remains investigation-only.
     requiresRepositoryChange: allowRepositoryWrite,
+    requiresTestDeployment: allowsTestDeployment,
   };
 }

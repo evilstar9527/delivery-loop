@@ -16,6 +16,7 @@ const BODY_CANARY = 'CANARY_ORIGINAL_USER_FEEDBACK_FOR_AGENT_ONLY';
 function taskEnvelope(
   kind: 'requirement' | 'bug' = 'bug',
   allowRepositoryWrite = false,
+  allowTestDeploy = false,
 ): TaskEnvelope {
   return {
     schemaVersion: '1',
@@ -44,7 +45,7 @@ function taskEnvelope(
     },
     policy: {
       allowRepositoryWrite,
-      allowTestDeploy: false,
+      allowTestDeploy,
       allowProductionDeploy: false,
       requireHumanApproval: true,
     },
@@ -73,6 +74,33 @@ function writablePlanContent(): Record<string, unknown> {
         },
         effects: ['repo_write'],
         dependsOn: [],
+        required: true,
+      },
+    ],
+  };
+}
+
+function writableTestDeploymentPlanContent(): Record<string, unknown> {
+  const content = writablePlanContent();
+  const items = content.items as Array<Record<string, unknown>>;
+  return {
+    ...content,
+    items: [
+      ...items,
+      {
+        id: 'deploy-test',
+        kind: 'delivery',
+        title: 'Deploy the verified head to test',
+        objective: 'Deploy the exact verified commit to the test environment.',
+        acceptanceCriteriaIndexes: [0],
+        doneWhen: ['The deployment provider verifies success for the exact commit.'],
+        verification: {
+          commandRefs: [],
+          evidenceKinds: ['deployment'],
+          externalFacts: ['deployment'],
+        },
+        effects: ['test_deploy'],
+        dependsOn: ['implement-request'],
         required: true,
       },
     ],
@@ -139,14 +167,16 @@ async function seedAttemptContext(task: TaskEnvelope = taskEnvelope()): Promise<
        ) VALUES (
          ?, 'manual', 'analysis-context-test', 'analysis-context-task', 'revision-1',
          ?, ?, 'user', 'analysis-context-user', 'example/delivery-target', 'main',
-         'test', ?, 'Analyze a user-reported failure', 'p1', 1, ?, 0, 0, 1, ?, ?
+         ?, ?, 'Analyze a user-reported failure', 'p1', 1, ?, ?, 0, 1, ?, ?
        )`,
     ).bind(
       TASK_ID,
       taskDigest,
       `r2://${payloadKey}`,
+      task.target.environment,
       task.intent.kind,
       Number(task.policy.allowRepositoryWrite),
+      Number(task.policy.allowTestDeploy),
       nowIso,
       nowIso,
     ),
@@ -190,13 +220,16 @@ async function replaceTaskSnapshot(task: TaskEnvelope): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare(
       `UPDATE tasks
-       SET task_digest = ?, payload_ref = ?, intent_kind = ?, allow_repository_write = ?
+       SET task_digest = ?, payload_ref = ?, target_environment = ?, intent_kind = ?,
+           allow_repository_write = ?, allow_test_deploy = ?
        WHERE task_id = ?`,
     ).bind(
       taskDigest,
       `r2://${payloadKey}`,
+      task.target.environment,
       task.intent.kind,
       Number(task.policy.allowRepositoryWrite),
+      Number(task.policy.allowTestDeploy),
       TASK_ID,
     ),
     env.DB_CONTROL.prepare(
@@ -381,6 +414,56 @@ describe('attempt-scoped analysis context and Plan proposal API', () => {
       body: validPlanContent(),
     });
     expect(plan.status).toBe(201);
+  });
+
+  it('projects exact test-deploy authority into context and persists a schedulable delivery Item', async () => {
+    const task = taskEnvelope('bug', true, true);
+    await replaceTaskSnapshot(task);
+
+    const context = await runnerFetch(`/v1/attempts/${ATTEMPT_ID}/context`, {
+      token: RAW_TOKEN,
+    });
+    expect(context.status).toBe(200);
+    expect(await context.json()).toMatchObject({
+      task,
+      planPolicy: {
+        allowedEffects: [
+          'repo_read', 'logs_read', 'database_diagnostic', 'repo_write', 'test_deploy',
+        ],
+        requiresRepositoryChange: true,
+        requiresTestDeployment: true,
+      },
+    });
+
+    const missingDeployment = await runnerFetch(`/v1/attempts/${ATTEMPT_ID}/plan`, {
+      method: 'POST', token: RAW_TOKEN, body: writablePlanContent(),
+    });
+    expect(missingDeployment.status).toBe(400);
+
+    const accepted = await runnerFetch(`/v1/attempts/${ATTEMPT_ID}/plan`, {
+      method: 'POST', token: RAW_TOKEN, body: writableTestDeploymentPlanContent(),
+    });
+    expect(accepted.status).toBe(201);
+    expect(await accepted.json()).toMatchObject({ status: 'validated', version: 1 });
+
+    const persisted = await env.DB_CONTROL.prepare(
+      `SELECT items.kind, effects.effect, evidence.evidence_kind,
+              facts.external_fact, dependencies.depends_on_item_id
+       FROM plan_items AS items
+       JOIN plan_item_effects AS effects
+         ON effects.plan_id = items.plan_id AND effects.item_id = items.item_id
+       JOIN plan_item_evidence_kinds AS evidence
+         ON evidence.plan_id = items.plan_id AND evidence.item_id = items.item_id
+       JOIN plan_item_external_facts AS facts
+         ON facts.plan_id = items.plan_id AND facts.item_id = items.item_id
+       JOIN plan_item_dependencies AS dependencies
+         ON dependencies.plan_id = items.plan_id AND dependencies.item_id = items.item_id
+       WHERE items.item_id = 'deploy-test'`,
+    ).first<Record<string, unknown>>();
+    expect(persisted).toEqual({
+      kind: 'delivery', effect: 'test_deploy', evidence_kind: 'deployment',
+      external_fact: 'deployment', depends_on_item_id: 'implement-request',
+    });
   });
 
   it('rejects Agent-controlled identity and effects without echoing content', async () => {
