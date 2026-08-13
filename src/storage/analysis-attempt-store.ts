@@ -117,7 +117,28 @@ async function attemptContextRow(
        FROM attempts
        JOIN runs ON runs.run_id = attempts.run_id
        JOIN tasks ON tasks.task_id = runs.task_id
-       WHERE attempts.attempt_id = ? AND attempts.run_id = ?`,
+       WHERE attempts.attempt_id = ? AND attempts.run_id = ?
+         AND (
+           EXISTS (
+             SELECT 1 FROM plan_revisions AS revision
+             WHERE revision.run_id = runs.run_id
+               AND revision.status = 'analyzing'
+           ) OR (
+             NOT EXISTS (
+               SELECT 1 FROM plan_revisions AS revision
+               WHERE revision.run_id = runs.run_id AND revision.status = 'analyzing'
+             )
+             AND attempts.attempt_id = COALESCE(
+               (SELECT retry.retry_attempt_id
+                FROM initial_analysis_retries AS retry
+                WHERE retry.run_id = runs.run_id
+                ORDER BY retry.retry_sequence DESC LIMIT 1),
+               (SELECT root.attempt_id FROM attempts AS root
+                WHERE root.run_id = runs.run_id AND root.mode = 'analysis'
+                ORDER BY root.ordinal LIMIT 1)
+             )
+           )
+         )`,
     )
     .bind(authorization.attemptId, authorization.runId)
     .first<AttemptContextRow>();

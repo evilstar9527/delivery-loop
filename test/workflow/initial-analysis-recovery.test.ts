@@ -1,0 +1,345 @@
+/// <reference types="@cloudflare/vitest-pool-workers/types" />
+
+import { env } from 'cloudflare:test';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { canonicalSha256 } from '../../src/domain/digest.js';
+import {
+  computeExecutionPlanDigest,
+  type ExecutionPlanBodyV1,
+  type ExecutionPlanV1,
+} from '../../src/domain/plan.js';
+import { InitialAnalysisReconciler } from
+  '../../src/reconciliation/initial-analysis-reconciler.js';
+import { AnalysisAttemptContextStore } from '../../src/storage/analysis-attempt-store.js';
+import { ExecutionPlanStore } from '../../src/storage/execution-plan-store.js';
+import { RunnerAttemptStore, type RunnerAuthorization } from
+  '../../src/storage/runner-attempt-store.js';
+import { type TaskEnvelope, taskRevisionDigest } from '../../src/domain/task.js';
+
+const RUN_ID = 'run-initial-analysis-recovery';
+const TASK_ID = 'task-initial-analysis-recovery';
+const ROOT_ATTEMPT_ID = 'analysis-root-initial-recovery';
+const BASE_SHA = '8'.repeat(40);
+const NOW = '2026-08-13T01:00:00.000Z';
+const FAILURE_ID = 'failure-initial-analysis-recovery';
+
+const task: TaskEnvelope = {
+  schemaVersion: '1',
+  eventId: 'event-initial-analysis-recovery',
+  occurredAt: NOW,
+  source: {
+    system: 'manual',
+    tenantKey: 'initial-analysis-recovery',
+    taskKey: TASK_ID,
+    revision: 'revision-1',
+    url: 'https://tasks.example.test/initial-analysis-recovery',
+  },
+  actor: { type: 'user', id: 'user-initial-analysis-recovery' },
+  target: {
+    owner: 'example',
+    repo: 'delivery-target',
+    baseBranch: 'main',
+    environment: 'none',
+  },
+  intent: {
+    kind: 'requirement',
+    title: 'Recover the initial analysis',
+    description: 'Create a replacement without creating another Task or Run.',
+    acceptanceCriteria: ['The replacement Plan becomes the active Plan.'],
+    priority: 'p1',
+  },
+  policy: {
+    allowRepositoryWrite: false,
+    allowTestDeploy: false,
+    allowProductionDeploy: false,
+    requireHumanApproval: true,
+  },
+};
+
+async function reset(): Promise<void> {
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM workflow_signals'),
+    env.DB_CONTROL.prepare('DELETE FROM initial_analysis_retries'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_heartbeat_receipts'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_failures'),
+    env.DB_CONTROL.prepare('DELETE FROM run_blockers'),
+    env.DB_CONTROL.prepare('DELETE FROM outbox'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_external_facts'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_evidence_kinds'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_command_refs'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_effects'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_dependencies'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_done_when'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_acceptance_criteria'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_item_progress'),
+    env.DB_CONTROL.prepare('DELETE FROM plan_items'),
+    env.DB_CONTROL.prepare('DELETE FROM execution_plan_evidence_refs'),
+    env.DB_CONTROL.prepare('DELETE FROM execution_plan_assumptions'),
+    env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
+    env.DB_CONTROL.prepare('DELETE FROM attempts'),
+    env.DB_CONTROL.prepare('DELETE FROM runs'),
+    env.DB_CONTROL.prepare('DELETE FROM tasks'),
+  ]);
+  const objects = await env.TASK_OBJECTS.list();
+  if (objects.objects.length > 0) {
+    await env.TASK_OBJECTS.delete(objects.objects.map((object) => object.key));
+  }
+}
+
+async function seedFailedRoot(overrides: {
+  scopeAttemptCount?: number;
+  consecutiveFingerprintCount?: number;
+  blocker?: boolean;
+  plan?: boolean;
+} = {}): Promise<void> {
+  const digest = await taskRevisionDigest(task);
+  const key = `tasks/${TASK_ID}/${digest.slice('sha256:'.length)}.json`;
+  await env.TASK_OBJECTS.put(key, JSON.stringify(task), {
+    httpMetadata: { contentType: 'application/json; charset=utf-8' },
+    customMetadata: { taskDigest: digest },
+  });
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO tasks (
+         task_id, source_system, tenant_key, source_task_key, task_revision,
+         task_digest, payload_ref, actor_type, actor_id, target_repository,
+         target_base_branch, target_environment, intent_kind, title, priority,
+         acceptance_criteria_count, allow_repository_write, allow_test_deploy,
+         allow_production_deploy, require_human_approval, created_at, updated_at
+       ) VALUES (?, 'manual', 'initial-analysis-recovery', ?, 'revision-1', ?, ?,
+                 'user', 'user-initial-analysis-recovery', 'example/delivery-target',
+                 'main', 'none', 'requirement', 'Recover initial analysis', 'p1',
+                 1, 0, 0, 0, 1, ?, ?)`,
+    ).bind(TASK_ID, TASK_ID, digest, `r2://${key}`, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO runs (
+         run_id, task_id, task_revision, task_digest, base_sha,
+         workflow_instance_id, state, version, created_at, updated_at
+       ) VALUES (?, ?, 'revision-1', ?, ?, ?, 'planning', 1, ?, ?)`,
+    ).bind(RUN_ID, TASK_ID, digest, BASE_SHA, RUN_ID, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+         workflow_ref, version, lease_generation, created_at, updated_at
+       ) VALUES (?, ?, 1, 'analysis', 'failed', ?, 'example/delivery-target',
+                 'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                 3, 1, ?, ?)`,
+    ).bind(ROOT_ATTEMPT_ID, RUN_ID, BASE_SHA, NOW, NOW),
+  ]);
+  await env.DB_CONTROL.prepare(
+    `INSERT INTO attempt_failures (
+       failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+       retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+       failure_site, needed_human_input, scope_attempt_count,
+       consecutive_fingerprint_count, revoked_lease_generation,
+       occurred_at, created_at
+     ) VALUES (?, ?, ?, 1, 'event-initial-analysis-failed', 1, ?, ?,
+               'policy_denied', 'tool_policy_denied', 'external_reconciliation',
+               'approve_policy_change', ?, ?, 1, ?, ?)`,
+  ).bind(
+    FAILURE_ID,
+    RUN_ID,
+    ROOT_ATTEMPT_ID,
+    `sha256:${'a'.repeat(64)}`,
+    `sha256:${'b'.repeat(64)}`,
+    overrides.scopeAttemptCount ?? 1,
+    overrides.consecutiveFingerprintCount ?? 1,
+    NOW,
+    NOW,
+  ).run();
+  if (overrides.blocker === true) {
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO run_blockers (
+         blocker_id, run_id, reason, retry_scope_digest, fingerprint_digest,
+         attempt_count, consecutive_fingerprint_count, needed_human_input,
+         created_at
+       ) VALUES ('blocker-initial-analysis', ?, 'attempt_limit', ?, ?, 3, 1,
+                 'manual_investigation', ?)`,
+    ).bind(RUN_ID, `sha256:${'a'.repeat(64)}`, `sha256:${'b'.repeat(64)}`, NOW).run();
+  }
+  if (overrides.plan === true) {
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO execution_plans (
+         plan_id, run_id, plan_version, task_revision, base_sha, digest, status,
+         created_by_attempt_id, objective, created_at, updated_at
+       ) VALUES ('plan-untrusted-existing', ?, 1, 'revision-1', ?, ?, 'validated',
+                 ?, 'Existing proposal blocks recovery.', ?, ?)`,
+    ).bind(RUN_ID, BASE_SHA, `sha256:${'c'.repeat(64)}`, ROOT_ATTEMPT_ID, NOW, NOW).run();
+  }
+}
+
+function validPlan(attemptId: string): ExecutionPlanBodyV1 {
+  return {
+    schemaVersion: '1',
+    id: 'plan-initial-analysis-recovery',
+    runId: RUN_ID,
+    version: 1,
+    taskRevision: 'revision-1',
+    baseSha: BASE_SHA,
+    createdByAttemptId: attemptId,
+    objective: 'Continue the same Task and Run after bounded analysis recovery.',
+    assumptions: ['The replacement uses the immutable original Task snapshot.'],
+    evidenceRefs: ['d1://evidence/initial-analysis-recovery'],
+    items: [{
+      id: 'verify-plan',
+      kind: 'verification',
+      title: 'Verify recovered analysis',
+      objective: 'Verify the source-backed recovered plan.',
+      acceptanceCriteriaIndexes: [0],
+      doneWhen: ['The recovered Plan is activated without another Task or Run.'],
+      verification: { commandRefs: ['policy:inspect'], evidenceKinds: ['diagnostic'] },
+      effects: ['repo_read'],
+      dependsOn: [],
+      required: true,
+    }],
+  };
+}
+
+beforeEach(reset);
+
+describe('initial analysis recovery', () => {
+  it('converges 20 reconcilers to one replacement and activates its Plan', async () => {
+    await seedFailedRoot();
+    const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    });
+    const results = await Promise.all(
+      Array.from({ length: 20 }, async () => await reconciler().reconcileFailedAttempts(5)),
+    );
+    expect(results.reduce((sum, count) => sum + count, 0)).toBe(1);
+    const retry = await env.DB_CONTROL.prepare(
+      `SELECT retries.retry_attempt_id, retries.retry_sequence,
+              attempts.status, outbox.delivery_state
+       FROM initial_analysis_retries AS retries
+       JOIN attempts ON attempts.attempt_id = retries.retry_attempt_id
+       JOIN outbox ON outbox.payload_ref = 'd1://attempts/' || attempts.attempt_id`,
+    ).first<{
+      retry_attempt_id: string;
+      retry_sequence: number;
+      status: string;
+      delivery_state: string;
+    }>();
+    expect(retry).toMatchObject({
+      retry_sequence: 1,
+      status: 'pending',
+      delivery_state: 'pending',
+    });
+    if (retry === null) throw new Error('missing initial analysis retry');
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM tasks').first()).toEqual({
+      count: 1,
+    });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM runs').first()).toEqual({
+      count: 1,
+    });
+
+    const expiresAt = new Date(Date.parse(NOW) + 300_000).toISOString();
+    const replacementAuth: RunnerAuthorization = {
+      attemptId: retry.retry_attempt_id,
+      runId: RUN_ID,
+      mode: 'analysis',
+      status: 'running',
+      version: 2,
+      leaseGeneration: 1,
+      leaseExpiresAt: expiresAt,
+      scopes: ['repo:read'],
+    };
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'running', version = 2, lease_generation = 1,
+                           lease_expires_at = ?, heartbeat_at = ?, updated_at = ?
+       WHERE attempt_id = ?`,
+    ).bind(expiresAt, NOW, NOW, retry.retry_attempt_id).run();
+    const context = await new AnalysisAttemptContextStore(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+    ).get(replacementAuth);
+    expect(context.attempt.id).toBe(retry.retry_attempt_id);
+    expect(context.revisionSource).toBeUndefined();
+    await expect(new AnalysisAttemptContextStore(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+    ).get({ ...replacementAuth, attemptId: ROOT_ATTEMPT_ID, version: 3 }))
+      .rejects.toMatchObject({ code: 'attempt_context_mismatch' });
+
+    const body = validPlan(retry.retry_attempt_id);
+    const proposal: ExecutionPlanV1 = {
+      ...body,
+      digest: await computeExecutionPlanDigest(body),
+      status: 'proposed',
+    };
+    const plan = await new ExecutionPlanStore(env.DB_CONTROL).saveValidatedProposal(
+      proposal,
+      {
+        runId: RUN_ID,
+        taskRevision: 'revision-1',
+        baseSha: BASE_SHA,
+        expectedVersion: 1,
+        acceptanceCriteriaCount: 1,
+        allowedCommandRefs: ['policy:inspect'],
+        allowedEffects: ['repo_read'],
+        requiresRepositoryChange: false,
+      },
+      NOW,
+    );
+    const rawToken = 'initial-analysis-replacement-token';
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_tokens (
+         token_id, attempt_id, oidc_token_digest, token_digest, lease_generation,
+         scopes_json, expires_at, created_at
+       ) VALUES ('token-initial-analysis-replacement', ?, ?, ?, 1,
+                 '["repo:read"]', ?, ?)`,
+    ).bind(
+      retry.retry_attempt_id,
+      `sha256:${'d'.repeat(64)}`,
+      await canonicalSha256(rawToken),
+      expiresAt,
+      NOW,
+    ).run();
+    await new RunnerAttemptStore(env.DB_CONTROL).complete(
+      retry.retry_attempt_id,
+      rawToken,
+      {
+        schemaVersion: '1',
+        eventId: 'event-initial-analysis-replacement-completed',
+        sequence: 1,
+        payloadRef: `d1://execution-plans/${plan.id}`,
+        digest: plan.digest,
+        occurredAt: NOW,
+        expectedVersion: 2,
+        leaseGeneration: 1,
+      },
+      new Date(NOW),
+    );
+    expect(await reconciler().reconcilePreparedPlans(5)).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state, active_plan_id, active_plan_version, active_plan_digest
+       FROM runs WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({
+      state: 'awaiting_approval',
+      active_plan_id: plan.id,
+      active_plan_version: 1,
+      active_plan_digest: plan.digest,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT status FROM attempts WHERE attempt_id = ?',
+    ).bind(retry.retry_attempt_id).first()).toEqual({ status: 'completed' });
+    expect(await reconciler().reconcilePreparedPlans(5)).toBe(0);
+  });
+
+  it.each([
+    [{ blocker: true }, 'active blocker'],
+    [{ plan: true }, 'existing proposal'],
+    [{ scopeAttemptCount: 3 }, 'attempt limit'],
+    [{ consecutiveFingerprintCount: 2 }, 'repeated fingerprint'],
+  ] as const)('does not retry with %s (%s)', async (...[overrides]) => {
+    await seedFailedRoot(overrides);
+    const created = await new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    }).reconcileFailedAttempts(5);
+    expect(created).toBe(0);
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM initial_analysis_retries',
+    ).first()).toEqual({ count: 0 });
+  });
+});
