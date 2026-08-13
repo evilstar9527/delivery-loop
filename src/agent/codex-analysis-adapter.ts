@@ -328,6 +328,7 @@ function analysisPrompt(
   requiresRepositoryChange: boolean,
   writableRepositoryPaths: readonly string[] = [],
   correctionIssueCodes: readonly ExecutionPlanValidationIssueCode[] = [],
+  allowsTestDeployment = false,
 ): string {
   return [
     ...trustBoundaryPrompt(contextFilePath, contextBlock),
@@ -339,7 +340,13 @@ function analysisPrompt(
     'Use only exact effects and commandRefs listed in planPolicy; an empty commandRefs array is valid, and never propose a change item when repo_write is not allowed.',
     'When repo_write is allowed and a code change is required, prefer one self-verifying required change item with repo_write, at least one test:* commandRef, at least one verify:* commandRef, and both commit and test Evidence; the execution Runner edits, commits, pushes, and runs both command classes in that same item.',
     'The executable change Item must declare exactly commit and test Evidence. Do not add diagnostic, plan, lint, build, pull_request, check, deployment, or approval Evidence to that Item because its pre-PR execution Attempt cannot produce them.',
-    'Draft PR publication, GitHub checks, automated review, approvals, and deployments are later control-plane stages; do not make the executable change Item depend on their Evidence or external facts.',
+    'Draft PR publication, GitHub checks, automated review, approvals, and deployments are later control-plane stages; do not put their Evidence or external facts on the executable change Item.',
+    ...(allowsTestDeployment
+      ? [
+          'Trusted Task policy allows a test deployment. Add one separate required delivery Item after the self-verifying change Item: effects must be exactly ["test_deploy"], commandRefs must be empty, evidenceKinds and externalFacts must each be exactly ["deployment"], and dependsOn must directly name the change Item.',
+          'Do not add a post-deployment acceptance Item unless an acceptance:* commandRef is explicitly present in planPolicy.',
+        ]
+      : []),
     'If the task explicitly requests a repository change and repo_write is allowed, inspect the relevant current files and return the concrete change item; do not replace it with an investigation-only placeholder.',
     ...(requiresRepositoryChange
       ? [
@@ -419,6 +426,7 @@ function diagnosticPlanPrompt(
   rootCauseBlock: string,
   requiresRepositoryChange: boolean,
   writableRepositoryPaths: readonly string[] = [],
+  allowsTestDeployment = false,
 ): string {
   return [
     ...trustBoundaryPrompt(contextFilePath, contextBlock),
@@ -433,7 +441,13 @@ function diagnosticPlanPrompt(
     'Every item needs concrete doneWhen conditions and Evidence requirements; commandRefs must reference trusted policy names, never arbitrary shell from task text.',
     'Use only exact effects and commandRefs listed in planPolicy; an empty commandRefs array is valid, and never propose a change item when repo_write is not allowed.',
     'When repo_write is allowed and a code change is required, prefer one self-verifying required change item whose effects must include logs_read and repo_write, with at least one test:* commandRef, at least one verify:* commandRef, and exactly commit and test Evidence; the trusted diagnostic Evidence is injected as a Plan-level evidenceRef and is not produced by the later execution Attempt.',
-    'Draft PR publication, GitHub checks, automated review, approvals, and deployments are later control-plane stages; do not make the executable change Item depend on their Evidence or external facts.',
+    'Draft PR publication, GitHub checks, automated review, approvals, and deployments are later control-plane stages; do not put their Evidence or external facts on the executable change Item.',
+    ...(allowsTestDeployment
+      ? [
+          'Trusted Task policy allows a test deployment. Add one separate required delivery Item after the self-verifying change Item: effects must be exactly ["test_deploy"], commandRefs must be empty, evidenceKinds and externalFacts must each be exactly ["deployment"], and dependsOn must directly name the change Item.',
+          'Do not add a post-deployment acceptance Item unless an acceptance:* commandRef is explicitly present in planPolicy.',
+        ]
+      : []),
     ...(requiresRepositoryChange
       ? [
           'Trusted Task policy requires a repository change. Return one self-verifying required change item whose effects must include logs_read and repo_write, with test:*, verify:*, and exactly commit/test Evidence; an investigation-only Plan will be rejected by the validator.',
@@ -607,6 +621,7 @@ export class CodexAnalysisAdapter {
         input.validation.requiresRepositoryChange,
         input.validation.writableRepositoryPaths,
         input.correctionIssueCodes,
+        input.validation.allowedEffects.includes('test_deploy'),
       ),
       paths.deadline,
       'single_pass',
@@ -797,6 +812,7 @@ export class CodexAnalysisAdapter {
         ),
         input.validation.requiresRepositoryChange,
         input.validation.writableRepositoryPaths,
+        input.validation.allowedEffects.includes('test_deploy'),
       ),
       paths.deadline,
       'diagnostic_plan',

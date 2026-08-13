@@ -66,9 +66,11 @@ interface AttemptContextRow {
   payload_ref: string;
   target_repository: string;
   target_base_branch: string;
+  target_environment: 'none' | 'test' | 'production';
   acceptance_criteria_count: number;
   intent_kind: 'requirement' | 'bug';
   allow_repository_write: number;
+  allow_test_deploy: number;
 }
 
 export interface AnalysisAttemptContext {
@@ -90,6 +92,7 @@ export interface AnalysisAttemptContext {
     allowedCommandRefs: readonly string[];
     verificationCommandRefs: readonly string[];
     requiresRepositoryChange: boolean;
+    requiresTestDeployment: boolean;
   };
 }
 
@@ -108,8 +111,9 @@ async function attemptContextRow(
               attempts.version, attempts.lease_generation, attempts.base_sha,
               attempts.repository, runs.task_id, runs.task_revision, runs.task_digest,
               runs.state AS run_state, tasks.payload_ref, tasks.target_repository,
-              tasks.target_base_branch, tasks.acceptance_criteria_count,
-              tasks.intent_kind, tasks.allow_repository_write
+              tasks.target_base_branch, tasks.target_environment,
+              tasks.acceptance_criteria_count, tasks.intent_kind,
+              tasks.allow_repository_write, tasks.allow_test_deploy
        FROM attempts
        JOIN runs ON runs.run_id = attempts.run_id
        JOIN tasks ON tasks.task_id = runs.task_id
@@ -163,8 +167,10 @@ export class AnalysisAttemptContextStore {
       task.source.revision !== row.task_revision ||
       `${task.target.owner}/${task.target.repo}` !== row.target_repository ||
       task.target.baseBranch !== row.target_base_branch ||
+      task.target.environment !== row.target_environment ||
       task.intent.kind !== row.intent_kind ||
-      Number(task.policy.allowRepositoryWrite) !== row.allow_repository_write
+      Number(task.policy.allowRepositoryWrite) !== row.allow_repository_write ||
+      Number(task.policy.allowTestDeploy) !== row.allow_test_deploy
     ) {
       throw new AnalysisAttemptError('task_payload_conflict');
     }
@@ -177,6 +183,8 @@ export class AnalysisAttemptContextStore {
     const policy = deriveAnalysisPlanPolicy(
       row.intent_kind,
       row.allow_repository_write === 1,
+      row.allow_test_deploy === 1,
+      row.target_environment,
     );
     return {
       schemaVersion: '1',
@@ -625,6 +633,8 @@ export class AnalysisPlanProposalStore {
     const policy = deriveAnalysisPlanPolicy(
       row.intent_kind,
       row.allow_repository_write === 1,
+      row.allow_test_deploy === 1,
+      row.target_environment,
     );
     const context = {
       runId: row.run_id,
