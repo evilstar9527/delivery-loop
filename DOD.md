@@ -572,7 +572,9 @@ E2E 必须脚本化到可重跑的最大程度；飞书人工批准步骤可以�
 - [x] 业务日志provider与exact external-dependency recovery本地契约：`logs/search/traces/get`固定代理
   组织Tool Bridge的Tipsy生产SLS只读工具，Agent不能选择gateway/tool/logstore/env/window/limit；
   migration 0082只恢复已有模型usage、唯一`logs/search=upstream_error`、零Evidence/Plan且直接来自
-  0081 marker的同一Run，20路并发只创建ordinal 6。production Secret/发布/恢复仍未发生。
+  0081 marker的同一Run，20路并发只创建ordinal 6。production adapter/0082/control Worker已发布，
+  但真实Cron暴露分阶段接线漏掉该reconciler，连续两个完整窗口仍为零recovery；接线修复本地
+  RED/GREEN已完成，尚待受保护交付和再次发布，不能冒充active Plan或backend PR。
 
 ## 10. 外部前置与人工决策
 

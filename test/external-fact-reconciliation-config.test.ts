@@ -56,6 +56,18 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await planRevisionAnalysis.reconcileBatch(5);',
       workflowDrain,
     );
+    const toolBridgeAnalysisRecovery = worker.indexOf(
+      'initialAnalysis.reconcileToolBridgeFailures(1)',
+      workflowDrain,
+    );
+    const toolBridgeAnalysisRecoveryRelay = worker.indexOf(
+      "await relay.relayDestination('github_actions', 1);",
+      toolBridgeAnalysisRecovery,
+    );
+    const ordinaryAnalysisRecovery = worker.indexOf(
+      'await initialAnalysis.reconcileFailedAttempts(5);',
+      workflowDrain,
+    );
     const reviewAttemptRecovery = worker.indexOf(
       'await recoverLostGitHubReviewFeedbacksFromEnv(env);',
       workflowDrain,
@@ -118,6 +130,9 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
 
     expect(priorityWorkflowCreateDrain).toBeGreaterThan(-1);
+    expect(toolBridgeAnalysisRecovery).toBeGreaterThan(workflowDrain);
+    expect(toolBridgeAnalysisRecoveryRelay).toBeGreaterThan(toolBridgeAnalysisRecovery);
+    expect(ordinaryAnalysisRecovery).toBeGreaterThan(toolBridgeAnalysisRecoveryRelay);
     expect(workflowDrain).toBeGreaterThan(-1);
     expect(priorityExecutionScheduling).toBeGreaterThan(-1);
     expect(priorityWorkflowCreateDrain).toBeLessThan(priorityExecutionScheduling);
