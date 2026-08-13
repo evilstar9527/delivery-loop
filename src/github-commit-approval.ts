@@ -242,7 +242,8 @@ export class GitHubCommitApprovalService {
     if (
       fact.schemaVersion !== '1' || fact.repository !== candidate.repository ||
       fact.commentId !== commentId || fact.commitSha !== candidate.base_sha ||
-      fact.authorType !== 'User' || fact.authorAssociation !== 'OWNER' ||
+      fact.authorType !== 'User' ||
+      !['OWNER', 'MEMBER'].includes(fact.authorAssociation) ||
       !LOGIN_PATTERN.test(fact.authorLogin) || bodyBytes < 1 || bodyBytes > MAX_COMMENT_BYTES ||
       fact.body !== expectedBody || fact.updatedAt !== fact.createdAt ||
       !Number.isFinite(createdAt) || createdAt < now.getTime() - MAX_SOURCE_AGE_MS ||
