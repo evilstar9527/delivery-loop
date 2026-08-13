@@ -83,6 +83,7 @@ import {
   reconcileGitHubRunsFromEnv,
 } from './reconciliation/github-run-reconciliation-runtime.js';
 import { reconcileGitHubBasesFromEnv } from './reconciliation/github-base-observation-runtime.js';
+import { InitialAnalysisReconciler } from './reconciliation/initial-analysis-reconciler.js';
 import { reconcileGitHubMergeGatesFromEnv } from './reconciliation/github-merge-gate-runtime.js';
 import {
   reconcileGitHubReviewFeedbacksFromEnv,
@@ -229,6 +230,9 @@ export default {
       const planRevisionAnalysis = new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
         now: scheduledNow,
       });
+      const initialAnalysis = new InitialAnalysisReconciler(env.DB_CONTROL, {
+        now: scheduledNow,
+      });
       // An exact human approval is already a durable external fact. Activate
       // and claim one approved Item before any recovery or observation scan can
       // consume the Free-plan 10 ms CPU budget.
@@ -255,6 +259,10 @@ export default {
       // recovery is D1-only, so activate one before any global relay or
       // external observation can starve the next approval boundary.
       await planRevisionAnalysis.reconcilePreparedPlans(1);
+      // The root Workflow still waits for its immutable first Attempt event.
+      // A bounded replacement therefore advances the D1 business projection
+      // directly after its callback is durable; no Workflow restart is needed.
+      await initialAnalysis.reconcilePreparedPlans(1);
       // A fresh identity-bound approval may already have fenced an exact
       // pre-effect review failure and made its unique replacement ready. This
       // recovery is D1-only; create and relay one replacement before a stale
@@ -316,6 +324,7 @@ export default {
       // dispatch stays durable and is relayed below.
       await executionProgress.reconcileReadyAttempts(1);
       await new AutomatedReviewScheduler(env.DB_CONTROL).resumeFixedRuns(5, scheduledNow());
+      await initialAnalysis.reconcileFailedAttempts(5);
       await planRevisionAnalysis.reconcileBatch(5);
       // Relay every remaining durable effect, then activate and schedule more
       // work. Prepared Draft recovery already ran before the first relay, so

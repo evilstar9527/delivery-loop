@@ -563,6 +563,10 @@ E2E 必须脚本化到可重跑的最大程度；飞书人工批准步骤可以�
 - [x] BUG四阶段analysis按真实模型调用逐次`reserve → settle`，不在首轮前占用四个最大窗口；
   terminal Attempt未结算reservation由既有Cron释放，429以固定policy failure安全归类。定向测试
   与production只读quota事实见`PROGRESS.md`最新Round。
+- [x] 初始analysis在零Plan状态失败时，由D1-only reconciler以immutable lineage创建唯一replacement；
+  20路并发仍只有一个Task/Run/replacement/outbox，旧Attempt不能读取context或提交Plan，replacement
+  completion可激活Plan；blocker、已有Plan、Attempt上限和重复fingerprint均零retry。验收命令与输出见
+  `PROGRESS.md`最新Round。production migration/发布与现有Run恢复尚未发生，不冒充backend PR完成。
 
 ## 10. 外部前置与人工决策
 
