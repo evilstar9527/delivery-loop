@@ -1,3 +1,5 @@
 export const ANALYSIS_REPOSITORY_INVENTORY_POLICY_VERSION = 2;
 export const ANALYSIS_REPOSITORY_MAX_TRACKED_PATHS = 5_000;
 export const ANALYSIS_REPOSITORY_MAX_TRACKED_PATH_BYTES = 256 * 1_024;
+// JSON adds quotes, separators and escaping to the NUL-delimited Git output.
+export const ANALYSIS_REPOSITORY_MAX_PROMPT_PATH_BYTES = 512 * 1_024;

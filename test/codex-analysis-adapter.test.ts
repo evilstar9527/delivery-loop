@@ -482,6 +482,43 @@ describe('Codex analysis Agent adapter', () => {
     }]);
   });
 
+  it('accepts a production-shaped v2 writable inventory above the former adapter limits', async () => {
+    const paths = await tempInput();
+    const inventory = Array.from(
+      { length: 2_131 },
+      (_, index) => `src/generated/${String(index).padStart(4, '0')}_repository_capacity_fixture.ts`,
+    );
+    expect(new TextEncoder().encode(JSON.stringify(inventory)).byteLength)
+      .toBeGreaterThan(64 * 1_024);
+    let invoked = false;
+    const adapter = new CodexAnalysisAdapter({
+      outputSchemaPath: SCHEMA_PATH,
+      execute: async (): Promise<CommandExecutionResult> => {
+        invoked = true;
+        await writeFile(
+          paths.outputFile,
+          JSON.stringify(agentOutput(writableRequirementContent())),
+        );
+        return { exitCode: 0 };
+      },
+    });
+    await adapter.start({
+      workspacePath: paths.workspace,
+      contextFilePath: paths.contextFile,
+      outputFilePath: paths.outputFile,
+      timeoutMs: 60_000,
+      identity: {
+        planId: 'plan-v2-capacity', runId: 'run-codex-analysis', version: 1,
+        taskRevision: 'revision-1', baseSha: BASE_SHA, attemptId: 'attempt-v2-capacity',
+      },
+      validation: {
+        ...writableRequirementValidationContext(),
+        writableRepositoryPaths: ['src/request.ts', ...inventory],
+      },
+    });
+    expect(invoked).toBe(true);
+  });
+
   it('announces the separate schedulable test-deployment contract', async () => {
     const paths = await tempInput();
     let observed: CommandExecutionRequest | undefined;
