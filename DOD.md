@@ -569,6 +569,10 @@ E2E 必须脚本化到可重跑的最大程度；飞书人工批准步骤可以�
   20路并发仍只有一个Task/Run/replacement/outbox，旧Attempt不能读取context或提交Plan，replacement
   completion可激活Plan；blocker、已有Plan、Attempt上限和重复fingerprint均零retry。验收命令与输出见
   `PROGRESS.md`最新Round。production migration/发布与现有Run恢复尚未发生，不冒充backend PR完成。
+- [x] 业务日志provider与exact external-dependency recovery本地契约：`logs/search/traces/get`固定代理
+  组织Tool Bridge的Tipsy生产SLS只读工具，Agent不能选择gateway/tool/logstore/env/window/limit；
+  migration 0082只恢复已有模型usage、唯一`logs/search=upstream_error`、零Evidence/Plan且直接来自
+  0081 marker的同一Run，20路并发只创建ordinal 6。production Secret/发布/恢复仍未发生。
 
 ## 10. 外部前置与人工决策
 

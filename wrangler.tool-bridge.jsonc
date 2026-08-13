@@ -7,8 +7,9 @@
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "CLOUDFLARE_ACCOUNT_ID": "b8488957e88658039d2a38fb8f160514",
-    "TELEMETRY_SOURCE_SERVICE": "delivery-loop-control-plane"
+    "TOOL_BRIDGE_BASE_URL": "https://tool-bridge.fantacy.live",
+    "TOOL_BRIDGE_SLS_LOGSTORE": "tipsy-chat",
+    "TOOL_BRIDGE_SLS_ENVIRONMENT": "prod"
   },
   "observability": {
     "enabled": true,
