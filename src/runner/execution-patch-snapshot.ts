@@ -9,6 +9,8 @@ import {
 } from '../domain/patch-proposal.js';
 import { isProtectedRepositoryPath } from '../domain/protected-path-change.js';
 import { explicitlyReferencesRepositoryPath } from '../domain/plan.js';
+import { ANALYSIS_REPOSITORY_MAX_TRACKED_PATH_BYTES } from
+  '../domain/analysis-repository-inventory.js';
 import { SecretScanner } from '../security/redaction.js';
 import { executeGitCommand } from './git-repository-writer.js';
 
@@ -53,11 +55,20 @@ export async function buildExecutionPatchSnapshot(input: {
   } catch {
     throw new ExecutionPatchSnapshotError('unavailable');
   }
-  const listed = await executeGitCommand({ repositoryPath: root, args: ['ls-files'] });
+  let listed;
+  try {
+    listed = await executeGitCommand({
+      repositoryPath: root,
+      args: ['ls-files', '-z'],
+      maxOutputBytes: ANALYSIS_REPOSITORY_MAX_TRACKED_PATH_BYTES,
+    });
+  } catch {
+    throw new ExecutionPatchSnapshotError('unavailable');
+  }
   if (listed.exitCode !== 0 || listed.stderr !== '') {
     throw new ExecutionPatchSnapshotError('unavailable');
   }
-  const paths = listed.stdout.split('\n').filter((path) =>
+  const paths = listed.stdout.split('\0').filter((path) =>
     path !== '' && patchPathIsSafe(path) &&
     input.referencedText.some((text) => explicitlyReferencesRepositoryPath(text, [path])) &&
     !isProtectedRepositoryPath(path, input.protectedPaths),

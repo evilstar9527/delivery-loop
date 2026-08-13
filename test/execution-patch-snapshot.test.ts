@@ -77,6 +77,24 @@ describe('execution patch snapshot', () => {
     ]);
   });
 
+  it('finds an explicit source file when the tracked path inventory exceeds 64 KiB', async () => {
+    const files: Record<string, string> = { 'service/chat_multi_char.go': 'package service\n' };
+    for (let index = 0; index < 2_500; index += 1) {
+      files[`generated/path-${String(index).padStart(4, '0')}-${'x'.repeat(20)}.go`] =
+        'package generated\n';
+    }
+    const root = await repository(files);
+
+    const snapshot = await buildOptionalExecutionPatchSnapshot({
+      repositoryPath: root,
+      referencedText: ['Update service/chat_multi_char.go.'],
+      protectedPaths: [],
+      runtimeSecrets: [],
+    });
+
+    expect(snapshot?.files.map(({ path }) => path)).toEqual(['service/chat_multi_char.go']);
+  });
+
   it('disables only the optional fallback when one file or the aggregate exceeds 128/256 KiB', async () => {
     for (const files of [
       { 'src/large.ts': 'x'.repeat(128 * 1024 + 1) },
