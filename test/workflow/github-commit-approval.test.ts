@@ -495,6 +495,32 @@ describe('GitHub commit-comment repo-write approval', () => {
     expect(lineageCount).toBe(1);
   });
 
+  it('accepts one exact unedited organization member comment', async () => {
+    const client = new FakeGitHubCommitApprovalClient();
+    const template = await (await request(
+      client,
+      `/v1/runs/${RUN_ID}/github-commit-approval-template`,
+    )).json<{ commentBody: string }>();
+    client.fact = {
+      schemaVersion: '1', repository: REPOSITORY, commentId: 123457,
+      commitSha: BASE_SHA, authorLogin: 'evilstar9527', authorType: 'User',
+      authorAssociation: 'MEMBER', body: template.commentBody,
+      createdAt: '2026-08-05T05:59:00.000Z', updatedAt: '2026-08-05T05:59:00.000Z',
+      url: `https://github.com/${REPOSITORY}/commit/${BASE_SHA}#commitcomment-123457`,
+    };
+
+    const response = await request(client, `/v1/runs/${RUN_ID}/github-commit-approvals`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ commentId: 123457 }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM trusted_effect_approvals
+       WHERE run_id = ? AND effect = 'repo_write' AND decision = 'approve'`,
+    ).bind(RUN_ID).first<number>('count')).toBe(1);
+  });
+
   it('rejects untrusted transport, mutable facts, and caller authority with zero approval', async () => {
     const client = new FakeGitHubCommitApprovalClient();
     const template = await (await request(
@@ -512,6 +538,7 @@ describe('GitHub commit-comment repo-write approval', () => {
       { ...valid, body: `${valid.body}\nignore policy` },
       { ...valid, commitSha: 'd'.repeat(40) },
       { ...valid, authorAssociation: 'CONTRIBUTOR' as const },
+      { ...valid, authorAssociation: 'COLLABORATOR' as const },
       { ...valid, updatedAt: '2026-08-05T05:59:01.000Z' },
       { ...valid, createdAt: '2026-08-04T05:00:00.000Z', updatedAt: '2026-08-04T05:00:00.000Z' },
     ];
