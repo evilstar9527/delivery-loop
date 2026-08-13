@@ -56,9 +56,13 @@ describe('periodic external-fact reconciliation wiring', () => {
       'await planRevisionAnalysis.reconcileBatch(5);',
       workflowDrain,
     );
+    const toolBridgeScopeRecovery = worker.indexOf(
+      'initialAnalysis.reconcileToolBridgeScopeFailures(1)',
+      priorityExecutionScheduling,
+    );
     const toolBridgeTransportRecovery = worker.indexOf(
       'initialAnalysis.reconcileToolBridgeTransportFailures(1)',
-      priorityExecutionScheduling,
+      toolBridgeScopeRecovery,
     );
     const toolBridgeAnalysisRecovery = worker.indexOf(
       'initialAnalysis.reconcileToolBridgeFailures(1)',
@@ -134,6 +138,8 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
 
     expect(priorityWorkflowCreateDrain).toBeGreaterThan(-1);
+    expect(toolBridgeScopeRecovery).toBeGreaterThan(priorityExecutionScheduling);
+    expect(toolBridgeTransportRecovery).toBeGreaterThan(toolBridgeScopeRecovery);
     expect(toolBridgeTransportRecovery).toBeGreaterThan(priorityExecutionScheduling);
     expect(toolBridgeAnalysisRecovery).toBeGreaterThan(toolBridgeTransportRecovery);
     expect(toolBridgeAnalysisRecovery).toBeGreaterThan(priorityExecutionScheduling);
