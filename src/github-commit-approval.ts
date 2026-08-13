@@ -470,7 +470,7 @@ export class GitHubCommitApprovalService {
     if (
       url.protocol !== 'https:' || url.hostname !== 'github.com' ||
       url.username !== '' || url.password !== '' || url.search !== '' ||
-      url.pathname !== `/${repository}/commit/${baseSha}` ||
+      url.pathname.toLowerCase() !== `/${repository.toLowerCase()}/commit/${baseSha}` ||
       url.hash !== `#commitcomment-${fact.commentId}`
     ) return null;
     return url.href;
