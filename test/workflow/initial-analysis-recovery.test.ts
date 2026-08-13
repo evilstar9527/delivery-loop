@@ -61,6 +61,7 @@ const task: TaskEnvelope = {
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM workflow_signals'),
+    env.DB_CONTROL.prepare('DELETE FROM initial_analysis_inventory_adapter_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_capacity_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_retries'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
@@ -281,6 +282,61 @@ async function seedCapacityBlocked(overrides: {
   }
 }
 
+async function seedInventoryAdapterBlocked(options: {
+  modelReservation?: boolean;
+} = {}): Promise<string> {
+  await seedCapacityBlocked();
+  const reconciler = new InitialAnalysisReconciler(env.DB_CONTROL, {
+    now: () => new Date(NOW),
+  });
+  expect(await reconciler.reconcileCapacityFailures(1)).toBe(1);
+  const recovery = await env.DB_CONTROL.prepare(
+    `SELECT replacement_attempt_id FROM initial_analysis_capacity_recoveries WHERE run_id = ?`,
+  ).bind(RUN_ID).first<{ replacement_attempt_id: string }>();
+  if (recovery === null) throw new Error('missing capacity replacement');
+  const scopeDigest = `sha256:${'e'.repeat(64)}`;
+  const fingerprintDigest = `sha256:${'3'.repeat(64)}`;
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'failed', version = 3, lease_generation = 1,
+                           updated_at = ? WHERE attempt_id = ?`,
+    ).bind(NOW, recovery.replacement_attempt_id),
+    env.DB_CONTROL.prepare(
+      `UPDATE runs SET state = 'blocked', version = 5, updated_at = ? WHERE run_id = ?`,
+    ).bind(NOW, RUN_ID),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_failures (
+         failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+         retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+         failure_site, needed_human_input, scope_attempt_count,
+         consecutive_fingerprint_count, revoked_lease_generation,
+         occurred_at, created_at
+       ) VALUES ('failure-inventory-adapter-capacity', ?, ?, 4,
+                 'event-inventory-adapter-capacity', 1, ?, ?, 'invalid_output',
+                 'invalid_agent_output', 'agent_output', 'manual_investigation',
+                 4, 1, 1, ?, ?)`,
+    ).bind(RUN_ID, recovery.replacement_attempt_id, scopeDigest, fingerprintDigest, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO run_blockers (
+         blocker_id, run_id, reason, retry_scope_digest, fingerprint_digest,
+         attempt_count, consecutive_fingerprint_count, needed_human_input, created_at
+       ) VALUES ('blocker-inventory-adapter-capacity', ?, 'attempt_limit', ?, ?,
+                 4, 1, 'manual_investigation', ?)`,
+    ).bind(RUN_ID, scopeDigest, fingerprintDigest, NOW),
+  ]);
+  if (options.modelReservation === true) {
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO quota_model_reservations (
+         reservation_id, attempt_id, run_id, profile_id, reserved_tokens,
+         reserved_cost_microusd, status, expires_at, created_at, updated_at
+       ) VALUES ('reservation-adapter-capacity', ?, ?,
+                 'codex-gpt-5p6-terra-medium-tool-loop-20260811', 1, 1,
+                 'released', '2026-08-13T02:00:00.000Z', ?, ?)`,
+    ).bind(recovery.replacement_attempt_id, RUN_ID, NOW, NOW).run();
+  }
+  return recovery.replacement_attempt_id;
+}
+
 function validPlan(attemptId: string): ExecutionPlanBodyV1 {
   return {
     schemaVersion: '1',
@@ -311,6 +367,56 @@ function validPlan(attemptId: string): ExecutionPlanBodyV1 {
 beforeEach(reset);
 
 describe('initial analysis recovery', () => {
+  it('converges the zero-model v2 adapter capacity blocker to one compatibility replacement', async () => {
+    const failedAttemptId = await seedInventoryAdapterBlocked();
+    const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    });
+    const results = await Promise.all(
+      Array.from({ length: 20 }, async () =>
+        await reconciler().reconcileInventoryAdapterFailures(5)),
+    );
+    expect(results.reduce((sum, count) => sum + count, 0)).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT recovery.failed_attempt_id, recovery.inventory_policy_version,
+              recovery.max_prompt_path_bytes, attempts.ordinal, attempts.status,
+              retries.retry_sequence, blockers.resolution_code, runs.state,
+              outbox.delivery_state
+       FROM initial_analysis_inventory_adapter_recoveries AS recovery
+       JOIN attempts ON attempts.attempt_id = recovery.replacement_attempt_id
+       JOIN initial_analysis_retries AS retries
+         ON retries.retry_attempt_id = recovery.replacement_attempt_id
+       JOIN run_blockers AS blockers ON blockers.blocker_id = recovery.blocker_id
+       JOIN runs ON runs.run_id = recovery.run_id
+       JOIN outbox ON outbox.payload_ref = 'd1://attempts/' || recovery.replacement_attempt_id`,
+    ).first()).toMatchObject({
+      failed_attempt_id: failedAttemptId,
+      inventory_policy_version: 2,
+      max_prompt_path_bytes: 512 * 1_024,
+      ordinal: 5,
+      status: 'pending',
+      retry_sequence: 4,
+      resolution_code: 'analysis_inventory_adapter_capacity_v2',
+      state: 'planning',
+      delivery_state: 'pending',
+    });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM tasks').first())
+      .toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM runs').first())
+      .toEqual({ count: 1 });
+    expect(await reconciler().reconcileInventoryAdapterFailures(5)).toBe(0);
+  });
+
+  it('does not compatibility-recover after a model reservation exists', async () => {
+    await seedInventoryAdapterBlocked({ modelReservation: true });
+    expect(await new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    }).reconcileInventoryAdapterFailures(5)).toBe(0);
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM initial_analysis_inventory_adapter_recoveries',
+    ).first()).toEqual({ count: 0 });
+  });
+
   it('converges a production-shaped capacity blocker to one replacement lineage', async () => {
     await seedCapacityBlocked();
     const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {

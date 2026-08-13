@@ -47,6 +47,10 @@ import {
 } from '../runner/analysis-source-snapshot.js';
 import type { z } from 'zod';
 import { patchPathIsSafe } from '../domain/patch-proposal.js';
+import {
+  ANALYSIS_REPOSITORY_MAX_PROMPT_PATH_BYTES,
+  ANALYSIS_REPOSITORY_MAX_TRACKED_PATHS,
+} from '../domain/analysis-repository-inventory.js';
 
 export {
   executeCommand,
@@ -951,10 +955,12 @@ export class CodexAnalysisAdapter {
     if (
       validation.requiresRepositoryChange &&
       (
-        writableRepositoryPaths.length < 1 || writableRepositoryPaths.length > 2_000 ||
+        writableRepositoryPaths.length < 1 ||
+        writableRepositoryPaths.length > ANALYSIS_REPOSITORY_MAX_TRACKED_PATHS ||
         new Set(writableRepositoryPaths).size !== writableRepositoryPaths.length ||
         writableRepositoryPaths.some((path) => !patchPathIsSafe(path)) ||
-        new TextEncoder().encode(JSON.stringify(writableRepositoryPaths)).byteLength > 64 * 1_024 ||
+        new TextEncoder().encode(JSON.stringify(writableRepositoryPaths)).byteLength >
+          ANALYSIS_REPOSITORY_MAX_PROMPT_PATH_BYTES ||
         new SecretScanner().scan(writableRepositoryPaths).length > 0
       )
     ) {
