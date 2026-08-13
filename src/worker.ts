@@ -84,6 +84,7 @@ import {
 } from './reconciliation/github-run-reconciliation-runtime.js';
 import { reconcileGitHubBasesFromEnv } from './reconciliation/github-base-observation-runtime.js';
 import { InitialAnalysisReconciler } from './reconciliation/initial-analysis-reconciler.js';
+import { ImplementationPreEffectRecoveryReconciler } from './reconciliation/implementation-pre-effect-reconciler.js';
 import { reconcileGitHubMergeGatesFromEnv } from './reconciliation/github-merge-gate-runtime.js';
 import {
   reconcileGitHubReviewFeedbacksFromEnv,
@@ -285,6 +286,10 @@ export default {
       // recovery is D1-only; create and relay one replacement before a stale
       // GitHub observation can consume the Free-plan scheduled CPU budget.
       if ((await recoverApprovedGitHubReviewFeedbacksFromEnv(env)).length > 0) {
+        await relay.relayDestination('github_actions', 1);
+      }
+      if ((await new ImplementationPreEffectRecoveryReconciler(env.DB_CONTROL)
+        .reconcileBatch(1)).length > 0) {
         await relay.relayDestination('github_actions', 1);
       }
       // A completed Action is the authority needed to verify Evidence and

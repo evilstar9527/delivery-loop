@@ -135,6 +135,7 @@ interface CandidateRow {
   recovery_source_kind:
     | 'failed_dependency'
     | 'lost_pre_effect'
+    | 'implement_lost_pre_effect'
     | 'automated_fix_failed_pre_effect'
     | null;
 }
@@ -422,6 +423,108 @@ export class IdentityBoundApprovalStore {
       candidate,
       now.toISOString(),
     ));
+    if (
+      input.effect === 'repo_write' &&
+      candidate.recovery_failed_attempt_id !== null &&
+      candidate.recovery_plan_item_id !== null &&
+      candidate.recovery_source_kind === 'implement_lost_pre_effect'
+    ) {
+      const recoveryApprovalId = `implementation_recovery_approval_${this.suffix(
+        await canonicalSha256({
+          failedAttemptId: candidate.recovery_failed_attempt_id,
+          approvalId,
+        }),
+        48,
+      )}`;
+      statements.push(
+        this.db.prepare(
+          `INSERT INTO implementation_pre_effect_recovery_approvals (
+             recovery_approval_id, run_id, plan_id, plan_version, plan_item_id,
+             failed_attempt_id, approval_id, created_at
+           )
+           SELECT ?, recovery.run_id, recovery.plan_id, recovery.plan_version,
+                  recovery.plan_item_id, recovery.failed_attempt_id,
+                  approvals.approval_id, ?
+           FROM implementation_lost_pre_effect_recovery_candidates AS recovery
+           JOIN approvals ON approvals.approval_id = ?
+            AND approvals.run_id = recovery.run_id
+            AND approvals.plan_id = recovery.plan_id
+            AND approvals.plan_version = recovery.plan_version
+            AND approvals.effect = 'repo_write'
+            AND approvals.decision = 'approve'
+           WHERE recovery.run_id = ? AND recovery.run_version = ?
+             AND recovery.plan_id = ? AND recovery.plan_version = ?
+             AND recovery.plan_item_id = ?
+             AND recovery.failed_attempt_id = ?
+           ON CONFLICT DO NOTHING`,
+        ).bind(
+          recoveryApprovalId,
+          now.toISOString(),
+          approvalId,
+          candidate.run_id,
+          candidate.run_version,
+          candidate.plan_id,
+          candidate.plan_version,
+          candidate.recovery_plan_item_id,
+          candidate.recovery_failed_attempt_id,
+        ),
+        this.db.prepare(
+          `UPDATE plan_item_progress
+           SET status = 'ready', active_attempt_id = NULL,
+               version = version + 1, updated_at = ?
+           WHERE plan_id = ? AND item_id = ? AND status = 'in_progress'
+             AND active_attempt_id = ?
+             AND EXISTS (
+               SELECT 1 FROM implementation_pre_effect_recovery_approvals
+               WHERE recovery_approval_id = ?
+                 AND plan_id = plan_item_progress.plan_id
+                 AND plan_item_id = plan_item_progress.item_id
+                 AND failed_attempt_id = plan_item_progress.active_attempt_id
+                 AND approval_id = ?
+             )`,
+        ).bind(
+          now.toISOString(),
+          candidate.plan_id,
+          candidate.recovery_plan_item_id,
+          candidate.recovery_failed_attempt_id,
+          recoveryApprovalId,
+          approvalId,
+        ),
+        this.db.prepare(
+          `UPDATE runs SET state = 'awaiting_approval', version = version + 1, updated_at = ?
+           WHERE run_id = ? AND state = 'blocked' AND version = ?
+             AND active_plan_id = ? AND active_plan_version = ?
+             AND EXISTS (
+               SELECT 1 FROM implementation_pre_effect_recovery_approvals
+               WHERE recovery_approval_id = ? AND run_id = runs.run_id
+                 AND failed_attempt_id = ? AND approval_id = ?
+             )
+             AND EXISTS (
+               SELECT 1 FROM execution_plans
+               WHERE plan_id = runs.active_plan_id AND status = 'active'
+             )
+             AND EXISTS (
+               SELECT 1 FROM plan_item_progress
+               WHERE plan_id = runs.active_plan_id AND item_id = ?
+                 AND status = 'ready' AND active_attempt_id IS NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM run_blockers
+               WHERE run_id = runs.run_id AND resolved_at IS NULL
+             )`,
+        ).bind(
+          now.toISOString(),
+          candidate.run_id,
+          candidate.run_version,
+          candidate.plan_id,
+          candidate.plan_version,
+          recoveryApprovalId,
+          candidate.recovery_failed_attempt_id,
+          approvalId,
+          candidate.recovery_plan_item_id,
+        ),
+      );
+    }
     if (
       input.effect === 'repo_write' &&
       candidate.recovery_failed_attempt_id !== null &&
@@ -731,7 +834,7 @@ export class IdentityBoundApprovalStore {
          FROM runs
          JOIN tasks ON tasks.task_id = runs.task_id
          JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
-         LEFT JOIN review_approval_recovery_candidates_v2 AS recovery
+         LEFT JOIN repo_write_recovery_candidates_v3 AS recovery
            ON recovery.run_id = runs.run_id
           AND recovery.run_version = runs.version
           AND recovery.plan_id = plans.plan_id
@@ -755,7 +858,8 @@ export class IdentityBoundApprovalStore {
              (runs.state = 'blocked' AND recovery.failed_attempt_id IS NOT NULL
               AND (
                 (recovery.source_kind = 'failed_dependency' AND plans.status = 'blocked')
-                OR (recovery.source_kind = 'lost_pre_effect' AND plans.status = 'active')
+                OR (recovery.source_kind IN ('lost_pre_effect', 'implement_lost_pre_effect')
+                    AND plans.status = 'active')
               ))
              OR
              (runs.state = 'executing' AND recovery.failed_attempt_id IS NOT NULL
