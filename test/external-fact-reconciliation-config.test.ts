@@ -58,7 +58,7 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
     const toolBridgeAnalysisRecovery = worker.indexOf(
       'initialAnalysis.reconcileToolBridgeFailures(1)',
-      workflowDrain,
+      priorityExecutionScheduling,
     );
     const toolBridgeAnalysisRecoveryRelay = worker.indexOf(
       "await relay.relayDestination('github_actions', 1);",
@@ -130,8 +130,9 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
 
     expect(priorityWorkflowCreateDrain).toBeGreaterThan(-1);
-    expect(toolBridgeAnalysisRecovery).toBeGreaterThan(workflowDrain);
+    expect(toolBridgeAnalysisRecovery).toBeGreaterThan(priorityExecutionScheduling);
     expect(toolBridgeAnalysisRecoveryRelay).toBeGreaterThan(toolBridgeAnalysisRecovery);
+    expect(toolBridgeAnalysisRecoveryRelay).toBeLessThan(priorityPullRequestReconciliation);
     expect(ordinaryAnalysisRecovery).toBeGreaterThan(toolBridgeAnalysisRecoveryRelay);
     expect(workflowDrain).toBeGreaterThan(-1);
     expect(priorityExecutionScheduling).toBeGreaterThan(-1);
