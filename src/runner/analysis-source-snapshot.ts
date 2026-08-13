@@ -2,7 +2,10 @@ import { lstat, readFile, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { z } from 'zod';
 import type { DiagnosticRootCauseV1Schema } from '../domain/diagnostic-evidence.js';
-import { ANALYSIS_REPOSITORY_MAX_TRACKED_PATHS } from
+import {
+  ANALYSIS_REPOSITORY_MAX_TRACKED_PATH_BYTES,
+  ANALYSIS_REPOSITORY_MAX_TRACKED_PATHS,
+} from
   '../domain/analysis-repository-inventory.js';
 import { patchPathIsSafe } from '../domain/patch-proposal.js';
 import { SecretScanner } from '../security/redaction.js';
@@ -12,13 +15,21 @@ const MAX_SOURCE_FILE_BYTES = 256 * 1_024;
 const MAX_SCANNED_BYTES = 16 * 1_024 * 1_024;
 const MAX_CONTEXT_NODES = 10_000;
 const MAX_CONTEXT_DEPTH = 20;
+const MAX_CONTEXT_STRING_BYTES = 256 * 1_024;
+const MAX_EXTRACTED_CANDIDATES = 1_000;
 const MAX_CANDIDATES = 100;
 const MAX_MATCHES = 8;
+const MAX_MATCHES_PER_CANDIDATE = 50;
 const MAX_INTERNAL_MATCHES = 1_000;
 const MAX_EXCERPT_BYTES = 1_000;
 const MAX_SNAPSHOT_BYTES = 12 * 1_024;
 const SOURCE_PATH_PATTERN = /\.(?:c|cc|cpp|cs|go|h|hpp|java|js|jsx|kt|mjs|php|py|rb|rs|swift|ts|tsx)$/i;
 const CANDIDATE_PATTERN = /^[A-Za-z][A-Za-z0-9_.:/-]{3,159}$/;
+const CANDIDATE_TOKEN_PATTERN = /(?:^|[^A-Za-z0-9_.:/-])([A-Za-z][A-Za-z0-9_.:/-]{3,159})(?=$|[^A-Za-z0-9_.:/-])/g;
+
+function isCodeShapedToken(value: string): boolean {
+  return /[_.:/-]/.test(value) || /[a-z][A-Z]/.test(value);
+}
 
 export interface AnalysisSourceSnapshotV1 {
   schemaVersion: '1';
@@ -46,7 +57,18 @@ function diagnosticCandidates(value: unknown): string[] {
       throw new AnalysisSourceSnapshotError();
     }
     if (typeof candidate === 'string') {
-      if (CANDIDATE_PATTERN.test(candidate)) values.add(candidate);
+      if (new TextEncoder().encode(candidate).byteLength > MAX_CONTEXT_STRING_BYTES) {
+        throw new AnalysisSourceSnapshotError();
+      }
+      if (CANDIDATE_PATTERN.test(candidate)) {
+        values.add(candidate);
+      } else {
+        for (const match of candidate.matchAll(CANDIDATE_TOKEN_PATTERN)) {
+          if (!isCodeShapedToken(match[1]!)) continue;
+          values.add(match[1]!);
+          if (values.size > MAX_EXTRACTED_CANDIDATES) throw new AnalysisSourceSnapshotError();
+        }
+      }
       return;
     }
     if (Array.isArray(candidate)) {
@@ -89,7 +111,11 @@ export async function buildAnalysisSourceSnapshot(input: {
   if (candidates.length === 0) throw new AnalysisSourceSnapshotError();
   let listed;
   try {
-    listed = await executeGitCommand({ repositoryPath: root, args: ['ls-files', '-z'] });
+    listed = await executeGitCommand({
+      repositoryPath: root,
+      args: ['ls-files', '-z'],
+      maxOutputBytes: ANALYSIS_REPOSITORY_MAX_TRACKED_PATH_BYTES,
+    });
   } catch {
     throw new AnalysisSourceSnapshotError();
   }
@@ -107,7 +133,10 @@ export async function buildAnalysisSourceSnapshot(input: {
     line: number;
     excerpt: string;
     score: number;
+    candidate: string;
   }>();
+  const candidateCounts = new Map<string, number>();
+  const saturatedCandidates = new Set<string>();
   let scannedBytes = 0;
   for (const path of paths) {
     if (!patchPathIsSafe(path)) throw new AnalysisSourceSnapshotError();
@@ -137,12 +166,24 @@ export async function buildAnalysisSourceSnapshot(input: {
       if (excerpt === '' || new TextEncoder().encode(excerpt).byteLength > MAX_EXCERPT_BYTES) {
         continue;
       }
-      const matched = candidates.find((candidate) => line.includes(candidate));
+      const matched = candidates.find((candidate) =>
+        !saturatedCandidates.has(candidate) && line.includes(candidate));
       if (matched === undefined) continue;
+      const count = (candidateCounts.get(matched) ?? 0) + 1;
+      candidateCounts.set(matched, count);
+      if (count > MAX_MATCHES_PER_CANDIDATE) {
+        saturatedCandidates.add(matched);
+        for (const [existingKey, existing] of matches) {
+          if (existing.candidate === matched) matches.delete(existingKey);
+        }
+        continue;
+      }
       const key = `${path}\0${index + 1}`;
       const current = matches.get(key);
       if (current === undefined || matched.length > current.score) {
-        matches.set(key, { path, line: index + 1, excerpt, score: matched.length });
+        matches.set(key, {
+          path, line: index + 1, excerpt, score: matched.length, candidate: matched,
+        });
         if (matches.size > MAX_INTERNAL_MATCHES) throw new AnalysisSourceSnapshotError();
       }
     }
