@@ -58,7 +58,7 @@ describe('Tipsy Tool Bridge SLS adapter', () => {
     expect(requests[0]!.url).toBe(
       'https://tool-bridge.example/mcp/tipsy/tipsy-analytics__sls_query_logs',
     );
-    expect(requests[0]!.init).toMatchObject({ method: 'POST', redirect: 'error' });
+    expect(requests[0]!.init).toMatchObject({ method: 'POST', redirect: 'manual' });
     expect(new Headers(requests[0]!.init.headers).get('authorization')).toBe(`Bearer ${TOOL_BRIDGE_SK}`);
     expect(JSON.parse(String(requests[0]!.init.body))).toEqual({
       logstore: 'tipsy-chat',
@@ -123,5 +123,21 @@ describe('Tipsy Tool Bridge SLS adapter', () => {
 
     expect(response.status).toBe(503);
     expect(calls).toBe(0);
+  });
+
+  it('does not follow an upstream redirect', async () => {
+    const app = createCloudflareTelemetryToolBridge({
+      fetcher: async (_input, init) => {
+        expect(init?.redirect).toBe('manual');
+        return new Response(null, { status: 302, headers: { location: 'https://untrusted.example' } });
+      },
+    });
+
+    const response = await app.fetch(
+      call('/htbp/logs/search', { uid: '1778279597200329343' }),
+      env,
+    );
+
+    expect(response.status).toBe(503);
   });
 });

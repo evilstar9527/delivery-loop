@@ -61,6 +61,7 @@ const task: TaskEnvelope = {
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM workflow_signals'),
+    env.DB_CONTROL.prepare('DELETE FROM initial_analysis_tool_bridge_transport_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_tool_bridge_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_inventory_adapter_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_capacity_recoveries'),
@@ -441,6 +442,80 @@ async function seedToolBridgeBlocked(overrides: {
   return adapter.replacement_attempt_id;
 }
 
+async function seedToolBridgeTransportBlocked(): Promise<string> {
+  await seedToolBridgeBlocked({ blockerReason: 'attempt_limit' });
+  const reconciler = new InitialAnalysisReconciler(env.DB_CONTROL, {
+    now: () => new Date(NOW),
+  });
+  expect(await reconciler.reconcileToolBridgeFailures(1)).toBe(1);
+  const provider = await env.DB_CONTROL.prepare(
+    `SELECT recovery_id, replacement_attempt_id
+     FROM initial_analysis_tool_bridge_recoveries WHERE run_id = ?`,
+  ).bind(RUN_ID).first<{ recovery_id: string; replacement_attempt_id: string }>();
+  if (provider === null) throw new Error('missing Tool Bridge provider replacement');
+  const scopeDigest = `sha256:${'7'.repeat(64)}`;
+  const fingerprintDigest = `sha256:${'8'.repeat(64)}`;
+  const profile = 'codex-gpt-5p6-terra-medium-tool-loop-20260811';
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'failed', version = 3, lease_generation = 1,
+                           updated_at = ? WHERE attempt_id = ?`,
+    ).bind(NOW, provider.replacement_attempt_id),
+    env.DB_CONTROL.prepare(
+      `UPDATE runs SET state = 'blocked', version = 8, updated_at = ? WHERE run_id = ?`,
+    ).bind(NOW, RUN_ID),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_failures (
+         failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+         retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+         failure_site, needed_human_input, scope_attempt_count,
+         consecutive_fingerprint_count, revoked_lease_generation,
+         occurred_at, created_at
+       ) VALUES ('failure-tool-bridge-transport', ?, ?, 6,
+                 'event-tool-bridge-transport', 1, ?, ?, 'tool_error',
+                 'tool_unavailable', 'tool_logs_search', 'resolve_external_dependency',
+                 6, 2, 1, ?, ?)`,
+    ).bind(RUN_ID, provider.replacement_attempt_id, scopeDigest, fingerprintDigest, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO run_blockers (
+         blocker_id, run_id, reason, retry_scope_digest, fingerprint_digest,
+         attempt_count, consecutive_fingerprint_count, needed_human_input, created_at
+       ) VALUES ('blocker-tool-bridge-transport', ?, 'repeated_fingerprint', ?, ?,
+                 6, 2, 'resolve_external_dependency', ?)`,
+    ).bind(RUN_ID, scopeDigest, fingerprintDigest, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO tool_call_traces (
+         trace_id, run_id, attempt_id, tool_path, action, effect,
+         duration_ms, result_category, occurred_at
+       ) VALUES ('tooltrace-tool-bridge-transport', ?, ?, 'logs/search',
+                 'logs:read', 'read', 629, 'upstream_error', ?)`,
+    ).bind(RUN_ID, provider.replacement_attempt_id, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO quota_model_reservations (
+         reservation_id, attempt_id, run_id, profile_id, reserved_tokens,
+         reserved_cost_microusd, status, expires_at, created_at, updated_at
+       ) VALUES ('reservation-tool-bridge-transport', ?, ?, ?, 1, 1,
+                 'settled', '2026-08-13T02:00:00.000Z', ?, ?)`,
+    ).bind(provider.replacement_attempt_id, RUN_ID, profile, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO model_usage (
+         usage_id, at, provider, model, run_id, attempt_id, tenant_key,
+         repository, principal, input_tokens, cached_input_tokens, output_tokens,
+         reasoning_output_tokens, cost_microusd, source_digest, created_at
+       ) VALUES ('usage-tool-bridge-transport', ?, 'delivery_loop_relay', 'gpt-5.6-terra',
+                 ?, ?, 'initial-analysis-recovery', 'example/delivery-target',
+                 'service:delivery-loop', 1, 0, 1, 1, 1, ?, ?)`,
+    ).bind(
+      NOW,
+      RUN_ID,
+      provider.replacement_attempt_id,
+      `sha256:${'9'.repeat(64)}`,
+      NOW,
+    ),
+  ]);
+  return provider.replacement_attempt_id;
+}
+
 function validPlan(attemptId: string): ExecutionPlanBodyV1 {
   return {
     schemaVersion: '1',
@@ -471,6 +546,46 @@ function validPlan(attemptId: string): ExecutionPlanBodyV1 {
 beforeEach(reset);
 
 describe('initial analysis recovery', () => {
+  it('converges the exact workerd redirect transport failure to one replacement', async () => {
+    const failedAttemptId = await seedToolBridgeTransportBlocked();
+    const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    });
+    const results = await Promise.all(
+      Array.from({ length: 20 }, async () =>
+        await reconciler().reconcileToolBridgeTransportFailures(5)),
+    );
+    expect(results.reduce((sum, count) => sum + count, 0)).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT recovery.failed_attempt_id, recovery.logs_trace_id,
+              recovery.transport_policy_version, attempts.ordinal, attempts.status,
+              retries.retry_sequence, blockers.resolution_code, runs.state,
+              outbox.delivery_state
+       FROM initial_analysis_tool_bridge_transport_recoveries AS recovery
+       JOIN attempts ON attempts.attempt_id = recovery.replacement_attempt_id
+       JOIN initial_analysis_retries AS retries
+         ON retries.retry_attempt_id = recovery.replacement_attempt_id
+       JOIN run_blockers AS blockers ON blockers.blocker_id = recovery.blocker_id
+       JOIN runs ON runs.run_id = recovery.run_id
+       JOIN outbox ON outbox.payload_ref = 'd1://attempts/' || recovery.replacement_attempt_id`,
+    ).first()).toMatchObject({
+      failed_attempt_id: failedAttemptId,
+      logs_trace_id: 'tooltrace-tool-bridge-transport',
+      transport_policy_version: 2,
+      ordinal: 7,
+      status: 'pending',
+      retry_sequence: 6,
+      resolution_code: 'analysis_tool_bridge_workerd_redirect_manual_v2',
+      state: 'planning',
+      delivery_state: 'pending',
+    });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM tasks').first())
+      .toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM runs').first())
+      .toEqual({ count: 1 });
+    expect(await reconciler().reconcileToolBridgeTransportFailures(5)).toBe(0);
+  });
+
   it('converges the exact external Tool Bridge failure to one replacement', async () => {
     const failedAttemptId = await seedToolBridgeBlocked();
     const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {

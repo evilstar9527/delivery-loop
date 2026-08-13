@@ -144,7 +144,7 @@
 - repo/write、k8s/apply、database/execute、shell/exec是catalog内已知deny capability。scope缺失或effect非read均留`policy_denied` metadata trace且不调用上游；即使D1 scope被污染为包含write/destructive action，独立effect gate仍拒绝。caller不能在body自报policy字段。
 - tool trace schema 只有 trace/run/attempt/path/action/effect/duration/result category/time，不提供 arguments、header、URL query、response 或 error-detail 容器。上游非 2xx 正文不读取；API 错误为固定类别，不能把工具或数据库原始错误变成 secret 回显通道。
 - service binding 的内部 token 只来自 Worker Secret binding；调用参数只存在本次内存/转发 body，成功结果以 `no-store` 返回授权 Runner，不进入 D1、Workflow event、console、artifact 或 PR。
-- 同账户`delivery-loop-tool-bridge`只持用途隔离的组织Tool Bridge SK与独立internal token；控制面只持后者且Runner两者都拿不到。SK scope仅需Tipsy SLS tool的read/call；BaseURL、tool path、`tipsy-chat/prod`、14天window和limit=20不可由Agent覆盖。logs参数strict为Task已有`uid/cid/path`，trace参数strict为前一步结果中的exact `trace_id`。adapter拒绝HTTP/schema/trace identity漂移、credential-shaped结果和超256 KiB响应，上游非2xx/raw error统一503；不向Agent暴露Tool Bridge discovery、admin、write、数据库或shell能力。
+- 同账户`delivery-loop-tool-bridge`只持用途隔离的组织Tool Bridge SK与独立internal token；控制面只持后者且Runner两者都拿不到。SK scope仅需Tipsy SLS tool的read/call；BaseURL、tool path、`tipsy-chat/prod/14天/20条`不可由Agent覆盖。logs参数strict为Task已有`uid/cid/path`，trace参数strict为前一步结果中的exact `trace_id`。adapter以workerd支持的`redirect=manual`发出唯一请求且不跟随3xx，所有非2xx都不读取正文并统一503；同时拒绝schema/trace identity漂移、credential-shaped结果和超256 KiB响应，不向Agent暴露Tool Bridge discovery、admin、write、数据库或shell能力。0083恢复还要求failed Attempt直接来自0082 marker、唯一upstream-error read trace、已结算模型usage、零Evidence/Plan/revision/review及digest-matched active blocker；它不修改旧Attempt、Task、Run identity或既有Secret。
 
 ### 3.5 人工 Task intake
 
