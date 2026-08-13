@@ -332,7 +332,7 @@ export class InitialAnalysisReconciler {
          AND failures.failure_code = 'tool_unavailable'
          AND failures.failure_site = 'tool_logs_search'
          AND failures.needed_human_input = 'resolve_external_dependency'
-         AND blockers.reason = 'external_dependency'
+         AND blockers.reason IN ('external_dependency', 'attempt_limit')
          AND blockers.needed_human_input = 'resolve_external_dependency'
          AND NOT EXISTS (SELECT 1 FROM execution_plans WHERE run_id = runs.run_id)
          AND NOT EXISTS (SELECT 1 FROM plan_revisions WHERE run_id = runs.run_id)
@@ -851,7 +851,7 @@ export class InitialAnalysisReconciler {
            AND failures.failure_code = 'tool_unavailable'
            AND failures.failure_site = 'tool_logs_search'
            AND failures.needed_human_input = 'resolve_external_dependency'
-           AND blockers.reason = 'external_dependency'
+           AND blockers.reason IN ('external_dependency', 'attempt_limit')
            AND blockers.needed_human_input = 'resolve_external_dependency'
            AND traces.tool_path = 'logs/search' AND traces.action = 'logs:read'
            AND traces.effect = 'read' AND traces.result_category = 'upstream_error'

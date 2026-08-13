@@ -345,6 +345,7 @@ async function seedInventoryAdapterBlocked(options: {
 async function seedToolBridgeBlocked(overrides: {
   traceResult?: 'upstream_error' | 'success';
   evidence?: boolean;
+  blockerReason?: 'external_dependency' | 'attempt_limit';
 } = {}): Promise<string> {
   const failedAttemptId = await seedInventoryAdapterBlocked();
   const reconciler = new InitialAnalysisReconciler(env.DB_CONTROL, {
@@ -383,9 +384,15 @@ async function seedToolBridgeBlocked(overrides: {
       `INSERT INTO run_blockers (
          blocker_id, run_id, reason, retry_scope_digest, fingerprint_digest,
          attempt_count, consecutive_fingerprint_count, needed_human_input, created_at
-       ) VALUES ('blocker-tool-bridge-external', ?, 'external_dependency', ?, ?,
+       ) VALUES ('blocker-tool-bridge-external', ?, ?, ?, ?,
                  5, 1, 'resolve_external_dependency', ?)`,
-    ).bind(RUN_ID, scopeDigest, fingerprintDigest, NOW),
+    ).bind(
+      RUN_ID,
+      overrides.blockerReason ?? 'external_dependency',
+      scopeDigest,
+      fingerprintDigest,
+      NOW,
+    ),
     env.DB_CONTROL.prepare(
       `INSERT INTO tool_call_traces (
          trace_id, run_id, attempt_id, tool_path, action, effect,
@@ -501,6 +508,24 @@ describe('initial analysis recovery', () => {
     expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM runs').first())
       .toEqual({ count: 1 });
     expect(await reconciler().reconcileToolBridgeFailures(5)).toBe(0);
+  });
+
+  it('recovers the same external Tool Bridge failure after the attempt limit blocks it', async () => {
+    await seedToolBridgeBlocked({ blockerReason: 'attempt_limit' });
+    expect(await new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    }).reconcileToolBridgeFailures(1)).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT attempts.ordinal, runs.state, blockers.resolution_code
+       FROM initial_analysis_tool_bridge_recoveries AS recovery
+       JOIN attempts ON attempts.attempt_id = recovery.replacement_attempt_id
+       JOIN runs ON runs.run_id = recovery.run_id
+       JOIN run_blockers AS blockers ON blockers.blocker_id = recovery.blocker_id`,
+    ).first()).toEqual({
+      ordinal: 6,
+      state: 'planning',
+      resolution_code: 'analysis_tipsy_sls_tool_bridge_v1',
+    });
   });
 
   it.each([
