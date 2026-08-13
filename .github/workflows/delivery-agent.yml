@@ -25,6 +25,9 @@ on:
       checkout_sha:
         required: true
         type: string
+      target_repository:
+        required: true
+        type: string
       control_plane_url:
         required: true
         type: string
@@ -54,10 +57,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Checkout trusted execution snapshot
+      - name: Checkout trusted runner snapshot
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          ref: ${{ github.sha }}
+          path: runner-source
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Checkout trusted target snapshot
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ${{ inputs.target_repository }}
           ref: ${{ inputs.checkout_sha }}
+          token: ${{ secrets.TARGET_REPOSITORY_READ_TOKEN }}
+          path: target-repository
           persist-credentials: false
           fetch-depth: 0
 
@@ -90,15 +104,18 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version-file: package.json
+          node-version-file: runner-source/package.json
           cache: pnpm
+          cache-dependency-path: runner-source/pnpm-lock.yaml
 
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
+        working-directory: runner-source
 
       - name: Run read-only analysis attempt
         if: inputs.mode == 'analysis'
         run: pnpm exec tsx scripts/run-analysis-attempt.ts
+        working-directory: runner-source
         env:
           DELIVERY_SCHEMA_VERSION: ${{ inputs.schema_version }}
           DELIVERY_RUN_ID: ${{ inputs.run_id }}
@@ -106,6 +123,8 @@ jobs:
           DELIVERY_TASK_DIGEST: ${{ inputs.task_digest }}
           DELIVERY_BASE_SHA: ${{ inputs.base_sha }}
           DELIVERY_CHECKOUT_SHA: ${{ inputs.checkout_sha }}
+          DELIVERY_TARGET_REPOSITORY: ${{ inputs.target_repository }}
+          DELIVERY_REPOSITORY_PATH: ${{ github.workspace }}/target-repository
           DELIVERY_ATTEMPT_MODE: ${{ inputs.mode }}
           DELIVERY_MODEL_PROFILE_ID: ${{ inputs.model_profile_id }}
           DELIVERY_CONTROL_PLANE_URL: ${{ inputs.control_plane_url }}
@@ -115,6 +134,7 @@ jobs:
       - name: Run approved execution attempt
         if: inputs.mode == 'implement' || inputs.mode == 'review_fix'
         run: pnpm exec tsx scripts/run-execution-attempt.ts
+        working-directory: runner-source
         env:
           DELIVERY_SCHEMA_VERSION: ${{ inputs.schema_version }}
           DELIVERY_RUN_ID: ${{ inputs.run_id }}
@@ -122,6 +142,8 @@ jobs:
           DELIVERY_TASK_DIGEST: ${{ inputs.task_digest }}
           DELIVERY_BASE_SHA: ${{ inputs.base_sha }}
           DELIVERY_CHECKOUT_SHA: ${{ inputs.checkout_sha }}
+          DELIVERY_TARGET_REPOSITORY: ${{ inputs.target_repository }}
+          DELIVERY_REPOSITORY_PATH: ${{ github.workspace }}/target-repository
           DELIVERY_ATTEMPT_MODE: ${{ inputs.mode }}
           DELIVERY_MODEL_PROFILE_ID: ${{ inputs.model_profile_id }}
           DELIVERY_PLAN_VERSION: ${{ inputs.plan_version }}
@@ -134,12 +156,13 @@ jobs:
         if: always() && inputs.mode == 'analysis'
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "$DELIVERY_CHECKOUT_SHA"
-          if git symbolic-ref --quiet --short HEAD >/dev/null; then
+          test "$(git -C "$DELIVERY_REPOSITORY_PATH" rev-parse HEAD)" = "$DELIVERY_CHECKOUT_SHA"
+          if git -C "$DELIVERY_REPOSITORY_PATH" symbolic-ref --quiet --short HEAD >/dev/null; then
             exit 1
           else
             test "$?" -eq 1
           fi
-          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+          test -z "$(git -C "$DELIVERY_REPOSITORY_PATH" status --porcelain=v1 --untracked-files=all)"
         env:
           DELIVERY_CHECKOUT_SHA: ${{ inputs.checkout_sha }}
+          DELIVERY_REPOSITORY_PATH: ${{ github.workspace }}/target-repository

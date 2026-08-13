@@ -657,6 +657,7 @@ describe('automated review loop', () => {
         task_digest: expect.any(String),
         base_sha: HEAD_SHA,
         checkout_sha: HEAD_SHA,
+        target_repository: 'example/delivery-target',
         control_plane_url: 'https://control.delivery.test',
         mode: 'analysis',
       },

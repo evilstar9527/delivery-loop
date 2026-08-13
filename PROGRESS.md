@@ -5091,3 +5091,19 @@
 - 目标与根因：用production delivery-loop处理飞书Wiki revision 179的tipsy-backend多角色名称反馈；首次Task POST在任何Task/Run/Action创建前以`target repository base is unavailable`停止。目标仓库交付基线为`dev`且缺opt-in workflow/delivery policy。进一步核对发现PR #277只实现了Yunxiao effect执行器，analysis policy没有把Task的`allowTestDeploy/target.environment`投影为`test_deploy`，因此完成仓库接入后仍不可能自然生成可调度deployment Item。本轮唯一DoD先闭合此可信计划投影，不绕过控制面本地修业务Bug。
 - 实现与安全边界：`deriveAnalysisPlanPolicy`只有在`allowRepositoryWrite=true + allowTestDeploy=true + environment=test`时加入`test_deploy`并要求`requiresTestDeployment`；analysis context SQL读取并与R2 Task重算environment/allowTestDeploy，Runner从完整Task再次派生，Plan persistence再从D1重派生。validator只接受直接依赖self-verifying change的独立required delivery Item，其effect恰为`test_deploy`、command refs为空、Evidence/external fact均恰为`deployment`；缺Item、错环境或混合effect固定拒绝。Prompt只在受信policy允许时要求该DAG，并明确没有`acceptance:*` ref就不虚构post-deployment acceptance。analysis/implement Runner仍无云效凭证，真实部署继续要求独立exact approval并由控制面scheduler执行。
 - 验收：`pnpm exec vitest run test/analysis-plan-policy.test.ts test/plan.test.ts test/codex-analysis-adapter.test.ts test/analysis-runner-bootstrap.test.ts` exit 0（4 files/102 tests）；`pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/analysis-attempt-api.test.ts test/workflow/test-deployment.test.ts test/workflow/test-deployment-routing.test.ts` exit 0（2 files/16 tests）。首轮全量Node仅`repository-writer`一项5秒时序超时，其余139 files/883 tests通过；该文件单独重跑11/11通过，随后Node全量140 files/884 tests通过。workerd全量先揭示3条旧plan-revision fixture把`test_deploy`混入change Item，按当前既有scheduler真实契约改为self-verifying change→独立delivery后，定向plan-revision/analysis/test-deployment为3 files/23 tests通过。最终`pnpm run verify && git diff --check` exit 0：Node 140 files/884 tests、workerd 62 files/436 tests、15 workflows/17 jobs、573文件Secret scan与docs links全绿；既有workerd主动terminate teardown诊断不改变exit 0。PR/CI/review、production发布、tipsy onboarding与真实Task仍待后续步骤，不能把本地契约冒充外部部署事实。
+## Round 431 — 2026-08-13
+- 目标纠偏：不为`tipsy-backend`做onboarding；关闭错误PR #1662后，仅恢复已有Task
+  `task_ef28ec3d3f537822c028b7eb1a63eb6955975a0358a6b59afe0a5172` / Run同suffix，
+  不创建第二Task。生产只读投影显示analysis Attempt仍`pending + github_run_id=NULL`。
+- 根因：dispatcher把`.github/workflows/delivery-agent.yml`投向业务仓库；backend默认分支没有
+  该workflow，GitHub返回404。实现改为固定集中executor repository/ref，payload携带非Secret的
+  `target_repository + checkout_sha`；Action分别检出exact runner源码与私有业务repo，Agent只在
+  业务目录运行。OIDC和GitHub status匹配executor，repo-write/PR仍匹配业务repository。
+- 恢复：旧业务workflow ref只可在唯一outbox lease内对`pending + 未绑定GitHub run/head`原子
+  重绑为集中ref；已启动/终态Attempt不隐式修改，不做D1 repair或Workflow recreate。
+- 安全：新增`TARGET_REPOSITORY_READ_TOKEN`只作为`actions/checkout.token`，关闭credential持久化；
+  不进入Agent环境、dispatch、日志、artifact或prompt。backend不新增workflow/配置/接入PR。
+- 本地验证：`pnpm exec vitest run test/delivery-agent-workflow.test.ts test/analysis-runner-bootstrap.test.ts test/execution-runner-bootstrap.test.ts` exit 0（3 files/25 tests）；
+  `pnpm exec vitest run --config vitest.workflow.config.ts test/workflow/github-dispatcher.test.ts test/workflow/github-oidc-exchange.test.ts test/workflow/github-run-reconciler.test.ts test/workflow/github-workflow-run-webhook.test.ts test/workflow/outbox-routing.test.ts` exit 0（5 files/36 tests）。首次全量RED由两个immutable verifier和两个dispatch payload fixture仍绑定旧workflow形状导致6+2 failures；同步集中workflow契约后定向12/12与24/24通过。最终`pnpm run verify` exit 0：Node 140 files/884 tests、workerd 62 files/436 tests、15 workflows/17 jobs、574文件Secret scan与docs links全绿；既有workerd主动terminate teardown诊断不改变exit 0。
+- 未完成：尚未受保护合入、写GitHub checkout Secret、发布Worker或观察现有唯一Run；
+  因而不能宣布真实主线通过或已创建backend PR。

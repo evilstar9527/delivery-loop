@@ -1,5 +1,19 @@
 # Security
 
+## 集中 Agent 工作台边界
+
+- `GITHUB_AGENT_EXECUTOR_REPOSITORY/REF`是部署者固定的受信配置，Task、PRD、反馈、
+  Agent或dispatch payload不能选择执行仓库；业务目标仍必须命中独立repository allowlist。
+- workflow自身只保留`contents:read + id-token:write`。私有业务仓库的
+  `TARGET_REPOSITORY_READ_TOKEN`只允许出现在目标`actions/checkout`的`token`输入，
+  `persist-credentials:false`，不得进入Agent env、argv、日志、artifact、prompt或控制面。
+- Runner源码与业务repo使用不同目录。Agent只得到业务目录的绝对路径和业务repository，
+  不把`GITHUB_WORKSPACE/GITHUB_REPOSITORY`的执行仓库身份误当成业务authority。
+- OIDC与workflow run observation绑定集中executor；repo-write短凭证仍只绑定
+  Attempt/Plan/Item/approval及业务repository。读取executor Action的权限不授予向业务repo写入。
+- 旧Attempt只允许在`pending + github_run_id/head_sha均为空`时由持有唯一outbox lease的
+  dispatcher原子重绑。任何已启动或终态Attempt都fail-closed，不通过migration伪造恢复。
+
 ## 1. 安全目标
 
 系统的主要风险不是传统 webhook 本身，而是“外部自然语言可以间接驱动拥有代码和基础设施权限的 Agent”。安全边界必须在模型之外执行：模型输出只能提出动作，请求由策略、凭证 scope 和平台保护共同裁决。

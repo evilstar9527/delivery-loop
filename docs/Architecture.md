@@ -61,6 +61,19 @@ flowchart TB
   G -->|"review/check/deploy event"| I -->|"dedupe + sendEvent"| WF
 ```
 
+GitHub Actions 是集中工作台，不是目标仓库的接入组件。控制面只向受信配置中的
+`executorRepository + executorRef` dispatch `delivery-agent.yml`；该 workflow 先检出
+delivery-loop 的 exact run SHA 作为 Runner 源码，再用只进入 `actions/checkout.token`
+的仓库 Secret 把 D1 绑定的目标仓库/exact checkout SHA 检出到独立目录。Agent 的
+读写工作区、commit、branch 和 PR 始终是目标仓库。业务仓库因此不需要复制
+delivery-loop workflow，也不需要 onboarding PR。
+
+Attempt 的 `repository` 表示业务目标，`workflow_ref` 表示集中执行身份；GitHub
+run 的 repository/head SHA 属于执行仓库，`base_sha/checkout_sha/head_sha` 属于业务
+代码谱系，二者不得互相冒充。pending 且从未 dispatch 的历史 Attempt 可在唯一
+dispatcher lease 内从旧业务 workflow ref 原子升级到固定集中 ref；已经绑定 run ID
+或进入 starting/running/终态的 Attempt 不做隐式重绑。
+
 默认部署选择是 Hono Worker + Cloudflare Workflows + D1 + Queues/outbox + R2。Queues 负责削峰和可靠投递，不承担 Run 状态机；Cron 只用于 reconciliation/stuck scan。领域层不 import Cloudflare API，将来可以替换为 Temporal + Node/Postgres，但 Task/Run/ExecutionPlan/Attempt 契约保持不变。
 
 ## 2. 模块边界

@@ -13,13 +13,14 @@ const RUN_ID = 'run-github-reconciler';
 const ATTEMPT_ID = 'attempt-github-reconciler';
 const GITHUB_RUN_ID = '123456789';
 const REPOSITORY = 'example/delivery-target';
+const EXECUTOR_REPOSITORY = 'example/delivery-loop';
 const BASE_SHA = 'd'.repeat(40);
 const GITHUB_HEAD_SHA = 'c'.repeat(40);
 const WORKFLOW_PATH = '.github/workflows/delivery-agent.yml';
 
 function runFact(overrides: Partial<GitHubWorkflowRunFact> = {}): GitHubWorkflowRunFact {
   return {
-    repository: REPOSITORY,
+    repository: EXECUTOR_REPOSITORY,
     githubRunId: GITHUB_RUN_ID,
     event: 'workflow_dispatch',
     status: 'completed',
@@ -79,7 +80,7 @@ async function seedAttempt(): Promise<void> {
       RUN_ID,
       BASE_SHA,
       REPOSITORY,
-      `${REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
+      `${EXECUTOR_REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
       GITHUB_RUN_ID,
       GITHUB_HEAD_SHA,
       now,
@@ -127,8 +128,8 @@ describe('GitHub App workflow run reconciliation', () => {
     expect(await reconciler.reconcileAttempt(ATTEMPT_ID)).toBe('applied');
     expect(await reconciler.reconcileAttempt(ATTEMPT_ID)).toBe('duplicate');
     expect(client.calls).toEqual([
-      { repository: REPOSITORY, githubRunId: GITHUB_RUN_ID },
-      { repository: REPOSITORY, githubRunId: GITHUB_RUN_ID },
+      { repository: EXECUTOR_REPOSITORY, githubRunId: GITHUB_RUN_ID },
+      { repository: EXECUTOR_REPOSITORY, githubRunId: GITHUB_RUN_ID },
     ]);
 
     const attempt = await env.DB_CONTROL.prepare(
@@ -248,7 +249,7 @@ describe('GitHub App workflow run reconciliation', () => {
         historicalRunId,
         BASE_SHA,
         REPOSITORY,
-        `${REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
+        `${EXECUTOR_REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
         GITHUB_HEAD_SHA,
         historicalCreatedAt,
         historicalCreatedAt,
@@ -268,7 +269,7 @@ describe('GitHub App workflow run reconciliation', () => {
       { attemptId: ATTEMPT_ID, disposition: 'applied' },
     ]);
     expect(client.calls).toEqual([
-      { repository: REPOSITORY, githubRunId: GITHUB_RUN_ID },
+      { repository: EXECUTOR_REPOSITORY, githubRunId: GITHUB_RUN_ID },
     ]);
 
     client.fact = runFact({
@@ -306,7 +307,7 @@ describe('GitHub App workflow run reconciliation', () => {
       { attemptId: ATTEMPT_ID, disposition: 'applied' },
     ]);
     expect(client.calls).toEqual([
-      { repository: REPOSITORY, githubRunId: GITHUB_RUN_ID },
+      { repository: EXECUTOR_REPOSITORY, githubRunId: GITHUB_RUN_ID },
     ]);
   });
 
@@ -389,7 +390,7 @@ describe('GitHub App workflow run reconciliation', () => {
       { attemptId: ATTEMPT_ID, disposition: 'applied' },
     ]);
     expect(client.calls).toEqual([
-      { repository: REPOSITORY, githubRunId: GITHUB_RUN_ID },
+      { repository: EXECUTOR_REPOSITORY, githubRunId: GITHUB_RUN_ID },
     ]);
   });
 
@@ -415,15 +416,15 @@ describe('GitHub App workflow run reconciliation', () => {
             display_title: `delivery-loop/${ATTEMPT_ID}`,
             run_attempt: 1,
             updated_at: '2026-07-25T07:00:00Z',
-            repository: { full_name: REPOSITORY },
+            repository: { full_name: EXECUTOR_REPOSITORY },
           });
         },
       },
     );
-    expect(await client.getWorkflowRun(REPOSITORY, GITHUB_RUN_ID)).toEqual(runFact());
+    expect(await client.getWorkflowRun(EXECUTOR_REPOSITORY, GITHUB_RUN_ID)).toEqual(runFact());
     expect(requests).toEqual([
       {
-        url: `https://api.github.test/repos/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`,
+        url: `https://api.github.test/repos/${EXECUTOR_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}`,
         authorization: 'Bearer CANARY_SHORT_INSTALLATION_TOKEN',
       },
     ]);

@@ -159,18 +159,19 @@ function job(drift: Drift): Record<string, unknown> {
     conclusion: 'success',
     head_sha: BASE_SHA,
     steps: [
-      { name: 'Checkout trusted execution snapshot', status: 'completed', conclusion: 'success', number: 1 },
-      { name: 'Validate attempt mode bindings', status: 'completed', conclusion: 'success', number: 2 },
-      { name: 'Set up pnpm', status: 'completed', conclusion: 'success', number: 3 },
-      { name: 'Set up Node.js', status: 'completed', conclusion: 'success', number: 4 },
-      { name: 'Install locked dependencies', status: 'completed', conclusion: 'success', number: 5 },
+      { name: 'Checkout trusted runner snapshot', status: 'completed', conclusion: 'success', number: 1 },
+      { name: 'Checkout trusted target snapshot', status: 'completed', conclusion: 'success', number: 2 },
+      { name: 'Validate attempt mode bindings', status: 'completed', conclusion: 'success', number: 3 },
+      { name: 'Set up pnpm', status: 'completed', conclusion: 'success', number: 4 },
+      { name: 'Set up Node.js', status: 'completed', conclusion: 'success', number: 5 },
+      { name: 'Install locked dependencies', status: 'completed', conclusion: 'success', number: 6 },
       {
         name: 'Run read-only analysis attempt', status: 'completed',
-        conclusion: drift === 'job' ? 'failure' : 'success', number: 6,
+        conclusion: drift === 'job' ? 'failure' : 'success', number: 7,
       },
-      { name: 'Run approved execution attempt', status: 'completed', conclusion: 'skipped', number: 7 },
-      { name: 'Verify read-only workspace', status: 'completed', conclusion: 'success', number: 8 },
-      { name: 'Complete job', status: 'completed', conclusion: 'success', number: 9 },
+      { name: 'Run approved execution attempt', status: 'completed', conclusion: 'skipped', number: 8 },
+      { name: 'Verify read-only workspace', status: 'completed', conclusion: 'success', number: 9 },
+      { name: 'Complete job', status: 'completed', conclusion: 'success', number: 10 },
     ],
   };
 }

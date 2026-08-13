@@ -26,6 +26,8 @@ export interface Bindings {
   GITHUB_PAT?: string;
   GITHUB_PAT_EXPIRES_AT?: string;
   GITHUB_ALLOWED_REPOSITORIES?: string;
+  GITHUB_AGENT_EXECUTOR_REPOSITORY?: string;
+  GITHUB_AGENT_EXECUTOR_REF?: string;
   GITHUB_API_BASE_URL?: string;
   GITHUB_CREDENTIAL_ENCRYPTION_KEY?: string;
   FEISHU_APP_ID?: string;

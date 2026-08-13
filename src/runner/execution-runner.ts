@@ -390,7 +390,8 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
   const planVersion = Number(rawPlanVersion);
   const planItemId = requiredEnvironment(environment, 'DELIVERY_PLAN_ITEM_ID');
   const modelProfileId = environment.DELIVERY_MODEL_PROFILE_ID;
-  const repository = requiredEnvironment(environment, 'GITHUB_REPOSITORY');
+  const repository = environment.DELIVERY_TARGET_REPOSITORY ??
+    requiredEnvironment(environment, 'GITHUB_REPOSITORY');
   const controlPlane = httpsUrl(
     requiredEnvironment(environment, 'DELIVERY_CONTROL_PLANE_URL'),
     'origin',
@@ -399,7 +400,8 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
     requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_URL'),
     'request',
   );
-  const rawWorkspace = requiredEnvironment(environment, 'GITHUB_WORKSPACE');
+  const rawWorkspace = environment.DELIVERY_REPOSITORY_PATH ??
+    requiredEnvironment(environment, 'GITHUB_WORKSPACE');
   const rawRunnerTemp = requiredEnvironment(environment, 'RUNNER_TEMP');
   if (!isAbsolute(rawWorkspace) || !isAbsolute(rawRunnerTemp)) {
     throw new ExecutionRunnerError('execution Runner path configuration is invalid');

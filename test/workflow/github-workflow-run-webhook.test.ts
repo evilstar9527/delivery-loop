@@ -9,6 +9,7 @@ const RUN_ID = 'run-github-webhook';
 const ATTEMPT_ID = 'attempt-github-webhook';
 const GITHUB_RUN_ID = 987_654_321;
 const REPOSITORY = 'example/delivery-target';
+const EXECUTOR_REPOSITORY = 'example/delivery-loop';
 const BASE_SHA = 'b'.repeat(40);
 const GITHUB_HEAD_SHA = 'a'.repeat(40);
 const WORKFLOW_PATH = '.github/workflows/delivery-agent.yml';
@@ -44,7 +45,7 @@ function workflowRunPayload(options: {
       run_attempt: options.runAttempt ?? 1,
       updated_at: options.updatedAt ?? '2026-07-25T06:00:00Z',
     },
-    repository: { full_name: options.repository ?? REPOSITORY },
+    repository: { full_name: options.repository ?? EXECUTOR_REPOSITORY },
     sender: { login: PAYLOAD_CANARY },
   };
 }
@@ -116,7 +117,7 @@ async function seedAttempt(): Promise<void> {
       RUN_ID,
       BASE_SHA,
       REPOSITORY,
-      `${REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
+      `${EXECUTOR_REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
       String(GITHUB_RUN_ID),
       GITHUB_HEAD_SHA,
       now,

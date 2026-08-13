@@ -4,6 +4,7 @@ import {
   type GitHubObservationDisposition,
   type GitHubWorkflowRunFact,
 } from '../storage/github-run-observation-store.js';
+import { parseGitHubAgentWorkflowRef } from '../domain/github-agent-executor.js';
 
 const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 
@@ -23,12 +24,14 @@ export interface GitHubBatchReconciliationResult {
 interface ReconciliationCandidate {
   attempt_id: string;
   repository: string;
+  workflow_ref: string;
   github_run_id: string;
 }
 
 interface AtRiskCandidate {
   attempt_id: string;
   repository: string | null;
+  workflow_ref: string | null;
   github_run_id: string | null;
   github_external_updated_at: string | null;
   github_status: string | null;
@@ -52,9 +55,11 @@ export class GitHubRunReconciler {
     if (!ATTEMPT_ID_PATTERN.test(attemptId)) return 'not_found';
     const candidate = await this.db
       .prepare(
-        `SELECT attempts.attempt_id, attempts.repository, attempts.github_run_id
+        `SELECT attempts.attempt_id, attempts.repository, attempts.workflow_ref,
+                attempts.github_run_id
          FROM attempts
          WHERE attempt_id = ? AND repository IS NOT NULL AND github_run_id IS NOT NULL
+           AND attempts.workflow_ref IS NOT NULL
            AND NOT EXISTS (
              SELECT 1 FROM test_acceptances
              WHERE test_acceptances.attempt_id = attempts.attempt_id
@@ -63,11 +68,13 @@ export class GitHubRunReconciler {
       .bind(attemptId)
       .first<ReconciliationCandidate>();
     if (candidate === null) return 'not_found';
-    const fact = await this.client.getWorkflowRun(candidate.repository, candidate.github_run_id);
+    const executor = parseGitHubAgentWorkflowRef(candidate.workflow_ref);
+    if (executor === null) return 'not_found';
+    const fact = await this.client.getWorkflowRun(executor.repository, candidate.github_run_id);
     const factDigest = await canonicalSha256(fact);
     const identityDigest = await canonicalSha256({
       source: 'github_api',
-      repository: candidate.repository,
+      repository: executor.repository,
       githubRunId: candidate.github_run_id,
       factDigest,
     });
@@ -89,10 +96,11 @@ export class GitHubRunReconciler {
     // observation projector remains the sole authority for external status.
     const candidates = await this.db
       .prepare(
-        `SELECT attempt_id, repository, github_run_id
+        `SELECT attempt_id, repository, workflow_ref, github_run_id
          FROM attempts JOIN runs ON runs.run_id = attempts.run_id
          WHERE attempts.repository IS NOT NULL
            AND attempts.github_run_id IS NOT NULL
+           AND attempts.workflow_ref IS NOT NULL
            AND NOT EXISTS (
              SELECT 1 FROM test_acceptances
              WHERE test_acceptances.attempt_id = attempts.attempt_id
@@ -148,7 +156,8 @@ export class GitHubRunReconciler {
       now.getTime() - runningThresholdSeconds * 1_000,
     ).toISOString();
     const candidates = await this.db.prepare(
-      `SELECT attempts.attempt_id, attempts.repository, attempts.github_run_id,
+      `SELECT attempts.attempt_id, attempts.repository, attempts.workflow_ref,
+              attempts.github_run_id,
               attempts.github_external_updated_at, attempts.github_status,
               test_acceptances.attempt_id AS test_acceptance_id
        FROM attempts JOIN runs ON runs.run_id = attempts.run_id
@@ -190,7 +199,8 @@ export class GitHubRunReconciler {
        LIMIT ?`,
     ).bind(nowIso, heartbeatCutoff, limit).all<AtRiskCandidate>();
     const reconcilable = candidates.results.filter((candidate) =>
-      candidate.repository !== null && candidate.github_run_id !== null &&
+      candidate.repository !== null && candidate.workflow_ref !== null &&
+      candidate.github_run_id !== null &&
       candidate.test_acceptance_id === null &&
       (
         candidate.github_external_updated_at === null || candidate.github_status === null ||
