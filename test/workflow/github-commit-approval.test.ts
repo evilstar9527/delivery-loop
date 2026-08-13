@@ -506,7 +506,7 @@ describe('GitHub commit-comment repo-write approval', () => {
       commitSha: BASE_SHA, authorLogin: 'evilstar9527', authorType: 'User',
       authorAssociation: 'MEMBER', body: template.commentBody,
       createdAt: '2026-08-05T05:59:00.000Z', updatedAt: '2026-08-05T05:59:00.000Z',
-      url: `https://github.com/${REPOSITORY}/commit/${BASE_SHA}#commitcomment-123457`,
+      url: `https://github.com/EvilStar9527/Delivery-Loop/commit/${BASE_SHA}#commitcomment-123457`,
     };
 
     const response = await request(client, `/v1/runs/${RUN_ID}/github-commit-approvals`, {
