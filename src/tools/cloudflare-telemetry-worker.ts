@@ -125,7 +125,9 @@ async function queryToolBridge(
       'content-type': 'application/json',
     },
     body: JSON.stringify(upstreamArguments(env, query)),
-    redirect: 'error',
+    // Cloudflare workerd rejects `redirect: error` before issuing the request.
+    // Keep redirects observable and reject every non-2xx response below.
+    redirect: 'manual',
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
