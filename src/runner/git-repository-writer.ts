@@ -24,7 +24,8 @@ export type { ProtectedPathChangeReportV1 } from '../domain/protected-path-chang
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
-const MAX_GIT_OUTPUT_BYTES = 64 * 1_024;
+const DEFAULT_MAX_GIT_OUTPUT_BYTES = 64 * 1_024;
+const ABSOLUTE_MAX_GIT_OUTPUT_BYTES = 256 * 1_024;
 const GIT_TIMEOUT_MS = 30_000;
 const UTF8_ENCODER = new TextEncoder();
 
@@ -35,6 +36,7 @@ export interface GitCommandRequest {
   repositoryPath: string;
   args: string[];
   environment?: Readonly<Record<string, string>>;
+  maxOutputBytes?: number;
 }
 
 export interface GitCommandResult {
@@ -249,7 +251,14 @@ function fixedGitEnvironment(overrides: Readonly<Record<string, string>> = {}): 
 
 export const executeGitCommand: GitCommandExecutor = async (
   request,
-): Promise<GitCommandResult> => await new Promise((resolvePromise, rejectPromise) => {
+): Promise<GitCommandResult> => {
+  const maxOutputBytes = request.maxOutputBytes ?? DEFAULT_MAX_GIT_OUTPUT_BYTES;
+  if (
+    !Number.isSafeInteger(maxOutputBytes) ||
+    maxOutputBytes < 1 ||
+    maxOutputBytes > ABSOLUTE_MAX_GIT_OUTPUT_BYTES
+  ) throw new Error('fixed Git command output limit is invalid');
+  return await new Promise((resolvePromise, rejectPromise) => {
   execFile(
     'git',
     request.args,
@@ -258,7 +267,7 @@ export const executeGitCommand: GitCommandExecutor = async (
       encoding: 'utf8',
       env: fixedGitEnvironment(request.environment),
       timeout: GIT_TIMEOUT_MS,
-      maxBuffer: MAX_GIT_OUTPUT_BYTES,
+      maxBuffer: maxOutputBytes,
       windowsHide: true,
     },
     (error, stdout, stderr) => {
@@ -273,7 +282,8 @@ export const executeGitCommand: GitCommandExecutor = async (
       rejectPromise(new Error('fixed Git command failed'));
     },
   );
-});
+  });
+};
 
 export function repositoryAttemptBranch(taskId: string, attemptId: string): string {
   if (!ID_PATTERN.test(taskId) || !ID_PATTERN.test(attemptId)) {

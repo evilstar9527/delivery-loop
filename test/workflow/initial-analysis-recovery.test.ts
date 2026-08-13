@@ -22,6 +22,8 @@ const ROOT_ATTEMPT_ID = 'analysis-root-initial-recovery';
 const BASE_SHA = '8'.repeat(40);
 const NOW = '2026-08-13T01:00:00.000Z';
 const FAILURE_ID = 'failure-initial-analysis-recovery';
+const CAPACITY_FAILURE_ID = 'failure-initial-analysis-capacity-3';
+const CAPACITY_BLOCKER_ID = 'blocker-initial-analysis-capacity';
 
 const task: TaskEnvelope = {
   schemaVersion: '1',
@@ -59,6 +61,7 @@ const task: TaskEnvelope = {
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM workflow_signals'),
+    env.DB_CONTROL.prepare('DELETE FROM initial_analysis_capacity_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_retries'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_heartbeat_receipts'),
@@ -170,6 +173,114 @@ async function seedFailedRoot(overrides: {
   }
 }
 
+async function seedCapacityBlocked(overrides: {
+  failureCode?: 'unknown_failure' | 'tool_unavailable';
+  failureSite?: 'repo_snapshot' | 'tool_repo_read';
+  blocker?: boolean;
+  plan?: boolean;
+} = {}): Promise<void> {
+  await seedFailedRoot();
+  const scopeDigest = `sha256:${'e'.repeat(64)}`;
+  const firstFingerprint = `sha256:${'f'.repeat(64)}`;
+  const repeatedFingerprint = `sha256:${'1'.repeat(64)}`;
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `UPDATE runs SET state = 'blocked', version = 4, updated_at = ? WHERE run_id = ?`,
+    ).bind(NOW, RUN_ID),
+    env.DB_CONTROL.prepare(
+      `UPDATE attempt_failures
+       SET retry_scope_digest = ?, fingerprint_digest = ?,
+           failure_class = 'unknown', failure_code = 'unknown_failure',
+           failure_site = 'repo_snapshot', needed_human_input = 'manual_investigation',
+           scope_attempt_count = 1, consecutive_fingerprint_count = 1
+       WHERE failure_id = ?`,
+    ).bind(scopeDigest, firstFingerprint, FAILURE_ID),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+         workflow_ref, version, lease_generation, created_at, updated_at
+       ) VALUES ('analysis-capacity-retry-1', ?, 2, 'analysis', 'failed', ?,
+                 'example/delivery-target',
+                 'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                 3, 1, ?, ?)`,
+    ).bind(RUN_ID, BASE_SHA, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempts (
+         attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+         workflow_ref, version, lease_generation, created_at, updated_at
+       ) VALUES ('analysis-capacity-retry-2', ?, 3, 'analysis', 'failed', ?,
+                 'example/delivery-target',
+                 'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                 3, 1, ?, ?)`,
+    ).bind(RUN_ID, BASE_SHA, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_failures (
+         failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+         retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+         failure_site, needed_human_input, scope_attempt_count,
+         consecutive_fingerprint_count, revoked_lease_generation,
+         occurred_at, created_at
+       ) VALUES ('failure-initial-analysis-capacity-2', ?, 'analysis-capacity-retry-1', 2,
+                 'event-initial-analysis-capacity-2', 1, ?, ?, 'unknown',
+                 'unknown_failure', 'repo_snapshot', 'manual_investigation', 2, 1, 1, ?, ?)`,
+    ).bind(RUN_ID, scopeDigest, firstFingerprint, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_failures (
+         failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+         retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+         failure_site, needed_human_input, scope_attempt_count,
+         consecutive_fingerprint_count, revoked_lease_generation,
+         occurred_at, created_at
+       ) VALUES (?, ?, 'analysis-capacity-retry-2', 3,
+                 'event-initial-analysis-capacity-3', 1, ?, ?, ?, ?, ?,
+                 'manual_investigation', 3, 2, 1, ?, ?)`,
+    ).bind(
+      CAPACITY_FAILURE_ID,
+      RUN_ID,
+      scopeDigest,
+      repeatedFingerprint,
+      overrides.failureCode === 'tool_unavailable' ? 'tool_error' : 'unknown',
+      overrides.failureCode ?? 'unknown_failure',
+      overrides.failureSite ?? 'repo_snapshot',
+      NOW,
+      NOW,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO initial_analysis_retries (
+         retry_id, run_id, failure_id, failed_attempt_id,
+         retry_attempt_id, retry_sequence, created_at
+       ) VALUES ('initial-analysis-capacity-retry-1', ?, ?, ?,
+                 'analysis-capacity-retry-1', 1, ?)`,
+    ).bind(RUN_ID, FAILURE_ID, ROOT_ATTEMPT_ID, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO initial_analysis_retries (
+         retry_id, run_id, failure_id, failed_attempt_id,
+         retry_attempt_id, retry_sequence, created_at
+       ) VALUES ('initial-analysis-capacity-retry-2', ?,
+                 'failure-initial-analysis-capacity-2', 'analysis-capacity-retry-1',
+                 'analysis-capacity-retry-2', 2, ?)`,
+    ).bind(RUN_ID, NOW),
+  ]);
+  if (overrides.blocker !== false) {
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO run_blockers (
+         blocker_id, run_id, reason, retry_scope_digest, fingerprint_digest,
+         attempt_count, consecutive_fingerprint_count, needed_human_input, created_at
+       ) VALUES (?, ?, 'repeated_fingerprint', ?, ?, 3, 2,
+                 'manual_investigation', ?)`,
+    ).bind(CAPACITY_BLOCKER_ID, RUN_ID, scopeDigest, repeatedFingerprint, NOW).run();
+  }
+  if (overrides.plan === true) {
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO execution_plans (
+         plan_id, run_id, plan_version, task_revision, base_sha, digest, status,
+         created_by_attempt_id, objective, created_at, updated_at
+       ) VALUES ('plan-capacity-existing', ?, 1, 'revision-1', ?, ?, 'validated',
+                 'analysis-capacity-retry-2', 'Existing proposal blocks recovery.', ?, ?)`,
+    ).bind(RUN_ID, BASE_SHA, `sha256:${'2'.repeat(64)}`, NOW, NOW).run();
+  }
+}
+
 function validPlan(attemptId: string): ExecutionPlanBodyV1 {
   return {
     schemaVersion: '1',
@@ -200,6 +311,125 @@ function validPlan(attemptId: string): ExecutionPlanBodyV1 {
 beforeEach(reset);
 
 describe('initial analysis recovery', () => {
+  it('converges a production-shaped capacity blocker to one replacement lineage', async () => {
+    await seedCapacityBlocked();
+    const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    });
+    const results = await Promise.all(
+      Array.from({ length: 20 }, async () => await reconciler().reconcileCapacityFailures(5)),
+    );
+    expect(results.reduce((sum, count) => sum + count, 0)).toBe(1);
+    const recovery = await env.DB_CONTROL.prepare(
+      `SELECT recovery.run_id, recovery.failed_attempt_id,
+              recovery.replacement_attempt_id, recovery.inventory_policy_version,
+              recovery.max_tracked_paths, recovery.max_tracked_path_bytes,
+              attempts.ordinal, attempts.mode, attempts.status,
+              retries.retry_sequence, blockers.resolution_code, runs.state,
+              outbox.delivery_state
+       FROM initial_analysis_capacity_recoveries AS recovery
+       JOIN attempts ON attempts.attempt_id = recovery.replacement_attempt_id
+       JOIN initial_analysis_retries AS retries
+         ON retries.retry_attempt_id = recovery.replacement_attempt_id
+       JOIN run_blockers AS blockers ON blockers.blocker_id = recovery.blocker_id
+       JOIN runs ON runs.run_id = recovery.run_id
+       JOIN outbox ON outbox.payload_ref = 'd1://attempts/' || recovery.replacement_attempt_id`,
+    ).first<Record<string, unknown>>();
+    expect(recovery).toMatchObject({
+      run_id: RUN_ID,
+      failed_attempt_id: 'analysis-capacity-retry-2',
+      inventory_policy_version: 2,
+      max_tracked_paths: 5_000,
+      max_tracked_path_bytes: 256 * 1_024,
+      ordinal: 4,
+      mode: 'analysis',
+      status: 'pending',
+      retry_sequence: 3,
+      resolution_code: 'analysis_repository_capacity_v2',
+      state: 'planning',
+      delivery_state: 'pending',
+    });
+    if (
+      recovery === null ||
+      typeof recovery.replacement_attempt_id !== 'string'
+    ) throw new Error('missing capacity replacement');
+    expect(await reconciler().reconcileCapacityFailures(5)).toBe(0);
+    const expiresAt = new Date(Date.parse(NOW) + 300_000).toISOString();
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'running', version = 2, lease_generation = 1,
+                           lease_expires_at = ?, heartbeat_at = ?, updated_at = ?
+       WHERE attempt_id = ?`,
+    ).bind(expiresAt, NOW, NOW, recovery.replacement_attempt_id).run();
+    const context = await new AnalysisAttemptContextStore(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+    ).get({
+      attemptId: recovery.replacement_attempt_id,
+      runId: RUN_ID,
+      mode: 'analysis',
+      status: 'running',
+      version: 2,
+      leaseGeneration: 1,
+      leaseExpiresAt: expiresAt,
+      scopes: ['repo:read'],
+    });
+    expect(context.attempt.id).toBe(recovery.replacement_attempt_id);
+    expect(context.revisionSource).toBeUndefined();
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM tasks').first())
+      .toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM runs').first())
+      .toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM initial_analysis_capacity_recoveries',
+    ).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox WHERE kind = 'analysis_dispatch'`,
+    ).first()).toEqual({ count: 1 });
+    await expect(env.DB_CONTROL.prepare(
+      `UPDATE initial_analysis_capacity_recoveries SET created_at = ? WHERE run_id = ?`,
+    ).bind('2026-08-13T02:00:00.000Z', RUN_ID).run()).rejects.toThrow();
+  });
+
+  it('keeps the blocker and Run intact when attempt quota rejects the replacement', async () => {
+    await seedCapacityBlocked();
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO quota_policies (
+         policy_id, scope_type, scope_key, resource_type, limit_value,
+         window_kind, enabled, created_at, updated_at
+       ) VALUES ('quota-capacity-run', 'run', ?, 'attempt', 3,
+                 'run_lifetime', 1, ?, ?)`,
+    ).bind(RUN_ID, NOW, NOW).run();
+    await expect(new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    }).reconcileCapacityFailures(5)).rejects.toThrow();
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM initial_analysis_capacity_recoveries',
+    ).first()).toEqual({ count: 0 });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM attempts').first())
+      .toEqual({ count: 3 });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT state FROM runs WHERE run_id = ?',
+    ).bind(RUN_ID).first()).toEqual({ state: 'blocked' });
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT resolved_at FROM run_blockers WHERE blocker_id = ?',
+    ).bind(CAPACITY_BLOCKER_ID).first()).toEqual({ resolved_at: null });
+  });
+
+  it.each([
+    [{ failureCode: 'tool_unavailable' as const }, 'wrong failure code'],
+    [{ failureSite: 'tool_repo_read' as const }, 'wrong failure site'],
+    [{ blocker: false }, 'missing active blocker'],
+    [{ plan: true }, 'existing Plan'],
+  ])('does not capacity-recover with %s (%s)', async (...[overrides]) => {
+    await seedCapacityBlocked(overrides);
+    expect(await new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    }).reconcileCapacityFailures(5)).toBe(0);
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM initial_analysis_capacity_recoveries',
+    ).first()).toEqual({ count: 0 });
+  });
+
   it('converges 20 reconcilers to one replacement and activates its Plan', async () => {
     await seedFailedRoot();
     const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {

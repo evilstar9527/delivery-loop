@@ -324,6 +324,7 @@ export default {
       // dispatch stays durable and is relayed below.
       await executionProgress.reconcileReadyAttempts(1);
       await new AutomatedReviewScheduler(env.DB_CONTROL).resumeFixedRuns(5, scheduledNow());
+      await initialAnalysis.reconcileCapacityFailures(1);
       await initialAnalysis.reconcileFailedAttempts(5);
       await planRevisionAnalysis.reconcileBatch(5);
       // Relay every remaining durable effect, then activate and schedule more
