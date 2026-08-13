@@ -302,6 +302,8 @@ describe('production outbox Queue routing', () => {
       GITHUB_APP_INSTALLATION_ID: '456',
       GITHUB_APP_PRIVATE_KEY: TEST_PRIVATE_KEY_PEM,
       GITHUB_ALLOWED_REPOSITORIES: '["example/repo"]',
+      GITHUB_AGENT_EXECUTOR_REPOSITORY: 'example/delivery-loop',
+      GITHUB_AGENT_EXECUTOR_REF: 'refs/heads/main',
     };
     expect(() => githubDispatchProcessorFromEnv(appBindings)).toThrow(
       'GitHub dispatch configuration is incomplete',

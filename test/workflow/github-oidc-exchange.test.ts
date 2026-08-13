@@ -9,7 +9,8 @@ const BASE_URL = 'https://delivery-loop.test';
 const ISSUER = 'https://token.actions.githubusercontent.com';
 const AUDIENCE = 'delivery-loop-control-plane';
 const REPOSITORY = 'example/delivery-target';
-const WORKFLOW_REF = `${REPOSITORY}/.github/workflows/delivery-agent.yml@refs/heads/main`;
+const EXECUTOR_REPOSITORY = 'example/delivery-loop';
+const WORKFLOW_REF = `${EXECUTOR_REPOSITORY}/.github/workflows/delivery-agent.yml@refs/heads/main`;
 const BASE_SHA = 'e'.repeat(40);
 const GITHUB_HEAD_SHA = 'd'.repeat(40);
 const GITHUB_RUN_ID = '987654321';
@@ -40,7 +41,7 @@ async function signOidcToken(
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   return await new SignJWT({
-    repository: REPOSITORY,
+    repository: EXECUTOR_REPOSITORY,
     workflow_ref: WORKFLOW_REF,
     sha: GITHUB_HEAD_SHA,
     run_id: GITHUB_RUN_ID,
@@ -50,7 +51,7 @@ async function signOidcToken(
     .setProtectedHeader({ alg: 'RS256', kid: 'delivery-loop-test-github-oidc' })
     .setIssuer(options.issuer ?? ISSUER)
     .setAudience(options.audience ?? AUDIENCE)
-    .setSubject(`repo:${REPOSITORY}:ref:refs/heads/main`)
+    .setSubject(`repo:${EXECUTOR_REPOSITORY}:ref:refs/heads/main`)
     .setJti(crypto.randomUUID())
     .setIssuedAt(now)
     .setNotBefore(now - 5)

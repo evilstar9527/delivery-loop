@@ -47,6 +47,7 @@ describe('fixed delivery Agent workflow', () => {
       'task_digest',
       'base_sha',
       'checkout_sha',
+      'target_repository',
       'control_plane_url',
       'mode',
       'model_profile_id',
@@ -63,6 +64,7 @@ describe('fixed delivery Agent workflow', () => {
       task_digest: true,
       base_sha: true,
       checkout_sha: true,
+      target_repository: true,
       control_plane_url: true,
       mode: true,
       model_profile_id: true,
@@ -78,11 +80,24 @@ describe('fixed delivery Agent workflow', () => {
     expect(workflow.jobs.attempt['timeout-minutes']).toBe(60);
 
     const steps = workflow.jobs.attempt.steps;
-    const checkout = steps.find((step) => step.name === 'Checkout trusted execution snapshot');
-    expect(checkout).toMatchObject({
+    const runnerCheckout = steps.find((step) => step.name === 'Checkout trusted runner snapshot');
+    expect(runnerCheckout).toMatchObject({
       uses: 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
       with: {
+        ref: '${{ github.sha }}',
+        path: 'runner-source',
+        'persist-credentials': false,
+        'fetch-depth': 1,
+      },
+    });
+    const targetCheckout = steps.find((step) => step.name === 'Checkout trusted target snapshot');
+    expect(targetCheckout).toMatchObject({
+      uses: 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262',
+      with: {
+        repository: '${{ inputs.target_repository }}',
         ref: '${{ inputs.checkout_sha }}',
+        token: '${{ secrets.TARGET_REPOSITORY_READ_TOKEN }}',
+        path: 'target-repository',
         'persist-credentials': false,
         'fetch-depth': 0,
       },
@@ -96,7 +111,10 @@ describe('fixed delivery Agent workflow', () => {
     expect(steps.filter((step) => step.uses !== undefined).every((step) => /@[a-f0-9]{40}$/.test(step.uses!))).toBe(true);
 
     const install = steps.find((step) => step.name === 'Install locked dependencies');
-    expect(install?.run).toBe('pnpm install --frozen-lockfile');
+    expect(install).toMatchObject({
+      run: 'pnpm install --frozen-lockfile',
+      'working-directory': 'runner-source',
+    });
     const analysis = steps.find((step) => step.name === 'Run read-only analysis attempt');
     expect(analysis?.run).toBe('pnpm exec tsx scripts/run-analysis-attempt.ts');
     expect(analysis?.if).toBe("inputs.mode == 'analysis'");
@@ -106,6 +124,8 @@ describe('fixed delivery Agent workflow', () => {
       DELIVERY_TASK_DIGEST: '${{ inputs.task_digest }}',
       DELIVERY_BASE_SHA: '${{ inputs.base_sha }}',
       DELIVERY_CHECKOUT_SHA: '${{ inputs.checkout_sha }}',
+      DELIVERY_TARGET_REPOSITORY: '${{ inputs.target_repository }}',
+      DELIVERY_REPOSITORY_PATH: '${{ github.workspace }}/target-repository',
       DELIVERY_CONTROL_PLANE_URL: '${{ inputs.control_plane_url }}',
       DELIVERY_MODEL_PROFILE_ID: '${{ inputs.model_profile_id }}',
       CODEX_API_KEY: '${{ secrets.OPENAI_API_KEY }}',
@@ -123,6 +143,8 @@ describe('fixed delivery Agent workflow', () => {
       DELIVERY_TASK_DIGEST: '${{ inputs.task_digest }}',
       DELIVERY_BASE_SHA: '${{ inputs.base_sha }}',
       DELIVERY_CHECKOUT_SHA: '${{ inputs.checkout_sha }}',
+      DELIVERY_TARGET_REPOSITORY: '${{ inputs.target_repository }}',
+      DELIVERY_REPOSITORY_PATH: '${{ github.workspace }}/target-repository',
       DELIVERY_ATTEMPT_MODE: '${{ inputs.mode }}',
       DELIVERY_PLAN_VERSION: '${{ inputs.plan_version }}',
       DELIVERY_PLAN_ITEM_ID: '${{ inputs.plan_item_id }}',
@@ -134,11 +156,12 @@ describe('fixed delivery Agent workflow', () => {
 
     const zeroWrite = steps.find((step) => step.name === 'Verify read-only workspace');
     expect(zeroWrite?.if).toBe("always() && inputs.mode == 'analysis'");
-    expect(zeroWrite?.run).toContain('git rev-parse HEAD');
-    expect(zeroWrite?.run).toContain('git symbolic-ref --quiet --short HEAD');
-    expect(zeroWrite?.run).toContain('git status --porcelain=v1 --untracked-files=all');
+    expect(zeroWrite?.run).toContain('git -C "$DELIVERY_REPOSITORY_PATH" rev-parse HEAD');
+    expect(zeroWrite?.run).toContain('git -C "$DELIVERY_REPOSITORY_PATH" symbolic-ref --quiet --short HEAD');
+    expect(zeroWrite?.run).toContain('git -C "$DELIVERY_REPOSITORY_PATH" status --porcelain=v1 --untracked-files=all');
     expect(zeroWrite?.env).toEqual({
       DELIVERY_CHECKOUT_SHA: '${{ inputs.checkout_sha }}',
+      DELIVERY_REPOSITORY_PATH: '${{ github.workspace }}/target-repository',
     });
     expect(source).not.toContain('persist-credentials: true');
   });

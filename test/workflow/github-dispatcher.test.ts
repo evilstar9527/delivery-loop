@@ -19,6 +19,8 @@ const RUN_ID = 'run-github-dispatch';
 const ATTEMPT_ID = 'attempt-github-dispatch';
 const OUTBOX_ID = 'dispatch-attempt-github-dispatch';
 const REPOSITORY = 'example/delivery-target';
+const EXECUTOR_REPOSITORY = 'example/delivery-loop';
+const EXECUTOR_REF = 'refs/heads/main';
 const CANARY = 'CANARY_TASK_BODY_OR_SECRET_MUST_NOT_DISPATCH';
 
 class FakeGitHubDispatchEffects implements GitHubDispatchEffects {
@@ -156,6 +158,8 @@ function processor(
 ): GitHubDispatchOutboxProcessor {
   return new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
     allowedRepositories,
+    executorRepository: EXECUTOR_REPOSITORY,
+    executorRef: EXECUTOR_REF,
     controlPlaneUrl: 'https://control.example.test',
     now: () => NOW,
     generateLeaseToken: () => crypto.randomUUID(),
@@ -242,7 +246,7 @@ describe('GitHub App workflow dispatcher contract', () => {
     expect(effects.requests).toHaveLength(1);
     expect(results.filter((result) => result === 'settled').length).toBeGreaterThanOrEqual(1);
     expect(effects.requests[0]).toEqual({
-      repository: REPOSITORY,
+      repository: EXECUTOR_REPOSITORY,
       workflowFile: '.github/workflows/delivery-agent.yml',
       ref: 'refs/heads/main',
       inputs: {
@@ -252,6 +256,7 @@ describe('GitHub App workflow dispatcher contract', () => {
         task_digest: TASK_DIGEST,
         base_sha: BASE_SHA,
         checkout_sha: BASE_SHA,
+        target_repository: REPOSITORY,
         control_plane_url: 'https://control.example.test',
         mode: 'analysis',
       },
@@ -292,13 +297,14 @@ describe('GitHub App workflow dispatcher contract', () => {
     await expect(processor(effects).deliver('outbox-initial-execution')).resolves.toBe('settled');
     expect(effects.requests).toHaveLength(1);
     expect(effects.requests[0]).toMatchObject({
-      repository: REPOSITORY,
+      repository: EXECUTOR_REPOSITORY,
       inputs: {
         attempt_id: 'attempt-initial-execution',
         mode: 'implement',
         plan_version: '1',
         plan_item_id: 'change',
         checkout_sha: BASE_SHA,
+        target_repository: REPOSITORY,
       },
     });
   });

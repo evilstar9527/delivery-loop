@@ -14,7 +14,8 @@ const MAX_RESPONSE_BYTES = 1 * 1_024 * 1_024;
 const MAX_WORKFLOW_BYTES = 256 * 1_024;
 const WORKFLOW_PATH = '.github/workflows/delivery-agent.yml';
 const REQUIRED_JOB_STEPS = [
-  ['Checkout trusted execution snapshot', 'success'],
+  ['Checkout trusted runner snapshot', 'success'],
+  ['Checkout trusted target snapshot', 'success'],
   ['Validate attempt mode bindings', 'success'],
   ['Set up pnpm', 'success'],
   ['Set up Node.js', 'success'],
@@ -24,13 +25,13 @@ const REQUIRED_JOB_STEPS = [
   ['Verify read-only workspace', 'success'],
 ] as const;
 const REQUIRED_READ_ONLY_WORKSPACE_SCRIPT = [
-  'test "$(git rev-parse HEAD)" = "$DELIVERY_CHECKOUT_SHA"',
-  'if git symbolic-ref --quiet --short HEAD >/dev/null; then',
+  'test "$(git -C "$DELIVERY_REPOSITORY_PATH" rev-parse HEAD)" = "$DELIVERY_CHECKOUT_SHA"',
+  'if git -C "$DELIVERY_REPOSITORY_PATH" symbolic-ref --quiet --short HEAD >/dev/null; then',
   '  exit 1',
   'else',
   '  test "$?" -eq 1',
   'fi',
-  'test -z "$(git status --porcelain=v1 --untracked-files=all)"',
+  'test -z "$(git -C "$DELIVERY_REPOSITORY_PATH" status --porcelain=v1 --untracked-files=all)"',
 ].join('\n');
 
 export type GitHubAppDispatchEvidenceVerificationErrorCode =
@@ -386,6 +387,7 @@ function deliveryWorkflowContractMatches(workflow: Record<string, unknown>, sour
     task_digest: true,
     base_sha: true,
     checkout_sha: true,
+    target_repository: true,
     control_plane_url: true,
     mode: true,
     model_profile_id: true,
@@ -404,18 +406,30 @@ function deliveryWorkflowContractMatches(workflow: Record<string, unknown>, sour
     return false;
   }
   const steps = attempt.steps;
-  const checkout = workflowStepByName(steps, 'Checkout trusted execution snapshot');
-  const checkoutWith = checkout === null ? null : record(checkout.with);
+  const runnerCheckout = workflowStepByName(steps, 'Checkout trusted runner snapshot');
+  const runnerCheckoutWith = runnerCheckout === null ? null : record(runnerCheckout.with);
+  const targetCheckout = workflowStepByName(steps, 'Checkout trusted target snapshot');
+  const targetCheckoutWith = targetCheckout === null ? null : record(targetCheckout.with);
   const analysis = workflowStepByName(steps, 'Run read-only analysis attempt');
   const analysisEnv = analysis === null ? null : record(analysis.env);
   const execution = workflowStepByName(steps, 'Run approved execution attempt');
   const zeroWrite = workflowStepByName(steps, 'Verify read-only workspace');
   const zeroWriteEnv = zeroWrite === null ? null : record(zeroWrite.env);
   if (
-    checkout === null || checkoutWith === null ||
-    checkout.uses !== 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262' ||
-    checkoutWith.ref !== '${{ inputs.checkout_sha }}' ||
-    checkoutWith['persist-credentials'] !== false || checkoutWith['fetch-depth'] !== 0 ||
+    runnerCheckout === null || runnerCheckoutWith === null ||
+    runnerCheckout.uses !== 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262' ||
+    runnerCheckoutWith.ref !== '${{ github.sha }}' ||
+    runnerCheckoutWith.path !== 'runner-source' ||
+    runnerCheckoutWith['persist-credentials'] !== false ||
+    runnerCheckoutWith['fetch-depth'] !== 1 ||
+    targetCheckout === null || targetCheckoutWith === null ||
+    targetCheckout.uses !== 'actions/checkout@11d5960a326750d5838078e36cf38b85af677262' ||
+    targetCheckoutWith.repository !== '${{ inputs.target_repository }}' ||
+    targetCheckoutWith.ref !== '${{ inputs.checkout_sha }}' ||
+    targetCheckoutWith.token !== '${{ secrets.TARGET_REPOSITORY_READ_TOKEN }}' ||
+    targetCheckoutWith.path !== 'target-repository' ||
+    targetCheckoutWith['persist-credentials'] !== false ||
+    targetCheckoutWith['fetch-depth'] !== 0 ||
     analysis === null || analysis.if !== "inputs.mode == 'analysis'" ||
     analysis.run !== 'pnpm exec tsx scripts/run-analysis-attempt.ts' || analysisEnv === null ||
     analysisEnv.DELIVERY_RUN_ID !== '${{ inputs.run_id }}' ||
@@ -423,14 +437,18 @@ function deliveryWorkflowContractMatches(workflow: Record<string, unknown>, sour
     analysisEnv.DELIVERY_TASK_DIGEST !== '${{ inputs.task_digest }}' ||
     analysisEnv.DELIVERY_BASE_SHA !== '${{ inputs.base_sha }}' ||
     analysisEnv.DELIVERY_CHECKOUT_SHA !== '${{ inputs.checkout_sha }}' ||
+    analysisEnv.DELIVERY_TARGET_REPOSITORY !== '${{ inputs.target_repository }}' ||
+    analysisEnv.DELIVERY_REPOSITORY_PATH !== '${{ github.workspace }}/target-repository' ||
     analysisEnv.DELIVERY_ATTEMPT_MODE !== '${{ inputs.mode }}' ||
     analysisEnv.DELIVERY_CONTROL_PLANE_URL !== '${{ inputs.control_plane_url }}' ||
     execution === null ||
     execution.if !== "inputs.mode == 'implement' || inputs.mode == 'review_fix'" ||
     execution.run !== 'pnpm exec tsx scripts/run-execution-attempt.ts' ||
     zeroWrite === null || zeroWrite.if !== "always() && inputs.mode == 'analysis'" ||
-    zeroWriteEnv === null || !exactKeys(zeroWriteEnv, ['DELIVERY_CHECKOUT_SHA']) ||
+    zeroWriteEnv === null ||
+    !exactKeys(zeroWriteEnv, ['DELIVERY_CHECKOUT_SHA', 'DELIVERY_REPOSITORY_PATH']) ||
     zeroWriteEnv.DELIVERY_CHECKOUT_SHA !== '${{ inputs.checkout_sha }}' ||
+    zeroWriteEnv.DELIVERY_REPOSITORY_PATH !== '${{ github.workspace }}/target-repository' ||
     typeof zeroWrite.run !== 'string' ||
     zeroWrite.run.trimEnd() !== REQUIRED_READ_ONLY_WORKSPACE_SCRIPT ||
     source.includes('persist-credentials: true') || source.includes('pull_request_target')

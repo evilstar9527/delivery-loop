@@ -14,8 +14,13 @@ import type {
   GitHubWorkflowRunStatus,
 } from '../storage/github-run-observation-store.js';
 import { GITHUB_API_USER_AGENT, githubApiFetch } from '../github-api.js';
+import {
+  DELIVERY_AGENT_WORKFLOW_FILE,
+  githubAgentExecutorBinding,
+  type GitHubAgentExecutorBinding,
+} from '../domain/github-agent-executor.js';
 
-export const DELIVERY_AGENT_WORKFLOW_FILE = '.github/workflows/delivery-agent.yml';
+export { DELIVERY_AGENT_WORKFLOW_FILE } from '../domain/github-agent-executor.js';
 export const TEST_ACCEPTANCE_WORKFLOW_FILE =
   '.github/workflows/delivery-test-acceptance.yml';
 export const TEST_ROLLBACK_WORKFLOW_FILE =
@@ -489,6 +494,9 @@ function parseWorkflowRunFact(
 
 export interface GitHubDispatchProcessorOptions {
   allowedRepositories: readonly string[];
+  /** Production runtime supplies both; test/embedded callers default to the first allowlisted repo. */
+  executorRepository?: string;
+  executorRef?: string;
   controlPlaneUrl: string;
   modelProfileId?: string;
   now?: () => Date;
@@ -536,6 +544,7 @@ function controlPlaneOrigin(value: string): string {
 export class GitHubDispatchOutboxProcessor {
   private readonly allowedRepositories: ReadonlySet<string>;
   private readonly controlPlaneUrl: string;
+  private readonly executor: GitHubAgentExecutorBinding;
   private readonly modelProfileId: string | undefined;
   private readonly now: () => Date;
   private readonly attemptLeaseMs: number;
@@ -547,6 +556,10 @@ export class GitHubDispatchOutboxProcessor {
     options: GitHubDispatchProcessorOptions,
   ) {
     this.allowedRepositories = new Set(options.allowedRepositories);
+    this.executor = githubAgentExecutorBinding(
+      options.executorRepository ?? options.allowedRepositories[0] ?? '',
+      options.executorRef ?? 'refs/heads/main',
+    );
     this.controlPlaneUrl = controlPlaneOrigin(options.controlPlaneUrl);
     this.modelProfileId = options.modelProfileId;
     this.now = options.now ?? (() => new Date());
@@ -676,11 +689,30 @@ export class GitHubDispatchOutboxProcessor {
         (attempt.status === 'pending' || attempt.status === 'starting');
       if (!activeExecution) return { settledCode: 'repair_dispatch_stale' };
     }
-    const ref = `refs/heads/${attempt.target_base_branch}`;
-    const expectedWorkflowRef =
-      `${attempt.repository}/${DELIVERY_AGENT_WORKFLOW_FILE}@${ref}`;
-    if (attempt.workflow_ref !== expectedWorkflowRef) {
+    const legacyWorkflowRef =
+      `${attempt.repository}/${DELIVERY_AGENT_WORKFLOW_FILE}@refs/heads/${attempt.target_base_branch}`;
+    if (
+      attempt.workflow_ref !== this.executor.workflowRef &&
+      attempt.workflow_ref !== legacyWorkflowRef
+    ) {
       throw new OutboxEffectError('workflow_ref_mismatch');
+    }
+    if (attempt.workflow_ref === legacyWorkflowRef) {
+      const rebound = await this.db.prepare(
+        `UPDATE attempts
+         SET workflow_ref = ?, updated_at = ?
+         WHERE attempt_id = ? AND run_id = ? AND status = 'pending'
+           AND workflow_ref = ? AND github_run_id IS NULL AND github_head_sha IS NULL`,
+      ).bind(
+        this.executor.workflowRef,
+        this.now().toISOString(),
+        attempt.attempt_id,
+        attempt.run_id,
+        legacyWorkflowRef,
+      ).run();
+      if (rebound.meta.changes !== 1) {
+        throw new OutboxEffectError('workflow_ref_mismatch');
+      }
     }
 
     const inputs: Record<string, string> = {
@@ -692,6 +724,7 @@ export class GitHubDispatchOutboxProcessor {
       checkout_sha: executionDispatch
         ? (attempt.head_sha ?? attempt.base_sha)
         : attempt.base_sha,
+      target_repository: attempt.repository,
       control_plane_url: this.controlPlaneUrl,
       mode: attempt.mode,
     };
@@ -712,9 +745,9 @@ export class GitHubDispatchOutboxProcessor {
     // A transport failure can mean GitHub accepted the dispatch but the response
     // was lost. Keep the slot until stable reconciliation, terminal Attempt, or TTL.
     const dispatch: GitHubDispatchResult = await this.effects.ensureDispatch({
-      repository: attempt.repository,
+      repository: this.executor.repository,
       workflowFile: DELIVERY_AGENT_WORKFLOW_FILE,
-      ref,
+      ref: this.executor.ref,
       inputs,
     });
     if (!/^[0-9]+$/.test(dispatch.githubRunId)) {

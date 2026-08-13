@@ -8,7 +8,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "GITHUB_AUTH_MODE": "pat",
-    "GITHUB_ALLOWED_REPOSITORIES": "[\"lightspeed-intelligence/tipsy-backend\"]",
+    "GITHUB_ALLOWED_REPOSITORIES": "[\"lightspeed-intelligence/tipsy-backend\",\"evilstar9527/delivery-loop\"]",
+    "GITHUB_AGENT_EXECUTOR_REPOSITORY": "evilstar9527/delivery-loop",
+    "GITHUB_AGENT_EXECUTOR_REF": "refs/heads/main",
     "GITHUB_OIDC_AUDIENCE": "delivery-loop-control-plane",
     "CONTROL_PLANE_URL": "https://delivery-loop-control-plane.eve55265.workers.dev",
     "CODEX_MODEL_PROFILE_ID": "codex-gpt-5p6-terra-medium-tool-loop-20260811",

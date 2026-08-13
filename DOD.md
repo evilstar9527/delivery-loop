@@ -552,6 +552,15 @@ E2E 必须脚本化到可重跑的最大程度；飞书人工批准步骤可以�
 
 **E2E-1～8 全部通过才可宣布项目 Done。**
 
+### 当前主线修复：集中 Agent executor
+
+- [ ] 已部署Worker把现有唯一pending Attempt dispatch到`evilstar9527/delivery-loop@main`，
+  Action以exact SHA独立检出`Lightspeed-Intelligence/tipsy-backend`，完成analysis→Plan→
+  execution→backend Draft PR；backend无需包含delivery-loop workflow或onboarding PR。
+- [x] 本地契约区分executor Action identity与业务repository/checkout identity；dispatch payload
+  无Secret/正文，私有checkout token仅进入checkout step，OIDC/observation与业务write authority
+  分离。验收命令与输出见`PROGRESS.md`最新Round。
+
 ## 10. 外部前置与人工决策
 
 进入 Phase 1 前必须记录：

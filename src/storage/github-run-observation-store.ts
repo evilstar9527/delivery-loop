@@ -1,3 +1,5 @@
+import { parseGitHubAgentWorkflowRef } from '../domain/github-agent-executor.js';
+
 export const DELIVERY_AGENT_WORKFLOW_PATH = '.github/workflows/delivery-agent.yml';
 
 export type GitHubWorkflowRunStatus =
@@ -77,12 +79,14 @@ function workflowPathMatches(path: string, branch: string): boolean {
 }
 
 function bindingMatches(attempt: AttemptRow, fact: GitHubWorkflowRunFact): boolean {
+  const executor = parseGitHubAgentWorkflowRef(attempt.workflow_ref);
   return (
     fact.event === 'workflow_dispatch' &&
-    attempt.repository === fact.repository &&
+    attempt.repository !== null &&
+    executor !== null &&
+    executor.repository === fact.repository &&
+    executor.branch === fact.headBranch &&
     attempt.github_run_id === fact.githubRunId &&
-    attempt.workflow_ref ===
-      `${fact.repository}/${DELIVERY_AGENT_WORKFLOW_PATH}@refs/heads/${fact.headBranch}` &&
     workflowPathMatches(fact.workflowPath, fact.headBranch) &&
     attempt.github_head_sha === fact.headSha &&
     fact.displayTitle === `delivery-loop/${attempt.attempt_id}` &&
@@ -278,8 +282,8 @@ export class GitHubRunObservationStore {
         observedAt,
         fact.externalUpdatedAt,
         attempt.attempt_id,
-        fact.repository,
-        `${fact.repository}/${DELIVERY_AGENT_WORKFLOW_PATH}@refs/heads/${fact.headBranch}`,
+        attempt.repository,
+        attempt.workflow_ref,
         fact.headSha,
         fact.githubRunId,
         attempt.github_observation_version,

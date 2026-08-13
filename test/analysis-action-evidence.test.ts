@@ -266,7 +266,8 @@ function job(drift: Drift): Record<string, unknown> {
     conclusion: 'success',
     head_sha: BASE_SHA,
     steps: [
-      { name: 'Checkout trusted execution snapshot', status: 'completed', conclusion: 'success' },
+      { name: 'Checkout trusted runner snapshot', status: 'completed', conclusion: 'success' },
+      { name: 'Checkout trusted target snapshot', status: 'completed', conclusion: 'success' },
       { name: 'Validate attempt mode bindings', status: 'completed', conclusion: 'success' },
       { name: 'Set up pnpm', status: 'completed', conclusion: 'success' },
       { name: 'Set up Node.js', status: 'completed', conclusion: 'success' },

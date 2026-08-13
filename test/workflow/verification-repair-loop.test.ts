@@ -569,6 +569,7 @@ describe('bounded verification repair loop', () => {
         task_digest: TASK_DIGEST,
         base_sha: BASE_SHA,
         checkout_sha: INITIAL_HEAD_SHA,
+        target_repository: REPOSITORY,
         control_plane_url: 'https://control.example.test',
         mode: 'review_fix',
         plan_version: '1',

@@ -327,7 +327,12 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
     requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_URL'),
     'request',
   );
-  const workspacePath = resolve(requiredEnvironment(environment, 'GITHUB_WORKSPACE'));
+  const workspacePath = resolve(requiredEnvironment(
+    environment,
+    environment.DELIVERY_REPOSITORY_PATH === undefined
+      ? 'GITHUB_WORKSPACE'
+      : 'DELIVERY_REPOSITORY_PATH',
+  ));
   const runnerTempPath = resolve(requiredEnvironment(environment, 'RUNNER_TEMP'));
   if (
     schemaVersion !== '1' ||

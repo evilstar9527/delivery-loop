@@ -6,6 +6,7 @@ import {
   isExactTriageToolActions,
 } from '../domain/tool-bridge.js';
 import type { GitHubOidcClaims } from '../auth/github-oidc.js';
+import { parseGitHubAgentWorkflowRef } from '../domain/github-agent-executor.js';
 
 const TOKEN_TTL_MS = 5 * 60 * 1_000;
 
@@ -74,12 +75,13 @@ export class AttemptExchangeStore {
       .bind(attemptId)
       .first<ExchangeAttemptRow>();
     if (attempt === null) throw new AttemptExchangeError('attempt_not_found');
+    const executor = parseGitHubAgentWorkflowRef(attempt.workflow_ref);
     if (
       attempt.repository === null ||
-      attempt.workflow_ref === null ||
+      executor === null ||
       attempt.github_run_id === null ||
       attempt.github_head_sha === null ||
-      claims.repository !== attempt.repository ||
+      claims.repository !== executor.repository ||
       claims.workflowRef !== attempt.workflow_ref ||
       claims.sha !== attempt.github_head_sha ||
       claims.runId !== attempt.github_run_id
