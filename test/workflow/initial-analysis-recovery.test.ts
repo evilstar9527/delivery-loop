@@ -61,6 +61,7 @@ const task: TaskEnvelope = {
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM workflow_signals'),
+    env.DB_CONTROL.prepare('DELETE FROM initial_analysis_source_snapshot_capacity_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_tool_bridge_secret_value_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_tool_bridge_scope_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_tool_bridge_transport_recoveries'),
@@ -656,6 +657,81 @@ async function seedToolBridgeSecretValueBlocked(): Promise<string> {
   return scope.replacement_attempt_id;
 }
 
+async function seedSourceSnapshotCapacityBlocked(): Promise<string> {
+  await seedToolBridgeSecretValueBlocked();
+  const reconciler = new InitialAnalysisReconciler(env.DB_CONTROL, {
+    now: () => new Date(NOW),
+  });
+  expect(await reconciler.reconcileToolBridgeSecretValueFailures(1)).toBe(1);
+  const recovery = await env.DB_CONTROL.prepare(
+    `SELECT recovery_id, replacement_attempt_id
+     FROM initial_analysis_tool_bridge_secret_value_recoveries WHERE run_id = ?`,
+  ).bind(RUN_ID).first<{ recovery_id: string; replacement_attempt_id: string }>();
+  if (recovery === null) throw new Error('missing verified credential replacement');
+  const scopeDigest = `sha256:${'1'.repeat(64)}`;
+  const fingerprintDigest = `sha256:${'2'.repeat(64)}`;
+  const profile = 'codex-gpt-5p6-terra-medium-tool-loop-20260811';
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'failed', version = 3, lease_generation = 2,
+                           updated_at = ? WHERE attempt_id = ?`,
+    ).bind(NOW, recovery.replacement_attempt_id),
+    env.DB_CONTROL.prepare(
+      `UPDATE runs SET state = 'blocked', version = 14, updated_at = ? WHERE run_id = ?`,
+    ).bind(NOW, RUN_ID),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_failures (
+         failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+         retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+         failure_site, needed_human_input, scope_attempt_count,
+         consecutive_fingerprint_count, revoked_lease_generation,
+         occurred_at, created_at
+       ) VALUES ('failure-source-snapshot-capacity', ?, ?, 9,
+                 'event-source-snapshot-capacity', 1, ?, ?, 'invalid_output',
+                 'invalid_agent_output', 'agent_output', 'manual_investigation',
+                 9, 1, 2, ?, ?)`,
+    ).bind(RUN_ID, recovery.replacement_attempt_id, scopeDigest, fingerprintDigest, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO run_blockers (
+         blocker_id, run_id, reason, retry_scope_digest, fingerprint_digest,
+         attempt_count, consecutive_fingerprint_count, needed_human_input, created_at
+       ) VALUES ('blocker-source-snapshot-capacity', ?, 'attempt_limit', ?, ?,
+                 9, 1, 'manual_investigation', ?)`,
+    ).bind(RUN_ID, scopeDigest, fingerprintDigest, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO tool_call_traces (
+         trace_id, run_id, attempt_id, tool_path, action, effect,
+         duration_ms, result_category, occurred_at
+       ) VALUES ('tooltrace-source-snapshot-logs', ?, ?, 'logs/search',
+                 'logs:read', 'read', 4185, 'success', ?)`,
+    ).bind(RUN_ID, recovery.replacement_attempt_id, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO tool_call_traces (
+         trace_id, run_id, attempt_id, tool_path, action, effect,
+         duration_ms, result_category, occurred_at
+       ) VALUES ('tooltrace-source-snapshot-request', ?, ?, 'traces/get',
+                 'trace:read', 'read', 3450, 'success', ?)`,
+    ).bind(RUN_ID, recovery.replacement_attempt_id, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO quota_model_reservations (
+         reservation_id, attempt_id, run_id, profile_id, reserved_tokens,
+         reserved_cost_microusd, status, expires_at, created_at, updated_at
+       ) VALUES ('reservation-source-snapshot-capacity', ?, ?, ?, 1, 1,
+                 'settled', '2026-08-13T03:00:00.000Z', ?, ?)`,
+    ).bind(recovery.replacement_attempt_id, RUN_ID, profile, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO model_usage (
+         usage_id, at, provider, model, run_id, attempt_id, tenant_key,
+         repository, principal, input_tokens, cached_input_tokens, output_tokens,
+         reasoning_output_tokens, cost_microusd, source_digest, created_at
+       ) VALUES ('usage-source-snapshot-capacity', ?, 'delivery_loop_relay', 'gpt-5.6-terra',
+                 ?, ?, 'initial-analysis-recovery', 'example/delivery-target',
+                 'service:delivery-loop', 1, 0, 1, 1, 1, ?, ?)`,
+    ).bind(NOW, RUN_ID, recovery.replacement_attempt_id, `sha256:${'3'.repeat(64)}`, NOW),
+  ]);
+  return recovery.replacement_attempt_id;
+}
+
 function validPlan(attemptId: string): ExecutionPlanBodyV1 {
   return {
     schemaVersion: '1',
@@ -686,6 +762,48 @@ function validPlan(attemptId: string): ExecutionPlanBodyV1 {
 beforeEach(reset);
 
 describe('initial analysis recovery', () => {
+  it('converges the exact stale source snapshot capacity failure to one replacement', async () => {
+    const failedAttemptId = await seedSourceSnapshotCapacityBlocked();
+    const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    });
+    const results = await Promise.all(
+      Array.from({ length: 20 }, async () =>
+        await reconciler().reconcileSourceSnapshotCapacityFailures(5)),
+    );
+    expect(results.reduce((sum, count) => sum + count, 0)).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT recovery.failed_attempt_id, recovery.logs_trace_id,
+              recovery.request_trace_id, recovery.inventory_policy_version,
+              recovery.max_tracked_paths, attempts.ordinal, attempts.status,
+              retries.retry_sequence, blockers.resolution_code, runs.state,
+              outbox.delivery_state
+       FROM initial_analysis_source_snapshot_capacity_recoveries AS recovery
+       JOIN attempts ON attempts.attempt_id = recovery.replacement_attempt_id
+       JOIN initial_analysis_retries AS retries ON retries.retry_attempt_id = recovery.replacement_attempt_id
+       JOIN run_blockers AS blockers ON blockers.blocker_id = recovery.blocker_id
+       JOIN runs ON runs.run_id = recovery.run_id
+       JOIN outbox ON outbox.payload_ref = 'd1://attempts/' || recovery.replacement_attempt_id`,
+    ).first()).toMatchObject({
+      failed_attempt_id: failedAttemptId,
+      logs_trace_id: 'tooltrace-source-snapshot-logs',
+      request_trace_id: 'tooltrace-source-snapshot-request',
+      inventory_policy_version: 2,
+      max_tracked_paths: 5_000,
+      ordinal: 10,
+      status: 'pending',
+      retry_sequence: 9,
+      resolution_code: 'analysis_source_snapshot_capacity_v2',
+      state: 'planning',
+      delivery_state: 'pending',
+    });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM tasks').first())
+      .toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM runs').first())
+      .toEqual({ count: 1 });
+    expect(await reconciler().reconcileSourceSnapshotCapacityFailures(5)).toBe(0);
+  });
+
   it('converges the exact unverified Tool Bridge secret value failure to one replacement', async () => {
     const failedAttemptId = await seedToolBridgeSecretValueBlocked();
     const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {
