@@ -1,48 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createCloudflareTelemetryToolBridge } from '../src/tools/cloudflare-telemetry-worker.js';
 
-const ACCOUNT_ID = 'b'.repeat(32);
-const REQUEST_ID = 'request_id_1234';
 const INTERNAL_TOKEN = 'internal-tool-bridge-token-value';
-const OBSERVABILITY_TOKEN = 'cloudflare-observability-token-value';
-const NOW = new Date('2026-08-06T12:00:00.000Z');
+const TOOL_BRIDGE_SK = 'tb_sk_live_tool_bridge_value';
+const REQUEST_ID = '2085560401799000064';
 
 const env = {
-  CLOUDFLARE_ACCOUNT_ID: ACCOUNT_ID,
-  CLOUDFLARE_OBSERVABILITY_TOKEN: OBSERVABILITY_TOKEN,
-  TELEMETRY_SOURCE_SERVICE: 'delivery-loop-control-plane',
   TOOL_BRIDGE_INTERNAL_TOKEN: INTERNAL_TOKEN,
+  TOOL_BRIDGE_BASE_URL: 'https://tool-bridge.example',
+  TOOL_BRIDGE_SK,
+  TOOL_BRIDGE_SLS_LOGSTORE: 'tipsy-chat',
+  TOOL_BRIDGE_SLS_ENVIRONMENT: 'prod',
 };
-
-function event(source: Record<string, unknown> = { event: 'run_stuck_detected', component: 'run_stuck' }) {
-  return {
-    $metadata: {
-      account: ACCOUNT_ID,
-      service: 'delivery-loop-control-plane',
-      requestId: REQUEST_ID,
-      type: 'cf-worker',
-    },
-    $workers: { requestId: REQUEST_ID, truncated: false },
-    dataset: 'cloudflare-workers',
-    timestamp: NOW.getTime() - 1_000,
-    source,
-  };
-}
-
-function response(view: unknown, source?: Record<string, unknown>): Response {
-  const value = event(source);
-  return Response.json({
-    success: true,
-    errors: [],
-    messages: [],
-    result: {
-      run: { accountId: ACCOUNT_ID, dry: true },
-      ...(view === 'events'
-        ? { events: { count: 1, events: [value] } }
-        : { invocations: { [REQUEST_ID]: [value] } }),
-    },
-  });
-}
 
 function call(path: string, args: Record<string, unknown>, token = INTERNAL_TOKEN): Request {
   return new Request(`https://tool-bridge.test${path}`, {
@@ -55,124 +24,104 @@ function call(path: string, args: Record<string, unknown>, token = INTERNAL_TOKE
   });
 }
 
-describe('Cloudflare telemetry tool bridge', () => {
-  it('maps a safe component path to one bounded events query', async () => {
-    const requests: Record<string, unknown>[] = [];
+function result(traceId = REQUEST_ID): string {
+  return [
+    '**SLS [prod] query**',
+    `WARN service/character.go:3237 trace_id:${traceId} uid:1778279597200329343`,
+    'ACCESS middleware/access.go:79 path:/character/detail',
+  ].join('\n');
+}
+
+describe('Tipsy Tool Bridge SLS adapter', () => {
+  it('maps bounded locators to the fixed production SLS read tool', async () => {
+    const requests: Array<{ url: string; init: RequestInit }> = [];
     const app = createCloudflareTelemetryToolBridge({
-      now: () => NOW,
-      fetcher: async (_input, init) => {
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        requests.push(body);
-        return response(body.view);
+      fetcher: async (input, init) => {
+        requests.push({ url: String(input), init: init ?? {} });
+        return Response.json(result());
       },
     });
 
-    const result = await app.fetch(call('/htbp/logs/search', { path: 'run_stuck' }), env);
+    const response = await app.fetch(call('/htbp/logs/search', {
+      uid: '1778279597200329343',
+      cid: '1780446342879247552',
+    }), env);
 
-    expect(result.status).toBe(200);
-    expect(result.headers.get('cache-control')).toBe('no-store');
-    expect(await result.json()).toEqual({
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(await response.json()).toEqual({
       schemaVersion: '1',
-      matched: 1,
-      events: [{
-        requestId: REQUEST_ID,
-        timestamp: '2026-08-06T11:59:59.000Z',
-        source: { event: 'run_stuck_detected', component: 'run_stuck' },
-      }],
+      requestIds: [REQUEST_ID],
+      result: result(),
     });
     expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({
-      view: 'events',
-      dry: true,
-      limit: 5,
-      timeframe: {
-        from: NOW.getTime() - 24 * 60 * 60_000,
-        to: NOW.getTime(),
-      },
-      parameters: {
-        filters: expect.arrayContaining([
-          { key: '$metadata.service', operation: 'eq', type: 'string', value: 'delivery-loop-control-plane' },
-          { key: 'component', operation: 'eq', type: 'string', value: 'run_stuck' },
-        ]),
-      },
+    expect(requests[0]!.url).toBe(
+      'https://tool-bridge.example/mcp/tipsy/tipsy-analytics__sls_query_logs',
+    );
+    expect(requests[0]!.init).toMatchObject({ method: 'POST', redirect: 'error' });
+    expect(new Headers(requests[0]!.init.headers).get('authorization')).toBe(`Bearer ${TOOL_BRIDGE_SK}`);
+    expect(JSON.parse(String(requests[0]!.init.body))).toEqual({
+      logstore: 'tipsy-chat',
+      query: '1778279597200329343 AND 1780446342879247552',
+      minutes_ago: 20160,
+      limit: 20,
+      env: 'prod',
     });
   });
 
-  it('binds traces/get to the request id returned by logs/search', async () => {
+  it('uses the exact selected SLS trace id for the second bounded query', async () => {
     const app = createCloudflareTelemetryToolBridge({
-      now: () => NOW,
       fetcher: async (_input, init) => {
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        expect(body.view).toBe('invocations');
-        expect(body).toMatchObject({
-          parameters: {
-            filters: expect.arrayContaining([
-              { key: '$metadata.requestId', operation: 'eq', type: 'string', value: REQUEST_ID },
-            ]),
-          },
-        });
-        return response(body.view);
+        expect(JSON.parse(String(init?.body))).toMatchObject({ query: REQUEST_ID });
+        return Response.json(result());
       },
     });
 
-    const result = await app.fetch(call('/htbp/traces/get', { requestId: REQUEST_ID }), env);
+    const response = await app.fetch(call('/htbp/traces/get', { requestId: REQUEST_ID }), env);
 
-    expect(result.status).toBe(200);
-    expect(await result.json()).toMatchObject({
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
       schemaVersion: '1',
       requestId: REQUEST_ID,
-      events: [{ requestId: REQUEST_ID }],
+      result: result(),
     });
   });
 
-  it('fails closed for missing auth, unknown arguments, and response Secrets', async () => {
+  it('fails closed for auth, schema, missing trace identity, upstream failure, and Secrets', async () => {
     const app = createCloudflareTelemetryToolBridge({
-      now: () => NOW,
       fetcher: async (_input, init) => {
-        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return response(body.view, { authorization: OBSERVABILITY_TOKEN });
+        const query = JSON.parse(String(init?.body)).query as string;
+        if (query === 'missing') return Response.json('no trace here');
+        if (query === 'upstream') return Response.json({ code: 'unavailable' }, { status: 503 });
+        return Response.json(`${result()} ${TOOL_BRIDGE_SK}`);
       },
     });
 
-    const missingAuth = await app.fetch(new Request('https://tool-bridge.test/htbp/logs/search', {
+    expect((await app.fetch(new Request('https://tool-bridge.test/htbp/logs/search', {
       method: 'POST',
-    }), env);
-    expect(missingAuth.status).toBe(401);
-
-    const invalid = await app.fetch(call('/htbp/logs/search', { query: '*' }), env);
-    expect(invalid.status).toBe(400);
-
-    const leaked = await app.fetch(call('/htbp/logs/search', { path: 'run_stuck' }), env);
-    expect(leaked.status).toBe(503);
-    expect(await leaked.json()).toEqual({ error: 'upstream_unavailable' });
+    }), env)).status).toBe(401);
+    expect((await app.fetch(call('/htbp/logs/search', { query: '*' }), env)).status).toBe(400);
+    expect((await app.fetch(call('/htbp/traces/get', { requestId: 'missing' }), env)).status).toBe(503);
+    expect((await app.fetch(call('/htbp/traces/get', { requestId: 'upstream' }), env)).status).toBe(503);
+    expect((await app.fetch(call('/htbp/logs/search', { uid: '1778279597200329343' }), env)).status)
+      .toBe(503);
   });
 
-  it('rejects invocation events whose metadata does not match the requested id', async () => {
+  it('rejects invalid provider configuration before forwarding', async () => {
+    let calls = 0;
     const app = createCloudflareTelemetryToolBridge({
-      now: () => NOW,
       fetcher: async () => {
-        const mismatched = {
-          ...event(),
-          $metadata: {
-            ...event().$metadata,
-            requestId: 'different_request_id',
-          },
-          $workers: { requestId: 'different_request_id', truncated: false },
-        };
-        return Response.json({
-          success: true,
-          errors: [],
-          messages: [],
-          result: {
-            run: { accountId: ACCOUNT_ID, dry: true },
-            invocations: { [REQUEST_ID]: [mismatched] },
-          },
-        });
+        calls += 1;
+        return Response.json(result());
       },
     });
 
-    const result = await app.fetch(call('/htbp/traces/get', { requestId: REQUEST_ID }), env);
+    const response = await app.fetch(call('/htbp/logs/search', { uid: '1778279597200329343' }), {
+      ...env,
+      TOOL_BRIDGE_BASE_URL: 'http://untrusted.example',
+    });
 
-    expect(result.status).toBe(503);
+    expect(response.status).toBe(503);
+    expect(calls).toBe(0);
   });
 });

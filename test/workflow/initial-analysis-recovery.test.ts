@@ -61,9 +61,11 @@ const task: TaskEnvelope = {
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM workflow_signals'),
+    env.DB_CONTROL.prepare('DELETE FROM initial_analysis_tool_bridge_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_inventory_adapter_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_capacity_recoveries'),
     env.DB_CONTROL.prepare('DELETE FROM initial_analysis_retries'),
+    env.DB_CONTROL.prepare('DELETE FROM quota_model_reservations'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_heartbeat_receipts'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_failures'),
@@ -82,6 +84,9 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM execution_plan_evidence_refs'),
     env.DB_CONTROL.prepare('DELETE FROM execution_plan_assumptions'),
     env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
+    env.DB_CONTROL.prepare('DELETE FROM evidence'),
+    env.DB_CONTROL.prepare('DELETE FROM tool_call_traces'),
+    env.DB_CONTROL.prepare('DELETE FROM model_usage'),
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
     env.DB_CONTROL.prepare('DELETE FROM runs'),
     env.DB_CONTROL.prepare('DELETE FROM tasks'),
@@ -337,6 +342,98 @@ async function seedInventoryAdapterBlocked(options: {
   return recovery.replacement_attempt_id;
 }
 
+async function seedToolBridgeBlocked(overrides: {
+  traceResult?: 'upstream_error' | 'success';
+  evidence?: boolean;
+} = {}): Promise<string> {
+  const failedAttemptId = await seedInventoryAdapterBlocked();
+  const reconciler = new InitialAnalysisReconciler(env.DB_CONTROL, {
+    now: () => new Date(NOW),
+  });
+  expect(await reconciler.reconcileInventoryAdapterFailures(1)).toBe(1);
+  const adapter = await env.DB_CONTROL.prepare(
+    `SELECT recovery_id, replacement_attempt_id
+     FROM initial_analysis_inventory_adapter_recoveries WHERE run_id = ?`,
+  ).bind(RUN_ID).first<{ recovery_id: string; replacement_attempt_id: string }>();
+  if (adapter === null) throw new Error('missing adapter replacement');
+  const scopeDigest = `sha256:${'4'.repeat(64)}`;
+  const fingerprintDigest = `sha256:${'5'.repeat(64)}`;
+  const profile = 'codex-gpt-5p6-terra-medium-tool-loop-20260811';
+  await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `UPDATE attempts SET status = 'failed', version = 3, lease_generation = 1,
+                           updated_at = ? WHERE attempt_id = ?`,
+    ).bind(NOW, adapter.replacement_attempt_id),
+    env.DB_CONTROL.prepare(
+      `UPDATE runs SET state = 'blocked', version = 6, updated_at = ? WHERE run_id = ?`,
+    ).bind(NOW, RUN_ID),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO attempt_failures (
+         failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+         retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+         failure_site, needed_human_input, scope_attempt_count,
+         consecutive_fingerprint_count, revoked_lease_generation,
+         occurred_at, created_at
+       ) VALUES ('failure-tool-bridge-external', ?, ?, 5,
+                 'event-tool-bridge-external', 1, ?, ?, 'tool_error',
+                 'tool_unavailable', 'tool_logs_search', 'resolve_external_dependency',
+                 5, 1, 1, ?, ?)`,
+    ).bind(RUN_ID, adapter.replacement_attempt_id, scopeDigest, fingerprintDigest, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO run_blockers (
+         blocker_id, run_id, reason, retry_scope_digest, fingerprint_digest,
+         attempt_count, consecutive_fingerprint_count, needed_human_input, created_at
+       ) VALUES ('blocker-tool-bridge-external', ?, 'external_dependency', ?, ?,
+                 5, 1, 'resolve_external_dependency', ?)`,
+    ).bind(RUN_ID, scopeDigest, fingerprintDigest, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO tool_call_traces (
+         trace_id, run_id, attempt_id, tool_path, action, effect,
+         duration_ms, result_category, occurred_at
+       ) VALUES ('tooltrace-tool-bridge-external', ?, ?, 'logs/search',
+                 'logs:read', 'read', 913, ?, ?)`,
+    ).bind(
+      RUN_ID,
+      adapter.replacement_attempt_id,
+      overrides.traceResult ?? 'upstream_error',
+      NOW,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO quota_model_reservations (
+         reservation_id, attempt_id, run_id, profile_id, reserved_tokens,
+         reserved_cost_microusd, status, expires_at, created_at, updated_at
+       ) VALUES ('reservation-tool-bridge-external', ?, ?, ?, 1, 1,
+                 'settled', '2026-08-13T02:00:00.000Z', ?, ?)`,
+    ).bind(adapter.replacement_attempt_id, RUN_ID, profile, NOW, NOW),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO model_usage (
+         usage_id, at, provider, model, run_id, attempt_id, tenant_key,
+         repository, principal, input_tokens, cached_input_tokens, output_tokens,
+         reasoning_output_tokens, cost_microusd, source_digest, created_at
+       ) VALUES ('usage-tool-bridge-external', ?, 'delivery_loop_relay', 'gpt-5.6-terra',
+                 ?, ?, 'initial-analysis-recovery', 'example/delivery-target',
+                 'service:delivery-loop', 1, 0, 1, 1, 1, ?, ?)`,
+    ).bind(
+      NOW,
+      RUN_ID,
+      adapter.replacement_attempt_id,
+      `sha256:${'6'.repeat(64)}`,
+      NOW,
+    ),
+  ]);
+  if (overrides.evidence === true) {
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO evidence (
+         evidence_id, run_id, attempt_id, kind, status, summary,
+         verification_status, observed_at, created_at
+       ) VALUES ('evidence-tool-bridge-external', ?, ?, 'diagnostic', 'passed',
+                 'Existing evidence blocks recovery.', 'verified', ?, ?)`,
+    ).bind(RUN_ID, adapter.replacement_attempt_id, NOW, NOW).run();
+  }
+  expect(failedAttemptId).toBeTruthy();
+  return adapter.replacement_attempt_id;
+}
+
 function validPlan(attemptId: string): ExecutionPlanBodyV1 {
   return {
     schemaVersion: '1',
@@ -367,6 +464,58 @@ function validPlan(attemptId: string): ExecutionPlanBodyV1 {
 beforeEach(reset);
 
 describe('initial analysis recovery', () => {
+  it('converges the exact external Tool Bridge failure to one replacement', async () => {
+    const failedAttemptId = await seedToolBridgeBlocked();
+    const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    });
+    const results = await Promise.all(
+      Array.from({ length: 20 }, async () => await reconciler().reconcileToolBridgeFailures(5)),
+    );
+    expect(results.reduce((sum, count) => sum + count, 0)).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT recovery.failed_attempt_id, recovery.logs_trace_id,
+              recovery.provider_policy_version, attempts.ordinal, attempts.status,
+              retries.retry_sequence, blockers.resolution_code, runs.state,
+              outbox.delivery_state
+       FROM initial_analysis_tool_bridge_recoveries AS recovery
+       JOIN attempts ON attempts.attempt_id = recovery.replacement_attempt_id
+       JOIN initial_analysis_retries AS retries
+         ON retries.retry_attempt_id = recovery.replacement_attempt_id
+       JOIN run_blockers AS blockers ON blockers.blocker_id = recovery.blocker_id
+       JOIN runs ON runs.run_id = recovery.run_id
+       JOIN outbox ON outbox.payload_ref = 'd1://attempts/' || recovery.replacement_attempt_id`,
+    ).first()).toMatchObject({
+      failed_attempt_id: failedAttemptId,
+      logs_trace_id: 'tooltrace-tool-bridge-external',
+      provider_policy_version: 1,
+      ordinal: 6,
+      status: 'pending',
+      retry_sequence: 5,
+      resolution_code: 'analysis_tipsy_sls_tool_bridge_v1',
+      state: 'planning',
+      delivery_state: 'pending',
+    });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM tasks').first())
+      .toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare('SELECT COUNT(*) AS count FROM runs').first())
+      .toEqual({ count: 1 });
+    expect(await reconciler().reconcileToolBridgeFailures(5)).toBe(0);
+  });
+
+  it.each([
+    [{ traceResult: 'success' as const }, 'successful old tool call'],
+    [{ evidence: true }, 'existing Evidence'],
+  ])('does not recover a non-exact Tool Bridge failure: %s (%s)', async (...[overrides]) => {
+    await seedToolBridgeBlocked(overrides);
+    expect(await new InitialAnalysisReconciler(env.DB_CONTROL, {
+      now: () => new Date(NOW),
+    }).reconcileToolBridgeFailures(5)).toBe(0);
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT COUNT(*) AS count FROM initial_analysis_tool_bridge_recoveries',
+    ).first()).toEqual({ count: 0 });
+  });
+
   it('converges the zero-model v2 adapter capacity blocker to one compatibility replacement', async () => {
     const failedAttemptId = await seedInventoryAdapterBlocked();
     const reconciler = () => new InitialAnalysisReconciler(env.DB_CONTROL, {
