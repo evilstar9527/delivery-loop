@@ -584,6 +584,21 @@ describe('review repo-write approval recovery', () => {
       head_sha: HEAD_SHA,
       recovered_from_attempt_id: PRIOR_ATTEMPT_ID,
     });
+
+    const outboxId = `dispatch_review_approval_recovery_${results[0]?.replacementAttemptId
+      .replace('attempt_review_approval_recovery_', '')}`;
+    await env.DB_CONTROL.prepare(
+      `UPDATE outbox SET delivery_state = 'settled', attempt_count = 2,
+              last_error_code = 'repair_fenced_after_dispatch'
+       WHERE outbox_id = ?`,
+    ).bind(outboxId).run();
+    await expect(reconciler.reconcileBatch()).resolves.toEqual([]);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT delivery_state, attempt_count, last_error_code
+       FROM outbox WHERE outbox_id = ?`,
+    ).bind(outboxId).first()).toEqual({
+      delivery_state: 'pending', attempt_count: 2, last_error_code: null,
+    });
   });
 
   it('creates one fresh-approval replacement for an automated review fix that failed pre-effect', async () => {
