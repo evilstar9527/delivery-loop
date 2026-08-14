@@ -90,10 +90,11 @@ export class GitHubRunReconciler {
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
       throw new Error('GitHub reconciliation limit must be between 1 and 100');
     }
-    // A durable Runner result still needs an external GitHub fact, but it must
-    // not sit behind an unbounded terminal backlog when the webhook is lost.
-    // The rank changes only which read-only GET is served first; the shared
-    // observation projector remains the sole authority for external status.
+    // A durable Runner result and a fenced recovery replacement both still
+    // need an external GitHub fact. Neither may sit behind an unbounded
+    // terminal backlog when the webhook is lost. The rank changes only which
+    // read-only GET is served first; the shared observation projector remains
+    // the sole authority for external status.
     const candidates = await this.db
       .prepare(
         `SELECT attempt_id, repository, workflow_ref, github_run_id
@@ -112,18 +113,23 @@ export class GitHubRunReconciler {
            )
          ORDER BY
            CASE
+             WHEN runs.state = 'blocked'
+              AND attempts.mode = 'review_fix'
+              AND attempts.status = 'lost'
+              AND attempts.result_event_id IS NULL
+              AND attempts.recovered_from_attempt_id IS NOT NULL THEN 0
              WHEN attempts.status IN ('starting', 'running')
               AND attempts.result_event_id IS NOT NULL
               AND runs.state IN (
                 'triaging', 'awaiting_approval', 'planning', 'executing',
                 'verifying', 'awaiting_review', 'deploying'
-              ) THEN 0
+              ) THEN 1
              WHEN attempts.status IN ('starting', 'running')
               AND runs.state IN (
                 'triaging', 'awaiting_approval', 'planning', 'executing',
                 'verifying', 'awaiting_review', 'deploying'
-              ) THEN 1
-             ELSE 2
+              ) THEN 2
+             ELSE 3
            END,
            COALESCE(attempts.github_observed_at, attempts.created_at),
            attempts.attempt_id
