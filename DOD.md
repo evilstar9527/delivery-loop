@@ -562,6 +562,9 @@ E2E 必须脚本化到可重跑的最大程度；飞书人工批准步骤可以�
 - [ ] 已部署Worker把现有唯一pending Attempt dispatch到`evilstar9527/delivery-loop@main`，
   Action以exact SHA独立检出`Lightspeed-Intelligence/tipsy-backend`，完成analysis→Plan→
   execution→backend Draft PR；backend无需包含delivery-loop workflow或onboarding PR。
+- [x] fresh manual operator允许受审allowlist内的业务repository/base/environment，同时只在集中
+  executor repository核对stable analysis Action；Task仍须满足404、matching Action=0、唯一POST，
+  业务仓库不能改变inventory或取得Runner Secret。定向与全量验证见`PROGRESS.md` Round 451。
 - [x] 本地契约区分executor Action identity与业务repository/checkout identity；dispatch payload
   无Secret/正文，私有checkout token仅进入checkout step，OIDC/observation与业务write authority
   分离。验收命令与输出见`PROGRESS.md`最新Round。
