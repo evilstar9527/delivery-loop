@@ -12,6 +12,8 @@ export interface GitHubWriteCredential {
 }
 
 export interface GitHubWriteCredentialProvider {
+  /** Static provider Secrets must stay provider-owned instead of being copied into D1. */
+  readonly writeCredentialPersistence?: 'provider_reference';
   issueWriteCredential(repository: string): Promise<GitHubWriteCredential>;
   revokeWriteCredential(token: string): Promise<void>;
 }
@@ -215,6 +217,16 @@ export class RepoWriteCredentialStore {
     const approval = await this.currentApproval(context, now);
     const credentialId = await this.credentialId(authorization);
     const existing = await this.readCredential(credentialId);
+    if (this.provider.writeCredentialPersistence === 'provider_reference') {
+      return await this.issueProviderReference(
+        credentialId,
+        existing,
+        authorization,
+        context,
+        approval,
+        now,
+      );
+    }
     if (existing !== null) {
       return await this.handleExisting(existing, authorization, context, approval, now);
     }
@@ -262,6 +274,274 @@ export class RepoWriteCredentialStore {
       approval,
       now,
     );
+  }
+
+  private async issueProviderReference(
+    credentialId: string,
+    existing: CredentialRow | null,
+    authorization: RunnerAuthorization,
+    context: AuthorizationContextRow,
+    approval: ApprovalRow,
+    now: Date,
+  ): Promise<IssuedRepoWriteCredential> {
+    if (existing !== null) {
+      this.assertCredentialIdentity(existing, authorization, context);
+      if (
+        existing.status !== 'active' ||
+        existing.issue_lease_token !== null ||
+        existing.issue_lease_expires_at !== null ||
+        existing.token_digest !== null ||
+        existing.token_ciphertext !== null ||
+        existing.token_iv !== null
+      ) {
+        throw new RepoWriteCredentialError('credential_conflict');
+      }
+    }
+
+    const issued = await this.resolveProviderCredential(context.task_repository, now);
+    const nowIso = now.toISOString();
+    const authorizationExpiresAt = new Date(Math.min(
+      validTimestamp(issued.expiresAt),
+      validTimestamp(approval.expires_at),
+      validTimestamp(authorization.leaseExpiresAt),
+    )).toISOString();
+    if (authorizationExpiresAt <= nowIso) {
+      throw new RepoWriteCredentialError('approval_required');
+    }
+    const githubExpiresAt = new Date(validTimestamp(issued.expiresAt)).toISOString();
+
+    if (existing === null) {
+      const inserted = await this.db
+        .prepare(
+          `INSERT INTO github_write_credentials (
+             credential_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+             approval_id, repository, lease_generation, status, github_expires_at,
+             authorization_expires_at, created_at, updated_at
+           )
+           SELECT ?, attempts.run_id, attempts.attempt_id, attempts.plan_id,
+                  attempts.plan_version, attempts.plan_item_id, approvals.approval_id,
+                  attempts.repository, attempts.lease_generation, 'active', ?, ?, ?, ?
+           FROM attempts
+           JOIN attempt_tokens ON attempt_tokens.attempt_id = attempts.attempt_id
+             AND attempt_tokens.lease_generation = attempts.lease_generation
+           JOIN runs ON runs.run_id = attempts.run_id
+           JOIN tasks ON tasks.task_id = runs.task_id
+           JOIN execution_plans ON execution_plans.plan_id = attempts.plan_id
+           JOIN plan_item_progress
+             ON plan_item_progress.plan_id = attempts.plan_id
+            AND plan_item_progress.item_id = attempts.plan_item_id
+           JOIN approvals ON approvals.approval_id = ?
+           WHERE attempts.attempt_id = ? AND attempts.run_id = ?
+             AND attempts.mode IN ('implement', 'review_fix')
+             AND attempts.status = 'running' AND attempts.version = ?
+             AND attempts.lease_generation = ? AND attempts.lease_expires_at = ?
+             AND attempts.lease_expires_at > ?
+             AND attempt_tokens.revoked_at IS NULL AND attempt_tokens.expires_at > ?
+             AND runs.state = 'executing'
+             AND runs.active_plan_id = attempts.plan_id
+             AND runs.active_plan_version = attempts.plan_version
+             AND runs.active_plan_digest = execution_plans.digest
+             AND tasks.allow_repository_write = 1
+             AND tasks.target_repository = attempts.repository
+             AND execution_plans.status = 'active'
+             AND plan_item_progress.status = 'in_progress'
+             AND plan_item_progress.active_attempt_id = attempts.attempt_id
+             AND approvals.run_id = runs.run_id
+             AND approvals.task_revision = runs.task_revision
+             AND approvals.plan_id = execution_plans.plan_id
+             AND approvals.plan_version = execution_plans.plan_version
+             AND approvals.plan_digest = execution_plans.digest
+             AND approvals.base_sha = runs.base_sha
+             AND approvals.effect = 'repo_write' AND approvals.decision = 'approve'
+             AND approvals.created_at <= ? AND approvals.expires_at > ?
+             AND NOT EXISTS (
+               SELECT 1 FROM invalidated_approvals
+               WHERE invalidated_approvals.approval_id = approvals.approval_id
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM approvals AS newer
+               WHERE newer.run_id = approvals.run_id
+                 AND newer.task_revision = approvals.task_revision
+                 AND newer.plan_id = approvals.plan_id
+                 AND newer.plan_version = approvals.plan_version
+                 AND newer.plan_digest = approvals.plan_digest
+                 AND newer.base_sha = approvals.base_sha
+                 AND newer.effect = approvals.effect
+                 AND newer.decision = 'reject'
+                 AND (
+                   newer.created_at > approvals.created_at
+                   OR (newer.created_at = approvals.created_at
+                       AND newer.approval_id > approvals.approval_id)
+                 )
+             )
+             AND EXISTS (
+               SELECT 1 FROM plan_item_effects
+               WHERE plan_item_effects.plan_id = attempts.plan_id
+                 AND plan_item_effects.item_id = attempts.plan_item_id
+                 AND plan_item_effects.effect = 'repo_write'
+             )
+           ON CONFLICT DO NOTHING`,
+        )
+        .bind(
+          credentialId,
+          githubExpiresAt,
+          authorizationExpiresAt,
+          nowIso,
+          nowIso,
+          approval.approval_id,
+          authorization.attemptId,
+          authorization.runId,
+          authorization.version,
+          authorization.leaseGeneration,
+          authorization.leaseExpiresAt,
+          nowIso,
+          nowIso,
+          nowIso,
+          nowIso,
+        )
+        .run();
+      if (inserted.meta.changes === 1) {
+        return this.result((await this.readCredential(credentialId))!, issued.token, true);
+      }
+      const raced = await this.readCredential(credentialId);
+      if (raced === null) throw new RepoWriteCredentialError('credential_conflict');
+      this.assertCredentialIdentity(raced, authorization, context);
+      if (
+        raced.status !== 'active' || raced.issue_lease_token !== null ||
+        raced.issue_lease_expires_at !== null || raced.token_digest !== null ||
+        raced.token_ciphertext !== null || raced.token_iv !== null
+      ) throw new RepoWriteCredentialError('credential_conflict');
+    }
+
+    const refreshed = await this.db
+      .prepare(
+        `UPDATE github_write_credentials
+         SET github_expires_at = ?, authorization_expires_at = ?, updated_at = ?
+         WHERE credential_id = ? AND status = 'active' AND approval_id = ?
+           AND issue_lease_token IS NULL AND issue_lease_expires_at IS NULL
+           AND token_digest IS NULL AND token_ciphertext IS NULL AND token_iv IS NULL
+           AND EXISTS (
+             SELECT 1
+             FROM attempts
+             JOIN attempt_tokens ON attempt_tokens.attempt_id = attempts.attempt_id
+               AND attempt_tokens.lease_generation = attempts.lease_generation
+             JOIN runs ON runs.run_id = attempts.run_id
+             JOIN tasks ON tasks.task_id = runs.task_id
+             JOIN execution_plans ON execution_plans.plan_id = attempts.plan_id
+             JOIN plan_item_progress
+               ON plan_item_progress.plan_id = attempts.plan_id
+              AND plan_item_progress.item_id = attempts.plan_item_id
+             JOIN approvals ON approvals.approval_id = ?
+             WHERE attempts.attempt_id = ? AND attempts.run_id = ?
+               AND attempts.mode IN ('implement', 'review_fix')
+               AND attempts.status = 'running' AND attempts.version = ?
+               AND attempts.lease_generation = ? AND attempts.lease_expires_at = ?
+               AND attempts.lease_expires_at > ?
+               AND attempt_tokens.revoked_at IS NULL AND attempt_tokens.expires_at > ?
+               AND runs.state = 'executing'
+               AND runs.active_plan_id = attempts.plan_id
+               AND runs.active_plan_version = attempts.plan_version
+               AND runs.active_plan_digest = execution_plans.digest
+               AND tasks.allow_repository_write = 1
+               AND tasks.target_repository = attempts.repository
+               AND execution_plans.status = 'active'
+               AND plan_item_progress.status = 'in_progress'
+               AND plan_item_progress.active_attempt_id = attempts.attempt_id
+               AND approvals.run_id = runs.run_id
+               AND approvals.task_revision = runs.task_revision
+               AND approvals.plan_id = execution_plans.plan_id
+               AND approvals.plan_version = execution_plans.plan_version
+               AND approvals.plan_digest = execution_plans.digest
+               AND approvals.base_sha = runs.base_sha
+               AND approvals.effect = 'repo_write' AND approvals.decision = 'approve'
+               AND approvals.created_at <= ? AND approvals.expires_at > ?
+               AND NOT EXISTS (
+                 SELECT 1 FROM invalidated_approvals
+                 WHERE invalidated_approvals.approval_id = approvals.approval_id
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM approvals AS newer
+                 WHERE newer.run_id = approvals.run_id
+                   AND newer.task_revision = approvals.task_revision
+                   AND newer.plan_id = approvals.plan_id
+                   AND newer.plan_version = approvals.plan_version
+                   AND newer.plan_digest = approvals.plan_digest
+                   AND newer.base_sha = approvals.base_sha
+                   AND newer.effect = approvals.effect
+                   AND newer.decision = 'reject'
+                   AND (
+                     newer.created_at > approvals.created_at
+                     OR (newer.created_at = approvals.created_at
+                         AND newer.approval_id > approvals.approval_id)
+                   )
+               )
+               AND EXISTS (
+                 SELECT 1 FROM plan_item_effects
+                 WHERE plan_item_effects.plan_id = attempts.plan_id
+                   AND plan_item_effects.item_id = attempts.plan_item_id
+                   AND plan_item_effects.effect = 'repo_write'
+               )
+           )`,
+      )
+      .bind(
+        githubExpiresAt,
+        authorizationExpiresAt,
+        nowIso,
+        credentialId,
+        approval.approval_id,
+        approval.approval_id,
+        authorization.attemptId,
+        authorization.runId,
+        authorization.version,
+        authorization.leaseGeneration,
+        authorization.leaseExpiresAt,
+        nowIso,
+        nowIso,
+        nowIso,
+        nowIso,
+      )
+      .run();
+    if (refreshed.meta.changes !== 1) {
+      throw new RepoWriteCredentialError('credential_conflict');
+    }
+    return this.result((await this.readCredential(credentialId))!, issued.token, false);
+  }
+
+  private async resolveProviderCredential(
+    repository: string,
+    now: Date,
+  ): Promise<GitHubWriteCredential> {
+    let issued: GitHubWriteCredential;
+    try {
+      issued = await this.provider.issueWriteCredential(repository);
+    } catch {
+      throw new RepoWriteCredentialError('provider_unavailable');
+    }
+    if (
+      issued.token.length < 1 || issued.token.length > MAX_TOKEN_LENGTH ||
+      /[\0\r\n]/.test(issued.token) || validTimestamp(issued.expiresAt) <= now.getTime()
+    ) {
+      throw new RepoWriteCredentialError('provider_unavailable');
+    }
+    return issued;
+  }
+
+  private assertCredentialIdentity(
+    row: CredentialRow,
+    authorization: RunnerAuthorization,
+    context: AuthorizationContextRow,
+  ): void {
+    if (
+      row.run_id !== authorization.runId ||
+      row.attempt_id !== authorization.attemptId ||
+      row.plan_id !== context.plan_id ||
+      row.plan_version !== context.plan_version ||
+      row.plan_item_id !== context.plan_item_id ||
+      row.repository !== context.task_repository ||
+      row.lease_generation !== authorization.leaseGeneration
+    ) {
+      throw new RepoWriteCredentialError('credential_conflict');
+    }
   }
 
   private async issueReserved(
@@ -450,17 +730,7 @@ export class RepoWriteCredentialStore {
     approval: ApprovalRow,
     now: Date,
   ): Promise<IssuedRepoWriteCredential> {
-    if (
-      row.run_id !== authorization.runId ||
-      row.attempt_id !== authorization.attemptId ||
-      row.plan_id !== context.plan_id ||
-      row.plan_version !== context.plan_version ||
-      row.plan_item_id !== context.plan_item_id ||
-      row.repository !== context.task_repository ||
-      row.lease_generation !== authorization.leaseGeneration
-    ) {
-      throw new RepoWriteCredentialError('credential_conflict');
-    }
+    this.assertCredentialIdentity(row, authorization, context);
     if (row.status === 'issuing' && (row.issue_lease_expires_at ?? '') > now.toISOString()) {
       throw new RepoWriteCredentialError('credential_issuing');
     }
@@ -803,6 +1073,30 @@ export class RepoWriteCredentialRevoker {
     }
     if (candidate.status !== 'revoking' && await this.stillAuthorized(candidate, nowIso)) {
       return null;
+    }
+    if (this.provider.writeCredentialPersistence === 'provider_reference') {
+      if (
+        candidate.token_digest !== null || candidate.token_ciphertext !== null ||
+        candidate.token_iv !== null
+      ) throw new RepoWriteCredentialError('credential_conflict');
+      const expired = await this.db
+        .prepare(
+          `UPDATE github_write_credentials
+           SET status = 'expired', issue_lease_token = NULL,
+               issue_lease_expires_at = NULL, revocation_lease_token = NULL,
+               revocation_lease_expires_at = NULL, last_error_code = NULL,
+               updated_at = ?
+           WHERE credential_id = ?
+             AND (
+               status IN ('active', 'revocation_pending')
+               OR (status = 'revoking' AND revocation_lease_expires_at <= ?)
+             )`,
+        )
+        .bind(nowIso, candidate.credential_id, nowIso)
+        .run();
+      return expired.meta.changes === 1
+        ? { attemptId: candidate.attempt_id, disposition: 'expired' }
+        : null;
     }
     if (candidate.token_ciphertext === null || candidate.token_iv === null) {
       throw new RepoWriteCredentialError('credential_conflict');

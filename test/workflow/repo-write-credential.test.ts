@@ -4,6 +4,7 @@ import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { canonicalSha256 } from '../../src/domain/digest.js';
 import { EXECUTION_TOOL_ACTIONS } from '../../src/domain/tool-bridge.js';
+import { GitHubPatTokenProvider } from '../../src/auth/github-pat-token.js';
 import { attemptApi } from '../../src/http/attempt-api.js';
 import type { RunnerAuthorization } from '../../src/storage/runner-attempt-store.js';
 import {
@@ -401,6 +402,87 @@ describe('repo_write approval and GitHub credential broker', () => {
     expect(await env.DB_CONTROL.prepare(
       'SELECT COUNT(*) AS count FROM github_write_credentials WHERE attempt_id = ?',
     ).bind(ATTEMPT_ID).first()).toEqual({ count: 1 });
+  });
+
+  it('atomically activates one PAT reference even when issuing finalization is unavailable', async () => {
+    await approve();
+    const provider = new GitHubPatTokenProvider({
+      pat: RAW_TOKEN,
+      allowedRepositories: [REPOSITORY],
+      now: () => NOW,
+    });
+    const store = new RepoWriteCredentialStore(env.DB_CONTROL, provider, {
+      encryptionKey: ENCRYPTION_KEY,
+    });
+    await env.DB_CONTROL.prepare(
+      `CREATE TRIGGER reject_pat_issuing_finalization
+       BEFORE UPDATE OF status ON github_write_credentials
+       WHEN OLD.status = 'issuing' AND NEW.status = 'active'
+       BEGIN
+         SELECT RAISE(ABORT, 'simulated lost post-reservation finalization');
+       END`,
+    ).run();
+
+    try {
+      const results = await Promise.allSettled(
+        Array.from({ length: 20 }, () => store.issue(AUTHORIZATION, NOW)),
+      );
+      expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+      expect(results.filter((result) => result.status === 'fulfilled' && result.value.created))
+        .toHaveLength(1);
+      expect(results.every((result) =>
+        result.status === 'fulfilled' && result.value.token === RAW_TOKEN)).toBe(true);
+
+      expect(await env.DB_CONTROL.prepare(
+        `SELECT COUNT(*) AS count FROM github_write_credentials
+         WHERE attempt_id = ?`,
+      ).bind(ATTEMPT_ID).first()).toEqual({ count: 1 });
+      expect(await env.DB_CONTROL.prepare(
+        `SELECT status, issue_lease_token, issue_lease_expires_at,
+                token_digest, token_ciphertext, token_iv
+         FROM github_write_credentials WHERE attempt_id = ?`,
+      ).bind(ATTEMPT_ID).first()).toEqual({
+        status: 'active',
+        issue_lease_token: null,
+        issue_lease_expires_at: null,
+        token_digest: null,
+        token_ciphertext: null,
+        token_iv: null,
+      });
+    } finally {
+      await env.DB_CONTROL.prepare('DROP TRIGGER reject_pat_issuing_finalization').run();
+    }
+  });
+
+  it('expires a PAT reference locally when its exact control-plane authority ends', async () => {
+    await approve();
+    const provider = new GitHubPatTokenProvider({
+      pat: RAW_TOKEN,
+      allowedRepositories: [REPOSITORY],
+      now: () => NOW,
+    });
+    const store = new RepoWriteCredentialStore(env.DB_CONTROL, provider, {
+      encryptionKey: ENCRYPTION_KEY,
+    });
+    await store.issue(AUTHORIZATION, NOW);
+
+    const revoker = new RepoWriteCredentialRevoker(env.DB_CONTROL, provider, {
+      encryptionKey: ENCRYPTION_KEY,
+      now: () => new Date('2026-07-25T10:06:00.000Z'),
+    });
+    expect(await revoker.scan()).toEqual([
+      { attemptId: ATTEMPT_ID, disposition: 'expired' },
+    ]);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, token_digest, token_ciphertext, token_iv, revoked_at
+       FROM github_write_credentials WHERE attempt_id = ?`,
+    ).bind(ATTEMPT_ID).first()).toEqual({
+      status: 'expired',
+      token_digest: null,
+      token_ciphertext: null,
+      token_iv: null,
+      revoked_at: null,
+    });
   });
 
   it('reclaims a failed issuance without creating a second credential identity', async () => {

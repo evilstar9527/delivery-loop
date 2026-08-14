@@ -751,6 +751,142 @@ describe('review repo-write approval recovery', () => {
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM review_approval_recoveries WHERE run_id = ?`,
     ).bind(RUN_ID).first()).toEqual({ count: 2 });
+
+    const credentialInterruptedAttemptId = secondReplacement?.replacement_attempt_id;
+    if (credentialInterruptedAttemptId === undefined) {
+      throw new Error('credential-interrupted replacement missing');
+    }
+    const nestedScopeDigest = `scope:v1:${'9'.repeat(62)}`;
+    const nestedFingerprint = `sha256:${'a'.repeat(64)}`;
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE outbox SET delivery_state = 'settled', attempt_count = 1, updated_at = ?
+         WHERE kind = 'execution_dispatch' AND payload_ref = ?`,
+      ).bind(NOW, `d1://attempts/${credentialInterruptedAttemptId}`),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET status = 'failed', version = 3, lease_generation = 2,
+             github_run_id = '987654322', github_status = 'completed',
+             github_conclusion = 'failure', updated_at = ?
+         WHERE attempt_id = ?`,
+      ).bind(NOW, credentialInterruptedAttemptId),
+      env.DB_CONTROL.prepare(
+        `UPDATE runs SET state = 'blocked', version = version + 1, updated_at = ?
+         WHERE run_id = ? AND state = 'executing'`,
+      ).bind(NOW, RUN_ID),
+      env.DB_CONTROL.prepare(
+        `UPDATE execution_plans SET status = 'blocked', updated_at = ?
+         WHERE plan_id = ? AND status = 'active'`,
+      ).bind(NOW, PLAN_ID),
+      env.DB_CONTROL.prepare(
+        `UPDATE plan_item_progress SET status = 'blocked', updated_at = ?
+         WHERE plan_id = ? AND item_id = ? AND active_attempt_id = ?`,
+      ).bind(NOW, PLAN_ID, ITEM_ID, credentialInterruptedAttemptId),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_failures (
+           failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+           retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+           failure_site, needed_human_input, scope_attempt_count,
+           consecutive_fingerprint_count, revoked_lease_generation, occurred_at, created_at
+         ) VALUES ('failure-nested-credential-interruption', ?, ?, 4,
+                   'event-nested-credential-interruption', 1, ?, ?, 'tool_error',
+                   'tool_unavailable', 'external_reconciliation',
+                   'resolve_external_dependency', 1, 1, 2, ?, ?)`,
+      ).bind(
+        RUN_ID,
+        credentialInterruptedAttemptId,
+        nestedScopeDigest,
+        nestedFingerprint,
+        NOW,
+        NOW,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO run_blockers (
+           blocker_id, run_id, reason, retry_scope_digest, fingerprint_digest,
+           attempt_count, consecutive_fingerprint_count, needed_human_input, created_at
+         ) VALUES ('blocker-nested-credential-interruption', ?, 'external_dependency',
+                   ?, ?, 1, 1, 'resolve_external_dependency', ?)`,
+      ).bind(RUN_ID, nestedScopeDigest, nestedFingerprint, NOW),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO github_write_credentials (
+           credential_id, run_id, attempt_id, plan_id, plan_version, plan_item_id,
+           approval_id, repository, lease_generation, status, issue_lease_token,
+           issue_lease_expires_at, created_at, updated_at
+         ) VALUES ('credential-nested-issuing', ?, ?, ?, 1, ?,
+                   'approval-review-recovery-old', ?, 2, 'issuing',
+                   'expired-issue-lease', '2026-08-08T07:59:00.000Z', ?, ?)`,
+      ).bind(
+        RUN_ID,
+        credentialInterruptedAttemptId,
+        PLAN_ID,
+        ITEM_ID,
+        REPOSITORY,
+        NOW,
+        NOW,
+      ),
+    ]);
+
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT source_kind, failed_attempt_id, root_review_attempt_id, blocker_id
+       FROM repo_write_recovery_candidates_v4 WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({
+      source_kind: 'failed_dependency',
+      failed_attempt_id: credentialInterruptedAttemptId,
+      root_review_attempt_id: PRIOR_ATTEMPT_ID,
+      blocker_id: 'blocker-nested-credential-interruption',
+    });
+
+    await env.DB_CONTROL.prepare(
+      `UPDATE github_write_credentials SET status = 'active'
+       WHERE credential_id = 'credential-nested-issuing'`,
+    ).run();
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM repo_write_recovery_candidates_v4 WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 0 });
+    await env.DB_CONTROL.prepare(
+      `UPDATE github_write_credentials SET status = 'issuing', last_error_code = 'interrupted'
+       WHERE credential_id = 'credential-nested-issuing'`,
+    ).run();
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM repo_write_recovery_candidates_v4 WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 0 });
+    await env.DB_CONTROL.prepare(
+      `UPDATE github_write_credentials SET last_error_code = NULL
+       WHERE credential_id = 'credential-nested-issuing'`,
+    ).run();
+    await env.DB_CONTROL.prepare(
+      `UPDATE outbox SET delivery_state = 'pending'
+       WHERE kind = 'execution_dispatch' AND payload_ref = ?`,
+    ).bind(`d1://attempts/${credentialInterruptedAttemptId}`).run();
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM repo_write_recovery_candidates_v4 WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 0 });
+    await env.DB_CONTROL.prepare(
+      `UPDATE outbox SET delivery_state = 'settled'
+       WHERE kind = 'execution_dispatch' AND payload_ref = ?`,
+    ).bind(`d1://attempts/${credentialInterruptedAttemptId}`).run();
+
+    const thirdTemplate = await service.template(RUN_ID);
+    client.fact = commentFact(thirdTemplate.commentBody, 224);
+    const thirdDecisions = await Promise.all(
+      Array.from({ length: 20 }, async () => await service.approve(RUN_ID, 224)),
+    );
+    expect(thirdDecisions.filter((decision) => decision.created)).toHaveLength(1);
+    const thirdRecoveries = await Promise.all(
+      Array.from({ length: 20 }, async () => await reconciler.reconcileBatch()),
+    );
+    expect(thirdRecoveries.flat().filter((result) => result.created)).toHaveLength(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT source_kind, failed_attempt_id, root_review_attempt_id
+       FROM review_approval_recoveries WHERE failed_attempt_id = ?`,
+    ).bind(credentialInterruptedAttemptId).first()).toEqual({
+      source_kind: 'failed_dependency',
+      failed_attempt_id: credentialInterruptedAttemptId,
+      root_review_attempt_id: PRIOR_ATTEMPT_ID,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM review_approval_recoveries WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 3 });
   });
 
   it('creates one fresh-approval replacement for an automated review fix that failed pre-effect', async () => {

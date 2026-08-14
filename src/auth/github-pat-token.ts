@@ -62,6 +62,7 @@ function parseExpiry(value: string | undefined, now: Date): number | undefined {
  * to provide GitHub App installation-level permission isolation or revocation.
  */
 export class GitHubPatTokenProvider implements GitHubRepositoryTokenProvider {
+  readonly writeCredentialPersistence = 'provider_reference' as const;
   private readonly pat: string;
   private readonly allowedRepositories: ReadonlySet<string>;
   private readonly patExpiresAt: number | undefined;
