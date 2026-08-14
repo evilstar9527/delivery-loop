@@ -311,7 +311,7 @@ export class GitHubCommitApprovalService {
        FROM runs
        JOIN tasks ON tasks.task_id = runs.task_id
        JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
-       LEFT JOIN repo_write_recovery_candidates_v3 AS recovery
+       LEFT JOIN repo_write_recovery_candidates_v4 AS recovery
          ON recovery.run_id = runs.run_id
         AND recovery.run_version = runs.version
         AND recovery.plan_id = plans.plan_id
@@ -333,7 +333,8 @@ export class GitHubCommitApprovalService {
            OR
            (runs.state = 'blocked' AND recovery.failed_attempt_id IS NOT NULL
             AND (
-              (recovery.source_kind = 'failed_dependency' AND plans.status = 'blocked')
+              (recovery.source_kind = 'failed_dependency'
+               AND plans.status IN ('active', 'blocked'))
               OR (recovery.source_kind IN ('lost_pre_effect', 'implement_lost_pre_effect')
                   AND plans.status = 'active')
             ))
