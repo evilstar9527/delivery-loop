@@ -27,6 +27,13 @@ describe('periodic external-fact reconciliation wiring', () => {
   it('activates approved work and projects completed Actions before the global relay', () => {
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     const priorityWorkflowCreateDrain = worker.indexOf('await workflowOutbox.drainCreates(1);');
+    const recoveryServingFence = worker.indexOf(
+      "if (recoveryState.servingState !== 'active')",
+    );
+    const priorityLostRecoveryGitHubReconciliation = worker.indexOf(
+      'await reconcileRecoveryGitHubRunsFromEnv(env, 1);',
+      recoveryServingFence,
+    );
     const workflowDrain = worker.indexOf('await workflowOutbox.drain(5);');
     const priorityExecutionScheduling = worker.indexOf(
       'await executionProgress.reconcileScheduling(1);',
@@ -75,10 +82,6 @@ describe('periodic external-fact reconciliation wiring', () => {
     const toolBridgeAnalysisRecoveryRelay = worker.indexOf(
       "await relay.relayDestination('github_actions', 1);",
       toolBridgeAnalysisRecovery,
-    );
-    const priorityLostRecoveryGitHubReconciliation = worker.indexOf(
-      'await reconcileGitHubRunsFromEnv(env, 1);',
-      toolBridgeAnalysisRecoveryRelay,
     );
     const ordinaryAnalysisRecovery = worker.indexOf(
       'await initialAnalysis.reconcileFailedAttempts(5);',
@@ -146,6 +149,8 @@ describe('periodic external-fact reconciliation wiring', () => {
     );
 
     expect(priorityWorkflowCreateDrain).toBeGreaterThan(-1);
+    expect(priorityLostRecoveryGitHubReconciliation).toBeGreaterThan(recoveryServingFence);
+    expect(priorityLostRecoveryGitHubReconciliation).toBeLessThan(priorityWorkflowCreateDrain);
     expect(toolBridgeSecretValueRecovery).toBeGreaterThan(priorityExecutionScheduling);
     expect(toolBridgeScopeRecovery).toBeGreaterThan(toolBridgeSecretValueRecovery);
     expect(toolBridgeScopeRecovery).toBeGreaterThan(priorityExecutionScheduling);
@@ -155,12 +160,6 @@ describe('periodic external-fact reconciliation wiring', () => {
     expect(toolBridgeAnalysisRecovery).toBeGreaterThan(priorityExecutionScheduling);
     expect(toolBridgeAnalysisRecoveryRelay).toBeGreaterThan(toolBridgeAnalysisRecovery);
     expect(toolBridgeAnalysisRecoveryRelay).toBeLessThan(priorityPullRequestReconciliation);
-    expect(priorityLostRecoveryGitHubReconciliation).toBeGreaterThan(
-      toolBridgeAnalysisRecoveryRelay,
-    );
-    expect(priorityLostRecoveryGitHubReconciliation).toBeLessThan(
-      priorityPullRequestReconciliation,
-    );
     expect(ordinaryAnalysisRecovery).toBeGreaterThan(toolBridgeAnalysisRecoveryRelay);
     expect(workflowDrain).toBeGreaterThan(-1);
     expect(priorityExecutionScheduling).toBeGreaterThan(-1);

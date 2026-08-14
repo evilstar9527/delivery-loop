@@ -363,11 +363,23 @@ describe('GitHub App workflow run reconciliation', () => {
     ]);
 
     const client = new FakeRunClient(runFact({ conclusion: 'failure' }));
-    expect(await new GitHubRunReconciler(env.DB_CONTROL, client).reconcileBatch(1)).toEqual([
+    const reconciler = new GitHubRunReconciler(env.DB_CONTROL, client);
+    expect(await reconciler.reconcileRecoveryBatch(1)).toEqual([
       { attemptId: ATTEMPT_ID, disposition: 'applied' },
     ]);
     expect(client.calls).toEqual([
       { repository: EXECUTOR_REPOSITORY, githubRunId: GITHUB_RUN_ID },
+    ]);
+
+    client.fact = runFact({
+      githubRunId: '987654321',
+      displayTitle: `delivery-loop/${historicalAttemptId}`,
+      externalUpdatedAt: '2026-07-20T07:00:00.000Z',
+    });
+    expect(await reconciler.reconcileRecoveryBatch(1)).toEqual([]);
+    expect(client.calls).toHaveLength(1);
+    expect(await reconciler.reconcileBatch(1)).toEqual([
+      { attemptId: historicalAttemptId, disposition: 'applied' },
     ]);
   });
 

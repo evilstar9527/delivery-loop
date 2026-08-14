@@ -140,6 +140,46 @@ export class GitHubRunReconciler {
     return await this.reconcileCandidates(candidates.results);
   }
 
+  async reconcileRecoveryBatch(limit = 1): Promise<GitHubBatchReconciliationResult[]> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+      throw new Error('GitHub reconciliation limit must be between 1 and 100');
+    }
+    // This lane is safe to serve before every other scheduled business action:
+    // it can spend a GitHub GET only for a fenced replacement whose terminal
+    // fact is the missing authority for a fresh recovery approval. Historical
+    // observation backlog must remain in the generic lane below so it cannot
+    // starve fresh Workflow creates after the current replacement converges.
+    const candidates = await this.db
+      .prepare(
+        `SELECT attempts.attempt_id, attempts.repository,
+                attempts.workflow_ref, attempts.github_run_id
+         FROM attempts JOIN runs ON runs.run_id = attempts.run_id
+         WHERE runs.state = 'blocked'
+           AND attempts.mode = 'review_fix'
+           AND attempts.status = 'lost'
+           AND attempts.result_event_id IS NULL
+           AND attempts.recovered_from_attempt_id IS NOT NULL
+           AND attempts.repository IS NOT NULL
+           AND attempts.github_run_id IS NOT NULL
+           AND attempts.workflow_ref IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM test_acceptances
+             WHERE test_acceptances.attempt_id = attempts.attempt_id
+           )
+           AND (
+             attempts.github_external_updated_at IS NULL
+             OR attempts.github_status IS NULL
+             OR attempts.github_status <> 'completed'
+           )
+         ORDER BY COALESCE(attempts.github_observed_at, attempts.created_at),
+                  attempts.attempt_id
+         LIMIT ?`,
+      )
+      .bind(limit)
+      .all<ReconciliationCandidate>();
+    return await this.reconcileCandidates(candidates.results);
+  }
+
   async reconcileAtRiskBatch(
     limit = 5,
     runningThresholdSeconds = 90,
