@@ -734,7 +734,15 @@ export class GitHubDispatchOutboxProcessor {
       mode: attempt.mode,
     };
     if (this.modelProfileId !== undefined) inputs.model_profile_id = this.modelProfileId;
-    if (attempt.automated_review_redispatch_id !== null) inputs.dispatch_generation = '1';
+    if (
+      attempt.automated_review_redispatch_id !== null ||
+      (attempt.review_approval_recovery_id !== null && outbox.attemptCount > 2)
+    ) {
+      // A fenced post-dispatch recovery already has an external run with the
+      // stable name. Use the workflow's bounded redispatch suffix so the next
+      // delivery cannot accidentally reuse that failed run.
+      inputs.dispatch_generation = '1';
+    }
     if (attempt.plan_version !== null) inputs.plan_version = String(attempt.plan_version);
     if (attempt.plan_item_id !== null) inputs.plan_item_id = attempt.plan_item_id;
     const quota = new QuotaControlStore(this.db);

@@ -816,7 +816,7 @@ export class GitHubReviewApprovalRecoveryReconciler {
            lease_expires_at = NULL, last_error_code = NULL, updated_at = ?
        WHERE delivery_state = 'settled'
          AND kind = 'execution_dispatch'
-         AND last_error_code = 'repair_dispatch_stale'
+         AND last_error_code IN ('repair_dispatch_stale', 'repair_fenced_after_dispatch')
          AND EXISTS (
            SELECT 1
            FROM review_approval_recoveries AS recovery

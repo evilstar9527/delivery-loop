@@ -391,6 +391,9 @@ describe('GitHub App workflow dispatcher contract', () => {
                    'attempt-failed-review-source', ?, 'approval-recovery-dispatch',
                    'attempt-initial-execution', ?)`
       ).bind(RUN_ID, ATTEMPT_ID, NOW.toISOString()),
+      env.DB_CONTROL.prepare(
+        `UPDATE outbox SET attempt_count = 2 WHERE outbox_id = 'outbox-initial-execution'`,
+      ),
     ]);
     const effects = new FakeGitHubDispatchEffects();
 
@@ -405,6 +408,7 @@ describe('GitHub App workflow dispatcher contract', () => {
         plan_item_id: 'change',
         checkout_sha: BASE_SHA,
         target_repository: REPOSITORY,
+        dispatch_generation: '1',
       },
     });
   });
