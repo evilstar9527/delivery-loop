@@ -557,18 +557,87 @@ export class GitHubReviewApprovalRecoveryReconciler {
              OR
              (
                recovery.source_kind = 'lost_pre_effect'
-               AND EXISTS (
-                 SELECT 1 FROM review_feedback_attempts AS review_lineage
-                 JOIN github_review_feedbacks AS feedback
-                   ON feedback.feedback_id = review_lineage.feedback_id
-                 WHERE review_lineage.review_attempt_id = recovery.root_review_attempt_id
-                   AND feedback.run_id = recovery.run_id
-                   AND feedback.plan_id = recovery.plan_id
-                   AND feedback.plan_version = recovery.plan_version
-                   AND feedback.plan_item_id = recovery.plan_item_id
-                   AND feedback.source_head_sha = failed.head_sha
+               AND (
+                 (
+                   EXISTS (
+                     SELECT 1 FROM review_feedback_attempts AS review_lineage
+                     JOIN github_review_feedbacks AS feedback
+                       ON feedback.feedback_id = review_lineage.feedback_id
+                     WHERE review_lineage.review_attempt_id =
+                           recovery.root_review_attempt_id
+                       AND feedback.run_id = recovery.run_id
+                       AND feedback.plan_id = recovery.plan_id
+                       AND feedback.plan_version = recovery.plan_version
+                       AND feedback.plan_item_id = recovery.plan_item_id
+                       AND feedback.source_head_sha = failed.head_sha
+                   )
+                   AND (
+                     SELECT COUNT(*) FROM github_write_credentials
+                     WHERE github_write_credentials.attempt_id = failed.attempt_id
+                   ) = 1
+                   AND EXISTS (
+                     SELECT 1 FROM github_write_credentials
+                     WHERE github_write_credentials.attempt_id = failed.attempt_id
+                       AND github_write_credentials.status IN ('revoked', 'expired')
+                   )
+                 )
+                 OR (
+                   EXISTS (
+                     SELECT 1
+                     FROM review_approval_recoveries AS prior_recovery
+                     JOIN attempts AS repair
+                       ON repair.attempt_id = prior_recovery.failed_attempt_id
+                     JOIN outbox AS repair_dispatch
+                       ON repair_dispatch.run_id = recovery.run_id
+                      AND repair_dispatch.kind = 'execution_dispatch'
+                      AND repair_dispatch.delivery_state = 'settled'
+                      AND repair_dispatch.payload_ref =
+                          'd1://attempts/' || repair.attempt_id
+                     JOIN attempt_failures AS prior_failure
+                       ON repair_dispatch.dedupe_key =
+                          'execution-repair:' || prior_failure.failure_id
+                     JOIN attempts AS prior
+                       ON prior.attempt_id = prior_failure.attempt_id
+                     WHERE prior_recovery.replacement_attempt_id = failed.attempt_id
+                       AND prior_recovery.root_review_attempt_id =
+                           recovery.root_review_attempt_id
+                       AND prior_recovery.source_kind = 'failed_dependency'
+                       AND repair.run_id = recovery.run_id
+                       AND repair.mode = 'review_fix' AND repair.status = 'failed'
+                       AND repair.plan_id = recovery.plan_id
+                       AND repair.plan_version = recovery.plan_version
+                       AND repair.plan_item_id = recovery.plan_item_id
+                       AND repair.head_sha = failed.head_sha
+                       AND prior.attempt_id = recovery.root_review_attempt_id
+                       AND prior.run_id = recovery.run_id
+                       AND prior.mode = 'implement' AND prior.status = 'failed'
+                       AND prior.plan_id = recovery.plan_id
+                       AND prior.plan_version = recovery.plan_version
+                       AND prior.plan_item_id = recovery.plan_item_id
+                       AND prior.head_sha = failed.head_sha
+                       AND prior_failure.failure_class = 'verification_error'
+                       AND prior_failure.failure_code = 'verification_nonzero_exit'
+                       AND prior_failure.failure_site = 'targeted_verification'
+                   )
+                   AND (
+                     NOT EXISTS (
+                       SELECT 1 FROM github_write_credentials
+                       WHERE github_write_credentials.attempt_id = failed.attempt_id
+                     )
+                     OR (
+                       SELECT COUNT(*) FROM github_write_credentials
+                       WHERE github_write_credentials.attempt_id = failed.attempt_id
+                     ) = 1
+                     AND EXISTS (
+                       SELECT 1 FROM github_write_credentials
+                       WHERE github_write_credentials.attempt_id = failed.attempt_id
+                         AND github_write_credentials.status IN ('revoked', 'expired')
+                     )
+                   )
+                 )
                )
                AND failed.status = 'lost'
+               AND failed.result_event_id IS NULL
                AND failed.github_status = 'completed'
                AND failed.github_conclusion IS NOT NULL
                AND failed.github_conclusion <> 'success'
@@ -577,15 +646,6 @@ export class GitHubReviewApprovalRecoveryReconciler {
                  WHERE prior_recovery.replacement_attempt_id = failed.attempt_id
                    AND prior_recovery.root_review_attempt_id =
                        recovery.root_review_attempt_id
-               )
-               AND (
-                 SELECT COUNT(*) FROM github_write_credentials
-                 WHERE github_write_credentials.attempt_id = failed.attempt_id
-               ) = 1
-               AND EXISTS (
-                 SELECT 1 FROM github_write_credentials
-                 WHERE github_write_credentials.attempt_id = failed.attempt_id
-                   AND github_write_credentials.status IN ('revoked', 'expired')
                )
                AND NOT EXISTS (
                  SELECT 1 FROM attempt_failures

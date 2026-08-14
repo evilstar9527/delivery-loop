@@ -621,6 +621,18 @@ describe('review repo-write approval recovery', () => {
              updated_at = ?
          WHERE attempt_id = ?`,
       ).bind(githubRunId, BASE_SHA, NOW, replacementAttemptId),
+      env.DB_CONTROL.prepare(
+        `UPDATE runs SET state = 'blocked', version = 13, updated_at = ?
+         WHERE run_id = ? AND state = 'executing' AND version = 12`,
+      ).bind(NOW, RUN_ID),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO run_stuck_incidents (
+           incident_id, run_id, state_kind, observed_run_state, run_version,
+           attempt_id, threshold_seconds, action, status, detected_at,
+           recovery_requested_at, resolved_at, resolution_code
+         ) VALUES ('incident-implementation-recovery-lost', ?, 'running', 'executing', 12,
+                   ?, 90, 'fence_lost_attempt', 'resolved', ?, ?, ?, 'attempt_fenced')`,
+      ).bind(RUN_ID, replacementAttemptId, NOW, NOW, NOW),
     ]);
     const fact: GitHubWorkflowRunFact = {
       repository: REPOSITORY,
@@ -690,6 +702,55 @@ describe('review repo-write approval recovery', () => {
         { processing_state: 'ignored', ignore_reason: 'binding_mismatch', count: 2 },
       ],
     });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT source_kind, failed_attempt_id, root_review_attempt_id
+       FROM repo_write_recovery_candidates_v4 WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({
+      source_kind: 'lost_pre_effect',
+      failed_attempt_id: replacementAttemptId,
+      root_review_attempt_id: PRIOR_ATTEMPT_ID,
+    });
+
+    const secondTemplate = await service.template(RUN_ID);
+    expect(secondTemplate.commentBody).toBe(githubCommitApprovalBody({
+      runId: RUN_ID,
+      runVersion: 13,
+      planId: PLAN_ID,
+      planVersion: 1,
+      planDigest: PLAN_DIGEST,
+      baseSha: BASE_SHA,
+    }));
+    client.fact = commentFact(secondTemplate.commentBody, 223);
+    const secondDecisions = await Promise.all(
+      Array.from({ length: 20 }, async () => await service.approve(RUN_ID, 223)),
+    );
+    expect(secondDecisions.filter((decision) => decision.created)).toHaveLength(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT source_kind, failed_attempt_id, root_review_attempt_id
+       FROM review_approval_recovery_approvals WHERE failed_attempt_id = ?`,
+    ).bind(replacementAttemptId).first()).toEqual({
+      source_kind: 'lost_pre_effect',
+      failed_attempt_id: replacementAttemptId,
+      root_review_attempt_id: PRIOR_ATTEMPT_ID,
+    });
+
+    const secondRecoveries = await Promise.all(
+      Array.from({ length: 20 }, async () => await reconciler.reconcileBatch()),
+    );
+    expect(secondRecoveries.flat().filter((result) => result.created)).toHaveLength(1);
+    const secondReplacement = await env.DB_CONTROL.prepare(
+      `SELECT replacement_attempt_id FROM review_approval_recoveries
+       WHERE failed_attempt_id = ?`,
+    ).bind(replacementAttemptId).first<{ replacement_attempt_id: string }>();
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, recovered_from_attempt_id FROM attempts WHERE attempt_id = ?`,
+    ).bind(secondReplacement?.replacement_attempt_id).first()).toEqual({
+      status: 'pending',
+      recovered_from_attempt_id: PRIOR_ATTEMPT_ID,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM review_approval_recoveries WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ count: 2 });
   });
 
   it('creates one fresh-approval replacement for an automated review fix that failed pre-effect', async () => {
@@ -1021,6 +1082,7 @@ describe('review repo-write approval recovery', () => {
 
   it.each([
     'active_credential',
+    'missing_credential',
     'verification',
     'cancel_unsettled',
     'incident_missing',
@@ -1028,6 +1090,11 @@ describe('review repo-write approval recovery', () => {
     await convertToLostPreEffectReplacement(
       kind === 'active_credential' ? 'active' : 'revoked',
     );
+    if (kind === 'missing_credential') {
+      await env.DB_CONTROL.prepare(
+        `DELETE FROM github_write_credentials WHERE attempt_id = ?`,
+      ).bind(FAILED_ATTEMPT_ID).run();
+    }
     if (kind === 'verification') {
       await env.DB_CONTROL.prepare(
         `INSERT INTO verification_suites (
