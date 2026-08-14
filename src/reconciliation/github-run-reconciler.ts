@@ -72,11 +72,14 @@ export class GitHubRunReconciler {
     if (executor === null) return 'not_found';
     const fact = await this.client.getWorkflowRun(executor.repository, candidate.github_run_id);
     const factDigest = await canonicalSha256(fact);
+    const redispatchBinding = fact.displayTitle ===
+      `delivery-loop/${candidate.attempt_id}/redispatch-1`;
     const identityDigest = await canonicalSha256({
       source: 'github_api',
       repository: executor.repository,
       githubRunId: candidate.github_run_id,
       factDigest,
+      ...(redispatchBinding ? { bindingProfile: 'redispatch-generation-1' } : {}),
     });
     return await new GitHubRunObservationStore(this.db).applyApiObservation({
       observationId: `github_api_${identityDigest.slice('sha256:'.length, 'sha256:'.length + 56)}`,
