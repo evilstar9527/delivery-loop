@@ -261,6 +261,12 @@ export default {
       } else if (await initialAnalysis.reconcileToolBridgeFailures(1) > 0) {
         await relay.relayDestination('github_actions', 1);
       }
+      // A fenced review replacement cannot become a fresh lost-pre-effect
+      // recovery candidate until its terminal GitHub fact is projected. Serve
+      // that bounded read before PR/base scans can consume the Free-plan CPU
+      // budget. The generic reconciler's rank keeps this call focused on the
+      // current blocked recovery and the shared projector remains authoritative.
+      await reconcileGitHubRunsFromEnv(env, 1);
       // A Draft PR already created by an earlier invocation is the shortest
       // active-run path to the automated review loop. Observe that exact PR
       // before stale at-risk Action recovery: on the Free plan, one historical
