@@ -204,6 +204,9 @@ export class GitHubRunReconciler {
     const heartbeatCutoff = new Date(
       now.getTime() - runningThresholdSeconds * 1_000,
     ).toISOString();
+    // A durable Runner result is not a GitHub terminal fact. If the final
+    // webhook is lost, the same stale-lease lane must still fetch GitHub and
+    // project that authority before the Run can consume the result.
     const candidates = await this.db.prepare(
       `SELECT attempts.attempt_id, attempts.repository, attempts.workflow_ref,
               attempts.github_run_id,
@@ -212,7 +215,6 @@ export class GitHubRunReconciler {
        FROM attempts JOIN runs ON runs.run_id = attempts.run_id
        LEFT JOIN test_acceptances ON test_acceptances.attempt_id = attempts.attempt_id
        WHERE attempts.status IN ('starting', 'running')
-         AND attempts.result_event_id IS NULL
          AND attempts.lease_expires_at IS NOT NULL
          AND (
            runs.state IN (
@@ -238,11 +240,12 @@ export class GitHubRunReconciler {
          )
        ORDER BY
          CASE
+           WHEN attempts.result_event_id IS NOT NULL THEN 0
            WHEN runs.state IN ('executing', 'verifying')
-            AND attempts.mode IN ('implement', 'review_fix') THEN 0
-           WHEN runs.state IN ('triaging', 'awaiting_approval', 'planning') THEN 1
-           WHEN runs.state IN ('awaiting_review', 'deploying') THEN 2
-           ELSE 3
+            AND attempts.mode IN ('implement', 'review_fix') THEN 1
+           WHEN runs.state IN ('triaging', 'awaiting_approval', 'planning') THEN 2
+           WHEN runs.state IN ('awaiting_review', 'deploying') THEN 3
+           ELSE 4
          END,
          COALESCE(attempts.heartbeat_at, attempts.updated_at), attempts.attempt_id
        LIMIT ?`,
