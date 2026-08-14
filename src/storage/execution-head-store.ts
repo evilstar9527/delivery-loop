@@ -54,6 +54,10 @@ interface CandidateRow {
   protected_path_gate_id: string | null;
   has_repo_write_effect: number;
   repair_id: string | null;
+  approval_recovery_id: string | null;
+  approval_recovery_root_mode: string | null;
+  approval_recovery_root_status: string | null;
+  approval_recovery_root_head_sha: string | null;
   review_feedback_id: string | null;
   review_branch: string | null;
   review_source_head_sha: string | null;
@@ -200,6 +204,49 @@ export class ExecutionHeadStore {
                    AND NOT EXISTS (
                      SELECT 1 FROM base_rebase_attempts
                      WHERE base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
+                   )
+                 )
+                 OR (
+                   EXISTS (
+                     SELECT 1
+                     FROM review_approval_recoveries AS approval_recovery
+                     JOIN attempts AS recovery_root
+                       ON recovery_root.attempt_id = approval_recovery.root_review_attempt_id
+                      AND recovery_root.run_id = approval_recovery.run_id
+                      AND recovery_root.plan_id = approval_recovery.plan_id
+                      AND recovery_root.plan_version = approval_recovery.plan_version
+                      AND recovery_root.plan_item_id = approval_recovery.plan_item_id
+                     WHERE approval_recovery.replacement_attempt_id = attempts.attempt_id
+                       AND approval_recovery.run_id = attempts.run_id
+                       AND approval_recovery.plan_id = attempts.plan_id
+                       AND approval_recovery.plan_version = attempts.plan_version
+                       AND approval_recovery.plan_item_id = attempts.plan_item_id
+                       AND approval_recovery.root_review_attempt_id =
+                           attempts.recovered_from_attempt_id
+                       AND approval_recovery.source_kind IN (
+                         'failed_dependency', 'lost_pre_effect'
+                       )
+                       AND recovery_root.mode = 'implement'
+                       AND recovery_root.status = 'failed'
+                       AND recovery_root.head_sha = attempts.head_sha
+                   )
+                   AND NOT EXISTS (
+                     SELECT 1 FROM attempt_repairs
+                     WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id
+                   )
+                   AND NOT EXISTS (
+                     SELECT 1 FROM review_feedback_attempts
+                     WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
+                   )
+                   AND NOT EXISTS (
+                     SELECT 1 FROM base_rebase_attempts
+                     WHERE base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
+                   )
+                   AND NOT EXISTS (
+                     SELECT 1
+                     FROM automated_review_fix_attempts
+                     WHERE automated_review_fix_attempts.fix_attempt_id =
+                           COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
                    )
                  )
                  OR (
@@ -378,6 +425,10 @@ export class ExecutionHeadStore {
                 AND plan_item_effects.effect = 'repo_write'
               ) AS has_repo_write_effect,
               attempt_repairs.repair_id,
+              approval_recovery.recovery_id AS approval_recovery_id,
+              approval_recovery_root.mode AS approval_recovery_root_mode,
+              approval_recovery_root.status AS approval_recovery_root_status,
+              approval_recovery_root.head_sha AS approval_recovery_root_head_sha,
               review_feedback_attempts.feedback_id AS review_feedback_id,
               review_feedback_attempts.branch AS review_branch,
               review_feedback_attempts.source_head_sha AS review_source_head_sha,
@@ -396,6 +447,20 @@ export class ExecutionHeadStore {
         AND plan_item_progress.item_id = attempts.plan_item_id
        LEFT JOIN attempt_repairs
          ON attempt_repairs.repair_attempt_id = attempts.attempt_id
+       LEFT JOIN review_approval_recoveries AS approval_recovery
+         ON approval_recovery.replacement_attempt_id = attempts.attempt_id
+        AND approval_recovery.run_id = attempts.run_id
+        AND approval_recovery.plan_id = attempts.plan_id
+        AND approval_recovery.plan_version = attempts.plan_version
+        AND approval_recovery.plan_item_id = attempts.plan_item_id
+        AND approval_recovery.root_review_attempt_id = attempts.recovered_from_attempt_id
+        AND approval_recovery.source_kind IN ('failed_dependency', 'lost_pre_effect')
+       LEFT JOIN attempts AS approval_recovery_root
+         ON approval_recovery_root.attempt_id = approval_recovery.root_review_attempt_id
+        AND approval_recovery_root.run_id = approval_recovery.run_id
+        AND approval_recovery_root.plan_id = approval_recovery.plan_id
+        AND approval_recovery_root.plan_version = approval_recovery.plan_version
+        AND approval_recovery_root.plan_item_id = approval_recovery.plan_item_id
        LEFT JOIN review_feedback_attempts
          ON review_feedback_attempts.review_attempt_id = attempts.attempt_id
        LEFT JOIN automated_review_fix_attempts
@@ -447,9 +512,16 @@ export class ExecutionHeadStore {
         (
           row.mode === 'review_fix' &&
           Number(row.repair_id !== null) +
+            Number(row.approval_recovery_id !== null) +
             Number(row.review_feedback_id !== null) +
             Number(row.automated_review_id !== null) +
             Number(row.base_rebase_id !== null) === 1 &&
+          (
+            row.approval_recovery_id === null ||
+            (row.approval_recovery_root_mode === 'implement' &&
+             row.approval_recovery_root_status === 'failed' &&
+             row.approval_recovery_root_head_sha === input.parentSha)
+          ) &&
           (
             row.review_feedback_id === null ||
             (row.review_branch !== null &&

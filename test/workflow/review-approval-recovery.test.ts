@@ -13,8 +13,11 @@ import {
 } from '../../src/reconciliation/github-review-feedback-reconciler.js';
 import { ExecutionProgressReconciler } from '../../src/reconciliation/execution-progress-reconciler.js';
 import { canonicalSha256 } from '../../src/domain/digest.js';
+import { EXECUTION_TOOL_ACTIONS } from '../../src/domain/tool-bridge.js';
 import { GitHubRunReconciler } from '../../src/reconciliation/github-run-reconciler.js';
+import { ExecutionHeadStore } from '../../src/storage/execution-head-store.js';
 import type { GitHubWorkflowRunFact } from '../../src/storage/github-run-observation-store.js';
+import type { RunnerAuthorization } from '../../src/storage/runner-attempt-store.js';
 
 const NOW = '2026-08-08T08:00:00.000Z';
 const RUN_ID = 'run-review-approval-recovery';
@@ -887,6 +890,63 @@ describe('review repo-write approval recovery', () => {
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM review_approval_recoveries WHERE run_id = ?`,
     ).bind(RUN_ID).first()).toEqual({ count: 3 });
+
+    const thirdReplacement = await env.DB_CONTROL.prepare(
+      `SELECT replacement_attempt_id FROM review_approval_recoveries
+       WHERE failed_attempt_id = ?`,
+    ).bind(credentialInterruptedAttemptId).first<{ replacement_attempt_id: string }>();
+    if (thirdReplacement === null) throw new Error('nested recovery replacement missing');
+    const thirdReplacementBranch = `agent/${TASK_ID}/${thirdReplacement.replacement_attempt_id}`;
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET status = 'running', version = 2, lease_generation = 1,
+           lease_expires_at = '2099-01-01T00:00:00.000Z', updated_at = ?
+       WHERE attempt_id = ? AND status = 'pending'`,
+    ).bind(NOW, thirdReplacement.replacement_attempt_id).run();
+    const authorization: RunnerAuthorization = {
+      attemptId: thirdReplacement.replacement_attempt_id,
+      runId: RUN_ID,
+      mode: 'review_fix',
+      status: 'running',
+      version: 2,
+      leaseGeneration: 1,
+      leaseExpiresAt: '2099-01-01T00:00:00.000Z',
+      scopes: [...EXECUTION_TOOL_ACTIONS],
+    };
+    const headInput = {
+      expectedVersion: 2,
+      leaseGeneration: 1,
+      parentSha: HEAD_SHA,
+      headSha: '6'.repeat(40),
+      branch: thirdReplacementBranch,
+    };
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET mode = 'review_fix' WHERE attempt_id = ?`,
+    ).bind(PRIOR_ATTEMPT_ID).run();
+    await expect(new ExecutionHeadStore(env.DB_CONTROL).record(
+      authorization,
+      headInput,
+      new Date(NOW),
+    )).rejects.toMatchObject({ code: 'state_conflict' });
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET mode = 'implement', head_sha = ? WHERE attempt_id = ?`,
+    ).bind('5'.repeat(40), PRIOR_ATTEMPT_ID).run();
+    await expect(new ExecutionHeadStore(env.DB_CONTROL).record(
+      authorization,
+      headInput,
+      new Date(NOW),
+    )).rejects.toMatchObject({ code: 'state_conflict' });
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts SET head_sha = ? WHERE attempt_id = ?`,
+    ).bind(HEAD_SHA, PRIOR_ATTEMPT_ID).run();
+    await expect(new ExecutionHeadStore(env.DB_CONTROL).record(authorization, {
+      ...headInput,
+    }, new Date(NOW))).resolves.toMatchObject({
+      created: true,
+      parentSha: HEAD_SHA,
+      headSha: '6'.repeat(40),
+      branch: thirdReplacementBranch,
+    });
   });
 
   it('creates one fresh-approval replacement for an automated review fix that failed pre-effect', async () => {
