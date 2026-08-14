@@ -469,6 +469,24 @@ export class IdentityBoundApprovalStore {
           candidate.recovery_failed_attempt_id,
         ),
         this.db.prepare(
+          `UPDATE run_blockers
+           SET resolved_at = ?, resolution_code = 'repo_write_reapproved'
+           WHERE blocker_id = ? AND run_id = ? AND resolved_at IS NULL
+             AND EXISTS (
+               SELECT 1 FROM implementation_pre_effect_recovery_approvals
+               WHERE recovery_approval_id = ? AND run_id = ?
+                 AND failed_attempt_id = ? AND approval_id = ?
+             )`,
+        ).bind(
+          now.toISOString(),
+          candidate.recovery_blocker_id,
+          candidate.run_id,
+          recoveryApprovalId,
+          candidate.run_id,
+          candidate.recovery_failed_attempt_id,
+          approvalId,
+        ),
+        this.db.prepare(
           `UPDATE plan_item_progress
            SET status = 'ready', active_attempt_id = NULL,
                version = version + 1, updated_at = ?

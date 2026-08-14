@@ -209,6 +209,57 @@ describe('implementation pre-effect recovery', () => {
     ).bind(`d1://attempts/${recovery?.replacement_attempt_id}`).first()).toEqual({ count: 1 });
   });
 
+  it('opens the same fresh approval path when a credential-only repair blocker is unresolved', async () => {
+    const dependencyAttemptId = 'attempt-implementation-recovery-credential-repair';
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, plan_id, plan_version, plan_item_id, version,
+           lease_generation, github_status, github_conclusion, created_at, updated_at
+         ) VALUES (?, ?, 13, 'review_fix', 'failed', ?, ?, ?, ?, 1, ?, 1, 1,
+                   'completed', 'failure', ?, ?)`,
+      ).bind(
+        dependencyAttemptId, RUN_ID, BASE_SHA, REPOSITORY, WORKFLOW_REF,
+        PLAN_ID, ITEM_ID, NOW, NOW,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_failures (
+           failure_id, run_id, attempt_id, attempt_ordinal, event_id, sequence,
+           retry_scope_digest, fingerprint_digest, failure_class, failure_code,
+           failure_site, needed_human_input, scope_attempt_count,
+           consecutive_fingerprint_count, revoked_lease_generation, occurred_at, created_at
+         ) VALUES ('failure-credential-repair', ?, ?, 13, 'event-credential-repair', 1,
+                   ?, ?, 'tool_error', 'tool_unavailable', 'external_reconciliation',
+                   'resolve_external_dependency', 3, 1, 1, ?, ?)`,
+      ).bind(
+        RUN_ID, dependencyAttemptId, `sha256:${'d'.repeat(64)}`,
+        `sha256:${'e'.repeat(64)}`, NOW, NOW,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO run_blockers (
+           blocker_id, run_id, reason, needed_human_input, retry_scope_digest,
+           fingerprint_digest, attempt_count, consecutive_fingerprint_count, created_at
+         ) VALUES ('blocker-credential-repair', ?, 'external_dependency',
+                   'resolve_external_dependency', ?, ?, 3, 1, ?)`,
+      ).bind(
+        RUN_ID, `sha256:${'d'.repeat(64)}`, `sha256:${'e'.repeat(64)}`, NOW,
+      ),
+    ]);
+    const client = new FakeCommentClient();
+    const service = new GitHubCommitApprovalService(env.DB_CONTROL, client, () => new Date(NOW));
+    const template = await service.template(RUN_ID);
+    client.fact = fact(template.commentBody);
+    const decision = await service.approve(RUN_ID, 301);
+    expect(decision.created).toBe(true);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT state, version FROM runs WHERE run_id = ?`,
+    ).bind(RUN_ID).first()).toEqual({ state: 'awaiting_approval', version: 21 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT resolved_at IS NOT NULL AS resolved FROM run_blockers WHERE blocker_id = ?`,
+    ).bind('blocker-credential-repair').first()).toEqual({ resolved: 1 });
+  });
+
   it.each(['credential', 'head', 'checkpoint', 'unsettled_cancel'] as const)(
     'rejects unsafe pre-effect recovery state: %s',
     async (kind) => {
