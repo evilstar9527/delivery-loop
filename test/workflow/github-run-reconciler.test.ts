@@ -412,6 +412,40 @@ describe('GitHub App workflow run reconciliation', () => {
     ]);
   });
 
+  it('repairs a missed terminal webhook after the Runner result is already durable', async () => {
+    const now = new Date('2026-07-25T07:01:00.000Z');
+    await env.DB_CONTROL.prepare(
+      `UPDATE attempts
+       SET result_event_id = 'event-durable-runner-result',
+           result_sequence = 1,
+           result_digest = ?,
+           result_reported_at = ?,
+           lease_expires_at = ?,
+           heartbeat_at = ?,
+           updated_at = ?
+       WHERE attempt_id = ?`,
+    ).bind(
+      `sha256:${'8'.repeat(64)}`,
+      '2026-07-25T07:00:29.000Z',
+      '2026-07-25T07:00:59.000Z',
+      '2026-07-25T07:00:29.000Z',
+      '2026-07-25T07:00:29.000Z',
+      ATTEMPT_ID,
+    ).run();
+
+    const client = new FakeRunClient(runFact());
+    const reconciler = new GitHubRunReconciler(env.DB_CONTROL, client, {
+      now: () => now,
+    });
+
+    expect(await reconciler.reconcileAtRiskBatch(1, 90)).toEqual([
+      { attemptId: ATTEMPT_ID, disposition: 'applied' },
+    ]);
+    expect(client.calls).toEqual([
+      { repository: EXECUTOR_REPOSITORY, githubRunId: GITHUB_RUN_ID },
+    ]);
+  });
+
   it('projects current execution before an older active-run backlog entry', async () => {
     const now = new Date('2026-07-25T07:01:00.000Z');
     const oldRunId = 'run-old-active-backlog';
