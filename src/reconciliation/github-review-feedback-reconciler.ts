@@ -477,16 +477,43 @@ export class GitHubReviewApprovalRecoveryReconciler {
            AND (
              (
                recovery.source_kind = 'failed_dependency'
-               AND EXISTS (
-                 SELECT 1 FROM review_feedback_attempts AS review_lineage
-                 JOIN github_review_feedbacks AS feedback
-                   ON feedback.feedback_id = review_lineage.feedback_id
-                 WHERE review_lineage.review_attempt_id = recovery.root_review_attempt_id
-                   AND feedback.run_id = recovery.run_id
-                   AND feedback.plan_id = recovery.plan_id
-                   AND feedback.plan_version = recovery.plan_version
-                   AND feedback.plan_item_id = recovery.plan_item_id
-                   AND feedback.source_head_sha = failed.head_sha
+               AND (
+                 EXISTS (
+                   SELECT 1 FROM review_feedback_attempts AS review_lineage
+                   JOIN github_review_feedbacks AS feedback
+                     ON feedback.feedback_id = review_lineage.feedback_id
+                   WHERE review_lineage.review_attempt_id = recovery.root_review_attempt_id
+                     AND feedback.run_id = recovery.run_id
+                     AND feedback.plan_id = recovery.plan_id
+                     AND feedback.plan_version = recovery.plan_version
+                     AND feedback.plan_item_id = recovery.plan_item_id
+                     AND feedback.source_head_sha = failed.head_sha
+                 )
+                 OR EXISTS (
+                   SELECT 1
+                   FROM outbox AS repair_dispatch
+                   JOIN attempt_failures AS prior_failure
+                     ON repair_dispatch.dedupe_key =
+                        'execution-repair:' || prior_failure.failure_id
+                   JOIN attempts AS prior
+                     ON prior.attempt_id = prior_failure.attempt_id
+                   WHERE repair_dispatch.run_id = recovery.run_id
+                     AND repair_dispatch.kind = 'execution_dispatch'
+                     AND repair_dispatch.delivery_state = 'settled'
+                     AND repair_dispatch.payload_ref =
+                         'd1://attempts/' || failed.attempt_id
+                     AND prior.attempt_id = recovery.root_review_attempt_id
+                     AND prior.run_id = recovery.run_id
+                     AND prior.mode = 'implement' AND prior.status = 'failed'
+                     AND prior.plan_id = recovery.plan_id
+                     AND prior.plan_version = recovery.plan_version
+                     AND prior.plan_item_id = recovery.plan_item_id
+                     AND prior.head_sha = failed.head_sha
+                     AND prior.head_branch IS NOT NULL
+                     AND prior_failure.failure_class = 'verification_error'
+                     AND prior_failure.failure_code = 'verification_nonzero_exit'
+                     AND prior_failure.failure_site = 'targeted_verification'
+                 )
                )
                AND failed.status = 'failed'
                AND EXISTS (
@@ -504,9 +531,27 @@ export class GitHubReviewApprovalRecoveryReconciler {
                    AND run_blockers.resolved_at IS NOT NULL
                    AND run_blockers.resolution_code = 'repo_write_reapproved'
                )
-               AND NOT EXISTS (
-                 SELECT 1 FROM github_write_credentials
-                 WHERE github_write_credentials.attempt_id = failed.attempt_id
+               AND (
+                 NOT EXISTS (
+                   SELECT 1 FROM github_write_credentials
+                   WHERE github_write_credentials.attempt_id = failed.attempt_id
+                 )
+                 OR 1 = (
+                   SELECT COUNT(*) FROM github_write_credentials AS credential
+                   WHERE credential.attempt_id = failed.attempt_id
+                     AND credential.token_digest IS NULL
+                     AND credential.token_ciphertext IS NULL
+                     AND credential.token_iv IS NULL
+                     AND (
+                       credential.status = 'issuance_failed'
+                       OR (
+                         credential.status = 'issuing'
+                         AND credential.issue_lease_expires_at IS NOT NULL
+                         AND credential.issue_lease_expires_at <=
+                             strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                       )
+                     )
+                 )
                )
              )
              OR

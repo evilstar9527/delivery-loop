@@ -549,6 +549,7 @@ export class IdentityBoundApprovalStore {
       candidate.recovery_root_attempt_id !== null &&
       candidate.recovery_plan_item_id !== null &&
       candidate.recovery_source_kind !== null &&
+      candidate.recovery_source_kind !== 'implement_lost_pre_effect' &&
       (candidate.recovery_source_kind === 'lost_pre_effect' ||
         candidate.recovery_source_kind === 'automated_fix_failed_pre_effect' ||
         candidate.recovery_blocker_id !== null)
@@ -571,7 +572,7 @@ export class IdentityBoundApprovalStore {
                   recovery.plan_item_id, recovery.failed_attempt_id,
                   recovery.root_review_attempt_id, approvals.approval_id, ?,
                   recovery.source_kind
-           FROM review_approval_recovery_candidates_v2 AS recovery
+           FROM repo_write_recovery_candidates_v4 AS recovery
            JOIN approvals ON approvals.approval_id = ?
             AND approvals.run_id = recovery.run_id
             AND approvals.plan_id = recovery.plan_id
@@ -631,7 +632,8 @@ export class IdentityBoundApprovalStore {
                WHERE recovery_approval_id = ? AND plan_id = execution_plans.plan_id
                  AND failed_attempt_id = ? AND approval_id = ?
                  AND (
-                   (source_kind = 'failed_dependency' AND execution_plans.status = 'blocked')
+                   (source_kind = 'failed_dependency'
+                    AND execution_plans.status IN ('active', 'blocked'))
                    OR (source_kind = 'lost_pre_effect' AND execution_plans.status = 'active')
                    OR (source_kind = 'automated_fix_failed_pre_effect'
                        AND execution_plans.status = 'active')
@@ -852,7 +854,7 @@ export class IdentityBoundApprovalStore {
          FROM runs
          JOIN tasks ON tasks.task_id = runs.task_id
          JOIN execution_plans AS plans ON plans.plan_id = runs.active_plan_id
-         LEFT JOIN repo_write_recovery_candidates_v3 AS recovery
+         LEFT JOIN repo_write_recovery_candidates_v4 AS recovery
            ON recovery.run_id = runs.run_id
           AND recovery.run_version = runs.version
           AND recovery.plan_id = plans.plan_id
@@ -875,7 +877,8 @@ export class IdentityBoundApprovalStore {
              OR
              (runs.state = 'blocked' AND recovery.failed_attempt_id IS NOT NULL
               AND (
-                (recovery.source_kind = 'failed_dependency' AND plans.status = 'blocked')
+                (recovery.source_kind = 'failed_dependency'
+                 AND plans.status IN ('active', 'blocked'))
                 OR (recovery.source_kind IN ('lost_pre_effect', 'implement_lost_pre_effect')
                     AND plans.status = 'active')
               ))
