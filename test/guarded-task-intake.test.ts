@@ -55,6 +55,12 @@ function options(fetcher: typeof fetch): GuardedTaskIntakeOptions {
     controlPlaneOrigin: 'https://control.example.com',
     githubApiOrigin: 'https://api.github.com',
     repository: 'evilstar9527/delivery-loop',
+    allowedTargets: [{
+      repository: 'evilstar9527/delivery-loop',
+      baseBranch: 'main',
+      environment: 'none',
+      allowTestDeploy: false,
+    }],
     taskToken: TASK_TOKEN,
     githubToken: GITHUB_TOKEN,
     task,
@@ -169,6 +175,45 @@ describe('guarded Task intake', () => {
       taskCreateRequests: 0,
     });
     expect(calls).toBe(0);
+  });
+
+  it('accepts an allowlisted external target while inventorying the executor repository', async () => {
+    const externalTask: TaskEnvelope = {
+      ...task,
+      target: {
+        owner: 'lightspeed-intelligence',
+        repo: 'tipsy-backend',
+        baseBranch: 'codex/feature/delivery-loop-onboarding-v2',
+        environment: 'test',
+      },
+      policy: { ...task.policy, allowTestDeploy: true },
+    };
+    const ids = await taskRevisionIds(externalTask);
+    const calls: URL[] = [];
+    const fetcher: typeof fetch = async (input, init = {}) => {
+      const url = new URL(String(input));
+      calls.push(url);
+      if (url.origin === 'https://api.github.com') {
+        return json({ total_count: 0, workflow_runs: [] });
+      }
+      if ((init.method ?? 'GET') === 'POST') {
+        return json({ accepted: true, taskId: ids.taskId, runId: ids.runId }, { status: 202 });
+      }
+      return new Response(null, { status: 404 });
+    };
+    await expect(runGuardedTaskIntake({
+      ...options(fetcher),
+      allowedTargets: [{
+        repository: 'lightspeed-intelligence/tipsy-backend',
+        baseBranch: 'codex/feature/delivery-loop-onboarding-v2',
+        environment: 'test',
+        allowTestDeploy: true,
+      }],
+      task: externalTask,
+    })).resolves.toMatchObject({ accepted: true, matchingActionRuns: 0 });
+    expect(calls[1]?.pathname).toBe(
+      '/repos/evilstar9527/delivery-loop/actions/workflows/.github%2Fworkflows%2Fdelivery-agent.yml/runs',
+    );
   });
 
   it('rejects credential reflection in a bounded GitHub response', async () => {

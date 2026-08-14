@@ -1,7 +1,9 @@
 import { readFileSync, statSync } from 'node:fs';
 import {
+  GuardedTaskIntakeTargetPoliciesSchema,
   GuardedTaskIntakeError,
   runGuardedTaskIntake,
+  type GuardedTaskIntakeTargetPolicy,
 } from '../src/pilot/guarded-task-intake.js';
 
 function env(name: string): string {
@@ -20,6 +22,14 @@ function taskFromEventFile(path: string): unknown {
   return JSON.parse(taskJson) as unknown;
 }
 
+function allowedTargets(raw: string): GuardedTaskIntakeTargetPolicy[] {
+  try {
+    return GuardedTaskIntakeTargetPoliciesSchema.parse(JSON.parse(raw) as unknown);
+  } catch {
+    throw new Error();
+  }
+}
+
 async function main(): Promise<void> {
   if (env('DELIVERY_LOOP_GUARDED_TASK_INTAKE') !== '1') {
     console.error('guarded-task-intake: opt-in missing');
@@ -27,6 +37,7 @@ async function main(): Promise<void> {
     return;
   }
   const eventPath = env('GITHUB_EVENT_PATH');
+  const rawAllowedTargets = env('GUARDED_TASK_INTAKE_ALLOWED_TARGETS_JSON');
   const configuration = {
     controlPlaneOrigin: env('GUARDED_TASK_INTAKE_CONTROL_PLANE_URL'),
     githubApiOrigin: env('GITHUB_API_URL'),
@@ -34,19 +45,30 @@ async function main(): Promise<void> {
     taskToken: env('GUARDED_TASK_INTAKE_TASK_TOKEN'),
     githubToken: env('GUARDED_TASK_INTAKE_GITHUB_TOKEN'),
   };
-  if (eventPath === '' || Object.values(configuration).some((value) => value === '')) {
+  if (
+    eventPath === '' || rawAllowedTargets === '' ||
+    Object.values(configuration).some((value) => value === '')
+  ) {
     console.error('guarded-task-intake: required configuration is incomplete');
     process.exitCode = 2;
     return;
   }
   let task: unknown;
-  try { task = taskFromEventFile(eventPath); } catch {
+  let parsedAllowedTargets: GuardedTaskIntakeTargetPolicy[];
+  try {
+    task = taskFromEventFile(eventPath);
+    parsedAllowedTargets = allowedTargets(rawAllowedTargets);
+  } catch {
     console.error('guarded-task-intake: FAIL task_input_invalid taskCreateRequests=0');
     process.exitCode = 1;
     return;
   }
   try {
-    console.log(JSON.stringify(await runGuardedTaskIntake({ ...configuration, task })));
+    console.log(JSON.stringify(await runGuardedTaskIntake({
+      ...configuration,
+      allowedTargets: parsedAllowedTargets,
+      task,
+    })));
   } catch (error) {
     const code = error instanceof GuardedTaskIntakeError ? error.code : 'execution_failed';
     const requests = error instanceof GuardedTaskIntakeError ? error.taskCreateRequests : 0;

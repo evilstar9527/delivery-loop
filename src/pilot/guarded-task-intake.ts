@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import { z } from 'zod';
 import { analysisAttemptId } from '../domain/workflow-event.js';
 import {
   TaskEnvelopeSchema,
@@ -15,6 +16,37 @@ const MAX_ACTION_PAGES = 20;
 const TOKEN_PATTERN = /^[^\0\r\n]{8,2000}$/;
 const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const WORKFLOW_PATH = '.github/workflows/delivery-agent.yml';
+
+const GuardedTaskIntakeTargetPolicySchema = z.object({
+  repository: z.string().regex(REPOSITORY_PATTERN),
+  baseBranch: z.string().min(1).max(255),
+  environment: z.enum(['none', 'test']),
+  allowTestDeploy: z.boolean(),
+}).strict().superRefine((policy, context) => {
+  if ((policy.environment === 'test') !== policy.allowTestDeploy) {
+    context.addIssue({
+      code: 'custom',
+      path: ['allowTestDeploy'],
+      message: 'test deployment policy must match the target environment',
+    });
+  }
+});
+
+export const GuardedTaskIntakeTargetPoliciesSchema = z
+  .array(GuardedTaskIntakeTargetPolicySchema)
+  .min(1)
+  .max(50)
+  .superRefine((policies, context) => {
+    const identities = policies.map((policy) =>
+      `${policy.repository}\0${policy.baseBranch}\0${policy.environment}`);
+    if (new Set(identities).size !== identities.length) {
+      context.addIssue({ code: 'custom', message: 'target policies must be unique' });
+    }
+  });
+
+export type GuardedTaskIntakeTargetPolicy = z.infer<
+  typeof GuardedTaskIntakeTargetPolicySchema
+>;
 
 export type GuardedTaskIntakeErrorCode =
   | 'configuration_invalid'
@@ -41,6 +73,7 @@ export interface GuardedTaskIntakeOptions {
   controlPlaneOrigin: string;
   githubApiOrigin: string;
   repository: string;
+  allowedTargets: readonly GuardedTaskIntakeTargetPolicy[];
   taskToken: string;
   githubToken: string;
   task: unknown;
@@ -222,12 +255,18 @@ function validateOptions(options: GuardedTaskIntakeOptions): {
     !TOKEN_PATTERN.test(options.taskToken) || !TOKEN_PATTERN.test(options.githubToken) ||
     options.taskToken === options.githubToken
   ) fail('configuration_invalid', 0);
+  const allowedTargets = GuardedTaskIntakeTargetPoliciesSchema.safeParse(options.allowedTargets);
+  if (!allowedTargets.success) fail('configuration_invalid', 0);
   if (!parsed.success) fail('task_input_invalid', 0);
   const task = parsed.data;
+  const targetRepository = `${task.target.owner}/${task.target.repo}`;
+  const targetAllowed = allowedTargets.data.some((target) =>
+    target.repository === targetRepository &&
+    target.baseBranch === task.target.baseBranch &&
+    target.environment === task.target.environment &&
+    target.allowTestDeploy === task.policy.allowTestDeploy);
   if (
-    `${task.target.owner}/${task.target.repo}` !== options.repository ||
-    task.target.baseBranch !== 'main' || task.target.environment !== 'none' ||
-    !task.policy.allowRepositoryWrite || task.policy.allowTestDeploy ||
+    !targetAllowed || !task.policy.allowRepositoryWrite ||
     task.policy.allowProductionDeploy || !task.policy.requireHumanApproval
   ) fail('task_policy_rejected', 0);
   if (scanner(options).scan(task).length > 0) fail('task_policy_rejected', 0);
