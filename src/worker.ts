@@ -81,6 +81,7 @@ import {
 import {
   reconcileAtRiskGitHubRunsFromEnv,
   reconcileGitHubRunsFromEnv,
+  reconcileRecoveryGitHubRunsFromEnv,
 } from './reconciliation/github-run-reconciliation-runtime.js';
 import { reconcileGitHubBasesFromEnv } from './reconciliation/github-base-observation-runtime.js';
 import { InitialAnalysisReconciler } from './reconciliation/initial-analysis-reconciler.js';
@@ -214,6 +215,12 @@ export default {
         await revokeRepoWriteCredentialsFromEnv(env);
         return;
       }
+      // A fenced review replacement cannot become a fresh lost-pre-effect
+      // recovery candidate until its terminal GitHub fact is projected. This
+      // dedicated lane runs before every other business action, but it never
+      // falls back to historical observation backlog when no such replacement
+      // exists, preserving the fresh Workflow-create priority below.
+      await reconcileRecoveryGitHubRunsFromEnv(env, 1);
       const workflowOutbox = new WorkflowOutboxProcessor(
         env.DB_CONTROL,
         new CloudflareWorkflowEffectClient(env.DELIVERY_RUN),
@@ -261,12 +268,6 @@ export default {
       } else if (await initialAnalysis.reconcileToolBridgeFailures(1) > 0) {
         await relay.relayDestination('github_actions', 1);
       }
-      // A fenced review replacement cannot become a fresh lost-pre-effect
-      // recovery candidate until its terminal GitHub fact is projected. Serve
-      // that bounded read before PR/base scans can consume the Free-plan CPU
-      // budget. The generic reconciler's rank keeps this call focused on the
-      // current blocked recovery and the shared projector remains authoritative.
-      await reconcileGitHubRunsFromEnv(env, 1);
       // A Draft PR already created by an earlier invocation is the shortest
       // active-run path to the automated review loop. Observe that exact PR
       // before stale at-risk Action recovery: on the Free plan, one historical

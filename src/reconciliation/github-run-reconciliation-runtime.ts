@@ -123,6 +123,14 @@ export async function reconcileGitHubRunsFromEnv(
   return reconciler === null ? [] : await reconciler.reconcileBatch(limit);
 }
 
+export async function reconcileRecoveryGitHubRunsFromEnv(
+  env: Bindings,
+  limit = 1,
+): Promise<GitHubBatchReconciliationResult[]> {
+  const reconciler = githubRunReconcilerFromEnv(env);
+  return reconciler === null ? [] : await reconciler.reconcileRecoveryBatch(limit);
+}
+
 export async function reconcileAtRiskGitHubRunsFromEnv(
   env: Bindings,
   options: {
