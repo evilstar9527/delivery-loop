@@ -531,6 +531,7 @@ interface DispatchAttemptRow {
   protected_path_gate_id: string | null;
   repair_id: string | null;
   review_feedback_id: string | null;
+  review_approval_recovery_id: string | null;
   automated_review_id: string | null;
   automated_review_redispatch_id: string | null;
   base_rebase_id: string | null;
@@ -627,6 +628,7 @@ export class GitHubDispatchOutboxProcessor {
                 plan_item_progress.protected_path_gate_id,
                 attempt_repairs.repair_id,
                 review_feedback_attempts.feedback_id AS review_feedback_id,
+                review_approval_recoveries.recovery_id AS review_approval_recovery_id,
                 automated_review_fix_attempts.review_id AS automated_review_id,
                 automated_review_replacement_redispatches.redispatch_id
                   AS automated_review_redispatch_id,
@@ -643,6 +645,8 @@ export class GitHubDispatchOutboxProcessor {
          LEFT JOIN review_feedback_attempts
            ON review_feedback_attempts.review_attempt_id =
               COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
+         LEFT JOIN review_approval_recoveries
+           ON review_approval_recoveries.replacement_attempt_id = attempts.attempt_id
          LEFT JOIN automated_review_fix_attempts
            ON automated_review_fix_attempts.fix_attempt_id =
               COALESCE(attempts.recovered_from_attempt_id, attempts.attempt_id)
@@ -669,6 +673,7 @@ export class GitHubDispatchOutboxProcessor {
     if (executionDispatch) {
       const sourceCount = Number(attempt.repair_id !== null) +
         Number(attempt.review_feedback_id !== null) +
+        Number(attempt.review_approval_recovery_id !== null) +
         Number(attempt.automated_review_id !== null) +
         Number(attempt.base_rebase_id !== null);
       const validSource = attempt.mode === 'implement'

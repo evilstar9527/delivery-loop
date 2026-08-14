@@ -170,6 +170,18 @@ function processor(
 
 beforeEach(async () => {
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM automated_review_replacement_redispatches'),
+    env.DB_CONTROL.prepare('DELETE FROM automated_review_fix_attempts'),
+    env.DB_CONTROL.prepare('DELETE FROM automated_reviews'),
+    env.DB_CONTROL.prepare('DELETE FROM github_write_credentials'),
+    env.DB_CONTROL.prepare('DELETE FROM run_blockers'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_failure_paths'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_failures'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_head_updates'),
+    env.DB_CONTROL.prepare('DELETE FROM verification_suite_commands'),
+    env.DB_CONTROL.prepare('DELETE FROM verification_suites'),
+    env.DB_CONTROL.prepare('DELETE FROM review_approval_recoveries'),
+    env.DB_CONTROL.prepare('DELETE FROM review_approval_recovery_approvals'),
     env.DB_CONTROL.prepare('DELETE FROM evidence'),
     env.DB_CONTROL.prepare('DELETE FROM checkpoints'),
     env.DB_CONTROL.prepare('DELETE FROM workflow_signals'),
@@ -301,6 +313,80 @@ describe('GitHub App workflow dispatcher contract', () => {
       inputs: {
         attempt_id: 'attempt-initial-execution',
         mode: 'implement',
+        plan_version: '1',
+        plan_item_id: 'change',
+        checkout_sha: BASE_SHA,
+        target_repository: REPOSITORY,
+      },
+    });
+  });
+
+  it('dispatches a review_fix Attempt whose source is approval recovery lineage', async () => {
+    await seedInitialExecutionDispatch();
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts SET mode = 'review_fix'
+         WHERE attempt_id = 'attempt-initial-execution'`,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, plan_id, plan_version, plan_item_id, version,
+           lease_generation, head_sha, created_at, updated_at
+         ) VALUES ('attempt-failed-review-source', ?, 3, 'review_fix', 'failed', ?, ?,
+                   ?, 'plan-initial-execution', 1, 'change', 1, 1, ?, ?, ?)`,
+      ).bind(
+        RUN_ID,
+        BASE_SHA,
+        REPOSITORY,
+        `${REPOSITORY}/.github/workflows/delivery-agent.yml@refs/heads/main`,
+        GITHUB_HEAD_SHA,
+        NOW.toISOString(),
+        NOW.toISOString(),
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO approvals (
+           approval_id, run_id, task_revision, plan_id, plan_version,
+           plan_digest, base_sha, effect, actor_id, decision, nonce_digest,
+           expires_at, created_at
+         ) VALUES ('approval-recovery-dispatch', ?, '1', 'plan-initial-execution', 1,
+                   ?, ?, 'repo_write', 'human:dispatch-test', 'approve', ?, ?, ?)`,
+      ).bind(
+        RUN_ID,
+        `sha256:${'c'.repeat(64)}`,
+        BASE_SHA,
+        `sha256:${'d'.repeat(64)}`,
+        '2026-07-25T11:00:00.000Z',
+        NOW.toISOString(),
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO review_approval_recovery_approvals (
+           recovery_approval_id, run_id, plan_id, plan_version, plan_item_id,
+           failed_attempt_id, root_review_attempt_id, approval_id, created_at
+         ) VALUES ('recovery-approval-dispatch', ?, 'plan-initial-execution', 1,
+                   'change', 'attempt-failed-review-source', ?,
+                   'approval-recovery-dispatch', ?)`,
+      ).bind(RUN_ID, ATTEMPT_ID, NOW.toISOString()),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO review_approval_recoveries (
+           recovery_id, recovery_approval_id, run_id, plan_id, plan_version,
+           plan_item_id, failed_attempt_id, root_review_attempt_id, approval_id,
+           replacement_attempt_id, created_at
+         ) VALUES ('recovery-dispatch', 'recovery-approval-dispatch', ?,
+                   'plan-initial-execution', 1, 'change',
+                   'attempt-failed-review-source', ?, 'approval-recovery-dispatch',
+                   'attempt-initial-execution', ?)`
+      ).bind(RUN_ID, ATTEMPT_ID, NOW.toISOString()),
+    ]);
+    const effects = new FakeGitHubDispatchEffects();
+
+    await expect(processor(effects).deliver('outbox-initial-execution')).resolves.toBe('settled');
+    expect(effects.requests).toHaveLength(1);
+    expect(effects.requests[0]).toMatchObject({
+      repository: EXECUTOR_REPOSITORY,
+      inputs: {
+        attempt_id: 'attempt-initial-execution',
+        mode: 'review_fix',
         plan_version: '1',
         plan_item_id: 'change',
         checkout_sha: BASE_SHA,
