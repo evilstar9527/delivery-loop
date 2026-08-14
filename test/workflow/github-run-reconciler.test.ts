@@ -282,6 +282,95 @@ describe('GitHub App workflow run reconciliation', () => {
     ]);
   });
 
+  it('prioritizes a blocked lost recovery over historical missing observations', async () => {
+    const rootAttemptId = 'attempt-review-recovery-root';
+    const historicalAttemptId = 'attempt-older-terminal-backlog';
+    const historicalRunId = 'run-older-terminal-backlog';
+    const historicalCreatedAt = '2026-07-20T06:00:00.000Z';
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE runs SET state = 'blocked', version = 3 WHERE run_id = ?`,
+      ).bind(RUN_ID),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET ordinal = 2, mode = 'review_fix', status = 'lost',
+             result_event_id = NULL
+         WHERE attempt_id = ?`,
+      ).bind(ATTEMPT_ID),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO tasks (
+           task_id, source_system, tenant_key, source_task_key, task_revision,
+           task_digest, payload_ref, actor_type, actor_id, target_repository,
+           target_base_branch, target_environment, intent_kind, title, priority,
+           acceptance_criteria_count, allow_repository_write, allow_test_deploy,
+           allow_production_deploy, require_human_approval, created_at, updated_at
+         ) VALUES (
+           'task-older-terminal-backlog', 'manual', 'github-reconciler-test',
+           'older-terminal-backlog', 'revision-1', ?,
+           'r2://tasks/older-terminal-backlog', 'system',
+           'github-reconciler-test', ?, 'main', 'none', 'bug',
+           'Older terminal backlog', 'p1', 1, 0, 0, 0, 1, ?, ?
+         )`,
+      ).bind(`sha256:${'7'.repeat(64)}`, REPOSITORY, historicalCreatedAt, historicalCreatedAt),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO runs (
+           run_id, task_id, task_revision, task_digest, base_sha,
+           workflow_instance_id, state, version, created_at, updated_at
+         ) VALUES (?, 'task-older-terminal-backlog', 'revision-1', ?, ?, ?,
+                   'blocked', 2, ?, ?)`,
+      ).bind(
+        historicalRunId,
+        `sha256:${'7'.repeat(64)}`,
+        BASE_SHA,
+        historicalRunId,
+        historicalCreatedAt,
+        historicalCreatedAt,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, github_run_id, github_head_sha, github_status, version,
+           lease_generation, created_at, updated_at
+         ) VALUES (?, ?, 1, 'analysis', 'lost', ?, ?, ?, '987654321', ?, 'requested',
+                   2, 1, ?, ?)`,
+      ).bind(
+        historicalAttemptId,
+        historicalRunId,
+        BASE_SHA,
+        REPOSITORY,
+        `${EXECUTOR_REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
+        GITHUB_HEAD_SHA,
+        historicalCreatedAt,
+        historicalCreatedAt,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, version, lease_generation, created_at, updated_at
+         ) VALUES (?, ?, 1, 'implement', 'failed', ?, ?, ?, 2, 1, ?, ?)`,
+      ).bind(
+        rootAttemptId,
+        RUN_ID,
+        BASE_SHA,
+        REPOSITORY,
+        `${EXECUTOR_REPOSITORY}/${WORKFLOW_PATH}@refs/heads/main`,
+        '2026-07-25T05:00:00.000Z',
+        '2026-07-25T05:00:00.000Z',
+      ),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts SET recovered_from_attempt_id = ? WHERE attempt_id = ?`,
+      ).bind(rootAttemptId, ATTEMPT_ID),
+    ]);
+
+    const client = new FakeRunClient(runFact({ conclusion: 'failure' }));
+    expect(await new GitHubRunReconciler(env.DB_CONTROL, client).reconcileBatch(1)).toEqual([
+      { attemptId: ATTEMPT_ID, disposition: 'applied' },
+    ]);
+    expect(client.calls).toEqual([
+      { repository: EXECUTOR_REPOSITORY, githubRunId: GITHUB_RUN_ID },
+    ]);
+  });
+
   it('does not spend a GitHub request until an active attempt is eligible for stuck fencing', async () => {
     const now = new Date('2026-07-25T07:01:00.000Z');
     const client = new FakeRunClient(runFact());
