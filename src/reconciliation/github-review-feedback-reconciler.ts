@@ -514,6 +514,57 @@ export class GitHubReviewApprovalRecoveryReconciler {
                      AND prior_failure.failure_code = 'verification_nonzero_exit'
                      AND prior_failure.failure_site = 'targeted_verification'
                  )
+                 OR EXISTS (
+                   SELECT 1
+                   FROM review_approval_recoveries AS current_recovery
+                   JOIN attempts AS lost
+                     ON lost.attempt_id = current_recovery.failed_attempt_id
+                   JOIN review_approval_recoveries AS prior_recovery
+                     ON prior_recovery.replacement_attempt_id = lost.attempt_id
+                    AND prior_recovery.root_review_attempt_id =
+                        current_recovery.root_review_attempt_id
+                    AND prior_recovery.source_kind = 'failed_dependency'
+                   JOIN attempts AS repair
+                     ON repair.attempt_id = prior_recovery.failed_attempt_id
+                   JOIN outbox AS repair_dispatch
+                     ON repair_dispatch.run_id = recovery.run_id
+                    AND repair_dispatch.kind = 'execution_dispatch'
+                    AND repair_dispatch.delivery_state = 'settled'
+                    AND repair_dispatch.payload_ref =
+                        'd1://attempts/' || repair.attempt_id
+                   JOIN attempt_failures AS prior_failure
+                     ON repair_dispatch.dedupe_key =
+                        'execution-repair:' || prior_failure.failure_id
+                   JOIN attempts AS prior
+                     ON prior.attempt_id = prior_failure.attempt_id
+                   WHERE current_recovery.replacement_attempt_id = failed.attempt_id
+                     AND current_recovery.root_review_attempt_id =
+                         recovery.root_review_attempt_id
+                     AND current_recovery.source_kind = 'lost_pre_effect'
+                     AND lost.run_id = recovery.run_id
+                     AND lost.mode = 'review_fix' AND lost.status = 'lost'
+                     AND lost.plan_id = recovery.plan_id
+                     AND lost.plan_version = recovery.plan_version
+                     AND lost.plan_item_id = recovery.plan_item_id
+                     AND lost.head_sha = failed.head_sha
+                     AND repair.run_id = recovery.run_id
+                     AND repair.mode = 'review_fix' AND repair.status = 'failed'
+                     AND repair.plan_id = recovery.plan_id
+                     AND repair.plan_version = recovery.plan_version
+                     AND repair.plan_item_id = recovery.plan_item_id
+                     AND repair.head_sha = failed.head_sha
+                     AND prior.attempt_id = recovery.root_review_attempt_id
+                     AND prior.run_id = recovery.run_id
+                     AND prior.mode = 'implement' AND prior.status = 'failed'
+                     AND prior.plan_id = recovery.plan_id
+                     AND prior.plan_version = recovery.plan_version
+                     AND prior.plan_item_id = recovery.plan_item_id
+                     AND prior.head_sha = failed.head_sha
+                     AND prior.head_branch IS NOT NULL
+                     AND prior_failure.failure_class = 'verification_error'
+                     AND prior_failure.failure_code = 'verification_nonzero_exit'
+                     AND prior_failure.failure_site = 'targeted_verification'
+                 )
                )
                AND failed.status = 'failed'
                AND EXISTS (
@@ -551,6 +602,30 @@ export class GitHubReviewApprovalRecoveryReconciler {
                              strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                        )
                      )
+                 )
+               )
+               AND (
+                 NOT EXISTS (
+                   SELECT 1 FROM review_approval_recoveries AS nested_recovery
+                   WHERE nested_recovery.replacement_attempt_id = failed.attempt_id
+                     AND nested_recovery.root_review_attempt_id =
+                         recovery.root_review_attempt_id
+                     AND nested_recovery.source_kind = 'lost_pre_effect'
+                 )
+                 OR 1 = (
+                   SELECT COUNT(*) FROM github_write_credentials AS nested_credential
+                   WHERE nested_credential.attempt_id = failed.attempt_id
+                     AND nested_credential.status = 'issuing'
+                     AND nested_credential.issue_lease_token IS NOT NULL
+                     AND nested_credential.issue_lease_expires_at IS NOT NULL
+                     AND nested_credential.issue_lease_expires_at <=
+                         strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                     AND nested_credential.token_digest IS NULL
+                     AND nested_credential.token_ciphertext IS NULL
+                     AND nested_credential.token_iv IS NULL
+                     AND nested_credential.github_expires_at IS NULL
+                     AND nested_credential.authorization_expires_at IS NULL
+                     AND nested_credential.last_error_code IS NULL
                  )
                )
              )
