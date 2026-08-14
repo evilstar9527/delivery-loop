@@ -906,6 +906,29 @@ export class GitHubDispatchOutboxProcessor {
                          WHERE base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
                        )
                      )
+                     OR (
+                       EXISTS (
+                         SELECT 1
+                         FROM review_approval_recoveries AS recovery
+                         WHERE recovery.replacement_attempt_id = attempts.attempt_id
+                           AND recovery.run_id = attempts.run_id
+                           AND recovery.plan_id = attempts.plan_id
+                           AND recovery.plan_version = attempts.plan_version
+                           AND recovery.plan_item_id = attempts.plan_item_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM attempt_repairs
+                         WHERE attempt_repairs.repair_attempt_id = attempts.attempt_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM review_feedback_attempts
+                         WHERE review_feedback_attempts.review_attempt_id = attempts.attempt_id
+                       )
+                       AND NOT EXISTS (
+                         SELECT 1 FROM base_rebase_attempts
+                         WHERE base_rebase_attempts.rebase_attempt_id = attempts.attempt_id
+                       )
+                     )
                        )
                      )
                    )
