@@ -69,7 +69,30 @@ interface AttemptRow {
   github_conclusion: string | null;
   github_external_updated_at: string | null;
   github_observation_version: number;
+  dispatch_generation: 0 | 1;
 }
+
+const DISPATCH_GENERATION_PROJECTION = `
+  CASE WHEN
+    EXISTS (
+      SELECT 1
+      FROM review_approval_recoveries AS recovery
+      JOIN outbox AS dispatch ON dispatch.run_id = recovery.run_id
+      WHERE recovery.replacement_attempt_id = attempts.attempt_id
+        AND dispatch.kind = 'execution_dispatch'
+        AND dispatch.payload_ref = 'd1://attempts/' || attempts.attempt_id
+        AND dispatch.attempt_count > 2
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM automated_review_replacement_redispatches AS redispatch
+      JOIN outbox AS dispatch ON dispatch.outbox_id = redispatch.outbox_id
+      WHERE redispatch.replacement_attempt_id = attempts.attempt_id
+        AND dispatch.kind = 'execution_dispatch'
+        AND dispatch.payload_ref = 'd1://attempts/' || attempts.attempt_id
+    )
+    THEN 1 ELSE 0
+  END`;
 
 function workflowPathMatches(path: string, branch: string): boolean {
   return (
@@ -80,6 +103,8 @@ function workflowPathMatches(path: string, branch: string): boolean {
 
 function bindingMatches(attempt: AttemptRow, fact: GitHubWorkflowRunFact): boolean {
   const executor = parseGitHubAgentWorkflowRef(attempt.workflow_ref);
+  const expectedDisplayTitle = `delivery-loop/${attempt.attempt_id}` +
+    (attempt.dispatch_generation === 1 ? '/redispatch-1' : '');
   return (
     fact.event === 'workflow_dispatch' &&
     attempt.repository !== null &&
@@ -89,7 +114,7 @@ function bindingMatches(attempt: AttemptRow, fact: GitHubWorkflowRunFact): boole
     attempt.github_run_id === fact.githubRunId &&
     workflowPathMatches(fact.workflowPath, fact.headBranch) &&
     attempt.github_head_sha === fact.headSha &&
-    fact.displayTitle === `delivery-loop/${attempt.attempt_id}` &&
+    fact.displayTitle === expectedDisplayTitle &&
     fact.runAttempt === 1
   );
 }
@@ -244,7 +269,8 @@ export class GitHubRunObservationStore {
         `SELECT attempt_id, repository, workflow_ref, github_run_id,
                 github_head_sha,
                 github_status, github_conclusion, github_external_updated_at,
-                github_observation_version
+                github_observation_version,
+                ${DISPATCH_GENERATION_PROJECTION} AS dispatch_generation
          FROM attempts WHERE github_run_id = ?`,
       )
       .bind(fact.githubRunId)
@@ -298,7 +324,8 @@ export class GitHubRunObservationStore {
         `SELECT attempt_id, repository, workflow_ref, github_run_id,
                 github_head_sha,
                 github_status, github_conclusion, github_external_updated_at,
-                github_observation_version
+                github_observation_version,
+                ${DISPATCH_GENERATION_PROJECTION} AS dispatch_generation
          FROM attempts WHERE attempt_id = ?`,
       )
       .bind(attempt.attempt_id)

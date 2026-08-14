@@ -12,6 +12,9 @@ import {
   GitHubReviewApprovalRecoveryReconciler,
 } from '../../src/reconciliation/github-review-feedback-reconciler.js';
 import { ExecutionProgressReconciler } from '../../src/reconciliation/execution-progress-reconciler.js';
+import { canonicalSha256 } from '../../src/domain/digest.js';
+import { GitHubRunReconciler } from '../../src/reconciliation/github-run-reconciler.js';
+import type { GitHubWorkflowRunFact } from '../../src/storage/github-run-observation-store.js';
 
 const NOW = '2026-08-08T08:00:00.000Z';
 const RUN_ID = 'run-review-approval-recovery';
@@ -44,6 +47,7 @@ class FakeCommentClient implements GitHubCommitApprovalClient {
 
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM github_api_observations'),
     env.DB_CONTROL.prepare('DELETE FROM automated_review_replacement_redispatches'),
     env.DB_CONTROL.prepare('DELETE FROM automated_review_fix_attempts'),
     env.DB_CONTROL.prepare('DELETE FROM automated_reviews'),
@@ -598,6 +602,93 @@ describe('review repo-write approval recovery', () => {
        FROM outbox WHERE outbox_id = ?`,
     ).bind(outboxId).first()).toEqual({
       delivery_state: 'pending', attempt_count: 2, last_error_code: null,
+    });
+
+    const replacementAttemptId = results[0]?.replacementAttemptId;
+    if (replacementAttemptId === undefined) throw new Error('replacement missing');
+    const githubRunId = '987654321';
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `UPDATE outbox
+         SET delivery_state = 'settled', attempt_count = 3, updated_at = ?
+         WHERE outbox_id = ?`,
+      ).bind(NOW, outboxId),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts
+         SET status = 'lost', github_run_id = ?, github_head_sha = ?,
+             github_status = 'requested', github_conclusion = NULL,
+             github_external_updated_at = NULL, github_observation_version = 0,
+             updated_at = ?
+         WHERE attempt_id = ?`,
+      ).bind(githubRunId, BASE_SHA, NOW, replacementAttemptId),
+    ]);
+    const fact: GitHubWorkflowRunFact = {
+      repository: REPOSITORY,
+      githubRunId,
+      event: 'workflow_dispatch',
+      status: 'completed',
+      conclusion: 'failure',
+      headSha: BASE_SHA,
+      headBranch: 'main',
+      workflowPath: '.github/workflows/delivery-agent.yml',
+      displayTitle: `delivery-loop/${replacementAttemptId}/redispatch-1`,
+      runAttempt: 1,
+      externalUpdatedAt: '2026-08-08T08:01:00.000Z',
+    };
+    const factDigest = await canonicalSha256(fact);
+    const oldIdentityDigest = await canonicalSha256({
+      source: 'github_api',
+      repository: REPOSITORY,
+      githubRunId,
+      factDigest,
+    });
+    await env.DB_CONTROL.prepare(
+      `INSERT INTO github_api_observations (
+         observation_id, fact_digest, repository, github_run_id, attempt_id,
+         processing_state, ignore_reason, external_updated_at, observed_at, processed_at
+       ) VALUES (?, ?, ?, ?, NULL, 'ignored', 'binding_mismatch', ?, ?, ?)`,
+    ).bind(
+      `github_api_${oldIdentityDigest.slice('sha256:'.length, 'sha256:'.length + 56)}`,
+      factDigest,
+      REPOSITORY,
+      githubRunId,
+      fact.externalUpdatedAt,
+      NOW,
+      NOW,
+    ).run();
+
+    let observedFact = {
+      ...fact,
+      displayTitle: `delivery-loop/${replacementAttemptId}/redispatch-2`,
+    };
+    const runReconciler = new GitHubRunReconciler(
+      env.DB_CONTROL,
+      { getWorkflowRun: async () => structuredClone(observedFact) },
+      { now: () => new Date('2026-08-08T08:02:00.000Z') },
+    );
+    expect(await runReconciler.reconcileAttempt(replacementAttemptId)).toBe('ignored');
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT github_observation_version FROM attempts WHERE attempt_id = ?`,
+    ).bind(replacementAttemptId).first()).toEqual({ github_observation_version: 0 });
+    observedFact = fact;
+    expect(await runReconciler.reconcileAttempt(replacementAttemptId)).toBe('applied');
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT github_status, github_conclusion, github_observation_version
+       FROM attempts WHERE attempt_id = ?`,
+    ).bind(replacementAttemptId).first()).toEqual({
+      github_status: 'completed',
+      github_conclusion: 'failure',
+      github_observation_version: 1,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT processing_state, ignore_reason, COUNT(*) AS count
+       FROM github_api_observations WHERE github_run_id = ?
+       GROUP BY processing_state, ignore_reason ORDER BY processing_state`,
+    ).bind(githubRunId).all()).toMatchObject({
+      results: [
+        { processing_state: 'applied', ignore_reason: null, count: 1 },
+        { processing_state: 'ignored', ignore_reason: 'binding_mismatch', count: 2 },
+      ],
     });
   });
 
