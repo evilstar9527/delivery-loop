@@ -809,6 +809,33 @@ export class GitHubReviewApprovalRecoveryReconciler {
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 25) {
       throw new Error('GitHub review approval recovery limit is invalid');
     }
+    const nowIso = this.now().toISOString();
+    await this.db.prepare(
+      `UPDATE outbox
+       SET delivery_state = 'pending', lease_token = NULL,
+           lease_expires_at = NULL, last_error_code = NULL, updated_at = ?
+       WHERE delivery_state = 'settled'
+         AND kind = 'execution_dispatch'
+         AND last_error_code = 'repair_dispatch_stale'
+         AND EXISTS (
+           SELECT 1
+           FROM review_approval_recoveries AS recovery
+           JOIN attempts AS replacement
+             ON replacement.attempt_id = recovery.replacement_attempt_id
+           JOIN runs ON runs.run_id = recovery.run_id
+           JOIN plan_item_progress AS progress
+             ON progress.plan_id = recovery.plan_id
+            AND progress.item_id = recovery.plan_item_id
+           WHERE recovery.replacement_attempt_id =
+                 substr(outbox.payload_ref, length('d1://attempts/') + 1)
+             AND outbox.run_id = recovery.run_id
+             AND replacement.status = 'pending'
+             AND replacement.github_run_id IS NULL
+             AND runs.state IN ('executing', 'verifying')
+             AND progress.status = 'in_progress'
+             AND progress.active_attempt_id = replacement.attempt_id
+         )`,
+    ).bind(nowIso).run();
     const rows = await this.db.prepare(
       `SELECT recovery.recovery_approval_id
        FROM review_approval_recovery_approvals AS recovery
