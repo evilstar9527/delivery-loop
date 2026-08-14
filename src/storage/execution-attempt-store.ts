@@ -172,6 +172,11 @@ export interface ExecutionAttemptContext {
     oldBaseSha: string;
     newBaseSha: string;
   };
+  reviewApprovalRecovery?: {
+    sourceAttemptId: string;
+    sourceHeadSha: string;
+    sourceKind: 'failed_dependency' | 'lost_pre_effect';
+  };
 }
 
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
@@ -235,11 +240,15 @@ export class ExecutionAttemptContextStore {
     const baseRebase = mode === 'review_fix'
       ? await this.baseRebase(row)
       : undefined;
+    const reviewApprovalRecovery = mode === 'review_fix'
+      ? await this.reviewApprovalRecovery(row)
+      : undefined;
     if (
       (mode === 'review_fix' &&
         Number(repair !== undefined) +
           Number(reviewFeedback !== undefined) +
-          Number(baseRebase !== undefined) !== 1) ||
+          Number(baseRebase !== undefined) +
+          Number(reviewApprovalRecovery !== undefined) !== 1) ||
       (mode === 'implement' &&
         (repair !== undefined || reviewFeedback !== undefined || baseRebase !== undefined))
     ) {
@@ -281,6 +290,7 @@ export class ExecutionAttemptContextStore {
       ...(repair === undefined ? {} : { repair }),
       ...(reviewFeedback === undefined ? {} : { reviewFeedback }),
       ...(baseRebase === undefined ? {} : { baseRebase }),
+      ...(reviewApprovalRecovery === undefined ? {} : { reviewApprovalRecovery }),
     };
   }
 
@@ -610,6 +620,47 @@ export class ExecutionAttemptContextStore {
       sourceHeadSha: rebase.source_head_sha,
       oldBaseSha: rebase.old_base_sha,
       newBaseSha: rebase.new_base_sha,
+    };
+  }
+
+  private async reviewApprovalRecovery(
+    row: ExecutionContextRow,
+  ): Promise<NonNullable<ExecutionAttemptContext['reviewApprovalRecovery']> | undefined> {
+    const recovery = await this.db.prepare(
+      `SELECT recoveries.root_review_attempt_id, recoveries.source_kind,
+              root.head_sha
+       FROM review_approval_recoveries AS recoveries
+       JOIN attempts AS root ON root.attempt_id = recoveries.root_review_attempt_id
+       WHERE recoveries.replacement_attempt_id = ?
+         AND recoveries.run_id = ?
+         AND recoveries.plan_id = ?
+         AND recoveries.plan_version = ?
+         AND recoveries.plan_item_id = ?`,
+    ).bind(
+      row.attempt_id,
+      row.run_id,
+      row.plan_id,
+      row.plan_version,
+      row.plan_item_id,
+    ).first<{
+      root_review_attempt_id: string;
+      source_kind: string;
+      head_sha: string | null;
+    }>();
+    if (recovery === null || recovery.source_kind === 'automated_fix_failed_pre_effect') {
+      return undefined;
+    }
+    if (
+      recovery.source_kind !== 'failed_dependency' &&
+      recovery.source_kind !== 'lost_pre_effect'
+    ) throw new ExecutionAttemptError('attempt_context_mismatch');
+    if (recovery.head_sha === null || recovery.head_sha !== row.head_sha) {
+      throw new ExecutionAttemptError('attempt_context_mismatch');
+    }
+    return {
+      sourceAttemptId: recovery.root_review_attempt_id,
+      sourceHeadSha: recovery.head_sha,
+      sourceKind: recovery.source_kind,
     };
   }
 

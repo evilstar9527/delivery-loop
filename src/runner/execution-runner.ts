@@ -131,6 +131,11 @@ const ContextResponseSchema = z.object({
     oldBaseSha: z.string().regex(SHA_PATTERN),
     newBaseSha: z.string().regex(SHA_PATTERN),
   }).strict().optional(),
+  reviewApprovalRecovery: z.object({
+    sourceAttemptId: z.string().regex(ID_PATTERN),
+    sourceHeadSha: z.string().regex(SHA_PATTERN),
+    sourceKind: z.enum(['failed_dependency', 'lost_pre_effect']),
+  }).strict().optional(),
 }).strict();
 
 const HeartbeatResponseSchema = z.object({
@@ -801,7 +806,8 @@ export async function runExecutionAttempt(
   const derivedAttemptBranch = `agent/${context.attempt.taskId}/${config.attemptId}`;
   const executionSourceCount = Number(context.repair !== undefined) +
     Number(context.reviewFeedback !== undefined) +
-    Number(context.baseRebase !== undefined);
+    Number(context.baseRebase !== undefined) +
+    Number(context.reviewApprovalRecovery !== undefined);
   if (
     context.attempt.id !== config.attemptId ||
     context.attempt.runId !== config.runId ||
@@ -833,7 +839,12 @@ export async function runExecutionAttempt(
         context.attempt.targetBranchMode !== 'new' ||
         context.attempt.targetBranch !== derivedAttemptBranch ||
         context.baseRebase.sourceBranch !==
-          `agent/${context.attempt.taskId}/${context.baseRebase.sourceAttemptId}`
+        `agent/${context.attempt.taskId}/${context.baseRebase.sourceAttemptId}`
+      )) ||
+      (context.reviewApprovalRecovery !== undefined && (
+        context.reviewApprovalRecovery.sourceHeadSha !== config.checkoutSha ||
+        context.attempt.targetBranchMode !== 'new' ||
+        context.attempt.targetBranch !== derivedAttemptBranch
       ))
     )) ||
     (config.mode === 'implement' && (
