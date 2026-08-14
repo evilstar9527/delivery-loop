@@ -319,6 +319,20 @@ describe('GitHub App workflow dispatcher contract', () => {
         target_repository: REPOSITORY,
       },
     });
+    const attempt = await env.DB_CONTROL.prepare(
+      `SELECT status, version, lease_generation, github_run_id, github_head_sha,
+              github_status, github_observed_at
+       FROM attempts WHERE attempt_id = 'attempt-initial-execution'`,
+    ).first<Record<string, unknown>>();
+    expect(attempt).toMatchObject({
+      status: 'starting',
+      version: 1,
+      lease_generation: 1,
+      github_run_id: '123456789',
+      github_head_sha: GITHUB_HEAD_SHA,
+      github_status: 'requested',
+      github_observed_at: NOW.toISOString(),
+    });
   });
 
   it('dispatches a review_fix Attempt whose source is approval recovery lineage', async () => {
