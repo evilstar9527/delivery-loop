@@ -69,6 +69,18 @@ interface PreviousFailureRow {
   consecutive_fingerprint_count: number;
 }
 
+interface PreVerificationRepairCandidateRow {
+  failure_id: string;
+  run_id: string;
+  failed_attempt_id: string;
+  retry_scope_digest: string;
+  fingerprint_digest: string;
+  source_suite_id: string;
+  source_evidence_id: string;
+  source_head_sha: string;
+  failure_fact_digest: string;
+}
+
 interface FailureProjectionRow {
   failure_id: string;
   run_id: string;
@@ -150,6 +162,122 @@ function stableSuffix(digest: string): string {
 /** Records one terminal Attempt failure and atomically applies the bounded retry policy. */
 export class AttemptFailureStore {
   constructor(private readonly db: D1Database) {}
+
+  /**
+   * Reuses one immutable failed-verification fact when its first repair was
+   * fenced before producing any repository or verification effect. The
+   * original failure remains the only repair authority; an Agent claim alone
+   * can never enter this lane.
+   */
+  async reconcilePreVerificationRepairs(limit = 5, now = new Date()): Promise<number> {
+    if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
+      throw new Error('Pre-verification repair reconciliation limit must be between 1 and 100');
+    }
+    const candidates = await this.db.prepare(
+      `SELECT failures.failure_id, failures.run_id,
+              failed.attempt_id AS failed_attempt_id,
+              failures.retry_scope_digest, failures.fingerprint_digest,
+              source.source_suite_id, source.source_evidence_id,
+              source.source_head_sha, source.failure_fact_digest
+       FROM attempt_failures AS failures
+       JOIN attempts AS failed
+         ON failed.attempt_id = failures.attempt_id
+        AND failed.run_id = failures.run_id
+       JOIN attempt_repairs AS source
+         ON source.repair_attempt_id = failed.attempt_id
+        AND source.run_id = failures.run_id
+       JOIN attempt_failure_verification_facts AS source_fact
+         ON source_fact.failure_id = source.failure_id
+        AND source_fact.source_suite_id = source.source_suite_id
+        AND source_fact.source_evidence_id = source.source_evidence_id
+        AND source_fact.source_head_sha = source.source_head_sha
+        AND source_fact.failure_fact_digest = source.failure_fact_digest
+       JOIN runs ON runs.run_id = failures.run_id
+       JOIN execution_plans AS plans ON plans.plan_id = failed.plan_id
+       JOIN plan_item_progress AS progress
+         ON progress.plan_id = failed.plan_id
+        AND progress.item_id = failed.plan_item_id
+       JOIN verification_suites AS suites
+         ON suites.suite_id = source.source_suite_id
+        AND suites.run_id = failures.run_id
+        AND suites.plan_id = failed.plan_id
+        AND suites.plan_version = failed.plan_version
+        AND suites.plan_item_id = failed.plan_item_id
+        AND suites.head_sha = source.source_head_sha
+        AND suites.status = 'failed'
+       JOIN verification_suite_commands AS commands
+         ON commands.suite_id = suites.suite_id
+        AND commands.evidence_id = source.source_evidence_id
+        AND commands.result_status = 'failed'
+       JOIN evidence
+         ON evidence.evidence_id = source.source_evidence_id
+        AND evidence.attempt_id = suites.attempt_id
+        AND evidence.run_id = failures.run_id
+        AND evidence.plan_id = failed.plan_id
+        AND evidence.plan_version = failed.plan_version
+        AND evidence.plan_item_id = failed.plan_item_id
+        AND evidence.sha = source.source_head_sha
+        AND evidence.status = 'failed'
+       JOIN outbox AS dispatch
+         ON dispatch.run_id = failures.run_id
+        AND dispatch.kind = 'execution_dispatch'
+        AND dispatch.payload_ref = 'd1://attempts/' || failed.attempt_id
+        AND dispatch.delivery_state = 'settled'
+       WHERE failed.mode = 'review_fix' AND failed.status = 'failed'
+         AND failed.head_sha = source.source_head_sha
+         AND failures.failure_class = 'unknown'
+         AND failures.failure_code = 'unknown_failure'
+         AND failures.failure_site = 'repo_snapshot'
+         AND failures.needed_human_input = 'manual_investigation'
+         AND failures.scope_attempt_count < ?
+         AND failures.consecutive_fingerprint_count < ?
+         AND runs.state IN ('executing', 'verifying')
+         AND runs.active_plan_id = failed.plan_id
+         AND runs.active_plan_version = failed.plan_version
+         AND plans.status = 'active'
+         AND progress.status = 'in_progress'
+         AND progress.active_attempt_id = failed.attempt_id
+         AND progress.protected_path_gate_id IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM run_blockers
+           WHERE run_blockers.run_id = failures.run_id
+             AND run_blockers.resolved_at IS NULL
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM attempt_repairs AS consumed
+           WHERE consumed.failure_id = failures.failure_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM attempt_head_updates
+           WHERE attempt_head_updates.attempt_id = failed.attempt_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM evidence AS produced
+           WHERE produced.attempt_id = failed.attempt_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM verification_suites AS produced
+           WHERE produced.attempt_id = failed.attempt_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM checkpoints
+           WHERE checkpoints.attempt_id = failed.attempt_id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM github_write_credentials AS credentials
+           WHERE credentials.attempt_id = failed.attempt_id
+             AND credentials.status NOT IN ('revoked', 'expired')
+         )
+       ORDER BY failures.created_at, failures.failure_id
+       LIMIT ?`,
+    ).bind(DEFAULT_MAX_ATTEMPTS, REPEATED_FAILURE_LIMIT, limit)
+      .all<PreVerificationRepairCandidateRow>();
+    let created = 0;
+    for (const candidate of candidates.results) {
+      if (await this.schedulePreVerificationRepair(candidate, now)) created += 1;
+    }
+    return created;
+  }
 
   /**
    * Reads back an already committed analysis failure after its HTTP response
@@ -975,6 +1103,256 @@ export class AttemptFailureStore {
         exitCode: row.exit_code,
       }),
     };
+  }
+
+  private async schedulePreVerificationRepair(
+    candidate: PreVerificationRepairCandidateRow,
+    now: Date,
+  ): Promise<boolean> {
+    const identity = await canonicalSha256({
+      schemaVersion: '1',
+      failureId: candidate.failure_id,
+      failedAttemptId: candidate.failed_attempt_id,
+      sourceEvidenceId: candidate.source_evidence_id,
+      recoveryKind: 'pre_verification_repair_retry',
+    });
+    const suffix = stableSuffix(identity);
+    const repairId = `repair_${suffix}`;
+    const attemptId = `attempt_repair_${suffix}`;
+    const outboxId = `dispatch_repair_${suffix}`;
+    const nowIso = now.toISOString();
+    const results = await this.db.batch([
+      this.db.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, plan_id, plan_version, plan_item_id,
+           claimed_progress_version, head_branch, head_sha,
+           version, lease_generation, created_at, updated_at
+         )
+         SELECT ?, failed.run_id,
+                (SELECT COALESCE(MAX(existing.ordinal), 0) + 1
+                 FROM attempts AS existing WHERE existing.run_id = failed.run_id),
+                'review_fix', 'pending', failed.base_sha, failed.repository,
+                failed.workflow_ref, failed.plan_id, failed.plan_version,
+                failed.plan_item_id, progress.version, NULL, failed.head_sha,
+                0, 0, ?, ?
+         FROM attempts AS failed
+         JOIN attempt_failures AS failures
+           ON failures.failure_id = ?
+          AND failures.attempt_id = failed.attempt_id
+          AND failures.run_id = failed.run_id
+         JOIN attempt_repairs AS source
+           ON source.repair_attempt_id = failed.attempt_id
+          AND source.run_id = failed.run_id
+          AND source.source_suite_id = ?
+          AND source.source_evidence_id = ?
+          AND source.source_head_sha = ?
+          AND source.failure_fact_digest = ?
+         JOIN attempt_failure_verification_facts AS source_fact
+           ON source_fact.failure_id = source.failure_id
+          AND source_fact.source_suite_id = source.source_suite_id
+          AND source_fact.source_evidence_id = source.source_evidence_id
+          AND source_fact.source_head_sha = source.source_head_sha
+          AND source_fact.failure_fact_digest = source.failure_fact_digest
+         JOIN runs ON runs.run_id = failed.run_id
+         JOIN execution_plans AS plans ON plans.plan_id = failed.plan_id
+         JOIN plan_item_progress AS progress
+           ON progress.plan_id = failed.plan_id
+          AND progress.item_id = failed.plan_item_id
+         JOIN verification_suites AS suites
+           ON suites.suite_id = source.source_suite_id
+          AND suites.run_id = failed.run_id
+          AND suites.plan_id = failed.plan_id
+          AND suites.plan_version = failed.plan_version
+          AND suites.plan_item_id = failed.plan_item_id
+          AND suites.head_sha = source.source_head_sha
+          AND suites.status = 'failed'
+         JOIN verification_suite_commands AS commands
+           ON commands.suite_id = suites.suite_id
+          AND commands.evidence_id = source.source_evidence_id
+          AND commands.result_status = 'failed'
+         JOIN evidence
+           ON evidence.evidence_id = source.source_evidence_id
+          AND evidence.attempt_id = suites.attempt_id
+          AND evidence.run_id = failed.run_id
+          AND evidence.plan_id = failed.plan_id
+          AND evidence.plan_version = failed.plan_version
+          AND evidence.plan_item_id = failed.plan_item_id
+          AND evidence.sha = source.source_head_sha
+          AND evidence.status = 'failed'
+         JOIN outbox AS dispatch
+           ON dispatch.run_id = failed.run_id
+          AND dispatch.kind = 'execution_dispatch'
+          AND dispatch.payload_ref = 'd1://attempts/' || failed.attempt_id
+          AND dispatch.delivery_state = 'settled'
+         WHERE failed.attempt_id = ? AND failed.mode = 'review_fix'
+           AND failed.status = 'failed' AND failed.head_sha = source.source_head_sha
+           AND failures.retry_scope_digest = ?
+           AND failures.fingerprint_digest = ?
+           AND failures.failure_class = 'unknown'
+           AND failures.failure_code = 'unknown_failure'
+           AND failures.failure_site = 'repo_snapshot'
+           AND failures.needed_human_input = 'manual_investigation'
+           AND failures.scope_attempt_count < ?
+           AND failures.consecutive_fingerprint_count < ?
+           AND runs.state IN ('executing', 'verifying')
+           AND runs.active_plan_id = failed.plan_id
+           AND runs.active_plan_version = failed.plan_version
+           AND plans.status = 'active'
+           AND progress.status = 'in_progress'
+           AND progress.active_attempt_id = failed.attempt_id
+           AND progress.protected_path_gate_id IS NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM run_blockers
+             WHERE run_blockers.run_id = failed.run_id
+               AND run_blockers.resolved_at IS NULL
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM attempt_repairs AS consumed
+             WHERE consumed.failure_id = failures.failure_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM attempt_head_updates
+             WHERE attempt_head_updates.attempt_id = failed.attempt_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM evidence AS produced
+             WHERE produced.attempt_id = failed.attempt_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM verification_suites AS produced
+             WHERE produced.attempt_id = failed.attempt_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM checkpoints
+             WHERE checkpoints.attempt_id = failed.attempt_id
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM github_write_credentials AS credentials
+             WHERE credentials.attempt_id = failed.attempt_id
+               AND credentials.status NOT IN ('revoked', 'expired')
+           )
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        attemptId,
+        nowIso,
+        nowIso,
+        candidate.failure_id,
+        candidate.source_suite_id,
+        candidate.source_evidence_id,
+        candidate.source_head_sha,
+        candidate.failure_fact_digest,
+        candidate.failed_attempt_id,
+        candidate.retry_scope_digest,
+        candidate.fingerprint_digest,
+        DEFAULT_MAX_ATTEMPTS,
+        REPEATED_FAILURE_LIMIT,
+      ),
+      this.db.prepare(
+        `INSERT INTO attempt_repairs (
+           repair_id, run_id, plan_id, plan_version, plan_item_id,
+           failure_id, failed_attempt_id, repair_attempt_id,
+           source_suite_id, source_evidence_id, source_head_sha,
+           failure_fact_digest, retry_scope_digest, fingerprint_digest, created_at
+         )
+         SELECT ?, failed.run_id, failed.plan_id, failed.plan_version,
+                failed.plan_item_id, failures.failure_id, failed.attempt_id,
+                repair.attempt_id, ?, ?, ?, ?, ?, ?, ?
+         FROM attempt_failures AS failures
+         JOIN attempts AS failed ON failed.attempt_id = failures.attempt_id
+         JOIN attempts AS repair
+           ON repair.attempt_id = ? AND repair.run_id = failed.run_id
+          AND repair.mode = 'review_fix' AND repair.status = 'pending'
+         WHERE failures.failure_id = ? AND failed.attempt_id = ?
+           AND failures.retry_scope_digest = ?
+           AND failures.fingerprint_digest = ?
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        repairId,
+        candidate.source_suite_id,
+        candidate.source_evidence_id,
+        candidate.source_head_sha,
+        candidate.failure_fact_digest,
+        candidate.retry_scope_digest,
+        candidate.fingerprint_digest,
+        nowIso,
+        attemptId,
+        candidate.failure_id,
+        candidate.failed_attempt_id,
+        candidate.retry_scope_digest,
+        candidate.fingerprint_digest,
+      ),
+      this.db.prepare(
+        `UPDATE plan_item_progress
+         SET active_attempt_id = ?, version = version + 1, updated_at = ?
+         WHERE status = 'in_progress' AND active_attempt_id = ?
+           AND EXISTS (
+             SELECT 1 FROM attempt_repairs
+             WHERE repair_id = ? AND repair_attempt_id = ?
+               AND failed_attempt_id = plan_item_progress.active_attempt_id
+               AND plan_id = plan_item_progress.plan_id
+               AND plan_item_id = plan_item_progress.item_id
+           )`,
+      ).bind(
+        attemptId,
+        nowIso,
+        candidate.failed_attempt_id,
+        repairId,
+        attemptId,
+      ),
+      this.db.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         )
+         SELECT ?, repairs.run_id, 'execution_dispatch', 'github_actions', ?, ?,
+                'pending', ?, ?
+         FROM attempt_repairs AS repairs
+         JOIN plan_item_progress AS progress
+           ON progress.plan_id = repairs.plan_id
+          AND progress.item_id = repairs.plan_item_id
+         WHERE repairs.repair_id = ? AND repairs.repair_attempt_id = ?
+           AND progress.status = 'in_progress'
+           AND progress.active_attempt_id = repairs.repair_attempt_id
+         ON CONFLICT DO NOTHING`,
+      ).bind(
+        outboxId,
+        `d1://attempts/${attemptId}`,
+        `execution-repair:${candidate.failure_id}`,
+        nowIso,
+        nowIso,
+        repairId,
+        attemptId,
+      ),
+    ]);
+    const inserted = results[0]?.meta.changes === 1;
+    if (!inserted) return false;
+    const projection = await this.db.prepare(
+      `SELECT COUNT(*) AS count
+       FROM attempt_repairs
+       JOIN attempts ON attempts.attempt_id = attempt_repairs.repair_attempt_id
+       JOIN plan_item_progress
+         ON plan_item_progress.plan_id = attempt_repairs.plan_id
+        AND plan_item_progress.item_id = attempt_repairs.plan_item_id
+       JOIN outbox ON outbox.outbox_id = ?
+       WHERE attempt_repairs.repair_id = ?
+         AND attempt_repairs.failure_id = ?
+         AND attempt_repairs.failed_attempt_id = ?
+         AND attempt_repairs.repair_attempt_id = ?
+         AND attempts.status = 'pending'
+         AND plan_item_progress.status = 'in_progress'
+         AND plan_item_progress.active_attempt_id = attempts.attempt_id
+         AND outbox.payload_ref = 'd1://attempts/' || attempts.attempt_id
+         AND outbox.delivery_state = 'pending'`,
+    ).bind(
+      outboxId,
+      repairId,
+      candidate.failure_id,
+      candidate.failed_attempt_id,
+      attemptId,
+    ).first<{ count: number }>();
+    if (projection?.count !== 1) throw new AttemptFailureError('state_conflict');
+    return true;
   }
 
   private async scopeAttemptCount(candidate: FailureCandidateRow): Promise<number> {
