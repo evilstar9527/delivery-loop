@@ -11,6 +11,7 @@ import {
   type GitHubDispatchRequest,
   type GitHubDispatchResult,
 } from '../../src/outbox/github-dispatcher.js';
+import { AttemptFailureStore } from '../../src/storage/attempt-failure-store.js';
 
 const BASE_URL = 'https://delivery-loop.test';
 const RUN_ID = 'run-verification-repair';
@@ -368,6 +369,27 @@ async function reportVerificationFailure(input: {
   });
 }
 
+async function reportPreVerificationPatchFailure(input: {
+  attemptId: string;
+  token: string;
+  expectedVersion: number;
+  leaseGeneration: number;
+}): Promise<Response> {
+  return await postJson(`/v1/attempts/${input.attemptId}/events`, input.token, {
+    schemaVersion: '1',
+    eventId: 'pre-verification-repair-patch-failure',
+    sequence: 1,
+    type: 'attempt_failed',
+    failureCode: 'unknown_failure',
+    failureSite: 'repo_snapshot',
+    attemptedPaths: ['code_change'],
+    neededHumanInput: 'manual_investigation',
+    occurredAt: TEST_STARTED_AT.toISOString(),
+    expectedVersion: input.expectedVersion,
+    leaseGeneration: input.leaseGeneration,
+  });
+}
+
 function dispatcher(effects: GitHubDispatchEffects): GitHubDispatchOutboxProcessor {
   return new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
     allowedRepositories: [REPOSITORY],
@@ -603,6 +625,127 @@ describe('bounded verification repair loop', () => {
         commandRef: expect.stringMatching(/^(test|verify):/),
       },
     });
+  });
+
+  it('reuses the immutable source failure once when a repair fails before any effect', async () => {
+    const { repair: firstRepair } = await scheduleFirstRepair('test:unit');
+    const effects = new FakeDispatchEffects();
+    expect(await dispatcher(effects).deliver(firstRepair.dispatchOutboxId)).toBe('settled');
+    const active = await activateRepair(firstRepair, INITIAL_HEAD_SHA);
+    const failed = await reportPreVerificationPatchFailure({
+      attemptId: firstRepair.attemptId,
+      token: active.token,
+      expectedVersion: active.version,
+      leaseGeneration: active.leaseGeneration,
+    });
+    expect(failed.status).toBe(202);
+    expect(await failed.json()).toMatchObject({
+      blocked: false,
+      retryAllowed: true,
+      attemptCount: 2,
+      consecutiveFingerprintCount: 1,
+    });
+
+    const reconciler = new AttemptFailureStore(env.DB_CONTROL);
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        reconciler.reconcilePreVerificationRepairs(1, TEST_STARTED_AT),
+      ),
+    );
+    expect(results.reduce((total, count) => total + count, 0)).toBe(1);
+    const repairs = await env.DB_CONTROL.prepare(
+      `SELECT attempt_repairs.failed_attempt_id,
+              attempt_repairs.repair_attempt_id,
+              attempt_repairs.source_suite_id,
+              attempt_repairs.source_evidence_id,
+              attempts.status
+       FROM attempt_repairs
+       JOIN attempts ON attempts.attempt_id = attempt_repairs.repair_attempt_id
+       WHERE attempt_repairs.run_id = ?
+       ORDER BY attempts.ordinal`,
+    ).bind(RUN_ID).all<{
+      failed_attempt_id: string;
+      repair_attempt_id: string;
+      source_suite_id: string;
+      source_evidence_id: string;
+      status: string;
+    }>();
+    expect(repairs.results).toHaveLength(2);
+    expect(repairs.results[1]).toMatchObject({
+      failed_attempt_id: firstRepair.attemptId,
+      source_suite_id: firstRepair.sourceSuiteId,
+      source_evidence_id: firstRepair.sourceEvidenceId,
+      status: 'pending',
+    });
+    const replacementAttemptId = repairs.results[1]?.repair_attempt_id;
+    if (replacementAttemptId === undefined) throw new Error('missing replacement repair');
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, active_attempt_id, version FROM plan_item_progress
+       WHERE plan_id = ? AND item_id = ?`,
+    ).bind(PLAN_ID, ITEM_ID).first()).toEqual({
+      status: 'in_progress',
+      active_attempt_id: replacementAttemptId,
+      version: 4,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox
+       WHERE run_id = ? AND kind = 'execution_dispatch'
+         AND payload_ref = 'd1://attempts/' || ?
+         AND delivery_state = 'pending'`,
+    ).bind(RUN_ID, replacementAttemptId).first()).toEqual({ count: 1 });
+    expect(await reconciler.reconcilePreVerificationRepairs(1, TEST_STARTED_AT)).toBe(0);
+  });
+
+  it('does not re-dispatch a pre-verification repair while its write credential is active', async () => {
+    const { repair } = await scheduleFirstRepair('test:unit');
+    const effects = new FakeDispatchEffects();
+    expect(await dispatcher(effects).deliver(repair.dispatchOutboxId)).toBe('settled');
+    const active = await activateRepair(repair, INITIAL_HEAD_SHA);
+    const failed = await reportPreVerificationPatchFailure({
+      attemptId: repair.attemptId,
+      token: active.token,
+      expectedVersion: active.version,
+      leaseGeneration: active.leaseGeneration,
+    });
+    expect(failed.status).toBe(202);
+    const nowIso = TEST_STARTED_AT.toISOString();
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO approvals (
+           approval_id, run_id, task_revision, plan_id, plan_version,
+           plan_digest, base_sha, effect, actor_id, decision, nonce_digest,
+           expires_at, created_at
+         ) VALUES (
+           'approval-pre-verification-repair', ?, '1', ?, 1, ?, ?,
+           'repo_write', 'test-reviewer', 'approve', ?, ?, ?
+         )`,
+      ).bind(
+        RUN_ID,
+        PLAN_ID,
+        PLAN_DIGEST,
+        BASE_SHA,
+        await canonicalSha256('pre-verification-repair-approval'),
+        LEASE_EXPIRES_AT,
+        nowIso,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO github_write_credentials (
+           credential_id, run_id, attempt_id, plan_id, plan_version,
+           plan_item_id, approval_id, repository, lease_generation,
+           status, created_at, updated_at
+         ) VALUES (
+           'credential-pre-verification-repair', ?, ?, ?, 1, ?,
+           'approval-pre-verification-repair', ?, 1, 'active', ?, ?
+         )`,
+      ).bind(RUN_ID, repair.attemptId, PLAN_ID, ITEM_ID, REPOSITORY, nowIso, nowIso),
+    ]);
+    const reconciler = new AttemptFailureStore(env.DB_CONTROL);
+    expect(await reconciler.reconcilePreVerificationRepairs(1, TEST_STARTED_AT)).toBe(0);
+    await env.DB_CONTROL.prepare(
+      `UPDATE github_write_credentials SET status = 'expired', updated_at = ?
+       WHERE credential_id = 'credential-pre-verification-repair'`,
+    ).bind(nowIso).run();
+    expect(await reconciler.reconcilePreVerificationRepairs(1, TEST_STARTED_AT)).toBe(1);
   });
 
   it('settles a delayed repair dispatch without GitHub effect after its Plan is blocked', async () => {

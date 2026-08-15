@@ -105,6 +105,7 @@ import { QuotaControlStore } from './storage/quota-control-store.js';
 import { BackupRestoreCoordinator } from './storage/backup-restore-store.js';
 import { DataRetentionStore } from './storage/data-retention-store.js';
 import { AutomatedReviewScheduler } from './storage/automated-review-store.js';
+import { AttemptFailureStore } from './storage/attempt-failure-store.js';
 
 export { DeliveryRunWorkflow } from './workflows/delivery-run-workflow.js';
 export { ControlPlaneBackupWorkflow } from './workflows/control-plane-backup-workflow.js';
@@ -251,6 +252,14 @@ export default {
       // filtering does not bypass D1 fencing; the Queue consumer still reloads
       // the immutable outbox and Attempt before performing any effect.
       await relay.relayDestination('github_actions', 1);
+      // A repair that failed before producing a head, checkpoint, Evidence, or
+      // verification result may safely consume the same immutable failed-suite
+      // authority once more. Reconcile this D1-only lane before external reads
+      // and immediately offer its unique dispatch to the Queue.
+      if (await new AttemptFailureStore(env.DB_CONTROL)
+        .reconcilePreVerificationRepairs(1, scheduledNow()) > 0) {
+        await relay.relayDestination('github_actions', 1);
+      }
       // This D1-only recovery binds one exact blocked analysis lineage. Run it
       // before any GitHub GET: a Free-plan scheduled invocation can otherwise
       // exhaust its CPU budget on external observation before reaching the
