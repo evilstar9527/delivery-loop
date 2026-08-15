@@ -218,7 +218,7 @@ jobs:
           jq -n --argjson commentId "$DELIVERY_APPROVAL_COMMENT_ID" \
             '{commentId:$commentId}' > "$request_file"
           chmod 600 "$request_file"
-          status="$(curl --silent --show-error --max-time 30 \
+          status="$(curl --silent --show-error --max-time 120 \
             --url "https://delivery-loop-control-plane.eve55265.workers.dev/v1/runs/$DELIVERY_APPROVAL_RUN_ID/github-commit-approvals" \
             --request POST \
             --header "Authorization: Bearer $DELIVERY_OPERATIONS_TOKEN" \

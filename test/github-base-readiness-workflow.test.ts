@@ -237,6 +237,7 @@ describe('GitHub-hosted base readiness workflow', () => {
       '/github-commit-approvals',
     );
     expect(approvalStep?.run).toContain('--request POST');
+    expect(approvalStep?.run).toContain('--max-time 120');
     expect(approvalStep?.run).toContain("'{commentId:$commentId}'");
     expect(approvalStep?.run).toContain(".status == \"accepted\"");
     expect(approvalStep?.run).toMatch(/select\(\s+\.status == "accepted"/);

@@ -72,4 +72,32 @@ describe('Watt-derived identity mapper', () => {
       roles: ['human'],
     });
   });
+
+  it('does not rewrite already identical principal and channel bindings', async () => {
+    const mapper = new IdentityMapper(env.DB_CONTROL);
+    await mapper.bind('user:stable', ['approve:repo_write', 'human'], NOW);
+    await mapper.bindChannelIdentity(
+      'github:example/repository',
+      'stable-user',
+      'user:stable',
+      NOW,
+    );
+
+    const later = '2026-07-26T03:01:00.000Z';
+    await mapper.bind('user:stable', ['human', 'approve:repo_write'], later);
+    await mapper.bindChannelIdentity(
+      'github:example/repository',
+      'stable-user',
+      'user:stable',
+      later,
+    );
+
+    expect(await env.DB_CONTROL.prepare(
+      'SELECT updated_at FROM identity_mappings WHERE principal = ?',
+    ).bind('user:stable').first()).toEqual({ updated_at: NOW });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT updated_at FROM channel_identities
+       WHERE channel = ? AND channel_user_id = ?`,
+    ).bind('github:example/repository', 'stable-user').first()).toEqual({ updated_at: NOW });
+  });
 });
