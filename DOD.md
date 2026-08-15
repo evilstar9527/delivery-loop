@@ -595,6 +595,12 @@ E2E 必须脚本化到可重跑的最大程度；飞书人工批准步骤可以�
   exact guard证明第五次失败的blocker reason为`attempt_limit`而非`external_dependency`；仅接受
   这两个已知reason的production-shape修复已17/17 RED/GREEN，尚待受保护交付和再次发布，不能
   冒充active Plan或backend PR。
+- [x] pre-verification repair approval fence：production Action `31858450204`证明新reconciler在
+  原`repo_write` approval过期后仍创建第三Attempt，Runner在Agent前固定`credential_unavailable`，
+  Run以真实`external_dependency`阻断。候选读取与原子创建现都要求latest non-invalidated decision
+  仍为未过期approve；production-shape测试先RED为错误创建1个Attempt，修复后过期时保持原
+  Attempt/Item且零新outbox，有效approval并发唯一创建路径无回归。当前blocked Run不创建第四Attempt，
+  该子项不冒充backend PR或父主链完成。
 
 ## 10. 外部前置与人工决策
 
