@@ -119,6 +119,7 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM verification_suite_commands'),
     env.DB_CONTROL.prepare('DELETE FROM verification_suites'),
     env.DB_CONTROL.prepare('DELETE FROM github_write_credentials'),
+    env.DB_CONTROL.prepare('DELETE FROM approvals'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
     env.DB_CONTROL.prepare('DELETE FROM evidence'),
     env.DB_CONTROL.prepare('DELETE FROM checkpoints'),
@@ -268,6 +269,24 @@ async function seed(): Promise<void> {
          plan_id, item_id, status, active_attempt_id, version, updated_at
        ) VALUES (?, ?, 'in_progress', ?, 2, ?)`,
     ).bind(PLAN_ID, ITEM_ID, INITIAL_ATTEMPT_ID, nowIso),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO approvals (
+         approval_id, run_id, task_revision, plan_id, plan_version,
+         plan_digest, base_sha, effect, actor_id, decision, nonce_digest,
+         expires_at, created_at
+       ) VALUES (
+         'approval-verification-repair', ?, '1', ?, 1, ?, ?,
+         'repo_write', 'test-reviewer', 'approve', ?, ?, ?
+       )`,
+    ).bind(
+      RUN_ID,
+      PLAN_ID,
+      PLAN_DIGEST,
+      BASE_SHA,
+      await canonicalSha256('verification-repair-approval'),
+      LEASE_EXPIRES_AT,
+      nowIso,
+    ),
   ]);
 }
 
@@ -694,6 +713,39 @@ describe('bounded verification repair loop', () => {
          AND delivery_state = 'pending'`,
     ).bind(RUN_ID, replacementAttemptId).first()).toEqual({ count: 1 });
     expect(await reconciler.reconcilePreVerificationRepairs(1, TEST_STARTED_AT)).toBe(0);
+  });
+
+  it('does not consume a repair Attempt after the repo_write approval expires', async () => {
+    const { repair: firstRepair } = await scheduleFirstRepair('test:unit');
+    const effects = new FakeDispatchEffects();
+    expect(await dispatcher(effects).deliver(firstRepair.dispatchOutboxId)).toBe('settled');
+    const active = await activateRepair(firstRepair, INITIAL_HEAD_SHA);
+    const failed = await reportPreVerificationPatchFailure({
+      attemptId: firstRepair.attemptId,
+      token: active.token,
+      expectedVersion: active.version,
+      leaseGeneration: active.leaseGeneration,
+    });
+    expect(failed.status).toBe(202);
+
+    const reconciler = new AttemptFailureStore(env.DB_CONTROL);
+    const afterApprovalExpiry = new Date(Date.parse(LEASE_EXPIRES_AT) + 1);
+    expect(await reconciler.reconcilePreVerificationRepairs(1, afterApprovalExpiry)).toBe(0);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM attempts
+       WHERE run_id = ? AND mode IN ('implement', 'review_fix')`,
+    ).bind(RUN_ID).first()).toEqual({ count: 2 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM outbox
+       WHERE run_id = ? AND kind = 'execution_dispatch'`,
+    ).bind(RUN_ID).first()).toEqual({ count: 1 });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, active_attempt_id FROM plan_item_progress
+       WHERE plan_id = ? AND item_id = ?`,
+    ).bind(PLAN_ID, ITEM_ID).first()).toEqual({
+      status: 'in_progress',
+      active_attempt_id: firstRepair.attemptId,
+    });
   });
 
   it('does not re-dispatch a pre-verification repair while its write credential is active', async () => {

@@ -155,6 +155,40 @@ const FAILURE_RUN_STATES = new Set([
   'deploying',
 ]);
 
+const CURRENT_REPO_WRITE_APPROVAL_GUARD = `EXISTS (
+  SELECT 1 FROM approvals AS approval
+  WHERE approval.run_id = runs.run_id
+    AND approval.task_revision = runs.task_revision
+    AND approval.plan_id = failed.plan_id
+    AND approval.plan_version = failed.plan_version
+    AND approval.plan_digest = plans.digest
+    AND approval.base_sha = runs.base_sha
+    AND approval.effect = 'repo_write'
+    AND approval.decision = 'approve'
+    AND approval.created_at <= ? AND approval.expires_at > ?
+    AND NOT EXISTS (
+      SELECT 1 FROM invalidated_approvals
+      WHERE invalidated_approvals.approval_id = approval.approval_id
+    )
+    AND approval.approval_id = (
+      SELECT latest.approval_id
+      FROM approvals AS latest
+      WHERE latest.run_id = runs.run_id
+        AND latest.task_revision = runs.task_revision
+        AND latest.plan_id = failed.plan_id
+        AND latest.plan_version = failed.plan_version
+        AND latest.plan_digest = plans.digest
+        AND latest.base_sha = runs.base_sha
+        AND latest.effect = 'repo_write'
+        AND NOT EXISTS (
+          SELECT 1 FROM invalidated_approvals
+          WHERE invalidated_approvals.approval_id = latest.approval_id
+        )
+      ORDER BY latest.created_at DESC, latest.approval_id DESC
+      LIMIT 1
+    )
+)`;
+
 function stableSuffix(digest: string): string {
   return digest.slice('sha256:'.length, 'sha256:'.length + 56);
 }
@@ -173,6 +207,7 @@ export class AttemptFailureStore {
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 100) {
       throw new Error('Pre-verification repair reconciliation limit must be between 1 and 100');
     }
+    const nowIso = now.toISOString();
     const candidates = await this.db.prepare(
       `SELECT failures.failure_id, failures.run_id,
               failed.attempt_id AS failed_attempt_id,
@@ -238,6 +273,7 @@ export class AttemptFailureStore {
          AND progress.status = 'in_progress'
          AND progress.active_attempt_id = failed.attempt_id
          AND progress.protected_path_gate_id IS NULL
+         AND ${CURRENT_REPO_WRITE_APPROVAL_GUARD}
          AND NOT EXISTS (
            SELECT 1 FROM run_blockers
            WHERE run_blockers.run_id = failures.run_id
@@ -270,7 +306,7 @@ export class AttemptFailureStore {
          )
        ORDER BY failures.created_at, failures.failure_id
        LIMIT ?`,
-    ).bind(DEFAULT_MAX_ATTEMPTS, REPEATED_FAILURE_LIMIT, limit)
+    ).bind(DEFAULT_MAX_ATTEMPTS, REPEATED_FAILURE_LIMIT, nowIso, nowIso, limit)
       .all<PreVerificationRepairCandidateRow>();
     let created = 0;
     for (const candidate of candidates.results) {
@@ -1202,6 +1238,7 @@ export class AttemptFailureStore {
            AND progress.status = 'in_progress'
            AND progress.active_attempt_id = failed.attempt_id
            AND progress.protected_path_gate_id IS NULL
+           AND ${CURRENT_REPO_WRITE_APPROVAL_GUARD}
            AND NOT EXISTS (
              SELECT 1 FROM run_blockers
              WHERE run_blockers.run_id = failed.run_id
@@ -1247,6 +1284,8 @@ export class AttemptFailureStore {
         candidate.fingerprint_digest,
         DEFAULT_MAX_ATTEMPTS,
         REPEATED_FAILURE_LIMIT,
+        nowIso,
+        nowIso,
       ),
       this.db.prepare(
         `INSERT INTO attempt_repairs (
