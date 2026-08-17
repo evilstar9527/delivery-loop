@@ -78,7 +78,8 @@ function origin(raw: string): string {
     throw new ExecutorPatchClientError('invalid_config');
   }
   if (
-    url.protocol !== 'https:' || url.username !== '' || url.password !== '' ||
+    (url.protocol !== 'https:' && url.origin !== 'http://control.delivery-loop.internal') ||
+    url.username !== '' || url.password !== '' ||
     url.pathname !== '/' || url.search !== '' || url.hash !== ''
   ) throw new ExecutorPatchClientError('invalid_config');
   return url.origin;

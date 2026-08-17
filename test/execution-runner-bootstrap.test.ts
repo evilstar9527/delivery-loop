@@ -1405,7 +1405,7 @@ describe('production execution Runner bootstrap', () => {
       DELIVERY_ATTEMPT_MODE: 'implement',
       DELIVERY_PLAN_VERSION: '1',
       DELIVERY_PLAN_ITEM_ID: ITEM_ID,
-      DELIVERY_CONTROL_PLANE_URL: 'https://control.delivery-loop.internal',
+      DELIVERY_CONTROL_PLANE_URL: 'http://control.delivery-loop.internal',
       DELIVERY_EXECUTOR_IDENTITY_KIND: 'cloudflare_sandbox_proxy',
       DELIVERY_EXECUTION_ID: 'execution-implement-proxy-1',
       DELIVERY_MODEL_PROFILE_ID: 'profile-executor-proxy',

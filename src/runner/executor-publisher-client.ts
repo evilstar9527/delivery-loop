@@ -86,7 +86,9 @@ function endpoint(context: ExecutorPublisherClientContext, suffix: string): stri
     throw new ExecutorPublisherClientError();
   }
   if (
-    origin.protocol !== 'https:' || origin.username !== '' || origin.password !== '' ||
+    (origin.protocol !== 'https:' &&
+      origin.origin !== 'http://control.delivery-loop.internal') ||
+    origin.username !== '' || origin.password !== '' ||
     origin.pathname !== '/' || origin.search !== '' || origin.hash !== '' ||
     !ATTEMPT_ID_PATTERN.test(context.attemptId) ||
     !ID_PATTERN.test(context.publisherExecutionId) || !ID_PATTERN.test(context.publicationId)

@@ -115,7 +115,9 @@ export async function checkoutExecutorRepository(input: {
     throw new ExecutorRepositoryCheckoutError();
   }
   if (
-    origin.protocol !== 'https:' || origin.username !== '' || origin.password !== '' ||
+    (origin.protocol !== 'https:' &&
+      origin.origin !== 'http://control.delivery-loop.internal') ||
+    origin.username !== '' || origin.password !== '' ||
     origin.pathname !== '/' || origin.search !== '' || origin.hash !== ''
   ) throw new ExecutorRepositoryCheckoutError();
   const repositoryUrl = new URL(

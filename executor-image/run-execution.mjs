@@ -72,7 +72,7 @@ if (
     'attemptId,controlPlaneUrl,executionId,identityKind,schemaVersion' ||
   grant.schemaVersion !== '1' || grant.identityKind !== 'cloudflare_sandbox_proxy' ||
   grant.executionId !== spec.executionId || grant.attemptId !== spec.attemptId ||
-  grant.controlPlaneUrl !== 'https://control.delivery-loop.internal'
+  grant.controlPlaneUrl !== 'http://control.delivery-loop.internal'
 ) {
   fail('invalid_execution_grant');
 }

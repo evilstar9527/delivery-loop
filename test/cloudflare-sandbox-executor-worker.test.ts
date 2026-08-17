@@ -2,10 +2,20 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CloudflareExecutorBackendError,
   createCloudflareSandboxExecutorHandler,
+  sandboxRpcFailure,
   type CloudflareSandboxExecutorBackend,
 } from '../src/executor/cloudflare-worker/executor-api.js';
 import type { CloudflareSandboxStartRequest } from '../src/executor/cloudflare-worker/protocol.js';
-import { proxyControlPlaneRequest } from
+import {
+  providerContainerIdentity,
+  sandboxIdFor,
+} from '../src/executor/cloudflare-worker/sandbox-id.js';
+import { sandboxProcessDiagnostic } from
+  '../src/executor/cloudflare-worker/process-diagnostic.js';
+import {
+  dispatchControlPlaneProxyOverride,
+  proxyControlPlaneRequest,
+} from
   '../src/executor/cloudflare-worker/control-plane-proxy.js';
 
 const CONTROL_TOKEN = 'test-executor-control-token';
@@ -64,9 +74,55 @@ function backend(): CloudflareSandboxExecutorBackend {
 }
 
 describe('Cloudflare Sandbox executor Worker API', () => {
+  it('derives deterministic Sandbox SDK identifiers within the DNS limit', async () => {
+    const first = await sandboxIdFor('execution-worker-1');
+    expect(first).toMatch(/^executor-[a-f0-9]+$/);
+    expect(first).toHaveLength(63);
+    expect(await sandboxIdFor('execution-worker-1')).toBe(first);
+    expect(await sandboxIdFor('execution-worker-2')).not.toBe(first);
+  });
+
+  it('freezes the callback-verifiable Durable Object identity after placement', () => {
+    const durableObjectId = 'a'.repeat(64);
+    expect(providerContainerIdentity(
+      durableObjectId,
+      '30269b67-d5ac-1c5e-aadd-0716f6d09bc6',
+    )).toBe(durableObjectId);
+    expect(() => providerContainerIdentity('placement-only', 'placement-id')).toThrow(
+      'container placement unavailable',
+    );
+    expect(() => providerContainerIdentity(durableObjectId, null)).toThrow(
+      'container placement unavailable',
+    );
+  });
+
+  it('projects only allowlisted process failure fields from bounded logs', () => {
+    expect(sandboxProcessDiagnostic(JSON.stringify({
+      schemaVersion: '1',
+      component: 'runner',
+      event: 'analysis_attempt_result',
+      outcome: 'failed',
+      failureKind: 'process_nonzero_exit',
+      failureStage: 'single_pass',
+      providerFailureCode: 'provider_network_failed',
+      raw: 'CANARY_MUST_NOT_BE_PROJECTED',
+    }))).toEqual({
+      kind: 'analysis_failure',
+      failureKind: 'process_nonzero_exit',
+      failureStage: 'single_pass',
+      providerFailureCode: 'provider_network_failed',
+    });
+    expect(sandboxProcessDiagnostic('CANARY_MUST_NOT_BE_PROJECTED')).toBeNull();
+    expect(sandboxProcessDiagnostic(
+      'delivery-agent bootstrap failed: invalid_execution_spec',
+    )).toEqual({ kind: 'bootstrap_failure', code: 'invalid_execution_spec' });
+  });
+
   it('keeps model grants separate from callback authority', async () => {
     const requests: Request[] = [];
-    vi.stubGlobal('fetch', async (outbound: Request) => {
+    let receiverWasGlobal = true;
+    vi.stubGlobal('fetch', async function (this: unknown, outbound: Request) {
+      receiverWasGlobal &&= this === globalThis;
       requests.push(outbound);
       return new Response(null, { status: 204 });
     });
@@ -81,7 +137,7 @@ describe('Cloudflare Sandbox executor Worker API', () => {
       };
       const env = { EXECUTOR_CALLBACK_TOKEN: 'worker-callback-token-value' };
       const invoke = async (path: string, method: 'GET' | 'POST', token: string) =>
-        await proxyControlPlaneRequest(new Request(`https://control.delivery-loop.internal${path}`, {
+        await proxyControlPlaneRequest(new Request(`http://control.delivery-loop.internal${path}`, {
           method,
           headers: {
             authorization: `Bearer ${token}`,
@@ -165,6 +221,61 @@ describe('Cloudflare Sandbox executor Worker API', () => {
         executionId: 'execution-worker-1',
         containerId: 'container-placement-1',
       })));
+      expect(receiverWasGlobal).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('dispatches the trusted runtime override across the ContainerProxy isolate', async () => {
+    const outbound = vi.fn(async (request: Request) => {
+      void request;
+      return new Response(null, { status: 204 });
+    });
+    vi.stubGlobal('fetch', outbound);
+    try {
+      const fallback = vi.fn(async () => new Response(null, { status: 520 }));
+      const response = await dispatchControlPlaneProxyOverride(
+        new Request(
+          'http://control.delivery-loop.internal/v1/attempts/attempt-worker-1/' +
+            'executor-exchange',
+          { method: 'POST' },
+        ),
+        { EXECUTOR_CALLBACK_TOKEN: 'worker-callback-token-value' },
+        {
+          containerId: 'container-placement-1',
+          outboundByHostOverrides: {
+            'control.delivery-loop.internal': {
+              method: 'controlPlaneProxy',
+              params: {
+                controlPlaneOrigin: 'https://control.example.test',
+                executionId: 'execution-worker-1',
+                attemptId: 'attempt-worker-1',
+              },
+            },
+          },
+        },
+        fallback,
+      );
+      expect(response.status).toBe(204);
+      expect(fallback).not.toHaveBeenCalled();
+      expect(outbound).toHaveBeenCalledOnce();
+      const proxied = vi.mocked(outbound).mock.calls[0]![0];
+      expect(proxied.url).toBe(
+        'https://control.example.test/v1/attempts/attempt-worker-1/executor-exchange',
+      );
+      expect(proxied.headers.get('authorization')).toBe(
+        'Bearer worker-callback-token-value',
+      );
+
+      const unrelated = await dispatchControlPlaneProxyOverride(
+        new Request('https://example.test/'),
+        {},
+        {},
+        fallback,
+      );
+      expect(unrelated.status).toBe(520);
+      expect(fallback).toHaveBeenCalledOnce();
     } finally {
       vi.unstubAllGlobals();
     }
@@ -242,7 +353,7 @@ describe('Cloudflare Sandbox executor Worker API', () => {
     expect(effects.ensure).not.toHaveBeenCalled();
   });
 
-  it('observes and cancels by execution identity with strict cancellation reasons', async () => {
+  it('observes and cancels the immutable provider external ID without re-deriving it', async () => {
     const effects = backend();
     const handler = createCloudflareSandboxExecutorHandler({
       controlToken: CONTROL_TOKEN,
@@ -251,7 +362,7 @@ describe('Cloudflare Sandbox executor Worker API', () => {
     });
 
     const observed = await handler.fetch(request(
-      '/v1/executions/execution-worker-1/observe',
+      '/v1/executions/executor-provider-id-1/observe',
     ));
     expect(observed.status).toBe(200);
     await expect(observed.json()).resolves.toMatchObject({
@@ -259,10 +370,10 @@ describe('Cloudflare Sandbox executor Worker API', () => {
       status: 'running',
       exitCode: null,
     });
-    expect(effects.observe).toHaveBeenCalledWith('execution-worker-1');
+    expect(effects.observe).toHaveBeenCalledWith('executor-provider-id-1');
 
     const cancelled = await handler.fetch(request(
-      '/v1/executions/execution-worker-1/cancel',
+      '/v1/executions/executor-provider-id-1/cancel',
       { method: 'POST', body: JSON.stringify({ reason: 'lease_expired' }) },
     ));
     expect(cancelled.status).toBe(200);
@@ -271,12 +382,12 @@ describe('Cloudflare Sandbox executor Worker API', () => {
       disposition: 'cancelled',
     });
     expect(effects.cancel).toHaveBeenCalledWith(
-      'execution-worker-1',
+      'executor-provider-id-1',
       'lease_expired',
     );
 
     const invalid = await handler.fetch(request(
-      '/v1/executions/execution-worker-1/cancel',
+      '/v1/executions/executor-provider-id-1/cancel',
       { method: 'POST', body: JSON.stringify({ reason: 'user_text' }) },
     ));
     expect(invalid.status).toBe(400);
@@ -306,8 +417,38 @@ describe('Cloudflare Sandbox executor Worker API', () => {
       '/v1/executions/execution-worker-1/observe',
     ));
     expect(unavailable.status).toBe(503);
+
+    const stagedUnavailableHandler = createCloudflareSandboxExecutorHandler({
+      controlToken: CONTROL_TOKEN,
+      configuredImageRef: IMAGE_REF,
+      backend: {
+        ensure: vi.fn(async () => {
+          throw new CloudflareExecutorBackendError('sandbox_process_start_unavailable');
+        }),
+        observe: vi.fn(),
+        cancel: vi.fn(),
+      },
+    });
+    const stagedUnavailable = await stagedUnavailableHandler.fetch(request(
+      '/v1/executions/ensure', {
+      method: 'POST',
+      body: JSON.stringify(startRequest()),
+    }));
+    expect(stagedUnavailable.status).toBe(503);
+    expect(await stagedUnavailable.json()).toEqual({
+      error: { code: 'sandbox_process_start_unavailable' },
+    });
     expect(JSON.stringify(await unavailable.json())).toBe(
       JSON.stringify({ error: { code: 'sandbox_unavailable' } }),
     );
+  });
+
+  it('preserves allowlisted stage errors that cross the Durable Object RPC boundary', async () => {
+    const rpcBoundaryError = {
+      message: 'Cloudflare executor backend failed: sandbox_workspace_prepare_unavailable',
+    };
+    expect(sandboxRpcFailure(rpcBoundaryError)).toMatchObject({
+      code: 'sandbox_workspace_prepare_unavailable',
+    });
   });
 });

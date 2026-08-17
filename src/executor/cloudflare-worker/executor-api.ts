@@ -61,9 +61,9 @@ const ProviderFactSchema: z.ZodType<CloudflareSandboxProviderFact> = z.object({
 
 export interface CloudflareSandboxExecutorBackend {
   ensure(request: CloudflareSandboxStartRequest): Promise<CloudflareSandboxStartResult>;
-  observe(executionId: string): Promise<CloudflareSandboxProviderFact>;
+  observe(sandboxId: string): Promise<CloudflareSandboxProviderFact>;
   cancel(
-    executionId: string,
+    sandboxId: string,
     reason: ExecutorCancelReason,
   ): Promise<'cancelled' | 'already_terminal'>;
 }
@@ -71,13 +71,54 @@ export interface CloudflareSandboxExecutorBackend {
 export type CloudflareExecutorBackendErrorCode =
   | 'execution_not_found'
   | 'execution_binding_conflict'
-  | 'execution_not_started';
+  | 'execution_not_started'
+  | 'sandbox_binding_unavailable'
+  | 'sandbox_storage_read_unavailable'
+  | 'sandbox_storage_initialize_unavailable'
+  | 'sandbox_network_policy_allowlist_unavailable'
+  | 'sandbox_network_policy_proxy_unavailable'
+  | 'sandbox_workspace_prepare_unavailable'
+  | 'sandbox_process_lookup_unavailable'
+  | 'sandbox_process_start_unavailable'
+  | 'sandbox_placement_unavailable'
+  | 'sandbox_storage_projection_unavailable'
+  | 'sandbox_rpc_unavailable';
 
 export class CloudflareExecutorBackendError extends Error {
   constructor(readonly code: CloudflareExecutorBackendErrorCode) {
     super(`Cloudflare executor backend failed: ${code}`);
     this.name = 'CloudflareExecutorBackendError';
   }
+}
+
+export function sandboxRpcFailure(cause: unknown): CloudflareExecutorBackendError {
+  const message = cause instanceof Error
+    ? cause.message
+    : typeof cause === 'object' && cause !== null && 'message' in cause &&
+        typeof cause.message === 'string'
+      ? cause.message
+      : null;
+  for (const stage of [
+    'binding',
+    'storage_read',
+    'storage_initialize',
+    'network_policy_allowlist',
+    'network_policy_proxy',
+    'workspace_prepare',
+    'process_lookup',
+    'process_start',
+    'placement',
+    'storage_projection',
+  ] as const) {
+    const code = `sandbox_${stage}_unavailable` as const;
+    if (
+      message === code ||
+      message === `Cloudflare executor backend failed: ${code}`
+    ) {
+      return new CloudflareExecutorBackendError(code);
+    }
+  }
+  return new CloudflareExecutorBackendError('sandbox_rpc_unavailable');
 }
 
 export interface CloudflareSandboxExecutorHandlerOptions {
@@ -158,7 +199,11 @@ async function readBoundedJson(request: Request): Promise<unknown> {
 function backendFailure(cause: unknown): Response {
   if (cause instanceof CloudflareExecutorBackendError) {
     if (cause.code === 'execution_not_found') return error(cause.code, 404);
-    return error(cause.code, 409);
+    if (
+      cause.code === 'execution_binding_conflict' ||
+      cause.code === 'execution_not_started'
+    ) return error(cause.code, 409);
+    return error(cause.code, 503);
   }
   return error('sandbox_unavailable', 503);
 }
@@ -201,12 +246,12 @@ export function createCloudflareSandboxExecutorHandler(
         url.pathname,
       );
       if (match === null) return error('not_found', 404);
-      const executionId = match[1];
+      const sandboxId = match[1];
       const operation = match[2];
-      if (executionId === undefined || operation === undefined) return error('not_found', 404);
+      if (sandboxId === undefined || operation === undefined) return error('not_found', 404);
       try {
         if (operation === 'observe' && request.method === 'GET') {
-          const fact = ProviderFactSchema.safeParse(await options.backend.observe(executionId));
+          const fact = ProviderFactSchema.safeParse(await options.backend.observe(sandboxId));
           return fact.success
             ? json({ schemaVersion: '1', ...fact.data })
             : error('sandbox_unavailable', 503);
@@ -214,7 +259,7 @@ export function createCloudflareSandboxExecutorHandler(
         if (operation === 'cancel' && request.method === 'POST') {
           const parsed = CancelRequestSchema.safeParse(await readBoundedJson(request));
           if (!parsed.success) return error('invalid_argument', 400);
-          const disposition = await options.backend.cancel(executionId, parsed.data.reason);
+          const disposition = await options.backend.cancel(sandboxId, parsed.data.reason);
           return json({ schemaVersion: '1', disposition });
         }
         return error('method_not_allowed', 405);

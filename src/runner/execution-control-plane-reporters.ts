@@ -84,7 +84,8 @@ function endpoint(context: ExecutionReporterContext, suffix: string): string {
     throw new ExecutionControlPlaneReporterError();
   }
   if (
-    base.protocol !== 'https:' ||
+    (base.protocol !== 'https:' &&
+      base.origin !== 'http://control.delivery-loop.internal') ||
     base.username !== '' ||
     base.password !== '' ||
     base.search !== '' ||

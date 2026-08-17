@@ -249,6 +249,28 @@ export class AttemptExchangeStore {
           attempt.lease_generation,
           nowIso,
         ),
+      ...(identityKind !== 'executor' || executionId === null
+        ? []
+        : [this.db.prepare(
+          `UPDATE attempt_execution_instances
+           SET status = 'running', updated_at = ?
+           WHERE execution_id = ? AND attempt_id = ? AND execution_role = 'work'
+             AND status = 'starting' AND lease_generation = ?
+             AND EXISTS (
+               SELECT 1 FROM attempt_tokens
+               WHERE attempt_id = attempt_execution_instances.attempt_id
+                 AND identity_kind = 'executor' AND execution_id = ?
+                 AND lease_generation = ? AND revoked_at IS NULL AND expires_at > ?
+             )`,
+        ).bind(
+          nowIso,
+          executionId,
+          attempt.attempt_id,
+          attempt.lease_generation,
+          executionId,
+          attempt.lease_generation,
+          nowIso,
+        )]),
     ]);
 
     const persisted = await this.db
@@ -277,6 +299,19 @@ export class AttemptExchangeStore {
       .first<{ status: string; version: number; lease_generation: number }>();
     if (activeAttempt === null || activeAttempt.status !== 'running') {
       throw new AttemptExchangeError('attempt_lease_inactive');
+    }
+    if (identityKind === 'executor' && executionId !== null) {
+      const activeExecution = await this.db.prepare(
+        `SELECT status FROM attempt_execution_instances
+         WHERE execution_id = ? AND attempt_id = ? AND lease_generation = ?`,
+      ).bind(
+        executionId,
+        attempt.attempt_id,
+        attempt.lease_generation,
+      ).first<{ status: string }>();
+      if (activeExecution?.status !== 'running') {
+        throw new AttemptExchangeError('attempt_lease_inactive');
+      }
     }
     let persistedScopes: unknown;
     try {

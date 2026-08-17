@@ -129,7 +129,10 @@ export class CloudflareSandboxWorkerEffects implements CloudflareSandboxExecutor
       this.callbackToken !== undefined &&
       (this.callbackToken.length < 16 || this.callbackToken.length > 4_096)
     ) throw new Error('Cloudflare Sandbox runtime callback token is invalid');
-    this.fetcher = options.fetch ?? fetch;
+    // Cloudflare's global fetch requires the runtime global as its receiver.
+    // Keeping the bare function on this instance and calling this.fetcher(...)
+    // can fail before a request leaves the Worker with an illegal invocation.
+    this.fetcher = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.maxResponseBytes = options.maxResponseBytes ?? MAX_RESPONSE_BYTES;
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0 || this.timeoutMs > 60_000) {
@@ -258,8 +261,9 @@ export class CloudflareSandboxWorkerEffects implements CloudflareSandboxExecutor
     });
     let response: Response;
     try {
+      const fetcher = this.fetcher;
       response = await Promise.race([
-        this.binding === undefined ? this.fetcher(request) : this.binding.fetch(request),
+        this.binding === undefined ? fetcher(request) : this.binding.fetch(request),
         deadline,
       ]);
     } catch (cause) {

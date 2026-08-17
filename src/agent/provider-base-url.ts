@@ -51,14 +51,14 @@ export function executorModelProviderBaseUrl(attemptId: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/.test(attemptId)) {
     throw new Error('Executor model provider identity is invalid');
   }
-  return `https://control.delivery-loop.internal/v1/attempts/${
+  return `http://control.delivery-loop.internal/v1/attempts/${
     encodeURIComponent(attemptId)
   }/executor-model/v1`;
 }
 
 export function normalizeExecutorModelProviderBaseUrl(raw: string | undefined): string | undefined {
   if (raw === undefined) return undefined;
-  const match = /^https:\/\/control\.delivery-loop\.internal\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9_-]{0,199})\/executor-model\/v1$/.exec(raw);
+  const match = /^http:\/\/control\.delivery-loop\.internal\/v1\/attempts\/([A-Za-z0-9][A-Za-z0-9_-]{0,199})\/executor-model\/v1$/.exec(raw);
   if (match === null || executorModelProviderBaseUrl(match[1]!) !== raw) {
     throw new Error('Executor model provider URL is invalid');
   }

@@ -7,8 +7,8 @@
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "EXECUTOR_IMAGE_REF": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:628b8fa20ee7c3d5d20161056db4ccf06d6708429c46a1cef5fd56a3bfd286ed",
-    "EXECUTOR_IMAGE_DIGEST": "sha256:628b8fa20ee7c3d5d20161056db4ccf06d6708429c46a1cef5fd56a3bfd286ed"
+    "EXECUTOR_IMAGE_REF": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:6eb5753350278abfda7c9a6ff8efa7eca2be30ce118fe622de295caffd79c268",
+    "EXECUTOR_IMAGE_DIGEST": "sha256:6eb5753350278abfda7c9a6ff8efa7eca2be30ce118fe622de295caffd79c268"
   },
   "observability": {
     "enabled": true,
@@ -36,7 +36,7 @@
     {
       "name": "delivery-agent-sandbox",
       "class_name": "DeliveryAgentSandbox",
-      "image": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:628b8fa20ee7c3d5d20161056db4ccf06d6708429c46a1cef5fd56a3bfd286ed",
+      "image": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:6eb5753350278abfda7c9a6ff8efa7eca2be30ce118fe622de295caffd79c268",
       "max_instances": 10,
       "instance_type": "standard-1"
     }

@@ -63,7 +63,7 @@ describe('executor patch runtime client', () => {
       return Response.json(await publisherResponse());
     });
     await expect(uploadExecutorWorkPatch({
-      controlPlaneUrl: 'https://control.delivery-loop.internal',
+      controlPlaneUrl: 'http://control.delivery-loop.internal',
       attemptId: 'attempt-client-1',
       executionId: 'execution-work-1',
       attemptToken: 'short-work-token',
@@ -72,7 +72,7 @@ describe('executor patch runtime client', () => {
       proposal,
     }, fetcher)).resolves.toMatchObject({ created: true });
     await expect(downloadExecutorPublisherPatch({
-      controlPlaneUrl: 'https://control.delivery-loop.internal',
+      controlPlaneUrl: 'http://control.delivery-loop.internal',
       attemptId: 'attempt-client-1',
       executionId: 'execution-publisher-1',
       patchId: 'patch-client-1',
@@ -99,7 +99,7 @@ describe('executor patch runtime client', () => {
     const tampered = await publisherResponse();
     tampered.patchDigest = `sha256:${'9'.repeat(64)}`;
     await expect(downloadExecutorPublisherPatch({
-      controlPlaneUrl: 'https://control.delivery-loop.internal',
+      controlPlaneUrl: 'http://control.delivery-loop.internal',
       attemptId: 'attempt-client-1',
       executionId: 'execution-publisher-1',
       patchId: 'patch-client-1',
@@ -113,7 +113,7 @@ describe('executor patch runtime client', () => {
     ];
     const waits: number[] = [];
     await expect(downloadPublisherPatch({
-      DELIVERY_CONTROL_PLANE_URL: 'https://control.delivery-loop.internal',
+      DELIVERY_CONTROL_PLANE_URL: 'http://control.delivery-loop.internal',
       DELIVERY_ATTEMPT_ID: 'attempt-client-1',
       DELIVERY_EXECUTION_ID: 'execution-publisher-1',
       DELIVERY_PATCH_ARTIFACT_ID: 'patch-client-1',
@@ -123,14 +123,14 @@ describe('executor patch runtime client', () => {
     expect(waits).toEqual([100]);
 
     await expect(downloadPublisherPatch({
-      DELIVERY_CONTROL_PLANE_URL: 'https://control.delivery-loop.internal',
+      DELIVERY_CONTROL_PLANE_URL: 'http://control.delivery-loop.internal',
       DELIVERY_ATTEMPT_ID: 'attempt-client-1',
       DELIVERY_EXECUTION_ID: 'execution-publisher-1',
       DELIVERY_PATCH_ARTIFACT_ID: 'patch-client-1',
     }, async () => new Response('CANARY_PROVIDER_BODY', { status: 418 }), async () => {}))
       .rejects.toMatchObject({ code: 'publisher_patch_unavailable' });
     const rejection = await downloadExecutorPublisherPatch({
-      controlPlaneUrl: 'https://control.delivery-loop.internal',
+      controlPlaneUrl: 'http://control.delivery-loop.internal',
       attemptId: 'attempt-client-1',
       executionId: 'execution-publisher-1',
       patchId: 'patch-client-1',
