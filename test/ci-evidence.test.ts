@@ -27,9 +27,10 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  node:
+    name: node checks
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: ${CHECKOUT_ACTION}
       - uses: ${PNPM_SETUP_ACTION}
@@ -38,7 +39,38 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run verify
+      - run: pnpm run verify:node
+
+  workflow:
+    name: workflow tests (shard \${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: ${CHECKOUT_ACTION}
+      - uses: ${PNPM_SETUP_ACTION}
+      - uses: ${NODE_SETUP_ACTION}
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec vitest run --config vitest.workflow.config.ts --shard=\${{ matrix.shard }}/4
+
+  verify:
+    name: verify
+    needs: [node, workflow]
+    if: \${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every verification lane
+        env:
+          NODE_RESULT: \${{ needs.node.result }}
+          WORKFLOW_RESULT: \${{ needs.workflow.result }}
+        run: test "$NODE_RESULT" = success && test "$WORKFLOW_RESULT" = success
 `;
 const CI_WORKFLOW_WRITE = CI_WORKFLOW.replace('contents: read', 'contents: write');
 const CI_WORKFLOW_ACTION_DRIFT = CI_WORKFLOW.replace(CHECKOUT_ACTION, 'actions/checkout@v4');
@@ -203,22 +235,29 @@ function fakeFetch(input: CiEvidenceManifestV1, drift: Drift = 'none'): typeof f
         status: 'completed',
         conclusion: item.conclusion,
       };
-      const job = {
-        id: Number(item.runId) + 1_000_000,
-        name: item.job.name,
+      const names = item.job.name === 'verify'
+        ? ['node checks', 'workflow tests (shard 1)', 'workflow tests (shard 2)',
+          'workflow tests (shard 3)', 'workflow tests (shard 4)', 'verify']
+        : ['validate'];
+      const jobs = names.map((name, index) => ({
+        id: Number(item.runId) * 10 + 1_000_000 + index,
+        name,
         status: item.job.status,
-        conclusion: drift === 'job_conclusion' && item.kind === 'ci_main_success'
+        conclusion: drift === 'job_conclusion' && item.kind === 'ci_main_success' && index === 0
           ? 'failure' : item.job.conclusion,
-        steps: item.job.name === 'validate'
+        steps: name === 'validate'
           ? [
             { name: 'Checkout', status: 'completed', conclusion: 'success' },
             { name: 'Install', status: 'completed', conclusion: 'success' },
             validationStep,
           ] : [{ name: 'Verify', status: 'completed', conclusion: 'success' }],
-      };
+      }));
       const duplicate = drift === 'job_count' && item.kind === 'ci_main_success';
       return responseJson(
-        { total_count: duplicate ? 2 : 1, jobs: duplicate ? [job, { ...job, id: job.id + 1 }] : [job] },
+        {
+          total_count: duplicate ? jobs.length + 1 : jobs.length,
+          jobs: duplicate ? [...jobs, { ...jobs[0]!, id: jobs[0]!.id + 100 }] : jobs,
+        },
         drift === 'pagination' && item.kind === 'ci_main_success'
           ? { link: '<https://api.github.test/next>; rel="next"' } : undefined,
       );
@@ -228,9 +267,12 @@ function fakeFetch(input: CiEvidenceManifestV1, drift: Drift = 'none'): typeof f
       if (new Headers(init?.headers).get('accept') !== 'application/vnd.github+json') {
         return new Response('unsupported media type', { status: 415 });
       }
-      const item = input.cases.find(
-        (candidate) => Number(candidate.runId) + 1_000_000 === Number(logMatch[1]),
-      );
+      const logJobId = Number(logMatch[1]);
+      const item = input.cases.find((candidate) => {
+        const firstJobId = Number(candidate.runId) * 10 + 1_000_000;
+        const jobCount = candidate.job.name === 'verify' ? 6 : 1;
+        return logJobId >= firstJobId && logJobId < firstJobId + jobCount;
+      });
       if (item === undefined) return new Response('missing', { status: 404 });
       const log = drift === 'leak' && item.kind === 'validate_invalid_failure'
         ? `validation rejected ${INVALID_TASK_CANARY}`
@@ -242,6 +284,10 @@ function fakeFetch(input: CiEvidenceManifestV1, drift: Drift = 'none'): typeof f
 }
 
 describe('GitHub CI external evidence', () => {
+  it('keeps the repository CI workflow identical to the verified contract fixture', () => {
+    expect(readFileSync(resolve('.github/workflows/ci.yml'), 'utf8')).toBe(CI_WORKFLOW);
+  });
+
   it('requires main, pull request, valid task and invalid task cases', async () => {
     const input = await manifest();
     expect(CiEvidenceManifestV1Schema.safeParse(input).success).toBe(true);
@@ -256,8 +302,8 @@ describe('GitHub CI external evidence', () => {
       fetch: fakeFetch(input),
     })).resolves.toEqual({
       schemaVersion: '1', evidenceId: input.evidenceId, repository: REPOSITORY,
-      caseCount: 4, verifiedRunCount: 4, verifiedJobCount: 4,
-      verifiedWorkflowCount: 4, scannedLogCount: 4, leakedCanaries: 0,
+      caseCount: 4, verifiedRunCount: 4, verifiedJobCount: 14,
+      verifiedWorkflowCount: 4, scannedLogCount: 14, leakedCanaries: 0,
     });
   });
 

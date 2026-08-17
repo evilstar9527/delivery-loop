@@ -119,6 +119,7 @@
 - 默认 App 权限：metadata read、contents read；仅已批准实现 attempt 获取 contents write / pull requests write 的 installation token。
 - Actions workflow 的 `GITHUB_TOKEN` 显式声明 permissions；不使用 `write-all`。
 - 当前试点仓库为public，因此Runner边界固定为literal `ubuntu-latest` GitHub-hosted job；`pnpm run verify:workflow-runners`对完整workflow inventory fail-closed，拒绝`self-hosted`、标签数组、matrix/repository variable/expression、未受审hosted标签和job级reusable workflow。不得把本机、持久VM或共享宿主注册到该public repository来绕过provider网络问题。未来如需self-hosted，必须先取得owner对机器、费用和注册权限的独立批准并升级本契约；最低边界是一job一机的clean JIT/`--ephemeral` disposable VM/container、专用runner group/label、外送保存runner application logs、任务后自动deregister并销毁，不得复用工作站或宿主Secret。独立private execution repository是另一种需要重新设计App installation、OIDC、immutable checkout和证据绑定的方案，不能由repository variable静默切换。
+- required CI 只把计算拆成一个Node lane和四个固定workerd shard；所有lane仍是literal `ubuntu-latest`、顶层`contents: read`且setup Action固定到受审commit。最终唯一名为`verify`的聚合job以`always()`运行，只在Node与完整matrix都为`success`时成功，因此分支保护继续只依赖稳定`verify`上下文，取消、跳过、缺失或失败的任一lane都不能被聚合层伪装为通过。CI外部证据verifier从exact head workflow恢复固定job集合，并核对与扫描真实展开后的六份job/log。
 - 分支保护禁止 Agent push main、批准自己的 PR、修改 required checks 或 workflow 文件（除非任务显式属于平台仓库并二次审批）。
 - 仓库初始化 verifier 没有 create/update 权限：`RepositoryBootstrapEvidenceManifestV1` 只保存用户决策主体/selection digest、repository/branch安全标量和active rule parameters digest。真实 API 用短期 metadata/contents/rules read token；本地 origin 只通过固定 `git remote get-url origin`读取并拒绝userinfo、PAT、非GitHub host或其他repository。manifest 不能自证用户确认，必须与仓库外人审记录共同入账。
 - 生产 deployment 使用 GitHub Environment reviewer 与 OIDC 云角色。
