@@ -6,6 +6,10 @@
   "main": "src/executor/cloudflare-worker/worker.ts",
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "EXECUTOR_IMAGE_REF": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:628b8fa20ee7c3d5d20161056db4ccf06d6708429c46a1cef5fd56a3bfd286ed",
+    "EXECUTOR_IMAGE_DIGEST": "sha256:628b8fa20ee7c3d5d20161056db4ccf06d6708429c46a1cef5fd56a3bfd286ed"
+  },
   "observability": {
     "enabled": true,
     "logs": {
@@ -32,8 +36,7 @@
     {
       "name": "delivery-agent-sandbox",
       "class_name": "DeliveryAgentSandbox",
-      "image": "./executor-image/Dockerfile",
-      "image_build_context": ".",
+      "image": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:628b8fa20ee7c3d5d20161056db4ccf06d6708429c46a1cef5fd56a3bfd286ed",
       "max_instances": 10,
       "instance_type": "standard-1"
     }
