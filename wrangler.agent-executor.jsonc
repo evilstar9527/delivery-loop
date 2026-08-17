@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "delivery-loop-agent-executor",
-  "account_id": "b8488957e88658039d2a38fb8f160514",
+  "account_id": "041d4868e5611b45f9959f4f58c1e4c7",
   "send_metrics": false,
   "main": "src/executor/cloudflare-worker/worker.ts",
   "compatibility_date": "2026-07-01",
