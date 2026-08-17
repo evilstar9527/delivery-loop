@@ -64,41 +64,40 @@ DROP TRIGGER attempt_execution_instances_profile_binding;
 
 CREATE TRIGGER attempt_execution_instances_profile_binding
 BEFORE INSERT ON attempt_execution_instances
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM executor_profiles AS profile
+  WHERE profile.profile_id = NEW.executor_profile_id
+    AND profile.provider_kind = NEW.provider_kind
+    AND profile.plugin_schema_version = NEW.plugin_schema_version
+    AND profile.release_digest = NEW.release_digest
+    AND profile.status IN ('active', 'retired')
+)
+OR (
+  NEW.execution_role = 'work'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM attempts AS attempt
+    WHERE attempt.attempt_id = NEW.attempt_id
+      AND attempt.executor_profile_id = NEW.executor_profile_id
+      AND attempt.executor_route_version IS NEW.executor_route_version
+  )
+)
+OR (
+  NEW.execution_role = 'publisher'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM attempts AS attempt
+    JOIN executor_routes AS route
+      ON route.repository = attempt.repository
+     AND route.attempt_mode = attempt.mode
+     AND route.execution_role = 'publisher'
+    WHERE attempt.attempt_id = NEW.attempt_id
+      AND route.profile_id = NEW.executor_profile_id
+      AND route.route_version IS NEW.executor_route_version
+      AND route.status = 'active'
+  )
+)
 BEGIN
-  SELECT CASE WHEN
-    NOT EXISTS (
-      SELECT 1
-      FROM executor_profiles AS profile
-      WHERE profile.profile_id = NEW.executor_profile_id
-        AND profile.provider_kind = NEW.provider_kind
-        AND profile.plugin_schema_version = NEW.plugin_schema_version
-        AND profile.release_digest = NEW.release_digest
-        AND profile.status IN ('active', 'retired')
-    )
-    OR (
-      NEW.execution_role = 'work'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM attempts AS attempt
-        WHERE attempt.attempt_id = NEW.attempt_id
-          AND attempt.executor_profile_id = NEW.executor_profile_id
-          AND attempt.executor_route_version IS NEW.executor_route_version
-      )
-    )
-    OR (
-      NEW.execution_role = 'publisher'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM attempts AS attempt
-        JOIN executor_routes AS route
-          ON route.repository = attempt.repository
-         AND route.attempt_mode = attempt.mode
-         AND route.execution_role = 'publisher'
-        WHERE attempt.attempt_id = NEW.attempt_id
-          AND route.profile_id = NEW.executor_profile_id
-          AND route.route_version IS NEW.executor_route_version
-          AND route.status = 'active'
-      )
-    )
-  THEN RAISE(ABORT, 'execution instance binding mismatch') END;
+  SELECT RAISE(ABORT, 'execution instance binding mismatch');
 END;

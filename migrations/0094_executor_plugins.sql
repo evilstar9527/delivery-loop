@@ -164,25 +164,24 @@ END;
 
 CREATE TRIGGER attempt_execution_instances_profile_binding
 BEFORE INSERT ON attempt_execution_instances
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM executor_profiles AS profile
+  WHERE profile.profile_id = NEW.executor_profile_id
+    AND profile.provider_kind = NEW.provider_kind
+    AND profile.plugin_schema_version = NEW.plugin_schema_version
+    AND profile.release_digest = NEW.release_digest
+    AND profile.status IN ('active', 'retired')
+)
+OR NOT EXISTS (
+  SELECT 1
+  FROM attempts AS attempt
+  WHERE attempt.attempt_id = NEW.attempt_id
+    AND attempt.executor_profile_id = NEW.executor_profile_id
+    AND attempt.executor_route_version IS NEW.executor_route_version
+)
 BEGIN
-  SELECT CASE WHEN
-    NOT EXISTS (
-      SELECT 1
-      FROM executor_profiles AS profile
-      WHERE profile.profile_id = NEW.executor_profile_id
-        AND profile.provider_kind = NEW.provider_kind
-        AND profile.plugin_schema_version = NEW.plugin_schema_version
-        AND profile.release_digest = NEW.release_digest
-        AND profile.status IN ('active', 'retired')
-    )
-    OR NOT EXISTS (
-      SELECT 1
-      FROM attempts AS attempt
-      WHERE attempt.attempt_id = NEW.attempt_id
-        AND attempt.executor_profile_id = NEW.executor_profile_id
-        AND attempt.executor_route_version IS NEW.executor_route_version
-    )
-  THEN RAISE(ABORT, 'execution instance binding mismatch') END;
+  SELECT RAISE(ABORT, 'execution instance binding mismatch');
 END;
 
 CREATE TRIGGER attempt_execution_instances_identity_immutable
