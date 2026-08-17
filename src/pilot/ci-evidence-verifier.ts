@@ -134,6 +134,67 @@ function exactRunStep(value: unknown, run: string): boolean {
   return step !== null && exactKeys(step, ['run']) && step.run === run;
 }
 
+function setupStepsMatch(value: unknown, command: string): boolean {
+  if (!Array.isArray(value) || value.length !== 5) return false;
+  const setupNode = record(value[2]);
+  const setupNodeWith = setupNode === null ? null : record(setupNode.with);
+  return exactUsesStep(value[0], CHECKOUT_ACTION) &&
+    exactUsesStep(value[1], PNPM_SETUP_ACTION) &&
+    setupNode !== null && exactKeys(setupNode, ['uses', 'with']) &&
+    setupNode.uses === NODE_SETUP_ACTION && setupNodeWith !== null &&
+    exactKeys(setupNodeWith, ['node-version', 'cache']) &&
+    setupNodeWith['node-version'] === 22 && setupNodeWith.cache === 'pnpm' &&
+    exactRunStep(value[3], 'pnpm install --frozen-lockfile') &&
+    exactRunStep(value[4], command);
+}
+
+function ciWorkflowContractMatches(
+  workflow: Record<string, unknown>,
+  triggers: Record<string, unknown>,
+  jobs: Record<string, unknown>,
+): boolean {
+  if (!exactKeys(jobs, ['node', 'workflow', 'verify'])) return false;
+  const node = record(jobs.node);
+  const workflowTests = record(jobs.workflow);
+  const verify = record(jobs.verify);
+  const strategy = workflowTests === null ? null : record(workflowTests.strategy);
+  const matrix = strategy === null ? null : record(strategy.matrix);
+  const verifySteps = verify === null || !Array.isArray(verify.steps) ? [] : verify.steps;
+  const verifyStep = record(verifySteps[0]);
+  const verifyEnvironment = verifyStep === null ? null : record(verifyStep.env);
+  const push = record(triggers.push);
+  return workflow.name === 'CI' && exactKeys(triggers, ['pull_request', 'push']) &&
+    triggers.pull_request === null && push !== null && exactKeys(push, ['branches']) &&
+    Array.isArray(push.branches) && push.branches.length === 1 && push.branches[0] === 'main' &&
+    node !== null && exactKeys(node, ['name', 'runs-on', 'timeout-minutes', 'steps']) &&
+    node.name === 'node checks' && node['runs-on'] === 'ubuntu-latest' &&
+    node['timeout-minutes'] === 10 && setupStepsMatch(node.steps, 'pnpm run verify:node') &&
+    workflowTests !== null &&
+    exactKeys(workflowTests, ['name', 'strategy', 'runs-on', 'timeout-minutes', 'steps']) &&
+    workflowTests.name === 'workflow tests (shard ${{ matrix.shard }})' &&
+    workflowTests['runs-on'] === 'ubuntu-latest' && workflowTests['timeout-minutes'] === 10 &&
+    strategy !== null && exactKeys(strategy, ['fail-fast', 'matrix']) &&
+    strategy['fail-fast'] === false && matrix !== null && exactKeys(matrix, ['shard']) &&
+    Array.isArray(matrix.shard) && matrix.shard.length === 4 &&
+    matrix.shard.every((value, index) => value === index + 1) &&
+    setupStepsMatch(
+      workflowTests.steps,
+      'pnpm exec vitest run --config vitest.workflow.config.ts --shard=${{ matrix.shard }}/4',
+    ) &&
+    verify !== null &&
+    exactKeys(verify, ['name', 'needs', 'if', 'runs-on', 'timeout-minutes', 'steps']) &&
+    verify.name === 'verify' && Array.isArray(verify.needs) && verify.needs.length === 2 &&
+    verify.needs[0] === 'node' && verify.needs[1] === 'workflow' &&
+    verify.if === '${{ always() }}' && verify['runs-on'] === 'ubuntu-latest' &&
+    verify['timeout-minutes'] === 2 && verifySteps.length === 1 && verifyStep !== null &&
+    exactKeys(verifyStep, ['name', 'env', 'run']) &&
+    verifyStep.name === 'Require every verification lane' &&
+    verifyEnvironment !== null && exactKeys(verifyEnvironment, ['NODE_RESULT', 'WORKFLOW_RESULT']) &&
+    verifyEnvironment.NODE_RESULT === '${{ needs.node.result }}' &&
+    verifyEnvironment.WORKFLOW_RESULT === '${{ needs.workflow.result }}' &&
+    verifyStep.run === 'test "$NODE_RESULT" = success && test "$WORKFLOW_RESULT" = success';
+}
+
 function workflowContractMatches(
   workflow: Record<string, unknown>,
   path: CiEvidenceManifestV1['cases'][number]['workflowPath'],
@@ -142,13 +203,16 @@ function workflowContractMatches(
   const triggers = record(workflow.on);
   const jobs = record(workflow.jobs);
   if (triggers === null || jobs === null) return false;
-  const expectedJobName = path === '.github/workflows/ci.yml' ? 'verify' : 'validate';
+  if (path === '.github/workflows/ci.yml') {
+    return ciWorkflowContractMatches(workflow, triggers, jobs);
+  }
+  const expectedJobName = 'validate';
   if (!exactKeys(jobs, [expectedJobName])) return false;
   const job = record(jobs[expectedJobName]);
   if (
     job === null || !exactKeys(job, ['runs-on', 'timeout-minutes', 'steps']) ||
     job['runs-on'] !== 'ubuntu-latest' ||
-    job['timeout-minutes'] !== (expectedJobName === 'verify' ? 15 : 10) ||
+    job['timeout-minutes'] !== 10 ||
     !Array.isArray(job.steps)
   ) return false;
   const steps = job.steps;
@@ -163,13 +227,6 @@ function workflowContractMatches(
     setupNodeWith['node-version'] !== 22 || setupNodeWith.cache !== 'pnpm' ||
     !exactRunStep(steps[3], 'pnpm install --frozen-lockfile')
   ) return false;
-  if (path === '.github/workflows/ci.yml') {
-    const push = record(triggers.push);
-    return workflow.name === 'CI' && exactKeys(triggers, ['pull_request', 'push']) &&
-      triggers.pull_request === null && push !== null && exactKeys(push, ['branches']) &&
-      Array.isArray(push.branches) && push.branches.length === 1 && push.branches[0] === 'main' &&
-      steps.length === 5 && exactRunStep(steps[4], 'pnpm run verify');
-  }
   const dispatch = record(triggers.workflow_dispatch);
   const inputs = dispatch === null ? null : record(dispatch.inputs);
   const taskInput = inputs === null ? null : record(inputs.task_json);
@@ -183,6 +240,13 @@ function workflowContractMatches(
     validation !== null && exactKeys(validation, ['name', 'run']) &&
     validation.name === 'Validate without printing the task body' &&
     validation.run === 'pnpm validate:task';
+}
+
+function expectedJobNames(item: CiEvidenceManifestV1['cases'][number]): string[] {
+  return item.workflowPath === '.github/workflows/ci.yml'
+    ? ['node checks', 'workflow tests (shard 1)', 'workflow tests (shard 2)',
+      'workflow tests (shard 3)', 'workflow tests (shard 4)', 'verify']
+    : [item.job.name];
 }
 
 async function fetchLogs(
@@ -290,15 +354,23 @@ export async function verifyCiEvidence(
     const jobs = jobsRoot !== null && Array.isArray(jobsRoot.jobs)
       ? jobsRoot.jobs.filter((job): job is Record<string, unknown> => record(job) !== null).map(record).filter((job): job is Record<string, unknown> => job !== null)
       : [];
-    if (jobsRoot === null || jobsRoot.total_count !== 1 || jobs.length !== 1) {
+    const expectedNames = expectedJobNames(item);
+    const actualNames = jobs.map((job) => job.name).sort();
+    if (
+      jobsRoot === null || jobsRoot.total_count !== expectedNames.length ||
+      jobs.length !== expectedNames.length ||
+      actualNames.some((name, index) => name !== [...expectedNames].sort()[index])
+    ) {
       throw new CiEvidenceVerificationError('github_job_mismatch');
     }
-    const job = jobs[0]!;
-    if (job.name !== item.job.name || job.status !== item.job.status || job.conclusion !== item.job.conclusion ||
-        typeof job.id !== 'number' || !Number.isSafeInteger(job.id) || job.id <= 0) {
+    if (jobs.some((job) =>
+      job.status !== item.job.status || job.conclusion !== item.job.conclusion ||
+      typeof job.id !== 'number' || !Number.isSafeInteger(job.id) || job.id <= 0
+    )) {
       throw new CiEvidenceVerificationError('github_job_mismatch');
     }
     if (item.workflowPath === '.github/workflows/validate-task.yml') {
+      const job = jobs[0]!;
       const steps = Array.isArray(job.steps)
         ? job.steps.map(record).filter((step): step is Record<string, unknown> => step !== null)
         : [];
@@ -315,15 +387,21 @@ export async function verifyCiEvidence(
         )
       ) throw new CiEvidenceVerificationError('github_job_mismatch');
     }
-    const logs = await fetchLogs(fetcher, `${apiOrigin}/repos/${item.repository}/actions/jobs/${job.id}/logs`, options.githubToken);
-    scannedLogCount += 1;
     if (item.logCanaryDigest !== null && item.logCanaryDigest !== canaryDigest) {
       throw new CiEvidenceVerificationError('manifest_invalid');
     }
-    if (scanner.scanText(new TextDecoder().decode(logs), '$.githubActionLog').length > 0) {
-      throw new CiEvidenceVerificationError('github_log_leak_detected');
+    for (const job of jobs) {
+      const logs = await fetchLogs(
+        fetcher,
+        `${apiOrigin}/repos/${item.repository}/actions/jobs/${String(job.id)}/logs`,
+        options.githubToken,
+      );
+      scannedLogCount += 1;
+      if (scanner.scanText(new TextDecoder().decode(logs), '$.githubActionLog').length > 0) {
+        throw new CiEvidenceVerificationError('github_log_leak_detected');
+      }
     }
-    verifiedJobCount += 1;
+    verifiedJobCount += jobs.length;
   }
   return {
     schemaVersion: '1', evidenceId: parsed.data.evidenceId, repository: parsed.data.repository,

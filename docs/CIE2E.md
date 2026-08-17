@@ -1,15 +1,15 @@
 # GitHub CI 外部证据验收
 
-`pnpm run e2e:ci` 只读核对已经发生的 GitHub Actions run、workflow blob、唯一 job、`validate-task` 命名校验步骤和完整 job log；它不 push、不开 PR、不触发 workflow，也不读取或保存 Task 正文。
+`pnpm run e2e:ci` 只读核对已经发生的 GitHub Actions run、workflow blob、CI 的完整并行 job 集合、`validate-task` 唯一命名校验 job 和全部 job log；它不 push、不开 PR、不触发 workflow，也不读取或保存 Task 正文。
 
 manifest 固定包含四类 run：
 
-- `ci_main_success`：`.github/workflows/ci.yml` 由 `push` 触发，`headBranch=main`，唯一 `verify` job 成功；
-- `ci_pull_request_success`：同一 CI workflow 由 `pull_request` 触发，唯一 `verify` job 成功；
+- `ci_main_success`：`.github/workflows/ci.yml` 由 `push` 触发，`headBranch=main`，Node lane、四个固定 workerd shard 和最终 `verify` 聚合 job 全部成功；
+- `ci_pull_request_success`：同一 CI workflow 由 `pull_request` 触发，同一组六个 job 全部成功；
 - `validate_valid_success`：`.github/workflows/validate-task.yml` 的合法 `TaskEnvelope v1` 手动校验成功；
 - `validate_invalid_failure`：含受控 canary 且缺少验收标准的输入在 `Validate without printing the task body` 步骤失败，前置步骤均成功，完整 job log 不含 canary。
 
-每个 case 绑定 repository、run ID/event/conclusion/head SHA/branch、workflow path/blob SHA/content digest、run title digest 和 job 结果。verifier 用 run 的不可变 `headSha` 读取 workflow blob，解析 YAML 后要求 trigger、唯一 job、setup/validation 命令与仓库内固定契约完全一致；第三方 setup Action 必须固定到受审的不可变 commit SHA，顶层 `permissions` 必须恰好只有 `contents: read`。因此 main/PR 的可移动分支、本地 workflow 文件、可变 Action tag 或同名伪步骤都不能覆盖实际运行版本。
+每个 case 绑定 repository、run ID/event/conclusion/head SHA/branch、workflow path/blob SHA/content digest、run title digest 和最终 job 结果。verifier 用 run 的不可变 `headSha` 读取 workflow blob，解析 YAML 后要求 trigger、Node lane、固定 `1/4`～`4/4` workerd matrix、只依赖这两类lane的`verify`聚合门禁，以及setup/validation命令与仓库内固定契约完全一致。它还要求真实CI run的六个展开job名称、状态和conclusion精确匹配，并扫描全部日志；`validate-task`仍只允许唯一`validate` job。第三方setup Action必须固定到受审的不可变commit SHA，顶层`permissions`必须恰好只有`contents: read`。因此main/PR的可移动分支、本地workflow文件、可变Action tag、缺失shard或同名伪步骤都不能覆盖实际运行版本。
 
 ## 真实运行与证据准备
 
@@ -35,7 +35,7 @@ CI_GITHUB_API_URL=https://api.github.example
 
 ## 判定和安全边界
 
-- `0`：四类 run、exact workflow blob、最小权限、唯一 job、validation step 和四份有界日志全部一致，canary 零命中；
+- `0`：四类 run、exact workflow blob、最小权限、两组完整 CI 并行 job、两个唯一 validation job、validation step 和十四份有界日志全部一致，canary 零命中；
 - `1`：manifest、run、workflow、job、日志、分页或大小边界不一致；
 - `2`：未显式 opt-in、配置不完整或 manifest 不可读，并在读取 manifest/访问网络前结束。
 

@@ -68,7 +68,7 @@ describe('public repository GitHub workflow runner policy', () => {
     })));
     expect(verifyPublicRepositoryWorkflowRunnerPolicy(sources)).toEqual({
       workflowCount: 15,
-      jobCount: 17,
+      jobCount: 19,
     });
   });
 });
