@@ -20,7 +20,12 @@ describe('data retention production wiring', () => {
       binding: 'RAW_AGENT_OBJECTS',
       bucket_name: 'delivery-loop-raw-agent-objects',
     });
+    expect(wrangler.r2_buckets).toContainEqual({
+      binding: 'EXECUTOR_PATCH_OBJECTS',
+      bucket_name: 'delivery-loop-executor-patches',
+    });
     expect(worker).toContain(".run('execute', 'scheduled', 25)");
     expect(backup).not.toContain('RAW_AGENT_OBJECTS');
+    expect(backup).not.toContain('EXECUTOR_PATCH_OBJECTS');
   });
 });

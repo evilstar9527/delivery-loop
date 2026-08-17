@@ -68,8 +68,8 @@
     "e2e:monitor-alert": "tsx scripts/verify-monitor-alert-evidence.ts",
     "e2e:draft-pr-cases": "tsx scripts/verify-draft-pr-cases-evidence.ts",
     "e2e:identity-approval": "tsx scripts/verify-identity-approval-evidence.ts",
-  "e2e:test-deployment": "tsx scripts/verify-test-deployment-evidence.ts",
-  "e2e:test-acceptance": "tsx scripts/verify-test-acceptance-evidence.ts",
+    "e2e:test-deployment": "tsx scripts/verify-test-deployment-evidence.ts",
+    "e2e:test-acceptance": "tsx scripts/verify-test-acceptance-evidence.ts",
     "e2e:test-rollback": "tsx scripts/verify-test-rollback-evidence.ts",
     "e2e:requirement": "tsx scripts/verify-requirement-e2e-evidence.ts",
     "e2e:bug-triage": "tsx scripts/verify-bug-triage-e2e-evidence.ts",
@@ -78,6 +78,7 @@
     "validate:task": "tsx scripts/validate-task-envelope.ts"
   },
   "dependencies": {
+    "@cloudflare/sandbox": "0.12.6",
     "hono": "4.12.27",
     "jose": "6.2.3",
     "zod": "^4.0.17"

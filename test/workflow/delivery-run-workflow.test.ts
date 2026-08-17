@@ -26,6 +26,7 @@ import type { DeliveryRunWorkflowParams } from '../../src/workflows/delivery-run
 const NOW = '2026-07-25T00:00:00.000Z';
 const TASK_DIGEST = `sha256:${'1'.repeat(64)}`;
 const BASE_SHA = 'a'.repeat(40);
+const EXECUTOR_PROFILE_ID = 'test-github-actions-route-v1';
 
 function immutablePlanBody(plan: ExecutionPlanV1): ExecutionPlanBodyV1 {
   return {
@@ -202,8 +203,8 @@ describe('DeliveryRunWorkflow durable analysis handoff', () => {
     })) as { attemptId: string; outboxId: string; payloadRef: string };
     expect(dispatch).toEqual({
       attemptId,
-      outboxId: `dispatch-${attemptId}`,
-      payloadRef: `d1://attempts/${attemptId}`,
+      outboxId: `outbox-agent-${attemptId}`,
+      payloadRef: `d1://attempt-executions/execution-work-${attemptId}`,
     });
 
     const store = new RunStore(env.DB_CONTROL);
@@ -221,6 +222,15 @@ describe('DeliveryRunWorkflow durable analysis handoff', () => {
     expect(
       await scalarCount('SELECT COUNT(*) AS count FROM outbox WHERE run_id = ?', runId),
     ).toBe(1);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT execution_id, executor_profile_id, executor_route_version, status
+       FROM attempt_execution_instances WHERE attempt_id = ?`,
+    ).bind(attemptId).first()).toEqual({
+      execution_id: `execution-work-${attemptId}`,
+      executor_profile_id: EXECUTOR_PROFILE_ID,
+      executor_route_version: 1,
+      status: 'pending',
+    });
 
     const plan = await seedValidatedPlan(runId, attemptId, planId);
     expect(plan.status).toBe('validated');

@@ -10,6 +10,7 @@ import {
   type GitHubDispatchEffects,
   type GitHubDispatchRequest,
 } from '../../src/outbox/github-dispatcher.js';
+import { deliverRoutedGitHubDispatch } from './routed-github-dispatch.js';
 import {
   GitHubReviewFeedbackReconciler,
   GitHubReviewFeedbackRecoveryReconciler,
@@ -195,6 +196,7 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM github_pull_request_api_observations'),
     env.DB_CONTROL.prepare('DELETE FROM github_pull_request_webhook_deliveries'),
     env.DB_CONTROL.prepare('DELETE FROM pull_request_publications'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
     env.DB_CONTROL.prepare('DELETE FROM approvals'),
     env.DB_CONTROL.prepare('DELETE FROM pull_request_draft_evidence'),
@@ -514,11 +516,18 @@ describe('head-bound GitHub review feedback', () => {
        WHERE payload_ref = ? AND kind = 'execution_dispatch'`,
     ).bind(`d1://attempts/${replacementAttemptId}`).first<{ outbox_id: string }>();
     const effects = new FakeDispatch();
-    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
+    const legacy = new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
       allowedRepositories: ['example/delivery-target'],
       controlPlaneUrl: 'https://control.delivery.test',
       now: () => new Date(NOW),
-    }).deliver(outbox!.outbox_id)).toBe('settled');
+    });
+    expect(await deliverRoutedGitHubDispatch(
+      env.DB_CONTROL,
+      legacy,
+      effects,
+      outbox!.outbox_id,
+      new Date(NOW),
+    )).toBe('settled');
     expect(effects.requests).toHaveLength(1);
     expect(effects.requests[0]!.inputs).toMatchObject({
       mode: 'review_fix',
@@ -755,11 +764,18 @@ describe('head-bound GitHub review feedback', () => {
       `SELECT outbox_id FROM outbox WHERE kind = 'execution_dispatch'`,
     ).first<{ outbox_id: string }>();
     const effects = new FakeDispatch();
-    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
+    const legacy = new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
       allowedRepositories: ['example/delivery-target'],
       controlPlaneUrl: 'https://control.delivery.test',
       now: () => new Date(NOW),
-    }).deliver(outbox!.outbox_id)).toBe('settled');
+    });
+    expect(await deliverRoutedGitHubDispatch(
+      env.DB_CONTROL,
+      legacy,
+      effects,
+      outbox!.outbox_id,
+      new Date(NOW),
+    )).toBe('settled');
     expect(effects.requests).toHaveLength(1);
     expect(effects.requests[0]!.inputs).toMatchObject({
       mode: 'review_fix',

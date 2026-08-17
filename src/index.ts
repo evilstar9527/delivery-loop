@@ -3,6 +3,177 @@ export {
   type AgentSessionResultV1,
 } from './domain/agent-session-result.js';
 export {
+  ExecutorPluginRegistry,
+  assertExecutionFact,
+  assertExecutorProfile,
+  assertFrozenExecutionSpec,
+} from './executor/core/executor-registry.js';
+export type {
+  EnsureExecutionResult,
+  ExecutionFact,
+  ExecutionHandle,
+  ExecutorCancelReason,
+  ExecutorCapabilities,
+  ExecutorIdentityAssertion,
+  ExecutorMode,
+  ExecutorPlugin,
+  ExecutorProfile,
+  ExecutorRole,
+  ExecutorStatus,
+  FrozenExecutionSpec,
+  ProviderEvidence,
+  VerifiedExecutorIdentity,
+} from './executor/core/executor-plugin.js';
+export {
+  RegistryExecutorIdentityProvider,
+} from './executor/core/executor-identity-provider.js';
+export type {
+  ExecutorIdentityProvider,
+  ExecutorIdentityRequest,
+} from './executor/core/executor-identity-provider.js';
+export {
+  GITHUB_ACTIONS_EXECUTOR_KIND,
+  GITHUB_ACTIONS_EXECUTOR_RELEASE_DIGEST_V1,
+  GITHUB_ACTIONS_EXECUTOR_SCHEMA_VERSION,
+  GitHubActionsExecutorPlugin,
+  githubActionsExecutorProfile,
+} from './executor/plugins/github-actions/github-actions-plugin.js';
+export type {
+  GitHubActionsExecutorEffects,
+  GitHubAgentDispatchEffects,
+  GitHubAgentDispatchRequest,
+  GitHubAgentDispatchResult,
+} from './executor/plugins/github-actions/github-actions-plugin.js';
+export {
+  CLOUDFLARE_SANDBOX_EXECUTOR_KIND,
+  CLOUDFLARE_SANDBOX_EXECUTOR_SCHEMA_VERSION,
+  CloudflareSandboxExecutorPlugin,
+  cloudflareSandboxExecutorProfile,
+} from './executor/plugins/cloudflare-sandbox/cloudflare-sandbox-plugin.js';
+export {
+  ExecutorControlError,
+  ExecutorControlStore,
+} from './storage/executor-control-store.js';
+export {
+  ExecutorObservationError,
+  ExecutorObservationService,
+  ExecutorObservationStore,
+} from './storage/executor-observation-store.js';
+export {
+  ExecutorPatchPublicationError,
+  ExecutorPatchPublicationStore,
+} from './storage/executor-patch-publication-store.js';
+export {
+  ExecutorPatchArtifactError,
+  ExecutorPatchArtifactStore,
+  executorPatchArtifactId,
+} from './storage/executor-patch-artifact-store.js';
+export type {
+  ExecutorPatchArtifactErrorCode,
+  LoadedExecutorPatchArtifact,
+  SavedExecutorPatchArtifact,
+} from './storage/executor-patch-artifact-store.js';
+export {
+  ExecutorRepositoryAuthorizationError,
+  ExecutorRepositoryAuthorizationStore,
+} from './storage/executor-repository-authorization-store.js';
+export type {
+  ExecutorRepositoryAuthorization,
+  ExecutorRepositoryAuthorizationErrorCode,
+} from './storage/executor-repository-authorization-store.js';
+export {
+  ExecutorRepositoryProxyError,
+  proxyExecutorPublisherRepositoryWrite,
+  proxyExecutorRepositoryRequest,
+  publisherGitToken,
+} from './http/executor-repository-proxy.js';
+export type {
+  ExecutorPublisherRepositoryAuthorization,
+  ExecutorRepositoryProxyErrorCode,
+  GitHubRepositoryReadTokenProvider,
+} from './http/executor-repository-proxy.js';
+export {
+  ExecutorPatchUploadRequestSchema,
+} from './domain/executor-patch-artifact.js';
+export type {
+  ExecutorPatchUploadRequest,
+} from './domain/executor-patch-artifact.js';
+export {
+  ExecutorPatchClientError,
+  downloadExecutorPublisherPatch,
+  uploadExecutorWorkPatch,
+} from './runner/executor-patch-client.js';
+export type {
+  DownloadExecutorPublisherPatchInput,
+  ExecutorPublisherPatch,
+  ExecutorWorkPatchUpload,
+  UploadExecutorWorkPatchInput,
+} from './runner/executor-patch-client.js';
+export type {
+  RecordAndScheduleExecutorPatchResult,
+  RecordExecutorPatchInput,
+  SchedulePublisherInput,
+} from './storage/executor-patch-publication-store.js';
+export {
+  ExecutorPublisherCredentialError,
+  ExecutorPublisherCredentialStore,
+} from './storage/executor-publisher-credential-store.js';
+export type {
+  ExecutorPublisherCredential,
+} from './storage/executor-publisher-credential-store.js';
+export {
+  ExecutorModelGrantError,
+  ExecutorModelGrantStore,
+} from './storage/executor-model-grant-store.js';
+export type {
+  ExecutorModelGrantAuthorization,
+} from './storage/executor-model-grant-store.js';
+export {
+  ExecutorModelProxyError,
+  executorModelProxyRuntimeFromEnv,
+  proxyExecutorModelResponse,
+} from './http/executor-model-proxy.js';
+export type {
+  ExecutorModelProxyRuntime,
+} from './http/executor-model-proxy.js';
+export { ExecutorReconciler } from './reconciliation/executor-reconciler.js';
+export type {
+  ExecutorReconcilerOptions,
+  ExecutorReconciliationResult,
+} from './reconciliation/executor-reconciler.js';
+export type {
+  ExecutorObservationDisposition,
+  ExecutorObservationIgnoreReason,
+  ExecutorObservationResult,
+  ExecutorObservationServiceOptions,
+  RecordExecutorObservationInput,
+} from './storage/executor-observation-store.js';
+export type {
+  FreezeExecutionInput,
+  FrozenExecutionInstance,
+  InstallExecutorRouteInput,
+} from './storage/executor-control-store.js';
+export {
+  AgentExecutorOutboxProcessor,
+} from './outbox/agent-executor.js';
+export type {
+  AgentExecutorOutboxProcessorOptions,
+} from './outbox/agent-executor.js';
+export type {
+  CloudflareSandboxExecutorEffects,
+  CloudflareSandboxExecutorProfileOptions,
+  CloudflareSandboxProviderFact,
+  CloudflareSandboxStartRequest,
+  CloudflareSandboxStartResult,
+} from './executor/plugins/cloudflare-sandbox/cloudflare-sandbox-plugin.js';
+export {
+  CloudflareSandboxWorkerEffects,
+  cloudflareSandboxEffectsFromEnv,
+} from './executor/plugins/cloudflare-sandbox/cloudflare-sandbox-runtime.js';
+export type {
+  CloudflareSandboxWorkerEffectsOptions,
+} from './executor/plugins/cloudflare-sandbox/cloudflare-sandbox-runtime.js';
+export {
   DEFAULT_DEDUPE_WINDOW_MS,
   InMemoryDedupeStore,
   resolveDedupe,
@@ -775,6 +946,46 @@ export {
   runExecutionAttempt,
   type RunExecutionAttemptOptions,
 } from './runner/execution-runner.js';
+export {
+  ExecutorRepositoryCheckoutError,
+  checkoutExecutorRepository,
+  runExecutorGitCommand,
+} from './runner/executor-repository-checkout.js';
+export type {
+  ExecutorGitCommand,
+  ExecutorGitCommandInput,
+  ExecutorGitCommandResult,
+} from './runner/executor-repository-checkout.js';
+export {
+  ExecutorWorkAttemptError,
+  ExecutorWorkAttemptRunner,
+  applyExecutorWorkPatch,
+  captureExecutorWorkPatch,
+} from './runner/executor-work-runner.js';
+export type {
+  ExecutorWorkAttemptResult,
+  ExecutorWorkAttemptRunnerContext,
+} from './runner/executor-work-runner.js';
+export {
+  ExecutorPublisherRunner,
+  ExecutorPublisherRunnerError,
+} from './runner/executor-publisher-runner.js';
+export {
+  ControlPlaneExecutorPublisherCompletionReporter,
+  ExecutorPublisherClientError,
+  ExecutorPublisherHeadReporter,
+  ExecutorPublisherVerificationReporter,
+  requestExecutorPublisherCredential,
+} from './runner/executor-publisher-client.js';
+export type {
+  ExecutorPublisherClientContext,
+} from './runner/executor-publisher-client.js';
+export type {
+  ExecutorPublisherCompletionReporter,
+  ExecutorPublisherRunnerDependencies,
+  ExecutorPublisherRunnerInput,
+  ExecutorPublisherRunnerResult,
+} from './runner/executor-publisher-runner.js';
 export {
   ExecutionAttemptContextStore,
   ExecutionAttemptError,

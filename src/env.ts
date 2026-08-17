@@ -9,6 +9,7 @@ export interface Bindings {
   CHECKPOINT_OBJECTS: R2Bucket;
   BACKUP_OBJECTS: R2Bucket;
   RAW_AGENT_OBJECTS: R2Bucket;
+  EXECUTOR_PATCH_OBJECTS: R2Bucket;
   RAW_AGENT_ARTIFACT_ENCRYPTION_KEY?: string;
   FEISHU_INGRESS_QUEUE: Queue<FeishuIngressQueueMessage>;
   TASK_INTAKE_TOKEN?: string;
@@ -29,6 +30,8 @@ export interface Bindings {
   GITHUB_AGENT_EXECUTOR_REPOSITORY?: string;
   GITHUB_AGENT_EXECUTOR_REF?: string;
   GITHUB_API_BASE_URL?: string;
+  /** Optional Git smart-HTTP origin; defaults to https://github.com. */
+  GITHUB_GIT_BASE_URL?: string;
   GITHUB_CREDENTIAL_ENCRYPTION_KEY?: string;
   FEISHU_APP_ID?: string;
   FEISHU_APP_SECRET?: string;
@@ -52,6 +55,19 @@ export interface Bindings {
   D1_BACKUP_API_TOKEN?: string;
   TOOL_BRIDGE?: Fetcher;
   TOOL_BRIDGE_INTERNAL_TOKEN?: string;
+  /** Preferred private service binding to the independent Agent Executor Worker. */
+  AGENT_EXECUTOR?: Fetcher;
+  /** Explicit HTTPS fallback origin; mutually exclusive with AGENT_EXECUTOR. */
+  AGENT_EXECUTOR_URL?: string;
+  AGENT_EXECUTOR_CONTROL_TOKEN?: string;
+  /** Shared only with the Executor Worker's outbound proxy, never a container. */
+  AGENT_EXECUTOR_CALLBACK_TOKEN?: string;
+  /** Control-plane-only Responses relay configuration; never passed to a container. */
+  EXECUTOR_MODEL_PROVIDER?: string;
+  EXECUTOR_MODEL_BASE_URL?: string;
+  EXECUTOR_MODEL_API_KEY?: string;
+  /** Control-plane-only key for encrypting per-reservation model grants in D1. */
+  EXECUTOR_MODEL_GRANT_ENCRYPTION_KEY?: string;
   WORKFLOW_OUTBOX_QUEUE: Queue<WorkflowOutboxMessage>;
   DELIVERY_RUN: Workflow<DeliveryRunWorkflowParams>;
   CONTROL_PLANE_BACKUP: Workflow<ControlPlaneBackupWorkflowParams>;

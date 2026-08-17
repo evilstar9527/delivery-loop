@@ -1055,6 +1055,135 @@ type WorkflowSignalV1 = {
 
 ## §6. GitHub dispatch 契约
 
+Agent启动的领域入口先使用provider-neutral `ExecutorPlugin v1`，GitHub dispatch是其当前兼容实现，
+不是Attempt状态机的一部分：
+
+- `ExecutorProfile v1 = {profileId, kind, pluginSchemaVersion, releaseDigest, configuration}`；
+  configuration只允许有界、Secret-free标量。profile由控制面冻结，调用方不能在dispatch或identity
+  assertion里覆盖。
+- `FrozenExecutionSpec v1`固定execution/run/attempt/lease generation/role/mode/profile、Task digest、
+  业务repository、base/checkout SHA、target branch、control-plane origin及可选Plan/Item/model profile；
+  不提供开放metadata或credential字段。
+- `ExecutionHandle v1`固定provider external ID及上述execution/attempt/generation/role/repository/profile/
+  release绑定，provider attributes只允许有界Secret-free string map。Registry对start结果、observe fact、
+  verified identity和provider Evidence逐项反向核对；不匹配不能进入D1。
+- 插件接口只有`capabilities/ensureStarted/observe/cancel/verifyIdentity/providerEvidence`。插件不能读取或
+  改写approval、Plan progress、quota/retry policy、Attempt lease/CAS；这些仍由控制面在插件调用前后裁决。
+- `executor_profiles`保存immutable release，`executor_routes`按repository/mode/role版本化选择provider；
+  `freezeExecution`把profile/route固定到Attempt并原子创建唯一execution instance与`agent_executor`语义
+  outbox。route后续切换不能重绑旧Attempt，也不能在原execution失败时静默fallback。
+- 新Attempt的生产路由契约为：创建前读取唯一active `(repository, attempt_mode, work)` route；root analysis与
+  初始Plan Item claim将Attempt、progress（如有）、profile/route binding、`FrozenExecutionSpec`、execution
+  instance和semantic outbox放在同一D1 batch。route/profile缺失、失活或并发漂移时不得留下半个Attempt、
+  progress claim或provider outbox。20路同identity必须收敛到一组记录。
+- 尚未重构的历史`analysis_dispatch|execution_dispatch / github_actions`只是一条兼容routing intent：consumer
+  看到`executor_profile_id IS NULL`时必须在GitHub effect前按active route冻结并创建`agent_executor` outbox，
+  然后把兼容intent结算为`executor_route_frozen`；route缺失保持retry。已由0094标记为
+  `legacy-github-actions-v1`且route version为空的历史Attempt继续走原兼容lane，不被静默迁移。
+- execution identity绑定`(attempt_id, lease_generation, role)`。首次work execution使用generation 1；同一
+  Attempt的明确redispatch沿用已冻结profile/route并创建generation N+1（ID/outbox带`-gN`），不能重新读取
+  active route。GitHub插件也由`agent_executor`消费；validated handle启动成功后才投影兼容
+  `github_run_id/github_head_sha`供既有OIDC、webhook/API reconciliation使用。
+- `ExecutorObservationStore`只接受与instance的provider kind/profile/external ID/execution/attempt/generation
+  全匹配的fact。fact digest重放返回duplicate；外部时间必须严格递增，`observation_sequence`以CAS递增；
+  running后的requested/queued为regression，已冻结terminal后的另一终态为conflict，两者都不入ledger。
+  accepted fact只投影execution instance；provider succeeded不等于Agent语义result，不得直接完成Attempt、
+  Item或Run。
+- `ExecutorReconciler.reconcileObservations`只读starting/running instance并调用冻结plugin；失败ledger只允许
+  `provider_unavailable|projection_conflict`、连续次数和指数退避时间，禁止raw body/cause。成功删除失败ledger。
+  Provider terminal仍只更新execution instance。
+- cancel不是observe失败的推断。既有Attempt stuck detector先因heartbeat/lease执行lost CAS、generation提升、
+  grant撤销和Run blocker，之后reconciler才为旧handle建立唯一`executor_cancellations` intent。并发claim只有一个
+  provider cancel；失败回pending，成功保存固定reason/outcome。`cancelled`投影cancelled，`already_terminal`因缺
+  exact terminal fact只投影lost；两者都不直接恢复或完成Attempt。
+- 当前`github_actions`兼容outbox继续投影旧`github_run_*`字段，但`ensureDispatch`已由
+  `GitHubActionsExecutorPlugin`从同一Frozen spec派生。Cloudflare Sandbox插件已使用相同契约定义独立
+  Worker effect port；D1迁移和本地plugin/store测试已经存在。
+- Cloudflare Executor Worker HTTP只接受Bearer-authenticated `POST /v1/executions/ensure`、
+  `GET /v1/executions/:executionId/observe`和`POST .../cancel`。body最大64 KiB且schema strict；ensure额外
+  绑定profile/release/image，cancel reason仅允许控制面四类固定枚举。raw SDK/provider错误永不返回。
+- 每个execution由稳定digest映射到一个`DeliveryAgentSandbox` DO。DO首次把完整Secret-free request canonical
+  digest与固定process ID写入storage，再配置零公网allowlist、写spec并运行固定
+  `/opt/delivery-agent/bin/run-execution /workspace/.delivery-loop/execution.json`；同execution不同digest固定
+  conflict。observe只在SDK process status变化时推进externalUpdatedAt，cancel先写cancelled事实再destroy。
+- Container访问控制面必须走`control.delivery-loop.internal` outbound handler；handler以request-bound
+  control-plane origin、Attempt path与method重验，并使用`ctx.containerId`注入execution identity。只有
+  `POST .../executor-exchange`及`GET .../executor-patches/:patchId`覆盖容器Authorization为callback token；其他
+  context/heartbeat/result/tool/work-patch请求保留一次性exchange签发的短token。镜像entry不读取任意argv/环境
+  credential，grant文件缺失即退出。
+- 独立Wrangler config故意不包含`EXECUTOR_CONTROL_TOKEN/EXECUTOR_CALLBACK_TOKEN/EXECUTOR_IMAGE_REF/
+  EXECUTOR_IMAGE_DIGEST`值；未配置时health及业务API均503。
+- 控制面Cloudflare effects client只允许二选一：私有`AGENT_EXECUTOR` service binding，或
+  `AGENT_EXECUTOR_URL`指定的唯一HTTPS origin；两者都要求`AGENT_EXECUTOR_CONTROL_TOKEN`且混用/缺项在
+  runtime构造时拒绝。ensure/observe/cancel固定10秒deadline、manual redirect、1 MiB response上限、JSON
+  content type和strict response schema；token只进入Authorization header，非200/raw body/transport cause只
+  映射固定错误。Cron只有存在至少一个已配置plugin时才relay `agent_executor`，Queue consumer仍按D1 destination
+  与冻结profile选择plugin，缺失kind不会fallback。
+- provider-neutral identity/grant使用`POST /v1/attempts/:attemptId/executor-exchange`。请求只能来自Executor
+  Worker outbound proxy：proxy覆盖Bearer callback token并注入`x-delivery-execution-id`与
+  `x-delivery-executor-container-id`；容器自报的同名header先删除。`RegistryExecutorIdentityProvider`从D1读取
+  immutable profile/validated handle，plugin逐项核对callback、execution/container、Attempt/generation/role/
+  repository。验证后沿用既有一次性Attempt token signer，run/tool token互异、TTL≤min(active lease, 5分钟)，
+  `attempt_tokens.identity_kind=executor`且绑定唯一execution；并发/重放只允许一个200，其余409。
+- DO写入的`execution-grant.json`只是strict、Secret-free bootstrap：schema/identity kind/execution/attempt和固定
+  internal control origin，必须与execution spec一致。Runner在executor模式不读取GitHub Actions OIDC env，只用
+  非Secret占位Authorization发exchange；outbound proxy重写目标到spec绑定的真实control-plane origin并注入真实
+  Worker credential。签发后的heartbeat/context/result/tool协议与GitHub runner相同。
+- executor work源码只经`GET /v1/attempts/:attemptId/repository.git/info/refs?service=git-upload-pack`与
+  `POST /v1/attempts/:attemptId/repository.git/git-upload-pack`读取。两条路由要求短Attempt Bearer token和Worker注入的
+  execution ID；D1必须确认`identity_kind=executor`、exact work execution、running Attempt、active lease/token及
+  Frozen spec repository/checkout SHA。控制面使用repository-narrowed contents-read credential请求固定Git origin，
+  只接受Git protocol v2 upload-pack、关闭redirect、限制request 1 MiB/response 256 MiB并校验content type；上游
+  Authorization/raw错误不返回容器。Runner remote URL无credential，短token只经Git `--config-env`进入一次fetch，
+  随后checkout detached exact SHA并复核clean status；已有非空/stale workspace不执行clean/reset而直接失败。
+- `FrozenExecutionSpec.role='publisher'`时必须且只能携带`patchArtifactId`；work spec不得携带该字段。work execution
+  通过`executor_patch_artifacts`登记immutable handoff：`patch_ref`只能是
+  `r2://executor-patches/<patchId>`，`patch_digest/changed_paths_digest`为SHA-256，正文最大1 MiB且不进入D1。
+- `POST /v1/attempts/:attemptId/executor-patches`只接受executor work短token和strict
+  `{schemaVersion,workExecutionId,expectedVersion,leaseGeneration,proposal:PatchProposal}`。patch ID不由容器选择，
+  而由控制面对`{schemaVersion:'1',workExecutionId}`取canonical SHA-256后稳定派生；一个work execution只对应
+  `executor-patches/<patchId>`一个私有R2 key。控制面对normalized proposal JSON计算raw bytes digest，对有序path列表
+  计算changed-paths digest；R2 metadata必须与execution/Attempt/generation/两个digest/长度exact同集，写后回读正文
+  再验证。前后authorization fence阻止R2调用期间Attempt/lease漂移；同内容20路收敛，不同内容不能写第二个key。
+- execution Runner在`identityKind=executor_proxy`时不进入GitHub writer分支，也不调用`github/write-token`、commit、push或
+  head callback。work lane只允许frozen detached HEAD和初始clean workspace；Agent改动由`git diff --raw --abbrev=40
+  --no-renames`与untracked inventory重建为PatchProposal v1，只有regular UTF-8 `100644` add/modify可进入，delete、rename、
+  executable bit、symlink、binary、protected path、Secret、超限或base digest漂移均拒绝。setup后仍须clean；按Plan选择的
+  `test:*`与policy全部`verify:*`逐条执行，每条前后重新捕获proposal且digest必须不变。全部exit 0后才以当前Attempt
+  version/generation/token调用上述上传API；本地验证不写commit/test Evidence，最终Evidence由publisher clean checkout
+  上的authoritative commit与复验产生。GitHub OIDC兼容lane继续走原credential/commit/non-force push/head/Evidence协议。
+- `GET /v1/attempts/:attemptId/executor-patches/:patchId`不接受work token，必须由Executor Worker以publisher callback
+  identity调用。控制面逐项绑定publisher execution/spec/publication running、prepared artifact、Attempt version/
+  generation/repository/base/checkout和target branch，随后读取专用`EXECUTOR_PATCH_OBJECTS`并重算两个digest才返回strict
+  proposal。错误只返回固定码，raw R2/provider body不回显；patch bucket不进入长期backup。
+- work patch上传在登记D1时自动调度publisher。控制面只接受同Attempt/generation/repository/base/checkout的work
+  execution，并从独立`(repository, mode, publisher)` active route冻结publisher profile/release；publisher profile
+  可以不同于Attempt已冻结的work profile，execution instance仍精确绑定自己的route version。target branch只能按
+  Attempt/task/review lineage复算：review feedback使用受信existing branch，其他execution使用
+  `agent/<taskId>/<attemptId>`，上传body不能指定。publication/execution/outbox ID从patch ID的canonical identity稳定
+  派生，patch/artifact、publication、publisher execution与outbox四表采用fail-on-conflict transaction；20路同内容上传
+  只有一个`created=true`，其余返回同一组ID且`created=false`，route/identity/branch冲突整批回滚，不留下D1孤儿。
+- publisher start只推进publisher instance和publication pending→running，不修改work Attempt version/generation，
+  不占用work concurrency slot。`completePublication`要求publisher execution ID与recomputed patch digest完全匹配；
+  只在digest等于冻结值时原子把artifact/publication置published并记录40字符head SHA，精确回调重放幂等。
+- `attempt_tokens.identity_kind=executor`不能调用GitHub repo-write broker；该gate必须在approval查询、credential row和
+  provider调用前执行，finalization/revocation查询再次检查。publisher使用独立
+  `executor_publisher_write_credentials` authority，不能复用work grant或GitHub OIDC兼容broker；PAT式
+  `provider_reference`固定拒绝。authority绑定publication/publisher execution/Attempt/approval/repository/
+  target branch/generation，D1保存token digest及AES-GCM ciphertext/IV，明文响应丢失时只允许同identity精确重放。
+- publisher Git API为`POST .../executor-publisher/write-token|head|verifications|verifications/:suiteId/results|complete`；
+  全部要求Executor Worker覆盖的publisher callback identity。source读取使用
+  `.../executor-publisher/repository.git/info/refs?service=git-upload-pack|git-upload-pack`和callback；push advertisement/
+  `git-receive-pack`保留`Basic x-access-token:<one-time token>`。控制面逐次校验token digest、execution、publication、
+  Attempt lease及branch，并解析receive-pack command：new old SHA必须全零，existing-fast-forward old SHA必须等于冻结
+  checkout，ref只能为冻结`refs/heads/<target>`，delete、多ref、redirect、错误content type和超限body均拒绝。
+- publisher patch响应除proposal/digest外，只从D1返回`publicationId/taskId/baseBranch/targetBranchMode/planVersion/
+  planItemId/targetedCommandRefs`。镜像入口clean checkout冻结SHA并从该commit读取policy；固定bot identity应用proposal、
+  commit和`force:false` push。随后head callback推进Attempt版本，在exact pushed head创建verification suite并依序写入
+  targeted+required Evidence。`complete`要求冻结branch/digest、Attempt head、completed suite及有序passed Evidence IDs
+  全部匹配，撤销authority后把artifact/publication置published并把publisher execution置succeeded；同body重放200，
+  完成后的token不能再次push。model outbound provider与真实Container部署尚未闭环；本地API测试不能冒充外部publication。
+
 目标 reusable workflow 只接收非敏感引用：
 
 ```json
@@ -1073,6 +1202,26 @@ type WorkflowSignalV1 = {
 Runner 从控制面读取完整任务。dispatch 不包含飞书正文、tool-bridge SK、GitHub token、数据库 DSN 或云凭证。
 
 模型认证与可选中转配置不属于 dispatch 协议。固定 workflow 从 repository Actions Secrets `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`读取配置，并只在 analysis/execution step 的进程环境中分别映射为Codex非交互认证变量`CODEX_API_KEY`与`OPENAI_BASE_URL`。base URL即使以Secret保存也只允许不含凭证的HTTPS URL，不能成为第二密钥通道；两者都不能成为 `workflow_dispatch` input、run-name、artifact、Plan、日志或控制面状态。
+
+非GitHub executor的模型认证改为控制面协议，不复制上述repository Secret。每次真实Codex invocation按以下顺序执行：
+
+1. Runner以普通Attempt短Bearer调用既有`POST /v1/attempts/:attemptId/model-reservations`；
+2. reservation成功后，以同一短Bearer调用`POST /v1/attempts/:attemptId/executor-model/grants`，body固定为
+   `{executionId,reservationId,expectedVersion,leaseGeneration}`，Executor Worker只注入可信execution/container header，
+   不覆盖Authorization；
+3. 控制面要求execution header与body完全相等，并把grant immutable绑定到work execution、Attempt、generation、
+   reservation及Frozen spec的`modelProfileId`。响应只在首次/精确重放时返回`{grantId,reservationId,token,expiresAt,created}`，
+   D1没有明文token字段；
+4. Codex只用该token请求exact
+   `POST /v1/attempts/:attemptId/executor-model/v1/responses`。请求必须为`application/json`、`stream=true`、无query、
+   body不超过1 MiB且`model`等于D1 profile；控制面上游固定Responses `/responses`、manual redirect、SSE 200，响应流
+   最多16 MiB；
+5. 既有`model-usage`结算使reservation离开`reserved`，同一grant随后固定拒绝。未产生usage的失败调用保留原
+   reservation/grant到二者较早TTL，不得伪造零usage或复用到下一invocation。
+
+publisher callback、work Attempt token、tool token及其他reservation的grant都不能替代当前model grant。provider 4xx/5xx、
+raw body/header与credential统一折叠为固定控制面错误；provider key只存在控制面Secret和上游Authorization header。
+GitHub Actions lane保持既有直接provider配置，是同一Agent adapter的兼容transport，不是model grant协议的fallback。
 
 Dispatcher 约束：
 

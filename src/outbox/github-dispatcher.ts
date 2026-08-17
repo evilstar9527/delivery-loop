@@ -19,6 +19,14 @@ import {
   githubAgentExecutorBinding,
   type GitHubAgentExecutorBinding,
 } from '../domain/github-agent-executor.js';
+import { ExecutorPluginRegistry } from '../executor/core/executor-registry.js';
+import type { ExecutorProfile } from '../executor/core/executor-plugin.js';
+import {
+  GITHUB_ACTIONS_EXECUTOR_RELEASE_DIGEST_V1,
+  GitHubActionsExecutorPlugin,
+  githubActionsExecutorProfile,
+} from '../executor/plugins/github-actions/github-actions-plugin.js';
+import { AttemptExecutionRouter } from '../storage/attempt-execution-router.js';
 
 export { DELIVERY_AGENT_WORKFLOW_FILE } from '../domain/github-agent-executor.js';
 export const TEST_ACCEPTANCE_WORKFLOW_FILE =
@@ -223,6 +231,42 @@ export class GitHubActionsApiClient implements GitHubDispatchEffects {
     if (!/^[0-9]+$/.test(githubRunId)) throw new Error('GitHub workflow run ID is invalid');
     const installationToken = await this.tokenProvider.getInstallationToken(repository);
     return await this.queryWorkflowRun(repository, githubRunId, installationToken, expectedEvent);
+  }
+
+  /** Cancels only a non-terminal Agent workflow; terminal runs converge idempotently. */
+  async cancelWorkflowRun(
+    repository: string,
+    githubRunId: string,
+  ): Promise<'cancelled' | 'already_terminal'> {
+    const fact = await this.getWorkflowRun(repository, githubRunId);
+    if (fact.status === 'completed') return 'already_terminal';
+    const installationToken = await this.tokenProvider.getInstallationToken(repository);
+    if (installationToken.length < 1 || installationToken.length > 2_000) {
+      throw new Error('GitHub installation token is unavailable');
+    }
+    let response: Response;
+    try {
+      response = await this.fetcher(
+        `${this.apiBaseUrl}/repos/${repository}/actions/runs/${githubRunId}/cancel`,
+        {
+          method: 'POST',
+          headers: {
+            accept: 'application/vnd.github+json',
+            authorization: `Bearer ${installationToken}`,
+            'user-agent': GITHUB_API_USER_AGENT,
+            'x-github-api-version': '2022-11-28',
+          },
+        },
+      );
+    } catch {
+      throw new Error('GitHub workflow run cancellation failed');
+    }
+    if (response.status !== 202) {
+      await response.body?.cancel();
+      throw new Error('GitHub workflow run cancellation failed');
+    }
+    await response.body?.cancel();
+    return 'cancelled';
   }
 
   /** Acceptance reconciliation keeps the dedicated Actions credential lifecycle. */
@@ -518,6 +562,8 @@ interface DispatchAttemptRow {
   plan_item_id: string | null;
   version: number;
   lease_generation: number;
+  executor_profile_id: string | null;
+  executor_route_version: number | null;
   github_run_id: string | null;
   head_sha: string | null;
   target_base_branch: string;
@@ -546,6 +592,9 @@ export class GitHubDispatchOutboxProcessor {
   private readonly allowedRepositories: ReadonlySet<string>;
   private readonly controlPlaneUrl: string;
   private readonly executor: GitHubAgentExecutorBinding;
+  private readonly executorProfile: ExecutorProfile;
+  private readonly executorPlugins: ExecutorPluginRegistry;
+  private readonly attemptRouter: AttemptExecutionRouter;
   private readonly modelProfileId: string | undefined;
   private readonly now: () => Date;
   private readonly attemptLeaseMs: number;
@@ -553,7 +602,7 @@ export class GitHubDispatchOutboxProcessor {
 
   constructor(
     private readonly db: D1Database,
-    private readonly effects: GitHubDispatchEffects,
+    effects: GitHubDispatchEffects,
     options: GitHubDispatchProcessorOptions,
   ) {
     this.allowedRepositories = new Set(options.allowedRepositories);
@@ -561,8 +610,23 @@ export class GitHubDispatchOutboxProcessor {
       options.executorRepository ?? options.allowedRepositories[0] ?? '',
       options.executorRef ?? 'refs/heads/main',
     );
+    this.executorProfile = githubActionsExecutorProfile({
+      profileId: 'legacy-github-actions-v1',
+      executorRepository: this.executor.repository,
+      executorRef: this.executor.ref,
+      releaseDigest: GITHUB_ACTIONS_EXECUTOR_RELEASE_DIGEST_V1,
+    });
+    this.executorPlugins = new ExecutorPluginRegistry([
+      new GitHubActionsExecutorPlugin(effects),
+    ]);
     this.controlPlaneUrl = controlPlaneOrigin(options.controlPlaneUrl);
     this.modelProfileId = options.modelProfileId;
+    this.attemptRouter = new AttemptExecutionRouter(db, {
+      controlPlaneUrl: this.controlPlaneUrl,
+      ...(this.modelProfileId === undefined
+        ? {}
+        : { modelProfileId: this.modelProfileId }),
+    });
     this.now = options.now ?? (() => new Date());
     this.attemptLeaseMs = options.attemptLeaseMs ?? 10 * 60_000;
     if (this.allowedRepositories.size === 0) {
@@ -619,7 +683,8 @@ export class GitHubDispatchOutboxProcessor {
         `SELECT attempts.attempt_id, attempts.run_id, attempts.mode, attempts.status,
                 attempts.base_sha, attempts.repository, attempts.workflow_ref,
                 attempts.plan_id, attempts.plan_version, attempts.plan_item_id, attempts.version,
-                attempts.lease_generation, attempts.github_run_id, attempts.head_sha,
+                attempts.lease_generation, attempts.executor_profile_id,
+                attempts.executor_route_version, attempts.github_run_id, attempts.head_sha,
                 tasks.target_base_branch, runs.task_digest,
                 runs.state AS run_state, runs.active_plan_id, runs.active_plan_version,
                 execution_plans.status AS plan_status,
@@ -694,6 +759,103 @@ export class GitHubDispatchOutboxProcessor {
         (attempt.status === 'pending' || attempt.status === 'starting');
       if (!activeExecution) return { settledCode: 'repair_dispatch_stale' };
     }
+    if (
+      attempt.executor_profile_id === null &&
+      attempt.executor_route_version !== null
+    ) {
+      throw new OutboxEffectError('executor_route_binding_invalid');
+    }
+    if (
+      attempt.executor_profile_id === null ||
+      attempt.executor_route_version !== null
+    ) {
+      let dispatchGeneration: 0 | 1 = 0;
+      if (
+        attempt.automated_review_redispatch_id !== null ||
+        (attempt.review_approval_recovery_id !== null && outbox.attemptCount > 2)
+      ) {
+        dispatchGeneration = 1;
+      }
+      const nextLeaseGeneration = attempt.lease_generation + 1;
+      const existing = await this.db.prepare(
+        `SELECT COUNT(*) AS count
+         FROM attempt_execution_instances
+         WHERE attempt_id = ? AND execution_role = 'work'
+           AND lease_generation = ?`,
+      ).bind(
+        attempt.attempt_id,
+        nextLeaseGeneration,
+      ).first<{ count: number }>();
+      if (existing?.count === 1) return { settledCode: 'executor_route_frozen' };
+      const routeInput = {
+        runId: attempt.run_id,
+        attemptId: attempt.attempt_id,
+        mode: attempt.mode as 'analysis' | 'implement' | 'review_fix',
+        taskDigest: attempt.task_digest,
+        repository: attempt.repository,
+        baseSha: attempt.base_sha,
+        checkoutSha: attempt.head_sha ?? attempt.base_sha,
+        targetBaseBranch: attempt.target_base_branch,
+        ...(attempt.plan_version === null ? {} : { planVersion: attempt.plan_version }),
+        ...(attempt.plan_item_id === null ? {} : { planItemId: attempt.plan_item_id }),
+        dispatchGeneration,
+        attemptVersion: attempt.version,
+        leaseGeneration: nextLeaseGeneration,
+      };
+      const routed = attempt.executor_profile_id === null
+        ? await this.attemptRouter.route(routeInput)
+        : await this.attemptRouter.resumeFrozen(
+            routeInput,
+            attempt.executor_profile_id,
+            attempt.executor_route_version!,
+          );
+      const nowIso = this.now().toISOString();
+      const statements: D1PreparedStatement[] = [];
+      if (attempt.executor_profile_id === null) {
+        statements.push(this.db.prepare(
+          `UPDATE attempts
+           SET executor_profile_id = ?, executor_route_version = ?,
+               workflow_ref = COALESCE(?, workflow_ref), updated_at = ?
+           WHERE attempt_id = ? AND run_id = ? AND status = 'pending'
+             AND version = ? AND lease_generation = ?
+             AND executor_profile_id IS NULL AND executor_route_version IS NULL
+             AND EXISTS (
+               SELECT 1 FROM executor_routes
+               WHERE route_id = ? AND profile_id = ? AND route_version = ?
+                 AND repository = ? AND attempt_mode = ?
+                 AND execution_role = 'work' AND status = 'active'
+             )`,
+        ).bind(
+          routed.profileId,
+          routed.routeVersion,
+          routed.attemptWorkflowRef,
+          nowIso,
+          attempt.attempt_id,
+          attempt.run_id,
+          attempt.version,
+          attempt.lease_generation,
+          routed.routeId,
+          routed.profileId,
+          routed.routeVersion,
+          attempt.repository,
+          attempt.mode,
+        ));
+      }
+      statements.push(...this.attemptRouter.persistenceStatements(routed, nowIso));
+      await this.db.batch(statements);
+      const persisted = await this.db.prepare(
+        `SELECT execution_id FROM attempt_execution_instances
+         WHERE execution_id = ? AND attempt_id = ? AND outbox_id = ?`,
+      ).bind(
+        routed.executionId,
+        attempt.attempt_id,
+        routed.outboxId,
+      ).first<{ execution_id: string }>();
+      if (persisted === null) {
+        throw new OutboxEffectError('executor_route_projection_conflict');
+      }
+      return { settledCode: 'executor_route_frozen' };
+    }
     const legacyWorkflowRef =
       `${attempt.repository}/${DELIVERY_AGENT_WORKFLOW_FILE}@refs/heads/${attempt.target_base_branch}`;
     if (
@@ -720,20 +882,7 @@ export class GitHubDispatchOutboxProcessor {
       }
     }
 
-    const inputs: Record<string, string> = {
-      schema_version: '1',
-      run_id: attempt.run_id,
-      attempt_id: attempt.attempt_id,
-      task_digest: attempt.task_digest,
-      base_sha: attempt.base_sha,
-      checkout_sha: executionDispatch
-        ? (attempt.head_sha ?? attempt.base_sha)
-        : attempt.base_sha,
-      target_repository: attempt.repository,
-      control_plane_url: this.controlPlaneUrl,
-      mode: attempt.mode,
-    };
-    if (this.modelProfileId !== undefined) inputs.model_profile_id = this.modelProfileId;
+    let dispatchGeneration: 0 | 1 = 0;
     if (
       attempt.automated_review_redispatch_id !== null ||
       (attempt.review_approval_recovery_id !== null && outbox.attemptCount > 2)
@@ -741,10 +890,8 @@ export class GitHubDispatchOutboxProcessor {
       // A fenced post-dispatch recovery already has an external run with the
       // stable name. Use the workflow's bounded redispatch suffix so the next
       // delivery cannot accidentally reuse that failed run.
-      inputs.dispatch_generation = '1';
+      dispatchGeneration = 1;
     }
-    if (attempt.plan_version !== null) inputs.plan_version = String(attempt.plan_version);
-    if (attempt.plan_item_id !== null) inputs.plan_item_id = attempt.plan_item_id;
     const quota = new QuotaControlStore(this.db);
     const now = this.now();
     try {
@@ -757,12 +904,34 @@ export class GitHubDispatchOutboxProcessor {
     }
     // A transport failure can mean GitHub accepted the dispatch but the response
     // was lost. Keep the slot until stable reconciliation, terminal Attempt, or TTL.
-    const dispatch: GitHubDispatchResult = await this.effects.ensureDispatch({
-      repository: this.executor.repository,
-      workflowFile: DELIVERY_AGENT_WORKFLOW_FILE,
-      ref: this.executor.ref,
-      inputs,
+    const start = await this.executorPlugins.ensureStarted({
+      schemaVersion: '1',
+      // Compatibility identity until attempt_execution_instances is introduced.
+      executionId: attempt.attempt_id,
+      runId: attempt.run_id,
+      attemptId: attempt.attempt_id,
+      leaseGeneration: attempt.lease_generation + 1,
+      role: 'work',
+      mode: attempt.mode as 'analysis' | 'implement' | 'review_fix',
+      profile: this.executorProfile,
+      taskDigest: attempt.task_digest,
+      repository: attempt.repository,
+      baseSha: attempt.base_sha,
+      checkoutSha: executionDispatch
+        ? (attempt.head_sha ?? attempt.base_sha)
+        : attempt.base_sha,
+      targetBaseBranch: attempt.target_base_branch,
+      controlPlaneUrl: this.controlPlaneUrl,
+      ...(attempt.plan_version === null ? {} : { planVersion: attempt.plan_version }),
+      ...(attempt.plan_item_id === null ? {} : { planItemId: attempt.plan_item_id }),
+      ...(this.modelProfileId === undefined ? {} : { modelProfileId: this.modelProfileId }),
+      dispatchGeneration,
     });
+    const dispatch: GitHubDispatchResult = {
+      disposition: start.disposition,
+      githubRunId: start.handle.externalId,
+      githubHeadSha: start.handle.attributes.executorHeadSha ?? '',
+    };
     if (!/^[0-9]+$/.test(dispatch.githubRunId)) {
       throw new OutboxEffectError('github_run_id_invalid');
     }

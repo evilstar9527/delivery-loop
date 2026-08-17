@@ -31,6 +31,10 @@ import { testRollbackApi } from './http/test-rollback-api.js';
 import { productionDeploymentApi } from './http/production-deployment-api.js';
 import { githubDispatchProcessorFromEnv } from './outbox/github-dispatch-runtime.js';
 import {
+  agentExecutorProcessorFromEnv,
+  executorReconcilerFromEnv,
+} from './outbox/agent-executor-runtime.js';
+import {
   githubTestAcceptanceRuntimeFromEnv,
   reconcileTestAcceptancesFromEnv,
 } from './outbox/github-test-acceptance-runtime.js';
@@ -187,6 +191,8 @@ export default {
   scheduled(controller, env, context): void {
     const scheduledNow = () => new Date(controller.scheduledTime);
     const githubDispatch = githubDispatchProcessorFromEnv(env);
+    const agentExecutor = agentExecutorProcessorFromEnv(env);
+    const executorReconciler = executorReconcilerFromEnv(env, { now: scheduledNow });
     const githubPullRequests = githubPullRequestRuntimeFromEnv(env);
     const githubTestDeployments = githubTestDeploymentRuntimeFromEnv(env);
     const githubTestAcceptances = githubTestAcceptanceRuntimeFromEnv(env);
@@ -194,6 +200,7 @@ export default {
     const githubProductionDeployments = githubProductionDeploymentRuntimeFromEnv(env);
     const feishuCards = feishuDeliveryCardRuntimeFromEnv(env);
     const destinations: RelayDestination[] = ['cloudflare_workflows'];
+    if (agentExecutor !== null) destinations.push('agent_executor');
     if (githubDispatch !== null) destinations.push('github_actions');
     if (githubPullRequests !== null) destinations.push('github_api');
     if (githubTestDeployments !== null) destinations.push(githubTestDeployments.destination);
@@ -216,6 +223,10 @@ export default {
         await revokeRepoWriteCredentialsFromEnv(env);
         return;
       }
+      // Provider lifecycle facts are read-only and monotonic. One early read
+      // prevents the Free-plan CPU fence from starving a newly started
+      // non-GitHub execution; semantic Attempt completion remains separate.
+      await executorReconciler?.reconcileObservations(1);
       // A fenced review replacement cannot become a fresh lost-pre-effect
       // recovery candidate until its terminal GitHub fact is projected. This
       // dedicated lane runs before every other business action, but it never
@@ -234,7 +245,19 @@ export default {
       const executionProgress = new ExecutionProgressReconciler(
         env.DB_CONTROL,
         env.TASK_OBJECTS,
-        { now: scheduledNow },
+        {
+          now: scheduledNow,
+          ...(env.CONTROL_PLANE_URL === undefined
+            ? {}
+            : {
+                executionRouting: {
+                  controlPlaneUrl: env.CONTROL_PLANE_URL,
+                  ...(env.CODEX_MODEL_PROFILE_ID === undefined
+                    ? {}
+                    : { modelProfileId: env.CODEX_MODEL_PROFILE_ID }),
+                },
+              }),
+        },
       );
       const planRevisionAnalysis = new PlanRevisionAnalysisReconciler(env.DB_CONTROL, {
         now: scheduledNow,
@@ -246,16 +269,15 @@ export default {
       // and claim one approved Item before any recovery or observation scan can
       // consume the Free-plan 10 ms CPU budget.
       await executionProgress.reconcileScheduling(1);
-      // The claim above may have created the only approved execution dispatch.
-      // Relay one GitHub Actions outbox ID immediately: later GitHub reads and
-      // R2-backed completion can exhaust the same CPU budget. Destination
-      // filtering does not bypass D1 fencing; the Queue consumer still reloads
-      // the immutable outbox and Attempt before performing any effect.
-      await relay.relayDestination('github_actions', 1);
+      // New claims always use the frozen provider-neutral route. Relay that
+      // semantic execution before compatibility-lane GitHub recovery work:
+      // later external reads can exhaust the same Free-plan CPU budget.
+      await relay.relayDestination('agent_executor', 1);
       // A repair that failed before producing a head, checkpoint, Evidence, or
       // verification result may safely consume the same immutable failed-suite
       // authority once more. Reconcile this D1-only lane before external reads
-      // and immediately offer its unique dispatch to the Queue.
+      // and immediately offer its legacy routing intent to the Queue. The
+      // GitHub dispatcher freezes its provider-neutral route before any effect.
       if (await new AttemptFailureStore(env.DB_CONTROL)
         .reconcilePreVerificationRepairs(1, scheduledNow()) > 0) {
         await relay.relayDestination('github_actions', 1);
@@ -380,6 +402,10 @@ export default {
           secrets: configuredSecrets(env),
         }),
       }).scan(5);
+      // The stuck detector owns Attempt fencing/revocation. Only afterwards
+      // may the provider-neutral lane deliver the corresponding idempotent
+      // cancel intent for the old immutable execution handle.
+      await executorReconciler?.reconcileCancellations(5);
       // Recover missed review webhooks before merge/base readers can race the
       // same pull_request_open Run-version transition.
       await reconcileGitHubReviewFeedbacksFromEnv(env);
@@ -456,6 +482,7 @@ export default {
       feishuCards?.processor ?? null,
       githubTestDeployments?.destination === 'yunxiao_pipelines'
         ? githubTestDeployments.processor : null,
+      agentExecutorProcessorFromEnv(env),
     );
     await consumeOutboxBatch(batch, router);
   },

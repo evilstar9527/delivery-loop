@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "delivery-loop-agent-executor",
+  "account_id": "b8488957e88658039d2a38fb8f160514",
+  "send_metrics": false,
+  "main": "src/executor/cloudflare-worker/worker.ts",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false,
+      "persist": true
+    }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "EXECUTOR_SANDBOX",
+        "class_name": "DeliveryAgentSandbox"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["DeliveryAgentSandbox"]
+    }
+  ],
+  "containers": [
+    {
+      "name": "delivery-agent-sandbox",
+      "class_name": "DeliveryAgentSandbox",
+      "image": "./executor-image/Dockerfile",
+      "image_build_context": ".",
+      "max_instances": 10,
+      "instance_type": "standard-1"
+    }
+  ]
+}

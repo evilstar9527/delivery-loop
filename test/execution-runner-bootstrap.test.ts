@@ -1389,4 +1389,213 @@ describe('production execution Runner bootstrap', () => {
     });
     expect(await readdir(runnerTemp)).toEqual([]);
   });
+
+  it('materializes an executor checkout after exchange without requesting GitHub OIDC', async () => {
+    const fixture = await repository();
+    const runnerTemp = join(fixture.root, 'runner-temp-executor-checkout');
+    await mkdir(runnerTemp, { mode: 0o700 });
+    const taskDigest = await taskRevisionDigest(task());
+    const environment: NodeJS.ProcessEnv = {
+      DELIVERY_SCHEMA_VERSION: '1',
+      DELIVERY_RUN_ID: RUN_ID,
+      DELIVERY_ATTEMPT_ID: ATTEMPT_ID,
+      DELIVERY_TASK_DIGEST: taskDigest,
+      DELIVERY_BASE_SHA: fixture.baseSha,
+      DELIVERY_CHECKOUT_SHA: fixture.checkoutSha,
+      DELIVERY_ATTEMPT_MODE: 'implement',
+      DELIVERY_PLAN_VERSION: '1',
+      DELIVERY_PLAN_ITEM_ID: ITEM_ID,
+      DELIVERY_CONTROL_PLANE_URL: 'https://control.delivery-loop.internal',
+      DELIVERY_EXECUTOR_IDENTITY_KIND: 'cloudflare_sandbox_proxy',
+      DELIVERY_EXECUTION_ID: 'execution-implement-proxy-1',
+      DELIVERY_MODEL_PROFILE_ID: 'profile-executor-proxy',
+      DELIVERY_REPOSITORY_PATH: fixture.path,
+      DELIVERY_TARGET_REPOSITORY: REPOSITORY,
+      RUNNER_TEMP: runnerTemp,
+    };
+    const attemptToken = 'executor-implement-short-grant';
+    let checkoutInput: unknown;
+    const requests: string[] = [];
+    let uploadedPatch: unknown;
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      requests.push(url);
+      if (url.endsWith('/executor-exchange')) {
+        expect(new Headers(init?.headers).get('authorization')).toBe('Bearer executor-proxy');
+        return Response.json({
+          attemptToken,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: 'executor-implement-tool-grant',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            scopes: [...EXECUTION_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith('/context')) {
+        return Response.json({
+          schemaVersion: '1',
+          attempt: {
+            id: ATTEMPT_ID,
+            runId: RUN_ID,
+            taskId: TASK_ID,
+            mode: 'implement',
+            version: 7,
+            leaseGeneration: 3,
+            baseSha: fixture.baseSha,
+            checkoutSha: fixture.checkoutSha,
+            repository: REPOSITORY,
+            baseBranch: 'main',
+            planId: PLAN_ID,
+            planVersion: 1,
+            planItemId: ITEM_ID,
+            targetBranch: `agent/${TASK_ID}/${ATTEMPT_ID}`,
+            targetBranchMode: 'new',
+          },
+          task: task(),
+          item: {
+            id: ITEM_ID,
+            kind: 'change',
+            title: 'Repair and verify',
+            objective: 'Repair the fixture and verify the result.',
+            required: true,
+            doneWhen: ['The exact change passes targeted and required verification.'],
+            commandRefs: ['test:unit', 'verify:all'],
+            evidenceKinds: ['commit', 'test'],
+            effects: ['repo_read', 'repo_write'],
+          },
+        });
+      }
+      if (url.endsWith('/model-reservations')) {
+        const body = JSON.parse(String(init?.body)) as { reservationId: string };
+        return Response.json({
+          reservationId: body.reservationId,
+          attemptId: ATTEMPT_ID,
+          runId: RUN_ID,
+          provider: 'delivery_loop_relay',
+          model: 'gpt-5.6-terra',
+          reservedTokens: 20_000,
+          reservedCostMicrousd: 50_000,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          overrideId: null,
+          disposition: 'created',
+        }, { status: 201 });
+      }
+      if (url.endsWith('/executor-model/grants')) {
+        expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${attemptToken}`);
+        expect(JSON.parse(String(init?.body))).toMatchObject({
+          executionId: 'execution-implement-proxy-1',
+          expectedVersion: 7,
+          leaseGeneration: 3,
+        });
+        return Response.json({
+          grantId: 'model-grant-executor-proxy',
+          reservationId: (JSON.parse(String(init?.body)) as { reservationId: string }).reservationId,
+          token: 'model-grant-executor-proxy-token',
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          created: true,
+        }, { status: 201 });
+      }
+      if (url.endsWith('/model-usage')) {
+        const body = JSON.parse(String(init?.body)) as {
+          reservationId: string;
+          usageId: string;
+        };
+        return Response.json({
+          usageId: body.usageId,
+          reservationId: body.reservationId,
+          totalTokens: 15,
+          costMicrousd: 10,
+          disposition: 'created',
+        }, { status: 201 });
+      }
+      if (url.endsWith('/artifacts')) {
+        const body = JSON.parse(String(init?.body)) as { artifactId: string };
+        return Response.json({
+          accepted: true,
+          status: 'uploading',
+          artifactId: body.artifactId,
+          category: 'raw_transcript',
+          objectIdentityDigest: `sha256:${'7'.repeat(64)}`,
+          created: false,
+        }, { status: 202 });
+      }
+      if (url.endsWith('/executor-patches')) {
+        uploadedPatch = JSON.parse(String(init?.body)) as unknown;
+        return Response.json({
+          schemaVersion: '1',
+          patchId: 'patch-executor-implement-proxy-1',
+          workExecutionId: 'execution-implement-proxy-1',
+          patchRef: 'r2://executor-patches/patch-executor-implement-proxy-1',
+          patchDigest: `sha256:${'9'.repeat(64)}`,
+          changedPathsDigest: `sha256:${'8'.repeat(64)}`,
+          byteLength: 200,
+          created: true,
+        }, { status: 201 });
+      }
+      if (url.endsWith('/github/write-token')) {
+        throw new Error('executor work must not request a GitHub write credential');
+      }
+      if (url.endsWith('/events')) {
+        return Response.json({ accepted: true }, {
+          status: 202,
+          headers: { 'cache-control': 'no-store' },
+        });
+      }
+      throw new Error(`unexpected executor request: ${url}`);
+    };
+    const result = await runExecutionAttempt({
+      environment,
+      fetch: fetchImplementation,
+      heartbeatIntervalMs: 60_000,
+      checkoutRepository: async (input) => {
+        checkoutInput = input;
+        await exec('git', ['checkout', '--detach', fixture.checkoutSha], { cwd: fixture.path });
+      },
+      agent: {
+        usesMeteredModel: true,
+        apply: async (input) => {
+          expect(input.model).toBe('gpt-5.6-terra');
+          input.onTranscriptLine?.(JSON.stringify({ type: 'thread.started' }));
+          input.onUsage?.({
+            inputTokens: 10,
+            cachedInputTokens: 0,
+            outputTokens: 5,
+            reasoningOutputTokens: 0,
+          });
+          await writeFile(join(fixture.path, 'value.txt'), 'fixed\n');
+          return { schemaVersion: '1', action: 'apply_fix' };
+        },
+      },
+      now: () => new Date('2026-07-25T15:02:00.000Z'),
+    });
+    expect(result).toMatchObject({
+      status: 'patch_uploaded',
+      patch: {
+        patchId: 'patch-executor-implement-proxy-1',
+        workExecutionId: 'execution-implement-proxy-1',
+      },
+    });
+    expect(checkoutInput).toMatchObject({
+      attemptId: ATTEMPT_ID,
+      executionId: 'execution-implement-proxy-1',
+      attemptToken,
+      checkoutSha: fixture.checkoutSha,
+    });
+    expect(requests.some((url) => url.includes('oidc.actions.test'))).toBe(false);
+    expect(requests.some((url) => url.endsWith('/github/write-token'))).toBe(false);
+    expect(requests.filter((url) => url.endsWith('/executor-model/grants'))).toHaveLength(1);
+    expect(uploadedPatch).toMatchObject({
+      schemaVersion: '1',
+      workExecutionId: 'execution-implement-proxy-1',
+      expectedVersion: 7,
+      leaseGeneration: 3,
+      proposal: {
+        schemaVersion: '1',
+        changes: [{ path: 'value.txt', content: 'fixed\n' }],
+      },
+    });
+  });
 });

@@ -59,6 +59,7 @@ import {
 } from '../domain/tool-bridge.js';
 import { isSensitiveFieldName, SecretScanner } from '../security/redaction.js';
 import type { CodexModelUsage } from '../domain/quota.js';
+import { executorModelProviderBaseUrl } from '../agent/provider-base-url.js';
 import { deriveAnalysisPlanPolicy } from '../domain/analysis-plan-policy.js';
 import type { AnalysisProviderProcessFailureCode } from
   '../agent/provider-preflight-failure.js';
@@ -73,6 +74,7 @@ import {
   type AutomatedReviewResultV1,
 } from '../domain/automated-review.js';
 import { listAnalysisWritableRepositoryPaths } from './analysis-repository-paths.js';
+import { checkoutExecutorRepository } from './executor-repository-checkout.js';
 
 const OIDC_AUDIENCE = 'delivery-loop-control-plane';
 const HEARTBEAT_INTERVAL_MS = 45_000;
@@ -179,6 +181,13 @@ const ModelUsageResponseSchema = z.object({
   costMicrousd: z.number().int().nonnegative(),
   disposition: z.enum(['created', 'existing']),
 }).strict();
+const ModelGrantResponseSchema = z.object({
+  grantId: z.string().regex(ID_PATTERN),
+  reservationId: z.string().regex(ID_PATTERN),
+  token: z.string().min(16).max(2_000),
+  expiresAt: z.iso.datetime({ offset: true }),
+  created: z.boolean(),
+}).strict();
 const AutomatedReviewCompletionResponseSchema = z.object({
   accepted: z.literal(true),
   reviewId: z.string().regex(ID_PATTERN),
@@ -208,8 +217,10 @@ interface RunnerConfiguration {
   mode: 'analysis';
   modelProfileId?: string;
   controlPlaneUrl: string;
-  oidcRequestUrl: string;
-  oidcRequestToken: string;
+  identityKind: 'github_oidc' | 'executor_proxy';
+  executionId?: string;
+  oidcRequestUrl?: string;
+  oidcRequestToken?: string;
   workspacePath: string;
   runnerTempPath: string;
 }
@@ -244,6 +255,7 @@ export interface RunAnalysisAttemptOptions {
     baseSha: string,
   ) => Promise<readonly string[]>;
   now?: () => Date;
+  checkoutRepository?: typeof checkoutExecutorRepository;
 }
 
 export interface AnalysisAttemptResult {
@@ -330,9 +342,11 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
     requiredEnvironment(environment, 'DELIVERY_CONTROL_PLANE_URL'),
     'origin',
   );
-  const oidcRequest = trustedHttpsUrl(
-    requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_URL'),
-    'request',
+  const executorIdentity = environment.DELIVERY_EXECUTOR_IDENTITY_KIND ===
+    'cloudflare_sandbox_proxy';
+  const executionId = environment.DELIVERY_EXECUTION_ID;
+  const oidcRequest = executorIdentity ? undefined : trustedHttpsUrl(
+    requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_URL'), 'request',
   );
   const workspacePath = resolve(requiredEnvironment(
     environment,
@@ -350,6 +364,7 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
     !BASE_SHA_PATTERN.test(baseSha) ||
     mode !== 'analysis' ||
     (modelProfileId !== undefined && !ID_PATTERN.test(modelProfileId)) ||
+    (executorIdentity && (executionId === undefined || !ID_PATTERN.test(executionId))) ||
     isWithin(workspacePath, runnerTempPath)
   ) {
     throw new AnalysisRunnerError('analysis Runner configuration is invalid');
@@ -363,8 +378,12 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
     mode: 'analysis',
     ...(modelProfileId === undefined ? {} : { modelProfileId }),
     controlPlaneUrl: controlPlane.origin,
-    oidcRequestUrl: oidcRequest.toString(),
-    oidcRequestToken: requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_TOKEN'),
+    identityKind: executorIdentity ? 'executor_proxy' : 'github_oidc',
+    ...(executionId === undefined ? {} : { executionId }),
+    ...(oidcRequest === undefined ? {} : {
+      oidcRequestUrl: oidcRequest.toString(),
+      oidcRequestToken: requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_TOKEN'),
+    }),
     workspacePath,
     runnerTempPath,
   };
@@ -482,6 +501,9 @@ async function obtainGitHubOidcToken(
   fetchImplementation: typeof globalThis.fetch,
   config: RunnerConfiguration,
 ): Promise<string> {
+  if (config.oidcRequestUrl === undefined || config.oidcRequestToken === undefined) {
+    throw new AnalysisRunnerError('GitHub OIDC configuration is unavailable');
+  }
   const url = new URL(config.oidcRequestUrl);
   url.searchParams.set('audience', OIDC_AUDIENCE);
   const raw = await fetchJson(
@@ -505,14 +527,21 @@ async function obtainGitHubOidcToken(
 async function exchangeAttemptToken(
   fetchImplementation: typeof globalThis.fetch,
   config: RunnerConfiguration,
-  oidcToken: string,
+  identityToken?: string,
 ): Promise<MutableFencing> {
+  const executorProxy = config.identityKind === 'executor_proxy';
+  if (!executorProxy && identityToken === undefined) {
+    throw new AnalysisRunnerError('attempt identity token is unavailable');
+  }
   const raw = await fetchJson(
     fetchImplementation,
-    `${config.controlPlaneUrl}/v1/attempts/${config.attemptId}/exchange`,
+    `${config.controlPlaneUrl}/v1/attempts/${config.attemptId}/` +
+      (executorProxy ? 'executor-exchange' : 'exchange'),
     {
-      method: 'POST',
-      headers: { accept: 'application/json', authorization: `Bearer ${oidcToken}` },
+      method: 'POST', headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${executorProxy ? 'executor-proxy' : identityToken}`,
+      },
     },
     [200],
     'attempt token exchange',
@@ -1057,6 +1086,7 @@ async function runAutomatedReview(
   let heartbeatFailure: unknown;
   let heartbeatTask: Promise<void> = Promise.resolve();
   let reservation: z.infer<typeof ModelReservationResponseSchema> | undefined;
+  let modelGrantToken: string | undefined;
   const measuredUsages: CodexModelUsage[] = [];
   try {
     if (options.reviewAgent === undefined || options.reviewAgent.usesMeteredModel === true) {
@@ -1090,6 +1120,30 @@ async function runAutomatedReview(
         throw new AnalysisRunnerError('model quota reservation response is invalid');
       }
       reservation = parsed.data;
+      if (config.identityKind === 'executor_proxy') {
+        const rawGrant = await controlPlaneJson(
+          fetchImplementation,
+          config,
+          `/v1/attempts/${config.attemptId}/executor-model/grants`,
+          fencing.token,
+          'executor model grant',
+          [200, 201],
+          {
+            executionId: config.executionId!,
+            reservationId: reservation.reservationId,
+            expectedVersion: fencing.version,
+            leaseGeneration: fencing.leaseGeneration,
+          },
+        );
+        const parsedGrant = ModelGrantResponseSchema.safeParse(rawGrant);
+        if (
+          !parsedGrant.success ||
+          parsedGrant.data.reservationId !== reservation.reservationId ||
+          Date.parse(parsedGrant.data.expiresAt) > Date.parse(reservation.expiresAt)
+        ) throw new AnalysisRunnerError('executor model grant response is invalid');
+        modelGrantToken = parsedGrant.data.token;
+        runtimeSecrets.add(modelGrantToken);
+      }
     }
     heartbeatTask = heartbeatLoop(
       fetchImplementation,
@@ -1114,10 +1168,14 @@ async function runAutomatedReview(
     const agent = options.reviewAgent ?? new CodexReviewAdapter({
       outputSchemaPath,
       runtimeSecrets: [...runtimeSecrets],
-      ...(environment.OPENAI_BASE_URL === undefined ||
-        environment.OPENAI_BASE_URL === ''
-        ? {}
-        : { providerBaseUrl: environment.OPENAI_BASE_URL }),
+      ...(config.identityKind === 'executor_proxy'
+        ? {
+            executorModelProviderBaseUrl: executorModelProviderBaseUrl(config.attemptId),
+            providerApiKey: () => modelGrantToken,
+          }
+        : environment.OPENAI_BASE_URL === undefined || environment.OPENAI_BASE_URL === ''
+          ? {}
+          : { providerBaseUrl: environment.OPENAI_BASE_URL }),
     });
     let result: AutomatedReviewResultV1;
     try {
@@ -1249,11 +1307,15 @@ export async function runAnalysisAttempt(
     throw new AnalysisRunnerError('analysis Runner heartbeat interval is invalid');
   }
 
-  const beforeSnapshot = await snapshotWorkspace(config.workspacePath);
-  const oidcToken = await obtainGitHubOidcToken(fetchImplementation, config);
-  const fencing = await exchangeAttemptToken(fetchImplementation, config, oidcToken);
+  let beforeSnapshot = config.identityKind === 'github_oidc'
+    ? await snapshotWorkspace(config.workspacePath)
+    : undefined;
+  const identityToken = config.identityKind === 'github_oidc'
+    ? await obtainGitHubOidcToken(fetchImplementation, config)
+    : undefined;
+  const fencing = await exchangeAttemptToken(fetchImplementation, config, identityToken);
   const runtimeSecrets = new Set<string>([
-    oidcToken,
+    identityToken,
     fencing.token,
     fencing.toolToken,
     config.oidcRequestToken,
@@ -1263,7 +1325,37 @@ export async function runAnalysisAttempt(
           entry[1] !== undefined && isSensitiveFieldName(entry[0]),
       )
       .map(([, value]) => value),
-  ]);
+  ].filter((value): value is string => value !== undefined));
+  if (config.identityKind === 'executor_proxy') {
+    try {
+      await (options.checkoutRepository ?? checkoutExecutorRepository)({
+        controlPlaneUrl: config.controlPlaneUrl,
+        attemptId: config.attemptId,
+        executionId: config.executionId!,
+        attemptToken: fencing.token,
+        checkoutSha: config.baseSha,
+        repositoryPath: config.workspacePath,
+      });
+      beforeSnapshot = await snapshotWorkspace(config.workspacePath);
+    } catch (error) {
+      const terminalError = terminalAnalysisRunnerError(error);
+      try {
+        await reportAttemptFailure(
+          fetchImplementation,
+          config,
+          fencing,
+          terminalError.failure!,
+          now(),
+        );
+      } catch {
+        // The executor lifecycle reconciler remains the durable fallback.
+      }
+      throw terminalError;
+    }
+  }
+  if (beforeSnapshot === undefined) {
+    throw new AnalysisRunnerError('analysis repository checkout is unavailable');
+  }
   let rawContext: unknown;
   try {
     rawContext = await controlPlaneContextJson(
@@ -1361,7 +1453,9 @@ export async function runAnalysisAttempt(
   let heartbeatFailure: unknown;
   let heartbeatTask: Promise<void> = Promise.resolve();
   const modelReservations: Array<z.infer<typeof ModelReservationResponseSchema>> = [];
+  const modelGrantTokens: string[] = [];
   const measuredUsages: CodexModelUsage[] = [];
+  let currentModelGrantToken: string | undefined;
   const diagnosticMediation = context.task.intent.kind === 'bug' &&
       carriedDiagnosticEvidenceRef === undefined
     ? new ControlledDiagnosticMediation(
@@ -1419,6 +1513,9 @@ export async function runAnalysisAttempt(
         parsedUsage.data.reservationId !== modelReservation.reservationId
       ) throw new AnalysisRunnerError('model usage settlement response is invalid');
       settledModelReservations += 1;
+      if (currentModelGrantToken === modelGrantTokens[settledModelReservations - 1]) {
+        currentModelGrantToken = undefined;
+      }
     }
   };
   const reserveModelInvocation = async (invocation: number): Promise<string | undefined> => {
@@ -1477,6 +1574,31 @@ export async function runAnalysisAttempt(
           parsedReservation.data.model !== modelReservations[0].model))
     ) throw new AnalysisRunnerError('model quota reservation response is invalid');
     modelReservations.push(parsedReservation.data);
+    if (config.identityKind === 'executor_proxy') {
+      const rawGrant = await requestLock.run(async () => await controlPlaneJson(
+        fetchImplementation,
+        config,
+        `/v1/attempts/${config.attemptId}/executor-model/grants`,
+        fencing.token,
+        'executor model grant',
+        [200, 201],
+        {
+          executionId: config.executionId!,
+          reservationId: parsedReservation.data.reservationId,
+          expectedVersion: fencing.version,
+          leaseGeneration: fencing.leaseGeneration,
+        },
+      ));
+      const parsedGrant = ModelGrantResponseSchema.safeParse(rawGrant);
+      if (
+        !parsedGrant.success ||
+        parsedGrant.data.reservationId !== parsedReservation.data.reservationId ||
+        Date.parse(parsedGrant.data.expiresAt) > Date.parse(parsedReservation.data.expiresAt)
+      ) throw new AnalysisRunnerError('executor model grant response is invalid');
+      modelGrantTokens.push(parsedGrant.data.token);
+      currentModelGrantToken = parsedGrant.data.token;
+      runtimeSecrets.add(parsedGrant.data.token);
+    }
     return parsedReservation.data.model;
   };
 
@@ -1628,9 +1750,14 @@ export async function runAnalysisAttempt(
       new CodexAnalysisAdapter({
         outputSchemaPath: analysisOutputSchemaPath,
         runtimeSecrets: [...runtimeSecrets],
-        ...(environment.OPENAI_BASE_URL === undefined || environment.OPENAI_BASE_URL === ''
-          ? {}
-          : { providerBaseUrl: environment.OPENAI_BASE_URL }),
+        ...(config.identityKind === 'executor_proxy'
+          ? {
+              executorModelProviderBaseUrl: executorModelProviderBaseUrl(config.attemptId),
+              providerApiKey: () => currentModelGrantToken,
+            }
+          : environment.OPENAI_BASE_URL === undefined || environment.OPENAI_BASE_URL === ''
+            ? {}
+            : { providerBaseUrl: environment.OPENAI_BASE_URL }),
       });
     const canCorrectInitialPlan = diagnosticMediation === null &&
       carriedDiagnosticEvidenceRef === undefined && context.revisionSource === undefined;

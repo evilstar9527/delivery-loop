@@ -12,6 +12,7 @@ import {
   type GitHubDispatchResult,
 } from '../../src/outbox/github-dispatcher.js';
 import { AttemptFailureStore } from '../../src/storage/attempt-failure-store.js';
+import { deliverRoutedGitHubDispatch } from './routed-github-dispatch.js';
 
 const BASE_URL = 'https://delivery-loop.test';
 const RUN_ID = 'run-verification-repair';
@@ -137,6 +138,7 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM execution_plan_assumptions'),
     env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
     env.DB_CONTROL.prepare('DELETE FROM idempotency_keys'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
@@ -409,14 +411,27 @@ async function reportPreVerificationPatchFailure(input: {
   });
 }
 
-function dispatcher(effects: GitHubDispatchEffects): GitHubDispatchOutboxProcessor {
-  return new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
+function dispatcher(effects: GitHubDispatchEffects): {
+  deliver(outboxId: string): ReturnType<GitHubDispatchOutboxProcessor['deliver']>;
+} {
+  const legacy = new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
     allowedRepositories: [REPOSITORY],
     controlPlaneUrl: 'https://control.example.test',
     now: () => TEST_STARTED_AT,
     generateLeaseToken: () => crypto.randomUUID(),
     attemptLeaseMs: 20 * 60_000,
   });
+  return {
+    async deliver(outboxId) {
+      return await deliverRoutedGitHubDispatch(
+        env.DB_CONTROL,
+        legacy,
+        effects,
+        outboxId,
+        TEST_STARTED_AT,
+      );
+    },
+  };
 }
 
 async function activateRepair(
@@ -600,7 +615,7 @@ describe('bounded verification repair loop', () => {
     const effects = new FakeDispatchEffects();
     expect(await dispatcher(effects).deliver(repair.dispatchOutboxId)).toBe('settled');
     expect(effects.requests).toEqual([{
-      repository: REPOSITORY,
+      repository: 'example/delivery-loop',
       workflowFile: '.github/workflows/delivery-agent.yml',
       ref: 'refs/heads/main',
       inputs: {

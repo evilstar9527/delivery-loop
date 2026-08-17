@@ -23,8 +23,10 @@ describe('Codex execution adapter', () => {
     await chmod(contextFilePath, 0o600);
     await writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' });
     let observed: CommandExecutionRequest | undefined;
+    let providerGrant = 'executor-grant-before-reservation';
     const adapter = new CodexExecutionAdapter({
       providerBaseUrl: 'https://relay.example.com/openai/v1/',
+      providerApiKey: () => providerGrant,
       execute: async (request) => {
         observed = request;
         const schemaPath = request.args[request.args.indexOf('--output-schema') + 1];
@@ -46,6 +48,7 @@ describe('Codex execution adapter', () => {
         return { exitCode: 0 };
       },
     });
+    providerGrant = 'executor-grant-after-reservation';
 
     await expect(adapter.apply({
       attemptId: 'attempt-execution-agent',
@@ -60,6 +63,8 @@ describe('Codex execution adapter', () => {
       },
     })).resolves.toEqual({ schemaVersion: '1', action: 'apply_fix' });
     expect(observed).toMatchObject({ command: 'codex', cwd: workspace });
+    expect(observed?.environment?.CODEX_API_KEY).toBe(providerGrant);
+    expect(observed?.environment?.OPENAI_API_KEY).toBeUndefined();
     expect(observed?.args).toEqual([
       'exec',
       '--ephemeral',

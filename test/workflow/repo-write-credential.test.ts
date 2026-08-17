@@ -88,7 +88,17 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM execution_plan_assumptions'),
     env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_patch_publications'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_patch_artifacts'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_cancellations'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_reconciliation_failures'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_observations'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_routes'),
+    env.DB_CONTROL.prepare(
+      `DELETE FROM executor_profiles WHERE profile_id <> 'legacy-github-actions-v1'`,
+    ),
     env.DB_CONTROL.prepare('DELETE FROM idempotency_keys'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
     env.DB_CONTROL.prepare('DELETE FROM runs'),
@@ -274,6 +284,77 @@ describe('repo_write approval and GitHub credential broker', () => {
       permissions: { contents: 'write', pullRequests: 'write' },
     });
     expect(provider.issuedRepositories).toEqual([REPOSITORY]);
+  });
+
+  it('never issues a Git write credential to an executor work-token grant', async () => {
+    await approve();
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare('DELETE FROM attempt_tokens WHERE attempt_id = ?').bind(ATTEMPT_ID),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO executor_profiles (
+           profile_id, schema_version, provider_kind, plugin_schema_version,
+           release_digest, configuration_json, capabilities_json, status,
+           created_at, activated_at
+         ) VALUES ('executor-work-no-write', '1', 'cloudflare_sandbox', '1', ?,
+                   '{}', '{}', 'active', ?, ?)`,
+      ).bind(`sha256:${'8'.repeat(64)}`, NOW.toISOString(), NOW.toISOString()),
+      env.DB_CONTROL.prepare(
+        `UPDATE attempts SET executor_profile_id = 'executor-work-no-write',
+             executor_route_version = 1 WHERE attempt_id = ?`,
+      ).bind(ATTEMPT_ID),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         ) VALUES ('outbox-executor-work-no-write', ?, 'agent_execution_start',
+                   'agent_executor', 'd1://attempt-executions/executor-work-no-write',
+                   'agent-executor:executor-work-no-write', 'settled', ?, ?)`,
+      ).bind(RUN_ID, NOW.toISOString(), NOW.toISOString()),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_execution_instances (
+           execution_id, attempt_id, attempt_version, lease_generation, execution_role,
+           executor_profile_id, executor_route_version, spec_digest, spec_json,
+           release_digest, provider_kind, plugin_schema_version, status, outbox_id,
+           created_at, started_at, updated_at
+         ) VALUES ('executor-work-no-write', ?, 2, 1, 'work',
+                   'executor-work-no-write', 1, ?, '{}', ?,
+                   'cloudflare_sandbox', '1', 'running',
+                   'outbox-executor-work-no-write', ?, ?, ?)`,
+      ).bind(
+        ATTEMPT_ID,
+        `sha256:${'9'.repeat(64)}`,
+        `sha256:${'8'.repeat(64)}`,
+        NOW.toISOString(),
+        NOW.toISOString(),
+        NOW.toISOString(),
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_tokens (
+           token_id, attempt_id, oidc_token_digest, token_digest, tool_token_digest,
+           lease_generation, scopes_json, expires_at, created_at, identity_kind, execution_id
+         ) VALUES ('token-executor-work-no-write', ?, ?, ?, ?, 1, ?, ?, ?,
+                   'executor', 'executor-work-no-write')`,
+      ).bind(
+        ATTEMPT_ID,
+        `sha256:${'a'.repeat(64)}`,
+        await canonicalSha256(RAW_RUNNER_TOKEN),
+        `sha256:${'b'.repeat(64)}`,
+        JSON.stringify(AUTHORIZATION.scopes),
+        AUTHORIZATION.leaseExpiresAt,
+        NOW.toISOString(),
+      ),
+    ]);
+    const provider = new FakeGitHubWriteCredentialProvider();
+    const store = new RepoWriteCredentialStore(env.DB_CONTROL, provider, {
+      encryptionKey: ENCRYPTION_KEY,
+    });
+    await expect(store.issue(AUTHORIZATION, NOW)).rejects.toMatchObject({
+      code: 'policy_denied',
+    });
+    expect(provider.issuedRepositories).toEqual([]);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS count FROM github_write_credentials`,
+    ).first()).toEqual({ count: 0 });
   });
 
   it('issues one target-repository credential, caps authorization TTL, and stores no plaintext', async () => {

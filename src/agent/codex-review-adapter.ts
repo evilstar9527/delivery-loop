@@ -16,10 +16,15 @@ import {
 } from './command-runtime.js';
 import { CodexUsageAccumulator } from './codex-usage.js';
 import {
+  codexProviderEnvironment,
   codexProviderProfileArguments,
+  type CodexProviderApiKey,
   type CodexRelayReasoningEffort,
 } from './codex-provider-profile.js';
-import { normalizeProviderBaseUrl } from './provider-base-url.js';
+import {
+  normalizeExecutorModelProviderBaseUrl,
+  normalizeProviderBaseUrl,
+} from './provider-base-url.js';
 import {
   AnalysisProviderJsonlFailureProjector,
   classifyAnalysisProviderProcessFailure,
@@ -42,6 +47,8 @@ export interface CodexReviewAdapterOptions {
   command?: string;
   execute?: CommandExecutor;
   providerBaseUrl?: string;
+  executorModelProviderBaseUrl?: string;
+  providerApiKey?: CodexProviderApiKey;
   reasoningEffort?: CodexRelayReasoningEffort;
   runtimeSecrets?: readonly string[];
 }
@@ -94,6 +101,7 @@ export class CodexReviewAdapter {
   private readonly command: string;
   private readonly execute: CommandExecutor;
   private readonly providerBaseUrl: string | undefined;
+  private readonly providerApiKey: CodexProviderApiKey | undefined;
   private readonly reasoningEffort: CodexRelayReasoningEffort | undefined;
   private readonly runtimeSecrets: readonly string[];
 
@@ -101,7 +109,16 @@ export class CodexReviewAdapter {
     this.outputSchemaPath = resolve(options.outputSchemaPath);
     this.command = options.command ?? 'codex';
     this.execute = options.execute ?? executeCommand;
-    this.providerBaseUrl = normalizeProviderBaseUrl(options.providerBaseUrl);
+    if (options.providerBaseUrl !== undefined && options.executorModelProviderBaseUrl !== undefined) {
+      throw new Error('Codex provider configuration is ambiguous');
+    }
+    this.providerBaseUrl = options.executorModelProviderBaseUrl === undefined
+      ? normalizeProviderBaseUrl(options.providerBaseUrl)
+      : normalizeExecutorModelProviderBaseUrl(options.executorModelProviderBaseUrl);
+    if (typeof options.providerApiKey === 'string') {
+      codexProviderEnvironment(options.providerApiKey);
+    }
+    this.providerApiKey = options.providerApiKey;
     this.reasoningEffort = options.reasoningEffort;
     this.runtimeSecrets = [...new Set(options.runtimeSecrets ?? [])];
   }
@@ -173,6 +190,10 @@ export class CodexReviewAdapter {
         cwd: resolve(input.workspacePath),
         stdin: prompt,
         timeoutMs: input.timeoutMs,
+        ...(() => {
+          const environment = codexProviderEnvironment(this.providerApiKey);
+          return environment === undefined ? {} : { environment };
+        })(),
         ...(input.model === undefined
           ? {}
           : {
