@@ -65,6 +65,8 @@ export interface Bindings {
   /** Control-plane-only Responses relay configuration; never passed to a container. */
   EXECUTOR_MODEL_PROVIDER?: string;
   EXECUTOR_MODEL_BASE_URL?: string;
+  /** Trusted transport alias; the Agent must still request the D1-authorized model. */
+  EXECUTOR_MODEL_UPSTREAM_MODEL?: string;
   EXECUTOR_MODEL_API_KEY?: string;
   /** Control-plane-only key for encrypting per-reservation model grants in D1. */
   EXECUTOR_MODEL_GRANT_ENCRYPTION_KEY?: string;

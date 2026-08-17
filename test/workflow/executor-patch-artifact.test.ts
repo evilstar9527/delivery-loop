@@ -971,6 +971,7 @@ describe('executor patch R2 handoff', () => {
       executorModelProxyRuntime: {
         provider: 'delivery_loop_relay',
         baseUrl: 'https://relay.example.test/v1',
+        upstreamModel: 'openai/gpt-5.6-terra',
         apiKey: 'provider-model-canary-value',
         fetch: async (input, init) => {
           const request = new Request(input, init);
@@ -1047,6 +1048,10 @@ describe('executor patch R2 handoff', () => {
     expect(upstream[0]!.url).toBe('https://relay.example.test/v1/responses');
     expect(upstream[0]!.headers.get('authorization'))
       .toBe('Bearer provider-model-canary-value');
+    await expect(upstream[0]!.clone().json()).resolves.toMatchObject({
+      model: 'openai/gpt-5.6-terra',
+      stream: true,
+    });
     expect((await invoke({
       model: 'gpt-5.6-sol',
       stream: true,

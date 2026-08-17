@@ -14,6 +14,10 @@
     "GITHUB_OIDC_AUDIENCE": "delivery-loop-control-plane",
     "CONTROL_PLANE_URL": "https://delivery-loop-control-plane.eve55265.workers.dev",
     "CODEX_MODEL_PROFILE_ID": "codex-gpt-5p6-terra-medium-tool-loop-20260811",
+    "AGENT_EXECUTOR_URL": "https://delivery-loop-agent-executor.heco.workers.dev",
+    "EXECUTOR_MODEL_PROVIDER": "delivery_loop_relay",
+    "EXECUTOR_MODEL_BASE_URL": "https://openrouter.ai/api/v1",
+    "EXECUTOR_MODEL_UPSTREAM_MODEL": "openai/gpt-5.6-terra",
     "TEST_DEPLOY_TARGETS_JSON": "[{\"repository\":\"lightspeed-intelligence/tipsy-backend\",\"provider\":\"yunxiao_pipeline\",\"environment\":\"test\",\"workflowPath\":\".github/workflows/delivery-test-deploy.yml\",\"oidcAudience\":\"delivery-loop-test-deploy\",\"roleRef\":\"test:yunxiao-pipeline\",\"organizationId\":\"68c3d49cbb64aae551955854\",\"pipelineId\":\"5186274\",\"repositoryUrl\":\"https://github.com/Lightspeed-Intelligence/tipsy-backend.git\"}]"
   },
   "observability": {

@@ -8,6 +8,7 @@ const MAX_RESPONSE_BYTES = 16 * 1_048_576;
 export interface ExecutorModelProxyRuntime {
   provider: string;
   baseUrl: string;
+  upstreamModel?: string;
   apiKey: string;
   fetch?: typeof globalThis.fetch;
 }
@@ -26,15 +27,26 @@ export class ExecutorModelProxyError extends Error {
 export function executorModelProxyRuntimeFromEnv(env: {
   EXECUTOR_MODEL_PROVIDER?: string;
   EXECUTOR_MODEL_BASE_URL?: string;
+  EXECUTOR_MODEL_UPSTREAM_MODEL?: string;
   EXECUTOR_MODEL_API_KEY?: string;
 }): ExecutorModelProxyRuntime | null {
   const provider = env.EXECUTOR_MODEL_PROVIDER;
   const baseUrl = env.EXECUTOR_MODEL_BASE_URL;
+  const upstreamModel = env.EXECUTOR_MODEL_UPSTREAM_MODEL;
   const apiKey = env.EXECUTOR_MODEL_API_KEY;
   if (provider === undefined || baseUrl === undefined || apiKey === undefined) return null;
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/.test(provider)) return null;
+  if (
+    upstreamModel !== undefined &&
+    !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(upstreamModel)
+  ) return null;
   try {
-    return { provider, baseUrl: normalizeProviderBaseUrl(baseUrl)!, apiKey };
+    return {
+      provider,
+      baseUrl: normalizeProviderBaseUrl(baseUrl)!,
+      ...(upstreamModel === undefined ? {} : { upstreamModel }),
+      apiKey,
+    };
   } catch {
     return null;
   }
@@ -94,6 +106,10 @@ export async function proxyExecutorModelResponse(input: {
   if (body.model !== input.authorization.model || body.stream !== true) {
     throw new ExecutorModelProxyError('policy_denied');
   }
+  const upstreamBody = {
+    ...body,
+    model: input.runtime.upstreamModel ?? input.authorization.model,
+  };
   let baseUrl: string;
   try { baseUrl = normalizeProviderBaseUrl(input.runtime.baseUrl)!; } catch {
     throw new ExecutorModelProxyError('provider_unavailable');
@@ -108,7 +124,7 @@ export async function proxyExecutorModelResponse(input: {
         authorization: `Bearer ${input.runtime.apiKey}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(upstreamBody),
       redirect: 'manual',
     });
   } catch {

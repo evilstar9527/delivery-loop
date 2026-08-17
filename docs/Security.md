@@ -76,7 +76,9 @@
   子进程边界。grant只注入Codex子进程`CODEX_API_KEY`，shell environment policy排除`*KEY*/*TOKEN*`；控制面以
   digest验证并绑定work execution/Attempt/generation/reservation/Frozen model profile，只有reservation仍`reserved`时
   才可调用exact model。grant密文使用独立`EXECUTOR_MODEL_GRANT_ENCRYPTION_KEY`，不得复用GitHub credential key；
-  provider key只存在控制面`EXECUTOR_MODEL_API_KEY` Secret。结算、lease/generation/execution状态变化或TTL到期都会让
+  provider key只存在控制面`EXECUTOR_MODEL_API_KEY` Secret。若上游要求命名空间化model ID，只有部署者受信配置
+  `EXECUTOR_MODEL_UPSTREAM_MODEL`可在D1授权后改写出站model；容器仍必须请求grant绑定的内部exact model，Task、Agent、
+  profile payload和请求body都不能选择上游alias。结算、lease/generation/execution状态变化或TTL到期都会让
   grant失效，raw provider错误及credential不能回显到容器、D1、R2或日志。GitHub Actions兼容lane的repository
   provider Secrets不进入Cloudflare容器，也不能作为executor grant使用。
 
