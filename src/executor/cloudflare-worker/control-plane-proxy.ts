@@ -1,4 +1,4 @@
-export const CONTROL_PLANE_PROXY_ORIGIN = 'https://control.delivery-loop.internal';
+export const CONTROL_PLANE_PROXY_ORIGIN = 'http://control.delivery-loop.internal';
 
 interface ControlPlaneProxyEnv {
   EXECUTOR_CALLBACK_TOKEN?: string;
@@ -8,6 +8,17 @@ interface ControlPlaneProxyParams {
   controlPlaneOrigin: string;
   executionId: string;
   attemptId: string;
+}
+
+interface ContainerProxyProps {
+  containerId?: unknown;
+  outboundByHostOverrides?: unknown;
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
 }
 
 function validProxyParams(value: unknown): value is ControlPlaneProxyParams {
@@ -21,6 +32,35 @@ function validProxyParams(value: unknown): value is ControlPlaneProxyParams {
 function allowedAttemptPath(pathname: string, attemptId: string): boolean {
   const prefix = `/v1/attempts/${encodeURIComponent(attemptId)}`;
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+/**
+ * The Containers package runs the exported ContainerProxy in a separate
+ * WorkerEntrypoint isolate from the Sandbox Durable Object. Runtime handler
+ * names are passed in props, but the package's in-memory handler registry is
+ * not shared across those isolates. Resolve only our fixed host/method here;
+ * every other request stays on the SDK's normal proxy path.
+ */
+export async function dispatchControlPlaneProxyOverride(
+  request: Request,
+  rawEnv: unknown,
+  rawProps: unknown,
+  fallback: () => Promise<Response>,
+): Promise<Response> {
+  if (new URL(request.url).hostname !== new URL(CONTROL_PLANE_PROXY_ORIGIN).hostname) {
+    return await fallback();
+  }
+  const props = record(rawProps) as ContainerProxyProps | null;
+  const overrides = record(props?.outboundByHostOverrides);
+  const override = record(overrides?.[new URL(CONTROL_PLANE_PROXY_ORIGIN).hostname]);
+  if (
+    props === null || typeof props.containerId !== 'string' ||
+    props.containerId.length === 0 || override?.method !== 'controlPlaneProxy'
+  ) return await fallback();
+  return await proxyControlPlaneRequest(request, rawEnv, {
+    containerId: props.containerId,
+    params: override.params,
+  });
 }
 
 function requiresExecutorCallback(
@@ -70,7 +110,7 @@ export async function proxyControlPlaneRequest(
   headers.set('x-delivery-executor-container-id', context.containerId);
   headers.set('x-delivery-execution-id', context.params.executionId);
   const target = new URL(`${url.pathname}${url.search}`, context.params.controlPlaneOrigin);
-  return await fetch(new Request(target, {
+  return await globalThis.fetch(new Request(target, {
     method: request.method,
     headers,
     body: request.body,

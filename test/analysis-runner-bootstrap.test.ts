@@ -348,7 +348,7 @@ describe('analysis Runner bootstrap', () => {
     environment.DELIVERY_EXECUTOR_IDENTITY_KIND = 'cloudflare_sandbox_proxy';
     environment.DELIVERY_EXECUTION_ID = 'execution-analysis-proxy-1';
     environment.DELIVERY_MODEL_PROFILE_ID = 'profile-analysis-proxy';
-    environment.DELIVERY_CONTROL_PLANE_URL = 'https://control.delivery-loop.internal';
+    environment.DELIVERY_CONTROL_PLANE_URL = 'http://control.delivery-loop.internal';
     const requests: Array<{ url: string; authorization: string | null }> = [];
     let checkoutInput: unknown;
     const fetchImplementation: typeof fetch = async (input, init) => {
@@ -440,7 +440,7 @@ describe('analysis Runner bootstrap', () => {
       checkoutRepository: async (input) => { checkoutInput = input; },
     })).rejects.toMatchObject({ name: 'AnalysisRunnerError' });
     expect(requests[0]).toEqual({
-      url: `https://control.delivery-loop.internal/v1/attempts/${ATTEMPT_ID}/executor-exchange`,
+      url: `http://control.delivery-loop.internal/v1/attempts/${ATTEMPT_ID}/executor-exchange`,
       authorization: 'Bearer executor-proxy',
     });
     expect(requests.some((entry) => entry.url.includes('oidc.actions.test'))).toBe(false);

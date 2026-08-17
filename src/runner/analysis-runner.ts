@@ -12,6 +12,8 @@ import {
   type DiagnosticAnalysisMediation,
   type CodexAnalysisStartInput,
 } from '../agent/codex-analysis-adapter.js';
+import { EXECUTOR_CODEX_COMMAND } from '../agent/executor-codex-command.js';
+
 import {
   ANALYSIS_AGENT_OUTPUT_V1_JSON_SCHEMA,
   AnalysisPlanContentV1Schema,
@@ -325,6 +327,13 @@ function trustedHttpsUrl(raw: string, kind: 'origin' | 'request'): URL {
   return url;
 }
 
+function trustedControlPlaneUrl(raw: string, executorProxy: boolean): URL {
+  if (executorProxy && raw === 'http://control.delivery-loop.internal') {
+    return new URL(raw);
+  }
+  return trustedHttpsUrl(raw, 'origin');
+}
+
 function isWithin(parent: string, child: string): boolean {
   const path = relative(parent, child);
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
@@ -338,12 +347,12 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
   const baseSha = requiredEnvironment(environment, 'DELIVERY_BASE_SHA');
   const mode = requiredEnvironment(environment, 'DELIVERY_ATTEMPT_MODE');
   const modelProfileId = environment.DELIVERY_MODEL_PROFILE_ID;
-  const controlPlane = trustedHttpsUrl(
-    requiredEnvironment(environment, 'DELIVERY_CONTROL_PLANE_URL'),
-    'origin',
-  );
   const executorIdentity = environment.DELIVERY_EXECUTOR_IDENTITY_KIND ===
     'cloudflare_sandbox_proxy';
+  const controlPlane = trustedControlPlaneUrl(
+    requiredEnvironment(environment, 'DELIVERY_CONTROL_PLANE_URL'),
+    executorIdentity,
+  );
   const executionId = environment.DELIVERY_EXECUTION_ID;
   const oidcRequest = executorIdentity ? undefined : trustedHttpsUrl(
     requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_URL'), 'request',
@@ -1752,6 +1761,7 @@ export async function runAnalysisAttempt(
         runtimeSecrets: [...runtimeSecrets],
         ...(config.identityKind === 'executor_proxy'
           ? {
+              command: EXECUTOR_CODEX_COMMAND,
               executorModelProviderBaseUrl: executorModelProviderBaseUrl(config.attemptId),
               providerApiKey: () => currentModelGrantToken,
             }

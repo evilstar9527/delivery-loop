@@ -101,6 +101,32 @@ describe('Cloudflare Sandbox control-plane effects', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it('calls the default Cloudflare fetch with the runtime global receiver', async () => {
+    let receiverWasGlobal = false;
+    vi.stubGlobal('fetch', function (this: unknown) {
+      receiverWasGlobal = this === globalThis;
+      return Promise.resolve(json({
+        schemaVersion: '1',
+        disposition: 'created',
+        sandboxId: 'execution-1',
+        containerId: 'container-1',
+      }));
+    });
+    try {
+      const effects = new CloudflareSandboxWorkerEffects({
+        workerOrigin: ORIGIN,
+        controlToken: TOKEN,
+      });
+      await expect(effects.ensureSandbox(ORIGIN, startRequest)).resolves.toMatchObject({
+        disposition: 'created',
+        sandboxId: 'execution-1',
+      });
+      expect(receiverWasGlobal).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('fails closed for mixed, partial, or absent runtime configuration', () => {
     const base = {} as Bindings;
     expect(cloudflareSandboxEffectsFromEnv(base)).toBeNull();

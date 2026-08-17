@@ -17,7 +17,7 @@ export function codexProviderProfileArguments(
   reasoningEffort: CodexRelayReasoningEffort = CODEX_RELAY_REASONING_EFFORT,
 ): string[] {
   const normalizedBaseUrl = providerBaseUrl?.startsWith(
-    'https://control.delivery-loop.internal/',
+    'http://control.delivery-loop.internal/',
   )
     ? normalizeExecutorModelProviderBaseUrl(providerBaseUrl)
     : normalizeProviderBaseUrl(providerBaseUrl);

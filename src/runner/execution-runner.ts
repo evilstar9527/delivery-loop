@@ -8,6 +8,7 @@ import {
   type ExecutionAgent,
   type ExecutionAgentDecision,
 } from '../agent/codex-execution-adapter.js';
+import { EXECUTOR_CODEX_COMMAND } from '../agent/executor-codex-command.js';
 import { BoundedEditRecoveryAgent } from '../agent/bounded-edit-recovery-agent.js';
 import {
   CodexExecutionActivityAccumulator,
@@ -396,6 +397,13 @@ function httpsUrl(raw: string, kind: 'origin' | 'request'): URL {
   return url;
 }
 
+function controlPlaneUrl(raw: string, executorProxy: boolean): URL {
+  if (executorProxy && raw === 'http://control.delivery-loop.internal') {
+    return new URL(raw);
+  }
+  return httpsUrl(raw, 'origin');
+}
+
 function within(parent: string, child: string): boolean {
   const path = relative(parent, child);
   return path === '' || (!path.startsWith('..') && !isAbsolute(path));
@@ -415,12 +423,12 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
   const modelProfileId = environment.DELIVERY_MODEL_PROFILE_ID;
   const repository = environment.DELIVERY_TARGET_REPOSITORY ??
     requiredEnvironment(environment, 'GITHUB_REPOSITORY');
-  const controlPlane = httpsUrl(
-    requiredEnvironment(environment, 'DELIVERY_CONTROL_PLANE_URL'),
-    'origin',
-  );
   const executorIdentity = environment.DELIVERY_EXECUTOR_IDENTITY_KIND ===
     'cloudflare_sandbox_proxy';
+  const controlPlane = controlPlaneUrl(
+    requiredEnvironment(environment, 'DELIVERY_CONTROL_PLANE_URL'),
+    executorIdentity,
+  );
   const executionId = environment.DELIVERY_EXECUTION_ID;
   const oidcRequest = executorIdentity ? undefined : httpsUrl(
     requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_URL'), 'request',
@@ -961,6 +969,7 @@ export async function runExecutionAttempt(
   const executionAgent = options.agent ?? new CodexExecutionAdapter({
     ...(config.identityKind === 'executor_proxy'
       ? {
+          command: EXECUTOR_CODEX_COMMAND,
           executorModelProviderBaseUrl: executorModelProviderBaseUrl(config.attemptId),
           providerApiKey: () => currentModelGrantToken,
         }

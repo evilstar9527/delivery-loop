@@ -7,7 +7,7 @@ import {
 } from '../src/runner/executor-publisher-client.js';
 
 const context = {
-  controlPlaneUrl: 'https://control.delivery-loop.internal',
+  controlPlaneUrl: 'http://control.delivery-loop.internal',
   attemptId: 'attempt-publisher-client',
   publisherExecutionId: 'execution-publisher-client',
   publicationId: 'publication-publisher-client',

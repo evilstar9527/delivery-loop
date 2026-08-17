@@ -467,6 +467,9 @@ describe('provider-neutral executor control store', () => {
       execution_id: 'execution-control-1',
       revoked_at: null,
     });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status FROM attempt_execution_instances WHERE execution_id = ?`,
+    ).bind('execution-control-1').first()).toEqual({ status: 'running' });
     expect(JSON.stringify(await env.DB_CONTROL.prepare(
       `SELECT oidc_token_digest, token_digest, tool_token_digest
        FROM attempt_tokens WHERE attempt_id = ?`,

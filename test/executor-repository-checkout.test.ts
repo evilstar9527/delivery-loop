@@ -26,13 +26,13 @@ describe('executor repository checkout', () => {
       if (command === 'remote get-url origin') {
         return {
           exitCode: 0,
-          stdout: 'https://control.delivery-loop.internal/v1/attempts/attempt-1/repository.git\n',
+          stdout: 'http://control.delivery-loop.internal/v1/attempts/attempt-1/repository.git\n',
         };
       }
       return { exitCode: 0, stdout: '' };
     });
     await checkoutExecutorRepository({
-      controlPlaneUrl: 'https://control.delivery-loop.internal',
+      controlPlaneUrl: 'http://control.delivery-loop.internal',
       attemptId: 'attempt-1',
       executionId: 'execution-1',
       attemptToken: 'short-executor-grant',
@@ -59,7 +59,7 @@ describe('executor repository checkout', () => {
     await writeFile(join(repositoryPath, 'untrusted.txt'), 'preserve\n');
     const runGit = vi.fn();
     await expect(checkoutExecutorRepository({
-      controlPlaneUrl: 'https://control.delivery-loop.internal',
+      controlPlaneUrl: 'http://control.delivery-loop.internal',
       attemptId: 'attempt-1',
       executionId: 'execution-1',
       attemptToken: 'short-executor-grant',
@@ -74,7 +74,7 @@ describe('executor repository checkout', () => {
     const repositoryPath = await mkdtemp(join(tmpdir(), 'executor-publisher-checkout-'));
     const calls: ExecutorGitCommandInput[] = [];
     const repositoryUrl =
-      'https://control.delivery-loop.internal/v1/attempts/attempt-1/' +
+      'http://control.delivery-loop.internal/v1/attempts/attempt-1/' +
       'executor-publisher/repository.git';
     const runGit = vi.fn(async (input: ExecutorGitCommandInput) => {
       calls.push(input);
@@ -87,7 +87,7 @@ describe('executor repository checkout', () => {
       return { exitCode: 0, stdout: '' };
     });
     await checkoutExecutorRepository({
-      controlPlaneUrl: 'https://control.delivery-loop.internal',
+      controlPlaneUrl: 'http://control.delivery-loop.internal',
       attemptId: 'attempt-1',
       executionId: 'execution-publisher-1',
       attemptToken: 'executor-proxy-placeholder',
