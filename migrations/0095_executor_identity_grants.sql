@@ -12,17 +12,18 @@ WHERE execution_id IS NOT NULL;
 CREATE TRIGGER attempt_tokens_executor_identity_binding
 BEFORE INSERT ON attempt_tokens
 WHEN NEW.identity_kind = 'executor'
+AND (
+  NEW.execution_id IS NULL OR NOT EXISTS (
+    SELECT 1
+    FROM attempt_execution_instances AS execution
+    WHERE execution.execution_id = NEW.execution_id
+      AND execution.attempt_id = NEW.attempt_id
+      AND execution.lease_generation = NEW.lease_generation
+      AND execution.status IN ('starting', 'running')
+  )
+)
 BEGIN
-  SELECT CASE WHEN
-    NEW.execution_id IS NULL OR NOT EXISTS (
-      SELECT 1
-      FROM attempt_execution_instances AS execution
-      WHERE execution.execution_id = NEW.execution_id
-        AND execution.attempt_id = NEW.attempt_id
-        AND execution.lease_generation = NEW.lease_generation
-        AND execution.status IN ('starting', 'running')
-    )
-  THEN RAISE(ABORT, 'executor grant identity mismatch') END;
+  SELECT RAISE(ABORT, 'executor grant identity mismatch');
 END;
 
 CREATE TRIGGER attempt_tokens_identity_immutable
