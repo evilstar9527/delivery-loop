@@ -29,6 +29,7 @@ export class OutboxDestinationRouter {
     private readonly githubTestRollbackProcessor: DestinationOutboxProcessor | null = null,
     private readonly feishuCardProcessor: DestinationOutboxProcessor | null = null,
     private readonly yunxiaoPipelineProcessor: DestinationOutboxProcessor | null = null,
+    private readonly agentExecutorProcessor: DestinationOutboxProcessor | null = null,
   ) {}
 
   async deliver(outboxId: string): Promise<OutboxRouteResult> {
@@ -54,6 +55,10 @@ export class OutboxDestinationRouter {
         return this.githubProcessor === null
           ? 'unconfigured'
           : await this.githubProcessor.deliver(outboxId);
+      case 'agent_executor':
+        return this.agentExecutorProcessor === null
+          ? 'unconfigured'
+          : await this.agentExecutorProcessor.deliver(outboxId);
       case 'github_api':
         return this.githubApiProcessor === null
           ? 'unconfigured'

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { AnalysisPlanContentV1Schema } from '../domain/analysis-plan.js';
 import { AgentCheckpointV1Schema } from '../domain/checkpoint.js';
 import { RawAgentArtifactRequestBodySchema } from '../domain/raw-agent-artifact.js';
+import { ExecutorPatchUploadRequestSchema } from '../domain/executor-patch-artifact.js';
 import { AttemptFailureReportV1Schema } from '../domain/attempt-failure.js';
 import { DiagnosticEvidenceV1Schema } from '../domain/diagnostic-evidence.js';
 import { ProtectedPathChangeReportV1Schema } from '../domain/protected-path-change.js';
@@ -23,6 +24,14 @@ import {
   GitHubOidcVerifier,
 } from '../auth/github-oidc.js';
 import type { Bindings } from '../env.js';
+import type { ExecutorIdentityProvider } from
+  '../executor/core/executor-identity-provider.js';
+import type { ExecutorPluginRegistry } from '../executor/core/executor-registry.js';
+import type { VerifiedExecutorIdentity } from '../executor/core/executor-plugin.js';
+import {
+  executorIdentityProviderFromEnv,
+  executorPluginRegistryFromEnv,
+} from '../outbox/agent-executor-runtime.js';
 import { configuredSecrets } from '../security/runtime-secrets.js';
 import {
   AttemptExchangeError,
@@ -66,6 +75,22 @@ import {
   RawAgentArtifactStore,
 } from '../storage/raw-agent-artifact-store.js';
 import {
+  ExecutorPatchArtifactError,
+  ExecutorPatchArtifactStore,
+} from '../storage/executor-patch-artifact-store.js';
+import {
+  ExecutorRepositoryAuthorizationError,
+  ExecutorRepositoryAuthorizationStore,
+  type ExecutorRepositoryAuthorization,
+} from '../storage/executor-repository-authorization-store.js';
+import {
+  ExecutorRepositoryProxyError,
+  proxyExecutorPublisherRepositoryWrite,
+  proxyExecutorRepositoryRequest,
+  publisherGitToken,
+  type GitHubRepositoryReadTokenProvider,
+} from './executor-repository-proxy.js';
+import {
   QuotaControlError,
   QuotaControlStore,
 } from '../storage/quota-control-store.js';
@@ -77,6 +102,14 @@ import {
   RepoWriteCredentialError,
   RepoWriteCredentialStore,
 } from '../storage/repo-write-credential-store.js';
+import {
+  ExecutorPublisherCredentialError,
+  ExecutorPublisherCredentialStore,
+} from '../storage/executor-publisher-credential-store.js';
+import {
+  ExecutorPatchPublicationError,
+  ExecutorPatchPublicationStore,
+} from '../storage/executor-patch-publication-store.js';
 import {
   ProtectedPathApprovalError,
   ProtectedPathApprovalStore,
@@ -106,13 +139,27 @@ import {
   type ToolBridgeClient,
   type ToolBridgeFailureCategory,
 } from '../tools/tool-bridge-client.js';
+import { githubActionsRuntimeFromEnv } from
+  '../reconciliation/github-run-reconciliation-runtime.js';
+import {
+  ExecutorModelProxyError,
+  executorModelProxyRuntimeFromEnv,
+  proxyExecutorModelResponse,
+  type ExecutorModelProxyRuntime,
+} from './executor-model-proxy.js';
+import {
+  ExecutorModelGrantError,
+  ExecutorModelGrantStore,
+} from '../storage/executor-model-grant-store.js';
 
 const ATTEMPT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
+const EXECUTOR_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
 const MAX_OIDC_TOKEN_LENGTH = 20_000;
 const MAX_RUNNER_BODY_LENGTH = 16 * 1_024;
 const MAX_PLAN_BODY_LENGTH = 256 * 1_024;
 const MAX_CHECKPOINT_BODY_LENGTH = 256 * 1_024;
 const MAX_ARTIFACT_BODY_LENGTH = 1_100_000;
+const MAX_EXECUTOR_PATCH_BODY_LENGTH = 1_100_000;
 const MAX_TOOL_CALL_BODY_LENGTH = 64 * 1_024;
 const MAX_DIAGNOSTIC_EVIDENCE_BODY_LENGTH = 32 * 1_024;
 
@@ -132,6 +179,13 @@ const ModelUsageBodySchema = z.object({
   cachedInputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
   reasoningOutputTokens: z.number().int().nonnegative(),
+}).strict();
+
+const ModelGrantBodySchema = z.object({
+  executionId: z.string().regex(EXECUTOR_ID_PATTERN),
+  reservationId: z.string().regex(ATTEMPT_ID_PATTERN),
+  expectedVersion: z.number().int().nonnegative(),
+  leaseGeneration: z.number().int().positive(),
 }).strict();
 
 const HeartbeatBodySchema = z
@@ -198,6 +252,32 @@ const VerificationResultBodySchema = z
     result: VerificationCommandResultV1Schema,
   })
   .strict();
+
+const PublisherIdentityBodySchema = z.object({
+  publicationId: z.string().regex(EXECUTOR_ID_PATTERN),
+}).strict();
+
+const PublisherHeadBodySchema = PublisherIdentityBodySchema.extend({
+  parentSha: z.string().regex(/^[a-f0-9]{40}$/),
+  headSha: z.string().regex(/^[a-f0-9]{40}$/),
+  branch: z.string().min(1).max(240),
+}).strict();
+
+const PublisherVerificationStartBodySchema = PublisherIdentityBodySchema.extend({
+  manifest: VerificationSuiteManifestV1Schema,
+}).strict();
+
+const PublisherVerificationResultBodySchema = PublisherIdentityBodySchema.extend({
+  result: VerificationCommandResultV1Schema,
+}).strict();
+
+const PublisherCompletionBodySchema = PublisherIdentityBodySchema.extend({
+  recomputedPatchDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  headSha: z.string().regex(/^[a-f0-9]{40}$/),
+  branch: z.string().min(1).max(240),
+  suiteId: z.string().regex(ATTEMPT_ID_PATTERN),
+  evidenceIds: z.array(z.string().regex(ATTEMPT_ID_PATTERN)).min(2).max(100),
+}).strict();
 
 const CheckpointBodySchema = z
   .object({
@@ -366,6 +446,28 @@ function checkpointError(
   }
 }
 
+function executorPatchError(
+  c: Parameters<typeof errorResponse>[0],
+  error: ExecutorPatchArtifactError,
+): Response {
+  switch (error.code) {
+    case 'invalid_request':
+      return errorResponse(c, 400, 'invalid_argument', 'invalid executor patch body', false);
+    case 'invalid_token':
+      return errorResponse(c, 401, 'unauthenticated', 'executor patch token rejected', false);
+    case 'policy_denied':
+    case 'secret_detected':
+      return errorResponse(c, 403, 'policy_denied', 'executor patch operation denied', false);
+    case 'not_found':
+      return errorResponse(c, 404, 'not_found', 'executor patch not found', false);
+    case 'state_conflict':
+    case 'payload_conflict':
+      return errorResponse(c, 409, 'conflict', 'executor patch state changed', false);
+    case 'storage_unavailable':
+      return errorResponse(c, 503, 'unavailable', 'executor patch storage unavailable', true);
+  }
+}
+
 function toolBridgeFailureResponse(
   c: Parameters<typeof errorResponse>[0],
   category: ToolBridgeFailureCategory,
@@ -403,15 +505,59 @@ export interface AttemptApiOptions {
   monotonicNow?: (() => number) | undefined;
   repoWriteCredentialRuntime?: RepoWriteCredentialRuntime;
   now?: () => Date;
+  executorIdentityProvider?: ExecutorIdentityProvider;
+  executorPluginRegistry?: ExecutorPluginRegistry;
+  executorRepositoryAuthorizer?: {
+    authorize(
+      attemptId: string,
+      rawToken: string,
+      executionId: string,
+      now?: Date,
+    ): Promise<ExecutorRepositoryAuthorization>;
+  };
+  executorRepositoryTokenProvider?: GitHubRepositoryReadTokenProvider;
+  executorRepositoryFetch?: typeof globalThis.fetch;
+  githubGitOrigin?: string;
+  executorModelProxyRuntime?: ExecutorModelProxyRuntime;
+  executorModelGrantEncryptionKey?: string;
 }
 
 export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bindings }> {
   const app = new Hono<{ Bindings: Bindings }>();
   const monotonicNow = options.monotonicNow ?? (() => performance.now());
+  const publisherIdentity = async (
+    c: Parameters<typeof errorResponse>[0],
+    attemptId: string,
+  ): Promise<VerifiedExecutorIdentity | Response> => {
+    const authorization = c.req.header('authorization');
+    const executionId = c.req.header('x-delivery-execution-id');
+    const containerId = c.req.header('x-delivery-executor-container-id');
+    if (
+      authorization === undefined || !authorization.startsWith('Bearer ') ||
+      authorization.length > 4_103 || executionId === undefined ||
+      !EXECUTOR_ID_PATTERN.test(executionId) || containerId === undefined ||
+      containerId.length < 1 || containerId.length > 500
+    ) return errorResponse(c, 401, 'unauthenticated', 'publisher identity required', false);
+    const provider = options.executorIdentityProvider ?? executorIdentityProviderFromEnv(c.env);
+    if (provider === null) {
+      return errorResponse(c, 503, 'unavailable', 'publisher identity unavailable', true);
+    }
+    try {
+      const identity = await provider.verify({
+        executionId,
+        attemptId,
+        payload: { authorization, executionId, containerId },
+      });
+      if (identity.role !== 'publisher') throw new Error('publisher role required');
+      return identity;
+    } catch {
+      return errorResponse(c, 401, 'unauthenticated', 'publisher identity invalid', false);
+    }
+  };
 
   app.post('/v1/attempts/:attemptId/exchange', async (c) => {
     const attemptId = c.req.param('attemptId');
-    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+    if (attemptId === undefined || !ATTEMPT_ID_PATTERN.test(attemptId)) {
       return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
     }
     const authorization = c.req.header('authorization');
@@ -472,6 +618,58 @@ export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bi
             return errorResponse(c, 403, 'policy_denied', 'attempt binding rejected', false);
           case 'oidc_replayed':
             return errorResponse(c, 409, 'conflict', 'OIDC exchange already consumed', false);
+          case 'identity_replayed':
+            return errorResponse(c, 409, 'conflict', 'executor exchange already consumed', false);
+        }
+      }
+      throw error;
+    }
+  });
+
+  app.post('/v1/attempts/:attemptId/executor-exchange', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    const authorization = c.req.header('authorization');
+    const executionId = c.req.header('x-delivery-execution-id');
+    const containerId = c.req.header('x-delivery-executor-container-id');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    if (
+      authorization === undefined || !authorization.startsWith('Bearer ') ||
+      authorization.length > 4_103 || executionId === undefined ||
+      !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/.test(executionId) ||
+      containerId === undefined || containerId.length < 1 || containerId.length > 500
+    ) return errorResponse(c, 401, 'unauthenticated', 'executor identity required', false);
+    const provider = options.executorIdentityProvider ?? executorIdentityProviderFromEnv(c.env);
+    if (provider === null) {
+      return errorResponse(c, 503, 'unavailable', 'executor identity unavailable', true);
+    }
+    let identity;
+    try {
+      identity = await provider.verify({
+        executionId,
+        attemptId,
+        payload: { authorization, executionId, containerId },
+      });
+    } catch {
+      return errorResponse(c, 401, 'unauthenticated', 'executor identity invalid', false);
+    }
+    try {
+      const result = await new AttemptExchangeStore(c.env.DB_CONTROL)
+        .exchangeExecutorIdentity(attemptId, identity, options.now?.() ?? new Date());
+      c.header('cache-control', 'no-store');
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof AttemptExchangeError) {
+        switch (error.code) {
+          case 'attempt_not_found':
+            return errorResponse(c, 404, 'not_found', 'attempt not found', false);
+          case 'attempt_binding_mismatch':
+          case 'attempt_lease_inactive':
+            return errorResponse(c, 403, 'policy_denied', 'attempt binding rejected', false);
+          case 'identity_replayed':
+          case 'oidc_replayed':
+            return errorResponse(c, 409, 'conflict', 'executor exchange already consumed', false);
         }
       }
       throw error;
@@ -512,6 +710,286 @@ export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bi
       if (error instanceof AutomatedReviewError) return automatedReviewError(c, error);
       if (error instanceof AnalysisAttemptError) return analysisError(c, error);
       if (error instanceof ExecutionAttemptError) return executionError(c, error);
+      throw error;
+    }
+  });
+
+  const repositoryProxy = async (c: Parameters<typeof errorResponse>[0]): Promise<Response> => {
+    const attemptId = c.req.param('attemptId');
+    const executionId = c.req.header('x-delivery-execution-id');
+    if (attemptId === undefined || !ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    const token = runnerToken(c.req.header('authorization'));
+    if (token === null || executionId === undefined || !EXECUTOR_ID_PATTERN.test(executionId)) {
+      return errorResponse(c, 401, 'unauthenticated', 'executor repository identity required', false);
+    }
+    try {
+      const authorization = await (
+        options.executorRepositoryAuthorizer ??
+        new ExecutorRepositoryAuthorizationStore(c.env.DB_CONTROL)
+      ).authorize(attemptId, token, executionId, options.now?.() ?? new Date());
+      const tokenProvider = options.executorRepositoryTokenProvider ??
+        githubActionsRuntimeFromEnv(c.env)?.provider;
+      if (tokenProvider === undefined) {
+        return errorResponse(c, 503, 'unavailable', 'repository source unavailable', true);
+      }
+      const githubGitOrigin = options.githubGitOrigin ?? c.env.GITHUB_GIT_BASE_URL;
+      return await proxyExecutorRepositoryRequest({
+        request: c.req.raw,
+        authorization,
+        tokenProvider,
+        ...(options.executorRepositoryFetch === undefined
+          ? {} : { fetch: options.executorRepositoryFetch }),
+        ...(githubGitOrigin === undefined ? {} : { githubGitOrigin }),
+      });
+    } catch (error) {
+      if (error instanceof ExecutorRepositoryAuthorizationError) {
+        return errorResponse(
+          c,
+          error.code === 'invalid_token' ? 401 : 409,
+          error.code === 'invalid_token' ? 'unauthenticated' : 'conflict',
+          error.code === 'invalid_token'
+            ? 'executor repository token rejected'
+            : 'executor repository state changed',
+          false,
+        );
+      }
+      if (error instanceof ExecutorRepositoryProxyError) {
+        if (error.code === 'invalid_request') {
+          return errorResponse(c, 400, 'invalid_argument', 'invalid repository request', false);
+        }
+        if (error.code === 'upstream_rejected') {
+          return errorResponse(c, 403, 'policy_denied', 'repository source rejected', false);
+        }
+        return errorResponse(c, 503, 'unavailable', 'repository source unavailable', true);
+      }
+      throw error;
+    }
+  };
+
+  app.get('/v1/attempts/:attemptId/repository.git/info/refs', repositoryProxy);
+  app.post('/v1/attempts/:attemptId/repository.git/git-upload-pack', repositoryProxy);
+
+  const publisherRepositoryProxy = async (
+    c: Parameters<typeof errorResponse>[0],
+  ): Promise<Response> => {
+    const attemptId = c.req.param('attemptId');
+    const executionId = c.req.header('x-delivery-execution-id');
+    if (
+      attemptId === undefined || !ATTEMPT_ID_PATTERN.test(attemptId) ||
+      executionId === undefined || !EXECUTOR_ID_PATTERN.test(executionId)
+    ) return errorResponse(c, 400, 'invalid_argument', 'invalid publisher repository identity', false);
+    const runtime = options.repoWriteCredentialRuntime ?? repoWriteCredentialRuntimeFromEnv(c.env);
+    if (runtime === null) {
+      return errorResponse(c, 503, 'unavailable', 'publisher repository unavailable', true);
+    }
+    const credentials = new ExecutorPublisherCredentialStore(
+      c.env.DB_CONTROL,
+      runtime.provider,
+      { encryptionKey: runtime.encryptionKey },
+    );
+    const isReceivePack = c.req.path.endsWith('/git-receive-pack') ||
+      c.req.query('service') === 'git-receive-pack';
+    try {
+      if (isReceivePack) {
+        const token = publisherGitToken(c.req.header('authorization'));
+        if (token === null) {
+          return errorResponse(c, 401, 'unauthenticated', 'publisher write token required', false);
+        }
+        const authorization = await credentials.authorizePush({
+          attemptId,
+          publisherExecutionId: executionId,
+          rawToken: token,
+          now: options.now?.() ?? new Date(),
+        });
+        return await proxyExecutorPublisherRepositoryWrite({
+          request: c.req.raw,
+          authorization,
+          token,
+          ...(options.executorRepositoryFetch === undefined
+            ? {} : { fetch: options.executorRepositoryFetch }),
+          ...((options.githubGitOrigin ?? c.env.GITHUB_GIT_BASE_URL) === undefined
+            ? {}
+            : { githubGitOrigin: options.githubGitOrigin ?? c.env.GITHUB_GIT_BASE_URL }),
+        });
+      }
+      const identity = await publisherIdentity(c, attemptId);
+      if (identity instanceof Response) return identity;
+      const authorization = await credentials.authorizeRepositoryRead(
+        identity,
+        options.now?.() ?? new Date(),
+      );
+      const tokenProvider = options.executorRepositoryTokenProvider ??
+        githubActionsRuntimeFromEnv(c.env)?.provider;
+      if (tokenProvider === undefined) {
+        return errorResponse(c, 503, 'unavailable', 'publisher repository unavailable', true);
+      }
+      return await proxyExecutorRepositoryRequest({
+        request: c.req.raw,
+        authorization,
+        tokenProvider,
+        ...(options.executorRepositoryFetch === undefined
+          ? {} : { fetch: options.executorRepositoryFetch }),
+        ...((options.githubGitOrigin ?? c.env.GITHUB_GIT_BASE_URL) === undefined
+          ? {}
+          : { githubGitOrigin: options.githubGitOrigin ?? c.env.GITHUB_GIT_BASE_URL }),
+      });
+    } catch (error) {
+      if (error instanceof ExecutorPublisherCredentialError) {
+        if (error.code === 'invalid_request') {
+          return errorResponse(c, 400, 'invalid_argument', 'invalid publisher repository request', false);
+        }
+        if (error.code === 'provider_unavailable') {
+          return errorResponse(c, 503, 'unavailable', 'publisher repository unavailable', true);
+        }
+        return errorResponse(c, 403, 'policy_denied', 'publisher repository denied', false);
+      }
+      if (error instanceof ExecutorRepositoryProxyError) {
+        if (error.code === 'invalid_request') {
+          return errorResponse(c, 400, 'invalid_argument', 'invalid publisher repository request', false);
+        }
+        if (error.code === 'upstream_rejected') {
+          return errorResponse(c, 403, 'policy_denied', 'publisher repository rejected', false);
+        }
+        return errorResponse(c, 503, 'unavailable', 'publisher repository unavailable', true);
+      }
+      throw error;
+    }
+  };
+
+  app.get(
+    '/v1/attempts/:attemptId/executor-publisher/repository.git/info/refs',
+    publisherRepositoryProxy,
+  );
+  app.post(
+    '/v1/attempts/:attemptId/executor-publisher/repository.git/git-upload-pack',
+    publisherRepositoryProxy,
+  );
+  app.post(
+    '/v1/attempts/:attemptId/executor-publisher/repository.git/git-receive-pack',
+    publisherRepositoryProxy,
+  );
+
+  app.post('/v1/attempts/:attemptId/executor-model/grants', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    const executionId = c.req.header('x-delivery-execution-id');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    const token = runnerToken(c.req.header('authorization'));
+    if (
+      token === null || executionId === undefined ||
+      !EXECUTOR_ID_PATTERN.test(executionId)
+    ) return errorResponse(c, 401, 'unauthenticated', 'attempt token required', false);
+    let body: unknown;
+    try {
+      body = await runnerBody(c);
+    } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid executor model grant body', false);
+    }
+    const parsed = ModelGrantBodySchema.safeParse(body);
+    if (!parsed.success || parsed.data.executionId !== executionId) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid executor model grant body', false);
+    }
+    const encryptionKey = options.executorModelGrantEncryptionKey ??
+      c.env.EXECUTOR_MODEL_GRANT_ENCRYPTION_KEY;
+    if (encryptionKey === undefined) {
+      return errorResponse(c, 503, 'unavailable', 'executor model grant unavailable', true);
+    }
+    try {
+      const now = options.now?.() ?? new Date();
+      const authorization = await new RunnerAttemptStore(c.env.DB_CONTROL).authorize(
+        attemptId,
+        token,
+        now,
+      );
+      if (
+        authorization.version !== parsed.data.expectedVersion ||
+        authorization.leaseGeneration !== parsed.data.leaseGeneration
+      ) return errorResponse(c, 409, 'conflict', 'attempt fencing changed', false);
+      const result = await new ExecutorModelGrantStore(
+        c.env.DB_CONTROL,
+        encryptionKey,
+      ).issue({
+        authorization,
+        executionId,
+        reservationId: parsed.data.reservationId,
+        now,
+      });
+      c.header('cache-control', 'no-store');
+      return c.json(result, result.created ? 201 : 200);
+    } catch (error) {
+      if (error instanceof RunnerAttemptError) return runnerError(c, error);
+      if (error instanceof ExecutorModelGrantError) {
+        if (error.code === 'invalid_request') {
+          return errorResponse(c, 400, 'invalid_argument', 'invalid executor model grant body', false);
+        }
+        if (error.code === 'not_found') {
+          return errorResponse(c, 404, 'not_found', 'executor model reservation unavailable', false);
+        }
+        return errorResponse(c, 409, 'conflict', 'executor model grant state changed', false);
+      }
+      return errorResponse(c, 503, 'unavailable', 'executor model grant unavailable', true);
+    }
+  });
+
+  app.post('/v1/attempts/:attemptId/executor-model/v1/responses', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    const executionId = c.req.header('x-delivery-execution-id');
+    const containerId = c.req.header('x-delivery-executor-container-id');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    if (
+      executionId === undefined ||
+      !EXECUTOR_ID_PATTERN.test(executionId) || containerId === undefined ||
+      containerId.length < 1 || containerId.length > 500
+    ) return errorResponse(c, 401, 'unauthenticated', 'executor model identity required', false);
+    const token = runnerToken(c.req.header('authorization'));
+    if (token === null || token.length > 2_000) {
+      return errorResponse(c, 401, 'unauthenticated', 'executor model grant required', false);
+    }
+    const runtime = options.executorModelProxyRuntime ?? executorModelProxyRuntimeFromEnv(c.env);
+    const encryptionKey = options.executorModelGrantEncryptionKey ??
+      c.env.EXECUTOR_MODEL_GRANT_ENCRYPTION_KEY;
+    if (runtime === null || encryptionKey === undefined) {
+      return errorResponse(c, 503, 'unavailable', 'executor model unavailable', true);
+    }
+    try {
+      const authorized = await new ExecutorModelGrantStore(
+        c.env.DB_CONTROL,
+        encryptionKey,
+      ).authorize({
+        attemptId,
+        executionId,
+        rawToken: token,
+        now: options.now?.() ?? new Date(),
+      });
+      return await proxyExecutorModelResponse({ request: c.req.raw, authorization: authorized, runtime });
+    } catch (error) {
+      if (error instanceof ExecutorModelGrantError) {
+        return errorResponse(
+          c,
+          error.code === 'invalid_request' ? 400 : error.code === 'not_found' ? 401 : 409,
+          error.code === 'invalid_request'
+            ? 'invalid_argument'
+            : error.code === 'not_found' ? 'unauthenticated' : 'conflict',
+          error.code === 'not_found'
+            ? 'executor model grant invalid'
+            : 'executor model reservation unavailable',
+          false,
+        );
+      }
+      if (error instanceof ExecutorModelProxyError) {
+        if (error.code === 'invalid_request') {
+          return errorResponse(c, 400, 'invalid_argument', 'invalid executor model request', false);
+        }
+        if (error.code === 'policy_denied') {
+          return errorResponse(c, 403, 'policy_denied', 'executor model request denied', false);
+        }
+        return errorResponse(c, 502, 'unavailable', 'executor model provider unavailable', true);
+      }
       throw error;
     }
   });
@@ -1446,6 +1924,300 @@ export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bi
         return errorResponse(c, 409, 'conflict', 'artifact state changed', false);
       }
       return errorResponse(c, 503, 'unavailable', 'artifact storage unavailable', true);
+    }
+  });
+
+  app.post('/v1/attempts/:attemptId/executor-patches', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    const token = runnerToken(c.req.header('authorization'));
+    if (token === null) {
+      return errorResponse(c, 401, 'unauthenticated', 'attempt token required', false);
+    }
+    let body: unknown;
+    try {
+      body = await runnerBody(c, MAX_EXECUTOR_PATCH_BODY_LENGTH);
+    } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid executor patch body', false);
+    }
+    if (!ExecutorPatchUploadRequestSchema.safeParse(body).success) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid executor patch body', false);
+    }
+    const registry = options.executorPluginRegistry ?? executorPluginRegistryFromEnv(c.env);
+    if (registry === null) {
+      return errorResponse(c, 503, 'unavailable', 'executor patch storage unavailable', true);
+    }
+    try {
+      const result = await new ExecutorPatchArtifactStore(
+        c.env.DB_CONTROL,
+        c.env.EXECUTOR_PATCH_OBJECTS,
+        registry,
+        { secrets: configuredSecrets(c.env), ...(options.now === undefined ? {} : { now: options.now }) },
+      ).saveWorkPatch(attemptId, token, body);
+      c.header('cache-control', 'no-store');
+      return c.json(result, result.created ? 201 : 200);
+    } catch (error) {
+      if (error instanceof ExecutorPatchArtifactError) return executorPatchError(c, error);
+      throw error;
+    }
+  });
+
+  app.get('/v1/attempts/:attemptId/executor-patches/:patchId', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    const patchId = c.req.param('patchId');
+    const authorization = c.req.header('authorization');
+    const executionId = c.req.header('x-delivery-execution-id');
+    const containerId = c.req.header('x-delivery-executor-container-id');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId) || !EXECUTOR_ID_PATTERN.test(patchId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid executor patch identity', false);
+    }
+    if (
+      authorization === undefined || !authorization.startsWith('Bearer ') ||
+      authorization.length > 4_103 || executionId === undefined ||
+      !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/.test(executionId) ||
+      containerId === undefined || containerId.length < 1 || containerId.length > 500
+    ) return errorResponse(c, 401, 'unauthenticated', 'executor identity required', false);
+    const provider = options.executorIdentityProvider ?? executorIdentityProviderFromEnv(c.env);
+    const registry = options.executorPluginRegistry ?? executorPluginRegistryFromEnv(c.env);
+    if (provider === null || registry === null) {
+      return errorResponse(c, 503, 'unavailable', 'executor patch storage unavailable', true);
+    }
+    let identity;
+    try {
+      identity = await provider.verify({
+        executionId,
+        attemptId,
+        payload: { authorization, executionId, containerId },
+      });
+    } catch {
+      return errorResponse(c, 401, 'unauthenticated', 'executor identity invalid', false);
+    }
+    try {
+      const result = await new ExecutorPatchArtifactStore(
+        c.env.DB_CONTROL,
+        c.env.EXECUTOR_PATCH_OBJECTS,
+        registry,
+        { secrets: configuredSecrets(c.env), ...(options.now === undefined ? {} : { now: options.now }) },
+      ).loadPublisherPatch(identity, patchId);
+      c.header('cache-control', 'no-store');
+      return c.json(result);
+    } catch (error) {
+      if (error instanceof ExecutorPatchArtifactError) return executorPatchError(c, error);
+      throw error;
+    }
+  });
+
+  const publisherCredentialError = (
+    c: Parameters<typeof errorResponse>[0],
+    error: ExecutorPublisherCredentialError,
+  ): Response => {
+    if (error.code === 'invalid_request') {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid publisher request', false);
+    }
+    if (error.code === 'not_found') {
+      return errorResponse(c, 404, 'not_found', 'publisher authority not found', false);
+    }
+    if (error.code === 'policy_denied' || error.code === 'approval_required') {
+      return errorResponse(c, 403, 'policy_denied', 'publisher authority denied', false);
+    }
+    if (error.code === 'provider_unavailable') {
+      return errorResponse(c, 503, 'unavailable', 'publisher authority unavailable', true);
+    }
+    return errorResponse(c, 409, 'conflict', 'publisher authority state changed', false);
+  };
+
+  app.post('/v1/attempts/:attemptId/executor-publisher/write-token', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    let body: unknown;
+    try { body = await runnerBody(c); } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid publisher credential body', false);
+    }
+    const parsed = PublisherIdentityBodySchema.safeParse(body);
+    if (!parsed.success) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid publisher credential body', false);
+    }
+    const identity = await publisherIdentity(c, attemptId);
+    if (identity instanceof Response) return identity;
+    const runtime = options.repoWriteCredentialRuntime ?? repoWriteCredentialRuntimeFromEnv(c.env);
+    if (runtime === null) {
+      return errorResponse(c, 503, 'unavailable', 'publisher authority unavailable', true);
+    }
+    try {
+      const result = await new ExecutorPublisherCredentialStore(
+        c.env.DB_CONTROL,
+        runtime.provider,
+        { encryptionKey: runtime.encryptionKey },
+      ).issue(identity, parsed.data.publicationId, options.now?.() ?? new Date());
+      c.header('cache-control', 'no-store');
+      return c.json(result, result.created ? 201 : 200);
+    } catch (error) {
+      if (error instanceof ExecutorPublisherCredentialError) {
+        return publisherCredentialError(c, error);
+      }
+      throw error;
+    }
+  });
+
+  app.post('/v1/attempts/:attemptId/executor-publisher/head', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    let body: unknown;
+    try { body = await runnerBody(c); } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid publisher head body', false);
+    }
+    const parsed = PublisherHeadBodySchema.safeParse(body);
+    if (!parsed.success) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid publisher head body', false);
+    }
+    const identity = await publisherIdentity(c, attemptId);
+    if (identity instanceof Response) return identity;
+    const runtime = options.repoWriteCredentialRuntime ?? repoWriteCredentialRuntimeFromEnv(c.env);
+    if (runtime === null) {
+      return errorResponse(c, 503, 'unavailable', 'publisher authority unavailable', true);
+    }
+    try {
+      const authorization = await new ExecutorPublisherCredentialStore(
+        c.env.DB_CONTROL,
+        runtime.provider,
+        { encryptionKey: runtime.encryptionKey },
+      ).authorizeAttempt(identity, parsed.data.publicationId, options.now?.() ?? new Date());
+      const result = await new ExecutionHeadStore(c.env.DB_CONTROL).record(authorization, {
+        expectedVersion: authorization.version,
+        leaseGeneration: authorization.leaseGeneration,
+        parentSha: parsed.data.parentSha,
+        headSha: parsed.data.headSha,
+        branch: parsed.data.branch,
+      }, options.now?.() ?? new Date());
+      c.header('cache-control', 'no-store');
+      return c.json(result, result.created ? 201 : 200);
+    } catch (error) {
+      if (error instanceof ExecutorPublisherCredentialError) {
+        return publisherCredentialError(c, error);
+      }
+      if (error instanceof ExecutionHeadError) {
+        return errorResponse(c, 409, 'conflict', 'publisher head state changed', false);
+      }
+      throw error;
+    }
+  });
+
+  app.post('/v1/attempts/:attemptId/executor-publisher/verifications', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    let body: unknown;
+    try { body = await runnerBody(c, MAX_TOOL_CALL_BODY_LENGTH); } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid publisher verification', false);
+    }
+    const parsed = PublisherVerificationStartBodySchema.safeParse(body);
+    if (!ATTEMPT_ID_PATTERN.test(attemptId) || !parsed.success) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid publisher verification', false);
+    }
+    const identity = await publisherIdentity(c, attemptId);
+    if (identity instanceof Response) return identity;
+    const runtime = options.repoWriteCredentialRuntime ?? repoWriteCredentialRuntimeFromEnv(c.env);
+    if (runtime === null) return errorResponse(c, 503, 'unavailable', 'publisher unavailable', true);
+    try {
+      const authorization = await new ExecutorPublisherCredentialStore(
+        c.env.DB_CONTROL, runtime.provider, { encryptionKey: runtime.encryptionKey },
+      ).authorizeAttempt(identity, parsed.data.publicationId, options.now?.() ?? new Date());
+      const result = await new VerificationEvidenceStore(c.env.DB_CONTROL).start(
+        authorization,
+        parsed.data.manifest,
+        options.now?.() ?? new Date(),
+      );
+      c.header('cache-control', 'no-store');
+      return c.json(result, result.created ? 201 : 200);
+    } catch (error) {
+      if (error instanceof ExecutorPublisherCredentialError) return publisherCredentialError(c, error);
+      if (error instanceof VerificationEvidenceError) {
+        return errorResponse(c, 409, 'conflict', 'publisher verification changed', false);
+      }
+      throw error;
+    }
+  });
+
+  app.post('/v1/attempts/:attemptId/executor-publisher/verifications/:suiteId/results', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    const suiteId = c.req.param('suiteId');
+    let body: unknown;
+    try { body = await runnerBody(c, MAX_TOOL_CALL_BODY_LENGTH); } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid publisher verification', false);
+    }
+    const parsed = PublisherVerificationResultBodySchema.safeParse(body);
+    if (
+      !ATTEMPT_ID_PATTERN.test(attemptId) || !ATTEMPT_ID_PATTERN.test(suiteId) || !parsed.success
+    ) return errorResponse(c, 400, 'invalid_argument', 'invalid publisher verification', false);
+    const identity = await publisherIdentity(c, attemptId);
+    if (identity instanceof Response) return identity;
+    const runtime = options.repoWriteCredentialRuntime ?? repoWriteCredentialRuntimeFromEnv(c.env);
+    if (runtime === null) return errorResponse(c, 503, 'unavailable', 'publisher unavailable', true);
+    try {
+      const authorization = await new ExecutorPublisherCredentialStore(
+        c.env.DB_CONTROL, runtime.provider, { encryptionKey: runtime.encryptionKey },
+      ).authorizeAttempt(identity, parsed.data.publicationId, options.now?.() ?? new Date());
+      const result = await new VerificationEvidenceStore(c.env.DB_CONTROL).record(
+        authorization,
+        suiteId,
+        parsed.data.result,
+        options.now?.() ?? new Date(),
+      );
+      c.header('cache-control', 'no-store');
+      return c.json(result, result.created ? 201 : 200);
+    } catch (error) {
+      if (error instanceof ExecutorPublisherCredentialError) return publisherCredentialError(c, error);
+      if (error instanceof VerificationEvidenceError) {
+        return errorResponse(c, 409, 'conflict', 'publisher verification changed', false);
+      }
+      throw error;
+    }
+  });
+
+  app.post('/v1/attempts/:attemptId/executor-publisher/complete', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    let body: unknown;
+    try { body = await runnerBody(c, MAX_TOOL_CALL_BODY_LENGTH); } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid publisher completion', false);
+    }
+    const parsed = PublisherCompletionBodySchema.safeParse(body);
+    if (!ATTEMPT_ID_PATTERN.test(attemptId) || !parsed.success) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid publisher completion', false);
+    }
+    const identity = await publisherIdentity(c, attemptId);
+    if (identity instanceof Response) return identity;
+    const registry = options.executorPluginRegistry ?? executorPluginRegistryFromEnv(c.env);
+    const runtime = options.repoWriteCredentialRuntime ?? repoWriteCredentialRuntimeFromEnv(c.env);
+    if (registry === null || runtime === null) {
+      return errorResponse(c, 503, 'unavailable', 'publisher completion unavailable', true);
+    }
+    const credentials = new ExecutorPublisherCredentialStore(
+      c.env.DB_CONTROL, runtime.provider, { encryptionKey: runtime.encryptionKey },
+    );
+    try {
+      await credentials.revoke(
+        parsed.data.publicationId,
+        identity.executionId,
+        options.now?.() ?? new Date(),
+      );
+      await new ExecutorPatchPublicationStore(c.env.DB_CONTROL, registry)
+        .completeVerifiedPublication({
+          ...parsed.data,
+          publisherExecutionId: identity.executionId,
+          now: options.now?.() ?? new Date(),
+        });
+      c.header('cache-control', 'no-store');
+      return c.json({ accepted: true });
+    } catch (error) {
+      if (error instanceof ExecutorPublisherCredentialError) return publisherCredentialError(c, error);
+      if (error instanceof ExecutorPatchPublicationError) {
+        return errorResponse(c, 409, 'conflict', 'publisher completion changed', false);
+      }
+      throw error;
     }
   });
 

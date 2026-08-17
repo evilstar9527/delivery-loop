@@ -21,6 +21,7 @@ import { taskRevisionDigest, TaskEnvelopeSchema } from '../domain/task.js';
 import { EXECUTION_TOOL_ACTIONS, isExactExecutionToolActions } from '../domain/tool-bridge.js';
 import { SecretScanner, isSensitiveFieldName } from '../security/redaction.js';
 import type { CodexModelUsage } from '../domain/quota.js';
+import { executorModelProviderBaseUrl } from '../agent/provider-base-url.js';
 import {
   ControlPlaneExecutionFailureReporter,
   ControlPlaneExecutionHeadReporter,
@@ -49,6 +50,12 @@ import {
   ControlPlaneVerificationEvidenceReporter,
   type VerificationReporterAuthorization,
 } from './verification-evidence-reporter.js';
+import { checkoutExecutorRepository } from './executor-repository-checkout.js';
+import { uploadExecutorWorkPatch } from './executor-patch-client.js';
+import {
+  ExecutorWorkAttemptRunner,
+  type ExecutorWorkAttemptResult,
+} from './executor-work-runner.js';
 
 const OIDC_AUDIENCE = 'delivery-loop-control-plane';
 const HEARTBEAT_INTERVAL_MS = 45_000;
@@ -181,6 +188,14 @@ const ModelUsageResponseSchema = z.object({
   disposition: z.enum(['created', 'existing']),
 }).strict();
 
+const ModelGrantResponseSchema = z.object({
+  grantId: z.string().regex(ID_PATTERN),
+  reservationId: z.string().regex(ID_PATTERN),
+  token: z.string().min(16).max(2_000),
+  expiresAt: z.iso.datetime({ offset: true }),
+  created: z.boolean(),
+}).strict();
+
 const RawTranscriptArtifactResponseSchema = z.discriminatedUnion('status', [
   z.object({
     accepted: z.literal(true),
@@ -216,8 +231,10 @@ interface RunnerConfiguration {
   modelProfileId?: string;
   repository: string;
   controlPlaneUrl: string;
-  oidcRequestUrl: string;
-  oidcRequestToken: string;
+  identityKind: 'github_oidc' | 'executor_proxy';
+  executionId?: string;
+  oidcRequestUrl?: string;
+  oidcRequestToken?: string;
   workspacePath: string;
   runnerTempPath: string;
 }
@@ -229,6 +246,7 @@ export interface RunExecutionAttemptOptions {
   heartbeatIntervalMs?: number;
   now?: () => Date;
   onAgentActivity?: (activity: CodexExecutionActivity) => void;
+  checkoutRepository?: typeof checkoutExecutorRepository;
 }
 
 export type ExecutionRunnerFailureKind =
@@ -401,9 +419,11 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
     requiredEnvironment(environment, 'DELIVERY_CONTROL_PLANE_URL'),
     'origin',
   );
-  const oidcRequest = httpsUrl(
-    requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_URL'),
-    'request',
+  const executorIdentity = environment.DELIVERY_EXECUTOR_IDENTITY_KIND ===
+    'cloudflare_sandbox_proxy';
+  const executionId = environment.DELIVERY_EXECUTION_ID;
+  const oidcRequest = executorIdentity ? undefined : httpsUrl(
+    requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_URL'), 'request',
   );
   const rawWorkspace = environment.DELIVERY_REPOSITORY_PATH ??
     requiredEnvironment(environment, 'GITHUB_WORKSPACE');
@@ -426,6 +446,7 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
     String(planVersion) !== rawPlanVersion ||
     !ID_PATTERN.test(planItemId) ||
     (modelProfileId !== undefined && !ID_PATTERN.test(modelProfileId)) ||
+    (executorIdentity && (executionId === undefined || !ID_PATTERN.test(executionId))) ||
     !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) ||
     within(workspacePath, runnerTempPath)
   ) {
@@ -444,8 +465,12 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
     ...(modelProfileId === undefined ? {} : { modelProfileId }),
     repository,
     controlPlaneUrl: controlPlane.origin,
-    oidcRequestUrl: oidcRequest.toString(),
-    oidcRequestToken: requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_TOKEN'),
+    identityKind: executorIdentity ? 'executor_proxy' : 'github_oidc',
+    ...(executionId === undefined ? {} : { executionId }),
+    ...(oidcRequest === undefined ? {} : {
+      oidcRequestUrl: oidcRequest.toString(),
+      oidcRequestToken: requiredEnvironment(environment, 'ACTIONS_ID_TOKEN_REQUEST_TOKEN'),
+    }),
     workspacePath,
     runnerTempPath,
   };
@@ -574,6 +599,9 @@ class MutableFencing implements MutableExecutionReporterAuthorization {
 }
 
 async function oidcToken(fetcher: typeof globalThis.fetch, config: RunnerConfiguration): Promise<string> {
+  if (config.oidcRequestUrl === undefined || config.oidcRequestToken === undefined) {
+    throw new ExecutionRunnerError('GitHub OIDC configuration is unavailable');
+  }
   const url = new URL(config.oidcRequestUrl);
   url.searchParams.set('audience', OIDC_AUDIENCE);
   const parsed = OidcResponseSchema.safeParse(await fetchJson(fetcher, url.toString(), {
@@ -590,12 +618,20 @@ async function oidcToken(fetcher: typeof globalThis.fetch, config: RunnerConfigu
 async function exchange(
   fetcher: typeof globalThis.fetch,
   config: RunnerConfiguration,
-  token: string,
+  token?: string,
 ): Promise<z.infer<typeof ExchangeResponseSchema>> {
+  const executorProxy = config.identityKind === 'executor_proxy';
+  if (!executorProxy && token === undefined) {
+    throw new ExecutionRunnerError('attempt identity token is unavailable');
+  }
   const parsed = ExchangeResponseSchema.safeParse(await fetchJson(
     fetcher,
-    `${config.controlPlaneUrl}/v1/attempts/${config.attemptId}/exchange`,
-    { method: 'POST', headers: { accept: 'application/json', authorization: `Bearer ${token}` } },
+    `${config.controlPlaneUrl}/v1/attempts/${config.attemptId}/` +
+      (executorProxy ? 'executor-exchange' : 'exchange'),
+    { method: 'POST', headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${executorProxy ? 'executor-proxy' : token}`,
+    } },
     [200],
     'attempt token exchange',
   ));
@@ -746,7 +782,7 @@ async function materializeSourceBranch(
 /** Runs one approved execution Attempt while D1 remains the durable state owner. */
 export async function runExecutionAttempt(
   options: RunExecutionAttemptOptions = {},
-): Promise<ExecutionAttemptResult> {
+): Promise<ExecutionAttemptResult | ExecutorWorkAttemptResult> {
   const environment = options.environment ?? process.env;
   const config = configuration(environment);
   const fetcher = options.fetch ?? globalThis.fetch;
@@ -755,17 +791,37 @@ export async function runExecutionAttempt(
   if (!Number.isSafeInteger(heartbeatIntervalMs) || heartbeatIntervalMs <= 0) {
     throw new ExecutionRunnerError('execution heartbeat interval is invalid');
   }
-  await assertCheckout(config);
-  let oidc: string;
+  if (config.identityKind === 'github_oidc') await assertCheckout(config);
+  let oidc: string | undefined;
   let exchanged: z.infer<typeof ExchangeResponseSchema>;
   try {
-    oidc = await oidcToken(fetcher, config);
+    oidc = config.identityKind === 'github_oidc'
+      ? await oidcToken(fetcher, config)
+      : undefined;
     exchanged = await exchange(fetcher, config, oidc);
   } catch {
     throw new ExecutionRunnerError(
       'execution identity exchange failed',
       'oidc_exchange_failed',
     );
+  }
+  if (config.identityKind === 'executor_proxy') {
+    try {
+      await (options.checkoutRepository ?? checkoutExecutorRepository)({
+        controlPlaneUrl: config.controlPlaneUrl,
+        attemptId: config.attemptId,
+        executionId: config.executionId!,
+        attemptToken: exchanged.attemptToken,
+        checkoutSha: config.checkoutSha,
+        repositoryPath: config.workspacePath,
+      });
+      await assertCheckout(config);
+    } catch {
+      throw new ExecutionRunnerError(
+        'execution repository checkout is unavailable',
+        'checkout_invalid',
+      );
+    }
   }
   const runtimeSecrets = new Set<string>([
     oidc,
@@ -776,7 +832,7 @@ export async function runExecutionAttempt(
       .filter((entry): entry is [string, string] =>
         entry[1] !== undefined && isSensitiveFieldName(entry[0]))
       .map(([, value]) => value),
-  ]);
+  ].filter((value): value is string => value !== undefined));
   const fencing = new MutableFencing(
     exchanged.attemptToken,
     exchanged.grant.toolBridgeToken,
@@ -899,18 +955,34 @@ export async function runExecutionAttempt(
   let heartbeatFailure: unknown;
   let heartbeatTask: Promise<void> = Promise.resolve();
   const modelReservations = new Map<1 | 2, z.infer<typeof ModelReservationResponseSchema>>();
+  const modelGrantTokens = new Map<1 | 2, string>();
   const settledModelInvocations = new Set<1 | 2>();
+  let currentModelGrantToken: string | undefined;
   const executionAgent = options.agent ?? new CodexExecutionAdapter({
-    ...(environment.OPENAI_BASE_URL === undefined || environment.OPENAI_BASE_URL === ''
-      ? {}
-      : { providerBaseUrl: environment.OPENAI_BASE_URL }),
+    ...(config.identityKind === 'executor_proxy'
+      ? {
+          executorModelProviderBaseUrl: executorModelProviderBaseUrl(config.attemptId),
+          providerApiKey: () => currentModelGrantToken,
+        }
+      : environment.OPENAI_BASE_URL === undefined || environment.OPENAI_BASE_URL === ''
+        ? {}
+        : { providerBaseUrl: environment.OPENAI_BASE_URL }),
   });
 
   const reserveModelInvocation = async (
     invocation: 1 | 2,
   ): Promise<z.infer<typeof ModelReservationResponseSchema>> => {
     const existing = modelReservations.get(invocation);
-    if (existing !== undefined) return existing;
+    if (existing !== undefined) {
+      currentModelGrantToken = modelGrantTokens.get(invocation);
+      if (config.identityKind === 'executor_proxy' && currentModelGrantToken === undefined) {
+        throw new ExecutionRunnerError(
+          'execution model grant is unavailable',
+          'quota_unavailable',
+        );
+      }
+      return existing;
+    }
     if (config.modelProfileId === undefined) {
       throw new ExecutionRunnerError(
         'execution Runner model profile is unavailable',
@@ -955,6 +1027,37 @@ export async function runExecutionAttempt(
       }
       return parsed.data;
     });
+    if (config.identityKind === 'executor_proxy') {
+      const rawGrant = await fencing.withAuthorization(async (authorization) =>
+        await controlPlaneJson(
+          fetcher,
+          config,
+          `/v1/attempts/${config.attemptId}/executor-model/grants`,
+          authorization.attemptToken,
+          'executor model grant',
+          [200, 201],
+          {
+            executionId: config.executionId!,
+            reservationId: reservation.reservationId,
+            expectedVersion: authorization.expectedVersion,
+            leaseGeneration: authorization.leaseGeneration,
+          },
+        ));
+      const parsedGrant = ModelGrantResponseSchema.safeParse(rawGrant);
+      if (
+        !parsedGrant.success ||
+        parsedGrant.data.reservationId !== reservation.reservationId ||
+        Date.parse(parsedGrant.data.expiresAt) > Date.parse(reservation.expiresAt)
+      ) {
+        throw new ExecutionRunnerError(
+          'execution model grant response is invalid',
+          'quota_unavailable',
+        );
+      }
+      modelGrantTokens.set(invocation, parsedGrant.data.token);
+      currentModelGrantToken = parsedGrant.data.token;
+      runtimeSecrets.add(parsedGrant.data.token);
+    }
     modelReservations.set(invocation, reservation);
     return reservation;
   };
@@ -1000,6 +1103,9 @@ export async function runExecutionAttempt(
           ) throw new ExecutionRunnerError('model usage settlement response is invalid');
         });
         settledModelInvocations.add(invocation);
+        if (currentModelGrantToken === modelGrantTokens.get(invocation)) {
+          currentModelGrantToken = undefined;
+        }
         return;
       } catch (error) {
         lastFailure = error;
@@ -1062,6 +1168,83 @@ export async function runExecutionAttempt(
     await writeFile(outputFilePath, '', { mode: 0o600, flag: 'wx' });
     if (new SecretScanner({ secrets: [...runtimeSecrets] }).scan(agentContext).length > 0) {
       throw new ExecutionRunnerError('execution context contains runtime credentials');
+    }
+    const artifactAgent = createRawTranscriptArtifactAgent({
+      agent: attemptAgent,
+      runtimeSecrets,
+      persist: async (content) => persistRawTranscript(fetcher, config, fencing, content),
+      ...(options.onAgentActivity === undefined ? {} : { onActivity: options.onAgentActivity }),
+      validateDecision: (decision) => {
+        if (decision.action !== 'apply_patch') return decision;
+        try {
+          return {
+            ...decision,
+            proposal: validateExecutionPatchProposal(
+              decision.proposal,
+              policy.policy.protectedPaths,
+              [...runtimeSecrets],
+            ),
+          };
+        } catch {
+          throw new CodexExecutionAdapterError('decision_invalid', 'invalid_output');
+        }
+      },
+    });
+    const executionAgentInput = {
+      attemptId: config.attemptId,
+      workspacePath: config.workspacePath,
+      contextFilePath,
+      outputFilePath,
+      timeoutMs: AGENT_TIMEOUT_MS,
+      allowPlanRevision: context.reviewFeedback !== undefined,
+      ...(context.repair === undefined ? {} : (() => {
+        const command = resolveDeliveryCommand(
+          policy.policy,
+          context.repair.commandRef,
+          config.workspacePath,
+        );
+        return {
+          repairCommand: {
+            ref: command.ref,
+            argv: [command.command, ...command.args],
+          },
+        };
+      })()),
+    };
+    if (config.identityKind === 'executor_proxy') {
+      if (context.baseRebase !== undefined) {
+        throw new ExecutionRunnerError('executor work base rebase is unavailable');
+      }
+      const result = await new ExecutorWorkAttemptRunner({
+        repositoryPath: config.workspacePath,
+        checkoutSha: config.checkoutSha,
+        targetedCommandRefs,
+        deliveryPolicy: policy,
+        runtimeSecrets: [...runtimeSecrets],
+        agent: artifactAgent,
+        agentInput: executionAgentInput,
+        failureReporter,
+        uploadPatch: async (proposal) => await fencing.withAuthorization(
+          async (authorization) => await uploadExecutorWorkPatch({
+            controlPlaneUrl: config.controlPlaneUrl,
+            attemptId: config.attemptId,
+            executionId: config.executionId!,
+            attemptToken: authorization.attemptToken,
+            expectedVersion: authorization.expectedVersion,
+            leaseGeneration: authorization.leaseGeneration,
+            proposal,
+          }, fetcher),
+        ),
+        ...(context.reviewFeedback === undefined ? {} : {
+          planRevisionReporter: new ControlPlanePlanRevisionReporter(reporterContext, fetcher),
+        }),
+      }).run();
+      heartbeatController.abort();
+      await heartbeatTask;
+      if (result.status === 'patch_uploaded' && heartbeatFailure !== undefined) {
+        throw new ExecutionRunnerError('attempt heartbeat failed during executor work');
+      }
+      return result;
     }
     const requestRepoWriteCredential = async (): Promise<
       z.infer<typeof CredentialResponseSchema>
@@ -1215,27 +1398,6 @@ export async function runExecutionAttempt(
         branch: result.targetBranch,
       };
     }
-    const artifactAgent = createRawTranscriptArtifactAgent({
-      agent: attemptAgent,
-      runtimeSecrets,
-      persist: async (content) => persistRawTranscript(fetcher, config, fencing, content),
-      ...(options.onAgentActivity === undefined ? {} : { onActivity: options.onAgentActivity }),
-      validateDecision: (decision) => {
-        if (decision.action !== 'apply_patch') return decision;
-        try {
-          return {
-            ...decision,
-            proposal: validateExecutionPatchProposal(
-              decision.proposal,
-              policy.policy.protectedPaths,
-              [...runtimeSecrets],
-            ),
-          };
-        } catch {
-          throw new CodexExecutionAdapterError('decision_invalid', 'invalid_output');
-        }
-      },
-    });
     const runner = new ExecutionAttemptRunner({
       repositoryPath: config.workspacePath,
       checkoutSha: config.checkoutSha,
@@ -1259,27 +1421,7 @@ export async function runExecutionAttempt(
         refreshCredential: requestRepoWriteCredential,
       }),
       agent: artifactAgent,
-      agentInput: {
-        attemptId: config.attemptId,
-        workspacePath: config.workspacePath,
-        contextFilePath,
-        outputFilePath,
-        timeoutMs: AGENT_TIMEOUT_MS,
-        allowPlanRevision: context.reviewFeedback !== undefined,
-        ...(context.repair === undefined ? {} : (() => {
-          const command = resolveDeliveryCommand(
-            policy.policy,
-            context.repair.commandRef,
-            config.workspacePath,
-          );
-          return {
-            repairCommand: {
-              ref: command.ref,
-              argv: [command.command, ...command.args],
-            },
-          };
-        })()),
-      },
+      agentInput: executionAgentInput,
       ...(context.reviewFeedback === undefined ? {} : {
         planRevisionReporter: new ControlPlanePlanRevisionReporter(reporterContext, fetcher),
       }),

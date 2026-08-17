@@ -77,7 +77,15 @@ export class DeliveryRunWorkflow extends WorkflowEntrypoint<
   ): Promise<unknown> {
     const params = event.payload;
     assertParams(params);
-    const store = new RunStore(this.env.DB_CONTROL);
+    if (this.env.CONTROL_PLANE_URL === undefined) {
+      throw new Error('executor routing control-plane URL is not configured');
+    }
+    const store = new RunStore(this.env.DB_CONTROL, {
+      controlPlaneUrl: this.env.CONTROL_PLANE_URL,
+      ...(this.env.CODEX_MODEL_PROFILE_ID === undefined
+        ? {}
+        : { modelProfileId: this.env.CODEX_MODEL_PROFILE_ID }),
+    });
 
     const run = await step.do('register-run', async () => {
       return await store.registerWorkflow(params, new Date().toISOString());

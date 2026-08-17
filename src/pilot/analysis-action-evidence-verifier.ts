@@ -440,7 +440,12 @@ function runnerShapeMatches(sources: ReadonlyMap<string, string>, codexVersion: 
     runner.includes('diagnosticMediation.agentInterface()') &&
     runner.includes('runtimeSecrets: [...runtimeSecrets]') &&
     runner.includes('DIAGNOSTIC_EVIDENCE_REF_PATTERN.test(ref)') &&
-    runner.includes('const beforeSnapshot = await snapshotWorkspace') &&
+    runner.includes("let beforeSnapshot = config.identityKind === 'github_oidc'") &&
+    runner.includes('? await snapshotWorkspace(config.workspacePath)') &&
+    runner.includes("if (config.identityKind === 'executor_proxy')") &&
+    runner.includes('(options.checkoutRepository ?? checkoutExecutorRepository)({') &&
+    runner.includes('attemptToken: fencing.token') &&
+    runner.includes('checkoutSha: config.baseSha') &&
     runner.includes('const afterSnapshot = await snapshotWorkspace') &&
     runner.includes('afterSnapshot !== beforeSnapshot') &&
     adapter.includes("'--ephemeral'") && adapter.includes("'--ignore-user-config'") &&

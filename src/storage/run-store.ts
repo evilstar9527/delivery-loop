@@ -5,6 +5,10 @@ import {
 } from '../domain/run.js';
 import { verificationPlanItemStep } from '../domain/workflow-replay.js';
 import type { DeliveryRunWorkflowParams } from '../workflows/delivery-run-workflow.js';
+import {
+  AttemptExecutionRouter,
+  type AttemptExecutionRoutingOptions,
+} from './attempt-execution-router.js';
 
 export interface RunProjection {
   runId: string;
@@ -101,7 +105,10 @@ function planIdFromRef(payloadRef: string): string {
 
 /** D1 is the product/query truth; Workflow status is only orchestration diagnostics. */
 export class RunStore {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly executionRouting?: AttemptExecutionRoutingOptions,
+  ) {}
 
   async getRun(runId: string): Promise<RunProjection | null> {
     const row = await this.db
@@ -316,25 +323,76 @@ export class RunStore {
     if (run === null || run.state !== 'planning' || run.baseSha === undefined) {
       throw new Error(`run ${runId} is not available for analysis dispatch`);
     }
+    const existing = await this.db.prepare(
+      `SELECT attempts.attempt_id, outbox.outbox_id, outbox.payload_ref
+       FROM attempts
+       JOIN outbox ON outbox.run_id = attempts.run_id
+       WHERE attempts.attempt_id = ? AND attempts.run_id = ?
+         AND attempts.mode = 'analysis' AND attempts.status = 'pending'
+         AND (
+           (outbox.kind = 'agent_execution_start'
+             AND outbox.destination = 'agent_executor'
+             AND outbox.dedupe_key = 'agent-executor:execution-work-' || attempts.attempt_id)
+           OR
+           (outbox.kind = 'analysis_dispatch'
+             AND outbox.destination = 'github_actions'
+             AND outbox.dedupe_key = 'analysis-dispatch:' || attempts.run_id || ':1')
+         )`,
+    ).bind(attemptId, runId).first<{
+      attempt_id: string;
+      outbox_id: string;
+      payload_ref: string;
+    }>();
+    if (existing !== null) {
+      return {
+        attemptId: existing.attempt_id,
+        outboxId: existing.outbox_id,
+        payloadRef: existing.payload_ref,
+      };
+    }
+    if (this.executionRouting === undefined) {
+      throw new Error('executor routing is not configured');
+    }
     const target = await this.db
       .prepare(
-        `SELECT tasks.target_repository, tasks.target_base_branch
+        `SELECT tasks.target_repository, tasks.target_base_branch, runs.task_digest
          FROM runs JOIN tasks ON tasks.task_id = runs.task_id
          WHERE runs.run_id = ?`,
       )
       .bind(runId)
-      .first<{ target_repository: string; target_base_branch: string }>();
+      .first<{
+        target_repository: string;
+        target_base_branch: string;
+        task_digest: string;
+      }>();
     if (target === null) throw new Error(`run ${runId} target is unavailable`);
-    const workflowRef = `${target.target_repository}/.github/workflows/delivery-agent.yml@refs/heads/${target.target_base_branch}`;
-    const outboxId = `dispatch-${attemptId}`;
-    const payloadRef = `d1://attempts/${attemptId}`;
+    const router = new AttemptExecutionRouter(this.db, this.executionRouting);
+    const routed = await router.route({
+      runId,
+      attemptId,
+      mode: 'analysis',
+      taskDigest: target.task_digest,
+      repository: target.target_repository,
+      baseSha: run.baseSha,
+      checkoutSha: run.baseSha,
+      targetBaseBranch: target.target_base_branch,
+    });
+    const persistence = router.persistenceStatements(routed, now);
     await this.db.batch([
       this.db
         .prepare(
           `INSERT INTO attempts (
              attempt_id, run_id, ordinal, mode, status, base_sha, repository, workflow_ref,
+             executor_profile_id, executor_route_version,
              lease_generation, created_at, updated_at
-           ) VALUES (?, ?, 1, 'analysis', 'pending', ?, ?, ?, 0, ?, ?)
+           )
+           SELECT ?, ?, 1, 'analysis', 'pending', ?, ?, ?, ?, ?, 0, ?, ?
+           WHERE EXISTS (
+             SELECT 1 FROM executor_routes
+             WHERE route_id = ? AND profile_id = ? AND route_version = ?
+               AND repository = ? AND attempt_mode = 'analysis'
+               AND execution_role = 'work' AND status = 'active'
+           )
            ON CONFLICT(attempt_id) DO NOTHING`,
         )
         .bind(
@@ -342,28 +400,29 @@ export class RunStore {
           runId,
           run.baseSha,
           target.target_repository,
-          workflowRef,
+          routed.attemptWorkflowRef,
+          routed.profileId,
+          routed.routeVersion,
           now,
           now,
+          routed.routeId,
+          routed.profileId,
+          routed.routeVersion,
+          target.target_repository,
         ),
-      this.db
-        .prepare(
-          `INSERT INTO outbox (
-             outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
-             delivery_state, created_at, updated_at
-           ) VALUES (?, ?, 'analysis_dispatch', 'github_actions', ?, ?, 'pending', ?, ?)
-           ON CONFLICT(dedupe_key) DO NOTHING`,
-        )
-        .bind(outboxId, runId, payloadRef, `analysis-dispatch:${runId}:1`, now, now),
+      ...persistence,
     ]);
 
     const row = await this.db
       .prepare(
-        `SELECT outbox_id, payload_ref
+        `SELECT outbox.outbox_id, outbox.payload_ref
          FROM outbox
-         WHERE dedupe_key = ? AND run_id = ?`,
+         JOIN attempt_execution_instances AS executions
+           ON executions.outbox_id = outbox.outbox_id
+         WHERE outbox.dedupe_key = ? AND outbox.run_id = ?
+           AND executions.execution_id = ? AND executions.attempt_id = ?`,
       )
-      .bind(`analysis-dispatch:${runId}:1`, runId)
+      .bind(`agent-executor:${routed.executionId}`, runId, routed.executionId, attemptId)
       .first<{ outbox_id: string; payload_ref: string }>();
     if (row === null) throw new Error(`analysis dispatch was not persisted for ${runId}`);
     return { attemptId, outboxId: row.outbox_id, payloadRef: row.payload_ref };

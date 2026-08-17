@@ -75,6 +75,9 @@ interface AuthorizationContextRow {
   progress_status: string | null;
   active_attempt_id: string | null;
   has_repo_write_effect: number;
+  token_identity_kind: string | null;
+  token_expires_at: string | null;
+  token_revoked_at: string | null;
 }
 
 interface ApprovalRow {
@@ -130,7 +133,7 @@ function encodeBase64(value: Uint8Array): string {
   return btoa(binary);
 }
 
-class CredentialCipher {
+export class CredentialCipher {
   private readonly rawKey: Uint8Array;
 
   constructor(encodedKey: string) {
@@ -336,6 +339,7 @@ export class RepoWriteCredentialStore {
              AND attempts.status = 'running' AND attempts.version = ?
              AND attempts.lease_generation = ? AND attempts.lease_expires_at = ?
              AND attempts.lease_expires_at > ?
+             AND attempt_tokens.identity_kind = 'github_oidc'
              AND attempt_tokens.revoked_at IS NULL AND attempt_tokens.expires_at > ?
              AND runs.state = 'executing'
              AND runs.active_plan_id = attempts.plan_id
@@ -437,6 +441,7 @@ export class RepoWriteCredentialStore {
                AND attempts.status = 'running' AND attempts.version = ?
                AND attempts.lease_generation = ? AND attempts.lease_expires_at = ?
                AND attempts.lease_expires_at > ?
+               AND attempt_tokens.identity_kind = 'github_oidc'
                AND attempt_tokens.revoked_at IS NULL AND attempt_tokens.expires_at > ?
                AND runs.state = 'executing'
                AND runs.active_plan_id = attempts.plan_id
@@ -611,6 +616,7 @@ export class RepoWriteCredentialStore {
                AND attempts.version = ?
                AND attempts.lease_generation = ?
                AND attempts.lease_expires_at > ?
+               AND attempt_tokens.identity_kind = 'github_oidc'
                AND attempt_tokens.revoked_at IS NULL AND attempt_tokens.expires_at > ?
                AND runs.state = 'executing'
                AND runs.active_plan_id = attempts.plan_id
@@ -842,6 +848,9 @@ export class RepoWriteCredentialStore {
                 execution_plans.status AS plan_status,
                 plan_item_progress.status AS progress_status,
                 plan_item_progress.active_attempt_id,
+                attempt_tokens.identity_kind AS token_identity_kind,
+                attempt_tokens.expires_at AS token_expires_at,
+                attempt_tokens.revoked_at AS token_revoked_at,
                 EXISTS (
                   SELECT 1 FROM plan_item_effects
                   WHERE plan_item_effects.plan_id = attempts.plan_id
@@ -851,6 +860,9 @@ export class RepoWriteCredentialStore {
          FROM attempts
          JOIN runs ON runs.run_id = attempts.run_id
          JOIN tasks ON tasks.task_id = runs.task_id
+         LEFT JOIN attempt_tokens
+           ON attempt_tokens.attempt_id = attempts.attempt_id
+          AND attempt_tokens.lease_generation = attempts.lease_generation
          LEFT JOIN execution_plans ON execution_plans.plan_id = attempts.plan_id
          LEFT JOIN plan_item_progress
            ON plan_item_progress.plan_id = attempts.plan_id
@@ -868,6 +880,16 @@ export class RepoWriteCredentialStore {
       row.lease_expires_at <= now.toISOString()
     ) {
       // authorize() already checked time. Exact row equality here prevents a stale caller snapshot.
+      throw new RepoWriteCredentialError('state_conflict');
+    }
+    if (row.token_identity_kind !== 'github_oidc') {
+      // Work sandboxes hand patches to a separate publisher and never receive Git write authority.
+      throw new RepoWriteCredentialError('policy_denied');
+    }
+    if (
+      row.token_revoked_at !== null || row.token_expires_at === null ||
+      row.token_expires_at <= now.toISOString()
+    ) {
       throw new RepoWriteCredentialError('state_conflict');
     }
     if (
@@ -1183,6 +1205,7 @@ export class RepoWriteCredentialRevoker {
            AND attempts.plan_id = github_write_credentials.plan_id
            AND attempts.plan_version = github_write_credentials.plan_version
            AND attempts.plan_item_id = github_write_credentials.plan_item_id
+           AND attempt_tokens.identity_kind = 'github_oidc'
            AND attempt_tokens.revoked_at IS NULL AND attempt_tokens.expires_at > ?
            AND runs.state = 'executing'
            AND runs.active_plan_id = github_write_credentials.plan_id

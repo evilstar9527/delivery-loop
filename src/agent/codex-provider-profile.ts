@@ -1,4 +1,7 @@
-import { normalizeProviderBaseUrl } from './provider-base-url.js';
+import {
+  normalizeExecutorModelProviderBaseUrl,
+  normalizeProviderBaseUrl,
+} from './provider-base-url.js';
 
 export const CODEX_RELAY_PROVIDER_ID = 'delivery_loop_relay';
 export const CODEX_RELAY_REASONING_EFFORT = 'medium';
@@ -13,7 +16,11 @@ export function codexProviderProfileArguments(
   providerBaseUrl: string | undefined,
   reasoningEffort: CodexRelayReasoningEffort = CODEX_RELAY_REASONING_EFFORT,
 ): string[] {
-  const normalizedBaseUrl = normalizeProviderBaseUrl(providerBaseUrl);
+  const normalizedBaseUrl = providerBaseUrl?.startsWith(
+    'https://control.delivery-loop.internal/',
+  )
+    ? normalizeExecutorModelProviderBaseUrl(providerBaseUrl)
+    : normalizeProviderBaseUrl(providerBaseUrl);
   if (normalizedBaseUrl === undefined) return [];
 
   return [
@@ -36,4 +43,21 @@ export function codexProviderProfileArguments(
     '-c',
     `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`,
   ];
+}
+
+export type CodexProviderApiKey = string | (() => string | undefined);
+
+export function codexProviderEnvironment(
+  source: CodexProviderApiKey | undefined,
+): NodeJS.ProcessEnv | undefined {
+  const apiKey = typeof source === 'function' ? source() : source;
+  if (apiKey === undefined) return undefined;
+  if (apiKey.length < 1 || apiKey.length > 4_096 || /[\0\r\n]/.test(apiKey)) {
+    throw new Error('Codex provider authentication is invalid');
+  }
+  const environment: NodeJS.ProcessEnv = { ...process.env };
+  delete environment.OPENAI_API_KEY;
+  delete environment.CODEX_API_KEY;
+  environment.CODEX_API_KEY = apiKey;
+  return environment;
 }

@@ -4,6 +4,7 @@ import { env } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Bindings } from '../../src/env.js';
 import { githubDispatchProcessorFromEnv } from '../../src/outbox/github-dispatch-runtime.js';
+import { agentExecutorProcessorFromEnv } from '../../src/outbox/agent-executor-runtime.js';
 import { githubPullRequestRuntimeFromEnv } from '../../src/outbox/github-pull-request-runtime.js';
 import { githubTestAcceptanceRuntimeFromEnv } from '../../src/outbox/github-test-acceptance-runtime.js';
 import { githubTestDeploymentRuntimeFromEnv } from '../../src/outbox/github-test-deployment-runtime.js';
@@ -96,6 +97,7 @@ async function seedOutboxes(): Promise<void> {
     ).bind(`sha256:${'5'.repeat(64)}`, 'f'.repeat(40), NOW, NOW),
     ...[
       ['outbox-workflow-route', 'workflow_create', 'cloudflare_workflows'],
+      ['outbox-agent-executor-route', 'agent_execution_start', 'agent_executor'],
       ['outbox-github-route', 'analysis_dispatch', 'github_actions'],
       ['outbox-github-api-route', 'pull_request', 'github_api'],
       ['outbox-github-deployment-route', 'test_deploy', 'github_deployments'],
@@ -148,6 +150,7 @@ describe('production outbox Queue routing', () => {
       queue as unknown as Queue<WorkflowOutboxMessage>,
       [
         'cloudflare_workflows',
+        'agent_executor',
         'github_actions',
         'github_api',
         'github_deployments',
@@ -157,8 +160,9 @@ describe('production outbox Queue routing', () => {
         'feishu_cards',
       ],
     );
-    expect(await relay.relay(100, new Date(NOW))).toBe(8);
+    expect(await relay.relay(100, new Date(NOW))).toBe(9);
     expect(queue.bodies.map((message) => message.outboxId).sort()).toEqual([
+      'outbox-agent-executor-route',
       'outbox-feishu-card-route',
       'outbox-github-acceptance-route',
       'outbox-github-api-route',
@@ -199,6 +203,7 @@ describe('production outbox Queue routing', () => {
     const githubProduction = new FakeDestinationProcessor();
     const githubTestRollback = new FakeDestinationProcessor();
     const feishuCards = new FakeDestinationProcessor();
+    const agentExecutor = new FakeDestinationProcessor();
     const router = new OutboxDestinationRouter(
       env.DB_CONTROL,
       workflow,
@@ -209,9 +214,12 @@ describe('production outbox Queue routing', () => {
       githubProduction,
       githubTestRollback,
       feishuCards,
+      null,
+      agentExecutor,
     );
 
     expect(await router.deliver('outbox-workflow-route')).toBe('settled');
+    expect(await router.deliver('outbox-agent-executor-route')).toBe('settled');
     expect(await router.deliver('outbox-github-route')).toBe('settled');
     expect(await router.deliver('outbox-github-api-route')).toBe('settled');
     expect(await router.deliver('outbox-github-deployment-route')).toBe('settled');
@@ -222,6 +230,7 @@ describe('production outbox Queue routing', () => {
     expect(await router.deliver('outbox-unknown-route')).toBe('unsupported');
     expect(await router.deliver('missing-outbox')).toBe('missing');
     expect(workflow.calls).toEqual(['outbox-workflow-route']);
+    expect(agentExecutor.calls).toEqual(['outbox-agent-executor-route']);
     expect(github.calls).toEqual(['outbox-github-route']);
     expect(githubApi.calls).toEqual(['outbox-github-api-route']);
     expect(githubDeployments.calls).toEqual(['outbox-github-deployment-route']);
@@ -238,6 +247,7 @@ describe('production outbox Queue routing', () => {
       null,
     );
     expect(await router.deliver('outbox-github-route')).toBe('unconfigured');
+    expect(await router.deliver('outbox-agent-executor-route')).toBe('unconfigured');
     expect(await router.deliver('outbox-github-api-route')).toBe('unconfigured');
     expect(await router.deliver('outbox-github-deployment-route')).toBe('unconfigured');
     expect(await router.deliver('outbox-github-acceptance-route')).toBe('unconfigured');
@@ -255,6 +265,7 @@ describe('production outbox Queue routing', () => {
   it('enables the production GitHub processor only for complete App and control-plane config', () => {
     const base = { DB_CONTROL: env.DB_CONTROL } as Bindings;
     expect(githubDispatchProcessorFromEnv(base)).toBeNull();
+    expect(agentExecutorProcessorFromEnv(base)).toBeNull();
     expect(githubPullRequestRuntimeFromEnv(base)).toBeNull();
     expect(githubTestDeploymentRuntimeFromEnv(base)).toBeNull();
     expect(githubTestAcceptanceRuntimeFromEnv(base)).toBeNull();
@@ -386,6 +397,20 @@ describe('production outbox Queue routing', () => {
         CODEX_MODEL_PROFILE_ID: 'codex-production',
       }),
     ).not.toBeNull();
+    expect(agentExecutorProcessorFromEnv({
+      ...base,
+      AGENT_EXECUTOR: { fetch: async () => Response.json({}) } as unknown as Fetcher,
+      AGENT_EXECUTOR_CONTROL_TOKEN: 'executor-control-token-for-routing',
+    })).not.toBeNull();
+    expect(() => agentExecutorProcessorFromEnv({
+      ...base,
+      AGENT_EXECUTOR_URL: 'https://agent-executor.example.test',
+    })).toThrow('Cloudflare Sandbox runtime configuration is incomplete');
+    expect(agentExecutorProcessorFromEnv({
+      ...appBindings,
+      CONTROL_PLANE_URL: 'https://control.example.test',
+      CODEX_MODEL_PROFILE_ID: 'codex-production',
+    })).not.toBeNull();
   });
 
   it('acks only terminal/missing deliveries and retries busy, failed, or unconfigured routes', async () => {

@@ -16,6 +16,10 @@ export function configuredSecrets(env: Partial<Bindings>): string[] {
     env.MONITOR_WEBHOOK_SECRET,
     env.D1_BACKUP_API_TOKEN,
     env.TOOL_BRIDGE_INTERNAL_TOKEN,
+    env.AGENT_EXECUTOR_CONTROL_TOKEN,
+    env.AGENT_EXECUTOR_CALLBACK_TOKEN,
+    env.EXECUTOR_MODEL_API_KEY,
+    env.EXECUTOR_MODEL_GRANT_ENCRYPTION_KEY,
     env.RAW_AGENT_ARTIFACT_ENCRYPTION_KEY,
   ].filter((value): value is string => value !== undefined && value.length > 0))];
 }

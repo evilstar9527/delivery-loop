@@ -53,6 +53,7 @@ async function clearDatabase(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM execution_plan_assumptions'),
     env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
     env.DB_CONTROL.prepare('DELETE FROM idempotency_keys'),

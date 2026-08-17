@@ -146,6 +146,7 @@ export interface WorkflowOutboxMessage {
 
 export type RelayDestination =
   | 'cloudflare_workflows'
+  | 'agent_executor'
   | 'github_actions'
   | 'github_api'
   | 'github_deployments'

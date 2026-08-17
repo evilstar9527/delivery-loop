@@ -337,6 +337,123 @@ describe('analysis Runner bootstrap', () => {
     expect(failureBody).not.toHaveProperty('analysisFailure');
   });
 
+  it('uses executor proxy identity without requesting a GitHub OIDC token', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-executor-identity-'));
+    const environment = await runnerEnvironment(root);
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(environment.GITHUB_WORKSPACE!, { recursive: true });
+    await mkdir(environment.RUNNER_TEMP!, { recursive: true });
+    delete environment.ACTIONS_ID_TOKEN_REQUEST_URL;
+    delete environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+    environment.DELIVERY_EXECUTOR_IDENTITY_KIND = 'cloudflare_sandbox_proxy';
+    environment.DELIVERY_EXECUTION_ID = 'execution-analysis-proxy-1';
+    environment.DELIVERY_MODEL_PROFILE_ID = 'profile-analysis-proxy';
+    environment.DELIVERY_CONTROL_PLANE_URL = 'https://control.delivery-loop.internal';
+    const requests: Array<{ url: string; authorization: string | null }> = [];
+    let checkoutInput: unknown;
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const authorization = new Headers(init?.headers).get('authorization');
+      requests.push({ url, authorization });
+      if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/executor-exchange`)) {
+        expect(authorization).toBe('Bearer executor-proxy');
+        return Response.json({
+          attemptToken: INITIAL_TOKEN,
+          expiresAt: '2026-07-25T00:05:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: INITIAL_TOOL_TOKEN,
+            expiresAt: '2026-07-25T00:05:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith('/context')) {
+        return Response.json({
+          schemaVersion: '1',
+          attempt: {
+            id: ATTEMPT_ID, runId: RUN_ID, mode: 'analysis', version: 7,
+            leaseGeneration: 3, baseSha: BASE_SHA,
+          },
+          task: taskEnvelope(),
+          planPolicy: {
+            version: 1,
+            allowedEffects: ['repo_read'],
+            allowedCommandRefs: ['policy:inspect'],
+          },
+        });
+      }
+      if (url.endsWith('/model-reservations')) {
+        const body = JSON.parse(String(init?.body)) as { reservationId: string };
+        return Response.json({
+          reservationId: body.reservationId,
+          attemptId: ATTEMPT_ID,
+          runId: RUN_ID,
+          provider: 'delivery_loop_relay',
+          model: 'gpt-5.6-terra',
+          reservedTokens: 20_000,
+          reservedCostMicrousd: 50_000,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          overrideId: null,
+          disposition: 'created',
+        }, { status: 201 });
+      }
+      if (url.endsWith('/executor-model/grants')) {
+        expect(authorization).toBe(`Bearer ${INITIAL_TOKEN}`);
+        const body = JSON.parse(String(init?.body)) as { reservationId: string };
+        expect(body).toMatchObject({
+          executionId: 'execution-analysis-proxy-1',
+          expectedVersion: 7,
+          leaseGeneration: 3,
+        });
+        return Response.json({
+          grantId: 'model-grant-analysis-proxy',
+          reservationId: body.reservationId,
+          token: 'model-grant-analysis-proxy-token',
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          created: true,
+        }, { status: 201 });
+      }
+      if (url.endsWith('/events')) {
+        return Response.json({ accepted: true }, { status: 202 });
+      }
+      throw new Error(`unexpected executor proxy request: ${url}`);
+    };
+    await expect(runAnalysisAttempt({
+      environment,
+      fetch: fetchImplementation,
+      agent: {
+        usesMeteredModel: true,
+        admitsEachModelInvocation: true,
+        start: async (input) => {
+          await expect(input.onModelInvocation?.()).resolves.toBe('gpt-5.6-terra');
+          throw new CodexAnalysisAdapterError(
+            'process_nonzero_exit',
+            'diagnostic_root_cause',
+            'provider_output_schema_rejected',
+          );
+        },
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+      checkoutRepository: async (input) => { checkoutInput = input; },
+    })).rejects.toMatchObject({ name: 'AnalysisRunnerError' });
+    expect(requests[0]).toEqual({
+      url: `https://control.delivery-loop.internal/v1/attempts/${ATTEMPT_ID}/executor-exchange`,
+      authorization: 'Bearer executor-proxy',
+    });
+    expect(requests.some((entry) => entry.url.includes('oidc.actions.test'))).toBe(false);
+    expect(requests.filter((entry) => entry.url.endsWith('/executor-model/grants')))
+      .toHaveLength(1);
+    expect(checkoutInput).toMatchObject({
+      attemptId: ATTEMPT_ID,
+      executionId: 'execution-analysis-proxy-1',
+      attemptToken: INITIAL_TOKEN,
+      checkoutSha: BASE_SHA,
+    });
+  });
+
   it('keeps trusted context readable inside the read-only workspace and removes it before the final snapshot', async () => {
     const root = await mkdtemp(join(tmpdir(), 'delivery-loop-runner-test-'));
     const environment = await runnerEnvironment(root);

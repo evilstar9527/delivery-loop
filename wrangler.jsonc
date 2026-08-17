@@ -64,6 +64,10 @@
     {
       "binding": "RAW_AGENT_OBJECTS",
       "bucket_name": "delivery-loop-raw-agent-objects"
+    },
+    {
+      "binding": "EXECUTOR_PATCH_OBJECTS",
+      "bucket_name": "delivery-loop-executor-patches"
     }
   ],
   "queues": {

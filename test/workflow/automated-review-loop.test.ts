@@ -20,6 +20,7 @@ import {
   type GitHubDispatchEffects,
   type GitHubDispatchRequest,
 } from '../../src/outbox/github-dispatcher.js';
+import { deliverRoutedGitHubDispatch } from './routed-github-dispatch.js';
 import { ExecutionAttemptContextStore } from '../../src/storage/execution-attempt-store.js';
 import { AnalysisAttemptContextStore } from '../../src/storage/analysis-attempt-store.js';
 import { ExecutionHeadStore } from '../../src/storage/execution-head-store.js';
@@ -60,6 +61,25 @@ class FakeDispatch implements GitHubDispatchEffects {
       githubHeadSha: BASE_SHA,
     };
   }
+}
+
+async function deliverDispatch(
+  effects: FakeDispatch,
+  outboxId: string,
+  now = new Date(NOW),
+) {
+  const legacy = new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
+    allowedRepositories: ['example/delivery-target'],
+    controlPlaneUrl: 'https://control.delivery.test',
+    now: () => now,
+  });
+  return await deliverRoutedGitHubDispatch(
+    env.DB_CONTROL,
+    legacy,
+    effects,
+    outboxId,
+    now,
+  );
 }
 
 class FakeReviewRunClient implements GitHubRunExternalFactClient {
@@ -128,6 +148,7 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM plan_item_verifications'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_head_updates'),
     env.DB_CONTROL.prepare('DELETE FROM evidence'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
     env.DB_CONTROL.prepare('DELETE FROM github_write_credentials'),
     env.DB_CONTROL.prepare('DELETE FROM approvals'),
@@ -634,20 +655,19 @@ describe('automated review loop', () => {
       throw new Error('automated review replacement dispatch was not created');
     }
     const replacementEffects = new FakeDispatch();
-    const replacementProcessor = new GitHubDispatchOutboxProcessor(
-      env.DB_CONTROL,
+    expect(await deliverDispatch(
       replacementEffects,
-      {
-        allowedRepositories: ['example/delivery-target'],
-        controlPlaneUrl: 'https://control.delivery.test',
-        now: () => now,
-      },
-    );
-    expect(await replacementProcessor.deliver(replacementOutbox.outbox_id)).toBe('settled');
-    expect(await replacementProcessor.deliver(replacementOutbox.outbox_id)).toBe('settled');
+      replacementOutbox.outbox_id,
+      now,
+    )).toBe('settled');
+    expect(await deliverDispatch(
+      replacementEffects,
+      replacementOutbox.outbox_id,
+      now,
+    )).toBe('settled');
     expect(replacementEffects.requests).toBe(1);
     expect(replacementEffects.lastRequest).toEqual({
-      repository: 'example/delivery-target',
+      repository: 'example/delivery-loop',
       workflowFile: '.github/workflows/delivery-agent.yml',
       ref: 'refs/heads/main',
       inputs: {
@@ -778,11 +798,7 @@ describe('automated review loop', () => {
 
     const effects = new FakeDispatch();
     const redispatch = redispatches[0]!;
-    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
-      allowedRepositories: ['example/delivery-target'],
-      controlPlaneUrl: 'https://control.delivery.test',
-      now: () => now,
-    }).deliver(redispatch.outboxId)).toBe('settled');
+    expect(await deliverDispatch(effects, redispatch.outboxId, now)).toBe('settled');
     expect(effects.requests).toBe(1);
     expect(effects.lastRequest?.inputs.dispatch_generation).toBe('1');
 
@@ -833,11 +849,7 @@ describe('automated review loop', () => {
     const redispatch = await scheduler.redispatchRun(RUN_ID, now);
     if (redispatch === null) throw new Error('automated review redispatch was not created');
     const effects = new FakeDispatch();
-    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
-      allowedRepositories: ['example/delivery-target'],
-      controlPlaneUrl: 'https://control.delivery.test',
-      now: () => now,
-    }).deliver(redispatch.outboxId)).toBe('settled');
+    expect(await deliverDispatch(effects, redispatch.outboxId, now)).toBe('settled');
     expect(effects.lastRequest?.inputs.dispatch_generation).toBe('1');
 
     const starting = await env.DB_CONTROL.prepare(
@@ -986,11 +998,7 @@ describe('automated review loop', () => {
     ).first<{ outbox_id: string }>();
     if (reviewOutbox === null) throw new Error('automated review dispatch was not created');
     const reviewEffects = new FakeDispatch();
-    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, reviewEffects, {
-      allowedRepositories: ['example/delivery-target'],
-      controlPlaneUrl: 'https://control.delivery.test',
-      now: () => new Date(NOW),
-    }).deliver(reviewOutbox.outbox_id)).toBe('settled');
+    expect(await deliverDispatch(reviewEffects, reviewOutbox.outbox_id)).toBe('settled');
     expect(reviewEffects.requests).toBe(1);
 
     const authorization = await startReview(created[0]!.attemptId);
@@ -1064,11 +1072,7 @@ describe('automated review loop', () => {
       throw new Error('automated review fix dispatch was not created');
     }
     const effects = new FakeDispatch();
-    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
-      allowedRepositories: ['example/delivery-target'],
-      controlPlaneUrl: 'https://control.delivery.test',
-      now: () => new Date(NOW),
-    }).deliver(outbox.outbox_id)).toBe('settled');
+    expect(await deliverDispatch(effects, outbox.outbox_id)).toBe('settled');
     expect(effects.requests).toBe(1);
     await env.DB_CONTROL.prepare(
       `UPDATE attempts SET status = 'running', version = version + 1,
@@ -1177,11 +1181,7 @@ describe('automated review loop', () => {
     ]);
 
     const effects = new FakeDispatch();
-    expect(await new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
-      allowedRepositories: ['example/delivery-target'],
-      controlPlaneUrl: 'https://control.delivery.test',
-      now: () => new Date(NOW),
-    }).deliver(replacementOutboxId)).toBe('settled');
+    expect(await deliverDispatch(effects, replacementOutboxId)).toBe('settled');
     expect(effects.requests).toBe(1);
     await env.DB_CONTROL.prepare(
       `UPDATE attempts SET status = 'running', version = version + 1,

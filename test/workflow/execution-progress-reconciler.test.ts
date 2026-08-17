@@ -15,6 +15,14 @@ const BASE_SHA = 'a'.repeat(40);
 const HEAD_SHA = 'b'.repeat(40);
 const PLAN_DIGEST = `sha256:${'c'.repeat(64)}`;
 const TASK_OBJECT_KEY = 'tasks/execution-progress.json';
+const EXECUTOR_PROFILE_ID = 'github-actions-execution-progress-v1';
+const RECONCILER_OPTIONS = {
+  now: () => NOW,
+  executionRouting: {
+    controlPlaneUrl: 'https://control.example.test',
+    modelProfileId: 'codex-production',
+  },
+};
 
 const TASK: TaskEnvelope = {
   schemaVersion: '1',
@@ -62,6 +70,7 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
     env.DB_CONTROL.prepare('DELETE FROM evidence'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
     env.DB_CONTROL.prepare('DELETE FROM approvals'),
     env.DB_CONTROL.prepare('DELETE FROM plan_item_external_facts'),
     env.DB_CONTROL.prepare('DELETE FROM plan_item_evidence_kinds'),
@@ -77,6 +86,10 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_routes'),
+    env.DB_CONTROL.prepare(
+      `DELETE FROM executor_profiles WHERE profile_id <> 'legacy-github-actions-v1'`,
+    ),
     env.DB_CONTROL.prepare('DELETE FROM runs'),
     env.DB_CONTROL.prepare('DELETE FROM tasks'),
   ]);
@@ -90,6 +103,40 @@ async function seed(approval: 'approve' | 'reject' | 'none' = 'approve'): Promis
     customMetadata: { taskDigest },
   });
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO executor_profiles (
+         profile_id, schema_version, provider_kind, plugin_schema_version,
+         release_digest, configuration_json, capabilities_json, status,
+         created_at, activated_at, retired_at
+       ) VALUES (?, '1', 'github_actions', '1', ?, ?, ?, 'active', ?, ?, NULL)`,
+    ).bind(
+      EXECUTOR_PROFILE_ID,
+      'sha256:071a9c98264ad5059cd55a8bf4392c7804539df384e379e771b265607638e6cd',
+      JSON.stringify({
+        executorRepository: 'example/delivery-loop',
+        executorRef: 'refs/heads/main',
+      }),
+      JSON.stringify({
+        workspaceIsolation: 'provider_managed',
+        networkIsolation: 'provider_managed',
+        supportsCancellation: true,
+        supportsReconciliation: true,
+        supportsSemanticResume: true,
+        supportsPublisherRole: false,
+        maxExecutionSeconds: 21_600,
+      }),
+      now,
+      now,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO executor_routes (
+         route_id, repository, attempt_mode, execution_role, profile_id,
+         route_version, status, created_at, updated_at
+       ) VALUES (
+         'route-execution-progress-v1', 'example/delivery-target', 'implement',
+         'work', ?, 1, 'active', ?, ?
+       )`,
+    ).bind(EXECUTOR_PROFILE_ID, now, now),
     env.DB_CONTROL.prepare(
       `INSERT INTO tasks (
          task_id, source_system, tenant_key, source_task_key, task_revision,
@@ -467,9 +514,11 @@ describe('execution progress reconciliation', () => {
     'keeps the Run behind the human gate when repo_write approval is %s',
     async (approval) => {
       await seed(approval);
-      await new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
-        now: () => NOW,
-      }).reconcileBatch(25);
+      await new ExecutionProgressReconciler(
+        env.DB_CONTROL,
+        env.TASK_OBJECTS,
+        RECONCILER_OPTIONS,
+      ).reconcileBatch(25);
 
       expect(await env.DB_CONTROL.prepare(
         'SELECT state, version FROM runs WHERE run_id = ?',
@@ -478,7 +527,7 @@ describe('execution progress reconciliation', () => {
         `SELECT COUNT(*) AS count FROM attempts WHERE run_id = ? AND mode = 'implement'`,
       ).bind(RUN_ID).first()).toEqual({ count: 0 });
       expect(await env.DB_CONTROL.prepare(
-        `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'execution_dispatch'`,
+        `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'agent_execution_start'`,
       ).bind(RUN_ID).first()).toEqual({ count: 0 });
     },
   );
@@ -489,15 +538,17 @@ describe('execution progress reconciliation', () => {
       `UPDATE approvals SET expires_at = ? WHERE approval_id = 'approval-execution-progress'`,
     ).bind(new Date(NOW.getTime() - 1).toISOString()).run();
 
-    await new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
-      now: () => NOW,
-    }).reconcileBatch(25);
+    await new ExecutionProgressReconciler(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+      RECONCILER_OPTIONS,
+    ).reconcileBatch(25);
 
     expect(await env.DB_CONTROL.prepare(
       'SELECT state, version FROM runs WHERE run_id = ?',
     ).bind(RUN_ID).first()).toEqual({ state: 'awaiting_approval', version: 2 });
     expect(await env.DB_CONTROL.prepare(
-      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'execution_dispatch'`,
+      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'agent_execution_start'`,
     ).bind(RUN_ID).first()).toEqual({ count: 0 });
   });
 
@@ -506,7 +557,7 @@ describe('execution progress reconciliation', () => {
     const reconciler = () => new ExecutionProgressReconciler(
       env.DB_CONTROL,
       env.TASK_OBJECTS,
-      { now: () => NOW },
+      RECONCILER_OPTIONS,
     ).reconcileBatch(25);
 
     await Promise.all(Array.from({ length: 20 }, reconciler));
@@ -518,7 +569,7 @@ describe('execution progress reconciliation', () => {
       `SELECT COUNT(*) AS count FROM attempts WHERE run_id = ? AND mode = 'implement'`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
     expect(await env.DB_CONTROL.prepare(
-      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'execution_dispatch'`,
+      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'agent_execution_start'`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
   });
 
@@ -526,15 +577,17 @@ describe('execution progress reconciliation', () => {
     await seed('approve');
     await seedOlderUnschedulableRuns(5);
 
-    await new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
-      now: () => NOW,
-    }).reconcileBatch(5);
+    await new ExecutionProgressReconciler(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+      RECONCILER_OPTIONS,
+    ).reconcileBatch(5);
 
     expect(await env.DB_CONTROL.prepare(
       `SELECT COUNT(*) AS count FROM attempts WHERE run_id = ? AND mode = 'implement'`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
     expect(await env.DB_CONTROL.prepare(
-      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'execution_dispatch'`,
+      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'agent_execution_start'`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
   });
 
@@ -565,7 +618,7 @@ describe('execution progress reconciliation', () => {
     await expect(new ExecutionProgressReconciler(
       env.DB_CONTROL,
       env.TASK_OBJECTS,
-      { now: () => NOW },
+      RECONCILER_OPTIONS,
     ).reconcileScheduling(1)).resolves.toEqual({
       activatedRuns: 1,
       scheduledAttempts: 1,
@@ -591,9 +644,11 @@ describe('execution progress reconciliation', () => {
          WHERE plan_id = ? AND item_id = 'change' AND status = 'pending'`,
       ).bind(NOW.toISOString(), PLAN_ID),
     ]);
-    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
-      now: () => NOW,
-    });
+    const reconciler = new ExecutionProgressReconciler(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+      RECONCILER_OPTIONS,
+    );
 
     expect(await reconciler.reconcileReadyAttempts(1)).toBe(1);
     expect(await reconciler.reconcileReadyAttempts(1)).toBe(0);
@@ -601,15 +656,17 @@ describe('execution progress reconciliation', () => {
       `SELECT COUNT(*) AS count FROM attempts WHERE run_id = ? AND mode = 'implement'`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
     expect(await env.DB_CONTROL.prepare(
-      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'execution_dispatch'`,
+      `SELECT COUNT(*) AS count FROM outbox WHERE run_id = ? AND kind = 'agent_execution_start'`,
     ).bind(RUN_ID).first()).toEqual({ count: 1 });
   });
 
   it('verifies a successful Action and creates one durable Draft PR publication', async () => {
     await seed('approve');
-    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
-      now: () => NOW,
-    });
+    const reconciler = new ExecutionProgressReconciler(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+      RECONCILER_OPTIONS,
+    );
     await reconciler.reconcileBatch(25);
     const attempt = await env.DB_CONTROL.prepare(
       `SELECT attempt_id FROM attempts WHERE run_id = ? AND mode = 'implement'`,
@@ -618,9 +675,11 @@ describe('execution progress reconciliation', () => {
     await simulateSuccessfulAction(attempt.attempt_id);
 
     await Promise.all(Array.from({ length: 20 }, async () => {
-      await new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
-        now: () => NOW,
-      }).reconcileBatch(25);
+      await new ExecutionProgressReconciler(
+        env.DB_CONTROL,
+        env.TASK_OBJECTS,
+        RECONCILER_OPTIONS,
+      ).reconcileBatch(25);
     }));
 
     expect(await env.DB_CONTROL.prepare(
@@ -648,9 +707,11 @@ describe('execution progress reconciliation', () => {
 
   it('resumes Draft PR finalization after verification survived an interrupted preparation', async () => {
     await seed('approve');
-    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
-      now: () => NOW,
-    });
+    const reconciler = new ExecutionProgressReconciler(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+      RECONCILER_OPTIONS,
+    );
     await reconciler.reconcileScheduling(25);
     const attempt = await env.DB_CONTROL.prepare(
       `SELECT attempt_id FROM attempts WHERE run_id = ? AND mode = 'implement'`,
@@ -689,9 +750,11 @@ describe('execution progress reconciliation', () => {
 
   it('projects a successful Action before opening the R2-backed Draft path', async () => {
     await seed('approve');
-    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
-      now: () => NOW,
-    });
+    const reconciler = new ExecutionProgressReconciler(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+      RECONCILER_OPTIONS,
+    );
     await reconciler.reconcileScheduling(25);
     const attempt = await env.DB_CONTROL.prepare(
       `SELECT attempt_id FROM attempts WHERE run_id = ? AND mode = 'implement'`,
@@ -718,9 +781,11 @@ describe('execution progress reconciliation', () => {
 
   it('schedules an already prepared Draft without reopening the Task object', async () => {
     await seed('approve');
-    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
-      now: () => NOW,
-    });
+    const reconciler = new ExecutionProgressReconciler(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+      RECONCILER_OPTIONS,
+    );
     await reconciler.reconcileScheduling(25);
     const attempt = await env.DB_CONTROL.prepare(
       `SELECT attempt_id FROM attempts WHERE run_id = ? AND mode = 'implement'`,
@@ -759,9 +824,11 @@ describe('execution progress reconciliation', () => {
 
   it('does not let an older expired approval starve a recoverable finalization', async () => {
     await seed('approve');
-    const reconciler = new ExecutionProgressReconciler(env.DB_CONTROL, env.TASK_OBJECTS, {
-      now: () => NOW,
-    });
+    const reconciler = new ExecutionProgressReconciler(
+      env.DB_CONTROL,
+      env.TASK_OBJECTS,
+      RECONCILER_OPTIONS,
+    );
     await reconciler.reconcileScheduling(25);
     const attempt = await env.DB_CONTROL.prepare(
       `SELECT attempt_id FROM attempts WHERE run_id = ? AND mode = 'implement'`,

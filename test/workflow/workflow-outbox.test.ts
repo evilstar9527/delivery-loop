@@ -119,6 +119,7 @@ beforeEach(async () => {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM workflow_signals'),
     env.DB_CONTROL.prepare('DELETE FROM idempotency_keys'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
     env.DB_CONTROL.prepare('DELETE FROM runs'),

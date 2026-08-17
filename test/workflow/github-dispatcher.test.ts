@@ -67,8 +67,10 @@ async function seedAnalysisDispatch(repository = REPOSITORY): Promise<void> {
     env.DB_CONTROL.prepare(
       `INSERT INTO attempts (
          attempt_id, run_id, ordinal, mode, status, base_sha, repository,
-         workflow_ref, version, lease_generation, created_at, updated_at
-       ) VALUES (?, ?, 1, 'analysis', 'pending', ?, ?, ?, 0, 0, ?, ?)`,
+         workflow_ref, executor_profile_id,
+         version, lease_generation, created_at, updated_at
+       ) VALUES (?, ?, 1, 'analysis', 'pending', ?, ?, ?,
+                 'legacy-github-actions-v1', 0, 0, ?, ?)`,
     ).bind(
       ATTEMPT_ID,
       RUN_ID,
@@ -117,10 +119,12 @@ async function seedInitialExecutionDispatch(): Promise<void> {
     env.DB_CONTROL.prepare(
       `INSERT INTO attempts (
          attempt_id, run_id, ordinal, mode, status, base_sha, repository,
-         workflow_ref, plan_id, plan_version, plan_item_id, claimed_progress_version,
+         workflow_ref, executor_profile_id,
+         plan_id, plan_version, plan_item_id, claimed_progress_version,
          version, lease_generation, created_at, updated_at
        ) VALUES ('attempt-initial-execution', ?, 2, 'implement', 'pending', ?, ?,
-                 ?, 'plan-initial-execution', 1, 'change', 1, 0, 0, ?, ?)`,
+                 ?, 'legacy-github-actions-v1',
+                 'plan-initial-execution', 1, 'change', 1, 0, 0, ?, ?)`,
     ).bind(
       RUN_ID,
       BASE_SHA,
@@ -198,6 +202,7 @@ beforeEach(async () => {
     env.DB_CONTROL.prepare('DELETE FROM execution_plan_assumptions'),
     env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
     env.DB_CONTROL.prepare('DELETE FROM idempotency_keys'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
@@ -208,6 +213,67 @@ beforeEach(async () => {
 });
 
 describe('GitHub App workflow dispatcher contract', () => {
+  it('freezes an unrouted compatibility outbox through the active semantic route', async () => {
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare('DELETE FROM outbox WHERE outbox_id = ?').bind(OUTBOX_ID),
+      env.DB_CONTROL.prepare('DELETE FROM attempts WHERE attempt_id = ?').bind(ATTEMPT_ID),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, version, lease_generation, created_at, updated_at
+         ) VALUES (?, ?, 1, 'analysis', 'pending', ?, ?, ?, 0, 0, ?, ?)`,
+      ).bind(
+        ATTEMPT_ID,
+        RUN_ID,
+        BASE_SHA,
+        REPOSITORY,
+        `${REPOSITORY}/.github/workflows/delivery-agent.yml@refs/heads/main`,
+        NOW.toISOString(),
+        NOW.toISOString(),
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         ) VALUES (?, ?, 'analysis_dispatch', 'github_actions', ?, ?, 'pending', ?, ?)`,
+      ).bind(
+        OUTBOX_ID,
+        RUN_ID,
+        `d1://attempts/${ATTEMPT_ID}`,
+        `analysis-dispatch:${RUN_ID}:1`,
+        NOW.toISOString(),
+        NOW.toISOString(),
+      ),
+    ]);
+    const effects = new FakeGitHubDispatchEffects();
+
+    await expect(processor(effects).deliver(OUTBOX_ID)).resolves.toBe('settled');
+
+    expect(effects.requests).toHaveLength(0);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT executor_profile_id, executor_route_version
+       FROM attempts WHERE attempt_id = ?`,
+    ).bind(ATTEMPT_ID).first()).toEqual({
+      executor_profile_id: 'test-github-actions-route-v1',
+      executor_route_version: 1,
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT execution_id, status FROM attempt_execution_instances
+       WHERE attempt_id = ?`,
+    ).bind(ATTEMPT_ID).first()).toEqual({
+      execution_id: `execution-work-${ATTEMPT_ID}`,
+      status: 'pending',
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT kind, destination, delivery_state FROM outbox
+       WHERE dedupe_key = ?`,
+    ).bind(`agent-executor:execution-work-${ATTEMPT_ID}`).first()).toEqual({
+      kind: 'agent_execution_start',
+      destination: 'agent_executor',
+      delivery_state: 'pending',
+    });
+  });
+
   it('invokes the default runtime fetch through globalThis instead of the client receiver', async () => {
     const usedGlobalReceiver: boolean[] = [];
     const fetchImplementation = vi.fn(function (this: unknown) {

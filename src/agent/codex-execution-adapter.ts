@@ -7,8 +7,15 @@ import {
 } from './command-runtime.js';
 import type { CodexModelUsage } from '../domain/quota.js';
 import { CodexUsageAccumulator } from './codex-usage.js';
-import { codexProviderProfileArguments } from './codex-provider-profile.js';
-import { normalizeProviderBaseUrl } from './provider-base-url.js';
+import {
+  codexProviderEnvironment,
+  codexProviderProfileArguments,
+  type CodexProviderApiKey,
+} from './codex-provider-profile.js';
+import {
+  normalizeExecutorModelProviderBaseUrl,
+  normalizeProviderBaseUrl,
+} from './provider-base-url.js';
 import { SecretScanner } from '../security/redaction.js';
 import {
   CodexExecutionActivityAccumulator,
@@ -177,6 +184,8 @@ export interface CodexExecutionAdapterOptions {
   command?: string;
   execute?: CommandExecutor;
   providerBaseUrl?: string;
+  executorModelProviderBaseUrl?: string;
+  providerApiKey?: CodexProviderApiKey;
 }
 
 function missingToolActivityReason(
@@ -375,11 +384,21 @@ export class CodexExecutionAdapter implements ExecutionAgent {
   private readonly command: string;
   private readonly execute: CommandExecutor;
   private readonly providerBaseUrl: string | undefined;
+  private readonly providerApiKey: CodexProviderApiKey | undefined;
 
   constructor(options: CodexExecutionAdapterOptions = {}) {
     this.command = options.command ?? 'codex';
     this.execute = options.execute ?? executeCommand;
-    this.providerBaseUrl = normalizeProviderBaseUrl(options.providerBaseUrl);
+    if (options.providerBaseUrl !== undefined && options.executorModelProviderBaseUrl !== undefined) {
+      throw new Error('Codex provider configuration is ambiguous');
+    }
+    this.providerBaseUrl = options.executorModelProviderBaseUrl === undefined
+      ? normalizeProviderBaseUrl(options.providerBaseUrl)
+      : normalizeExecutorModelProviderBaseUrl(options.executorModelProviderBaseUrl);
+    if (typeof options.providerApiKey === 'string') {
+      codexProviderEnvironment(options.providerApiKey);
+    }
+    this.providerApiKey = options.providerApiKey;
   }
 
   async apply(input: CodexExecutionInput): Promise<ExecutionAgentDecision> {
@@ -490,6 +509,10 @@ export class CodexExecutionAdapter implements ExecutionAgent {
           input.repairCommand,
         ),
         timeoutMs: input.timeoutMs,
+        ...(() => {
+          const environment = codexProviderEnvironment(this.providerApiKey);
+          return environment === undefined ? {} : { environment };
+        })(),
         ...(input.model === undefined && input.onTranscriptLine === undefined
           ? {}
           : {

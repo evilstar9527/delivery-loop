@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { canonicalSha256 } from '../domain/digest.js';
+import {
+  AttemptExecutionRouter,
+  type AttemptExecutionRoutingOptions,
+  type RoutedAttemptExecution,
+} from './attempt-execution-router.js';
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 
@@ -70,6 +75,7 @@ interface ItemClaimContextRow extends ActivePlanRow {
   base_sha: string | null;
   repository: string;
   base_branch: string;
+  task_digest: string;
   has_deploy_effect: number;
 }
 
@@ -98,7 +104,10 @@ function parseInput<T>(schema: z.ZodType<T>, input: unknown): T {
  * so an Agent can report an outcome but cannot set ready/skipped/passed itself.
  */
 export class PlanItemAttemptStore {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly executionRouting?: AttemptExecutionRoutingOptions,
+  ) {}
 
   async promoteReadyItems(
     rawInput: unknown,
@@ -163,7 +172,6 @@ export class PlanItemAttemptStore {
     if (context.base_sha === null) throw new PlanItemAttemptError('state_conflict');
 
     const attemptId = await this.claimAttemptId(context.plan_id, input);
-    const outboxId = `outbox_execution_${attemptId}`;
     const existing = await this.existingClaim(attemptId, input);
     if (existing !== null) return this.claimResult(existing, false);
 
@@ -179,20 +187,41 @@ export class PlanItemAttemptStore {
     }
 
     const mode = context.has_deploy_effect === 1 ? 'deploy' : 'implement';
-    const workflowRef = `${context.repository}/.github/workflows/delivery-agent.yml@refs/heads/${context.base_branch}`;
     const nowIso = now.toISOString();
+    let routed: RoutedAttemptExecution | undefined;
+    let persistence: D1PreparedStatement[] = [];
+    if (mode === 'implement') {
+      if (this.executionRouting === undefined) {
+        throw new PlanItemAttemptError('state_conflict');
+      }
+      const router = new AttemptExecutionRouter(this.db, this.executionRouting);
+      routed = await router.route({
+        runId: input.runId,
+        attemptId,
+        mode,
+        taskDigest: context.task_digest,
+        repository: context.repository,
+        baseSha: context.base_sha,
+        checkoutSha: context.base_sha,
+        targetBaseBranch: context.base_branch,
+        planVersion: input.planVersion,
+        planItemId: input.planItemId,
+      });
+      persistence = router.persistenceStatements(routed, nowIso);
+    }
     const results = await this.db.batch([
       this.db
         .prepare(
           `INSERT INTO attempts (
              attempt_id, run_id, ordinal, mode, status, base_sha, repository,
-             workflow_ref, plan_id, plan_version, plan_item_id,
+             workflow_ref, executor_profile_id, executor_route_version,
+             plan_id, plan_version, plan_item_id,
              claimed_progress_version, version, lease_generation, created_at, updated_at
            )
            SELECT ?, runs.run_id,
                   (SELECT COALESCE(MAX(existing.ordinal), 0) + 1
                    FROM attempts AS existing WHERE existing.run_id = runs.run_id),
-                  ?, 'pending', runs.base_sha, tasks.target_repository, ?,
+                  ?, 'pending', runs.base_sha, tasks.target_repository, ?, ?, ?,
                   execution_plans.plan_id, execution_plans.plan_version,
                   plan_items.item_id, ?, 0, 0, ?, ?
            FROM runs
@@ -211,6 +240,16 @@ export class PlanItemAttemptStore {
              AND plan_item_progress.status = 'ready'
              AND plan_item_progress.version = ?
              AND plan_item_progress.active_attempt_id IS NULL
+             AND (
+               ? = 'deploy'
+               OR EXISTS (
+                 SELECT 1 FROM executor_routes
+                 WHERE route_id = ? AND profile_id = ? AND route_version = ?
+                   AND repository = tasks.target_repository
+                   AND attempt_mode = 'implement' AND execution_role = 'work'
+                   AND status = 'active'
+               )
+             )
              AND (
                NOT EXISTS (
                  SELECT 1 FROM plan_item_effects
@@ -268,7 +307,10 @@ export class PlanItemAttemptStore {
         .bind(
           attemptId,
           mode,
-          workflowRef,
+          routed?.attemptWorkflowRef ??
+            `${context.repository}/.github/workflows/delivery-agent.yml@refs/heads/${context.base_branch}`,
+          routed?.profileId ?? null,
+          routed?.routeVersion ?? null,
           input.expectedProgressVersion,
           nowIso,
           nowIso,
@@ -277,6 +319,10 @@ export class PlanItemAttemptStore {
           input.planVersion,
           input.planItemId,
           input.expectedProgressVersion,
+          mode,
+          routed?.routeId ?? '',
+          routed?.profileId ?? '',
+          routed?.routeVersion ?? 0,
           nowIso,
         ),
       this.db
@@ -322,39 +368,7 @@ export class PlanItemAttemptStore {
           input.planVersion,
           input.expectedProgressVersion,
         ),
-      this.db
-        .prepare(
-          `INSERT INTO outbox (
-             outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
-             delivery_state, created_at, updated_at
-           )
-           SELECT ?, attempts.run_id, 'execution_dispatch', 'github_actions', ?, ?,
-                  'pending', ?, ?
-           FROM attempts
-           JOIN plan_item_progress
-             ON plan_item_progress.plan_id = attempts.plan_id
-            AND plan_item_progress.item_id = attempts.plan_item_id
-           WHERE attempts.attempt_id = ? AND attempts.run_id = ?
-             AND attempts.status = 'pending'
-             AND attempts.mode = 'implement'
-             AND attempts.plan_version = ? AND attempts.plan_item_id = ?
-             AND attempts.claimed_progress_version = ?
-             AND plan_item_progress.status = 'in_progress'
-             AND plan_item_progress.active_attempt_id = attempts.attempt_id
-           ON CONFLICT DO NOTHING`,
-        )
-        .bind(
-          outboxId,
-          `d1://attempts/${attemptId}`,
-          `execution-dispatch:${attemptId}`,
-          nowIso,
-          nowIso,
-          attemptId,
-          input.runId,
-          input.planVersion,
-          input.planItemId,
-          input.expectedProgressVersion,
-        ),
+      ...persistence,
     ]);
 
     const claimed = await this.existingClaim(attemptId, input);
@@ -389,6 +403,7 @@ export class PlanItemAttemptStore {
                 plan_item_progress.active_attempt_id,
                 tasks.target_repository AS repository,
                 tasks.target_base_branch AS base_branch,
+                tasks.task_digest,
                 EXISTS (
                   SELECT 1 FROM plan_item_effects
                   WHERE plan_item_effects.plan_id = plan_items.plan_id
@@ -477,8 +492,16 @@ export class PlanItemAttemptStore {
           AND plan_item_progress.item_id = attempts.plan_item_id
          LEFT JOIN outbox
            ON outbox.run_id = attempts.run_id
-          AND outbox.kind = 'execution_dispatch'
-          AND outbox.dedupe_key = 'execution-dispatch:' || attempts.attempt_id
+          AND (
+            (outbox.kind = 'agent_execution_start'
+              AND outbox.destination = 'agent_executor'
+              AND outbox.dedupe_key =
+                  'agent-executor:execution-work-' || attempts.attempt_id)
+            OR
+            (outbox.kind = 'execution_dispatch'
+              AND outbox.destination = 'github_actions'
+              AND outbox.dedupe_key = 'execution-dispatch:' || attempts.attempt_id)
+          )
          WHERE attempts.attempt_id = ?
            AND attempts.run_id = ?
            AND attempts.plan_version = ?

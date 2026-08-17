@@ -5,7 +5,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { canonicalSha256 } from '../../src/domain/digest.js';
 import { taskRevisionDigest, type TaskEnvelope } from '../../src/domain/task.js';
 import { EXECUTION_TOOL_ACTIONS } from '../../src/domain/tool-bridge.js';
-import { GitHubDispatchOutboxProcessor } from '../../src/outbox/github-dispatcher.js';
+import {
+  GitHubDispatchOutboxProcessor,
+  type GitHubDispatchEffects,
+} from '../../src/outbox/github-dispatcher.js';
+import { deliverRoutedGitHubDispatch } from './routed-github-dispatch.js';
 import { BaseRebaseAttemptReconciler } from '../../src/reconciliation/base-rebase-attempt-reconciler.js';
 import { repositoryAttemptBranch } from '../../src/runner/git-repository-writer.js';
 import { ExecutionAttemptContextStore } from '../../src/storage/execution-attempt-store.js';
@@ -84,6 +88,7 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM github_write_credentials'),
     env.DB_CONTROL.prepare('DELETE FROM evidence'),
     env.DB_CONTROL.prepare('DELETE FROM approvals'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
@@ -432,7 +437,7 @@ describe('base-only Plan revision rebase Attempt', () => {
     });
 
     const calls: unknown[] = [];
-    const processor = new GitHubDispatchOutboxProcessor(env.DB_CONTROL, {
+    const effects: GitHubDispatchEffects = {
       ensureDispatch: async (request) => {
         calls.push(request);
         return {
@@ -441,7 +446,8 @@ describe('base-only Plan revision rebase Attempt', () => {
           githubHeadSha: NEW_BASE_SHA,
         };
       },
-    }, {
+    };
+    const processor = new GitHubDispatchOutboxProcessor(env.DB_CONTROL, effects, {
       allowedRepositories: [REPOSITORY],
       controlPlaneUrl: 'https://control.delivery.test',
       now: () => new Date(NOW),
@@ -452,9 +458,15 @@ describe('base-only Plan revision rebase Attempt', () => {
        WHERE kind = 'execution_dispatch' AND payload_ref = ?`,
     ).bind(`d1://attempts/${attemptId}`).first<{ outbox_id: string }>();
     expect(outbox).not.toBeNull();
-    expect(await processor.deliver(outbox!.outbox_id)).toBe('settled');
+    expect(await deliverRoutedGitHubDispatch(
+      env.DB_CONTROL,
+      processor,
+      effects,
+      outbox!.outbox_id,
+      new Date(NOW),
+    )).toBe('settled');
     expect(calls).toMatchObject([{
-      repository: REPOSITORY,
+      repository: 'example/delivery-loop',
       ref: 'refs/heads/main',
       inputs: {
         attempt_id: attemptId,

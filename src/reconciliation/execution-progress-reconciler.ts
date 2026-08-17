@@ -2,6 +2,8 @@ import {
   PlanItemAttemptError,
   PlanItemAttemptStore,
 } from '../storage/plan-item-attempt-store.js';
+import type { AttemptExecutionRoutingOptions } from
+  '../storage/attempt-execution-router.js';
 import {
   PlanItemEvidenceVerificationError,
   PlanItemEvidenceVerifier,
@@ -71,6 +73,7 @@ export interface ExecutionFinalizationResult {
 
 export interface ExecutionProgressReconcilerOptions {
   now?: () => Date;
+  executionRouting?: AttemptExecutionRoutingOptions;
 }
 
 /**
@@ -82,6 +85,7 @@ export interface ExecutionProgressReconcilerOptions {
  */
 export class ExecutionProgressReconciler {
   private readonly now: () => Date;
+  private readonly executionRouting: AttemptExecutionRoutingOptions | undefined;
 
   constructor(
     private readonly db: D1Database,
@@ -89,6 +93,7 @@ export class ExecutionProgressReconciler {
     options: ExecutionProgressReconcilerOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.executionRouting = options.executionRouting;
   }
 
   async reconcileBatch(limit = 25): Promise<ExecutionProgressReconciliationResult> {
@@ -468,7 +473,7 @@ export class ExecutionProgressReconciler {
        ORDER BY runs.updated_at, runs.run_id LIMIT ?`,
     ).bind(now.toISOString(), limit).all<RunPlanRow>();
     let scheduled = 0;
-    const store = new PlanItemAttemptStore(this.db);
+    const store = new PlanItemAttemptStore(this.db, this.executionRouting);
     for (const run of runs.results) {
       try {
         await store.promoteReadyItems({

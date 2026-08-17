@@ -14,6 +14,15 @@ const PLAN_ID = 'plan-plan-item-claim';
 const BASE_SHA = 'a'.repeat(40);
 const HEAD_SHA = 'd'.repeat(40);
 const PLAN_DIGEST = `sha256:${'b'.repeat(64)}`;
+const EXECUTOR_PROFILE_ID = 'cloudflare-plan-item-work-v1';
+const EXECUTOR_RELEASE_DIGEST = `sha256:${'e'.repeat(64)}`;
+
+function attemptStore(): PlanItemAttemptStore {
+  return new PlanItemAttemptStore(env.DB_CONTROL, {
+    controlPlaneUrl: 'https://control.example.test',
+    modelProfileId: 'codex-production',
+  });
+}
 
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
@@ -36,9 +45,14 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM execution_plan_assumptions'),
     env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
     env.DB_CONTROL.prepare('DELETE FROM idempotency_keys'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_routes'),
+    env.DB_CONTROL.prepare(
+      `DELETE FROM executor_profiles WHERE profile_id <> 'legacy-github-actions-v1'`,
+    ),
     env.DB_CONTROL.prepare('DELETE FROM runs'),
     env.DB_CONTROL.prepare('DELETE FROM tasks'),
   ]);
@@ -47,6 +61,40 @@ async function reset(): Promise<void> {
 async function seedPlan(): Promise<void> {
   const now = NOW.toISOString();
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare(
+      `INSERT INTO executor_profiles (
+         profile_id, schema_version, provider_kind, plugin_schema_version,
+         release_digest, configuration_json, capabilities_json, status,
+         created_at, activated_at, retired_at
+       ) VALUES (?, '1', 'cloudflare_sandbox', '1', ?, ?, ?, 'active', ?, ?, NULL)`,
+    ).bind(
+      EXECUTOR_PROFILE_ID,
+      EXECUTOR_RELEASE_DIGEST,
+      JSON.stringify({
+        workerOrigin: 'https://agent-executor.example.test',
+        imageRef: 'registry.example/work@sha256:immutable',
+      }),
+      JSON.stringify({
+        workspaceIsolation: 'ephemeral',
+        networkIsolation: 'default_deny',
+        supportsCancellation: true,
+        supportsReconciliation: true,
+        supportsSemanticResume: true,
+        supportsPublisherRole: true,
+        maxExecutionSeconds: 3600,
+      }),
+      now,
+      now,
+    ),
+    env.DB_CONTROL.prepare(
+      `INSERT INTO executor_routes (
+         route_id, repository, attempt_mode, execution_role, profile_id,
+         route_version, status, created_at, updated_at
+       ) VALUES (
+         'route-example-implement-v1', 'example/repo', 'implement', 'work', ?,
+         1, 'active', ?, ?
+       )`,
+    ).bind(EXECUTOR_PROFILE_ID, now, now),
     env.DB_CONTROL.prepare(
       `INSERT INTO tasks (
          task_id, source_system, tenant_key, source_task_key, task_revision,
@@ -141,7 +189,7 @@ function claimInput(itemId = 'investigate', progressVersion = 1): Record<string,
 
 describe('Plan Item readiness and Attempt claims', () => {
   it('promotes only dependency-satisfied items and converges 20 claims to one Attempt', async () => {
-    const store = new PlanItemAttemptStore(env.DB_CONTROL);
+    const store = attemptStore();
     const promotion = await store.promoteReadyItems(
       { runId: RUN_ID, expectedRunVersion: 4, planVersion: 1 },
       NOW,
@@ -171,7 +219,7 @@ describe('Plan Item readiness and Attempt claims', () => {
       ordinal: 2,
       mode: 'implement',
     });
-    expect(claims[0]?.outboxId).toBe(`outbox_execution_${claims[0]?.attemptId}`);
+    expect(claims[0]?.outboxId).toBe(`outbox-agent-${claims[0]?.attemptId}`);
 
     const progress = await env.DB_CONTROL.prepare(
       `SELECT status, version, active_attempt_id FROM plan_item_progress
@@ -204,14 +252,23 @@ describe('Plan Item readiness and Attempt claims', () => {
     });
     expect(await env.DB_CONTROL.prepare(
       `SELECT outbox_id, kind, destination, payload_ref, dedupe_key, delivery_state
-       FROM outbox WHERE run_id = ? AND kind = 'execution_dispatch'`,
+       FROM outbox WHERE run_id = ? AND kind = 'agent_execution_start'`,
     ).bind(RUN_ID).first()).toEqual({
-      outbox_id: `outbox_execution_${claims[0]?.attemptId}`,
-      kind: 'execution_dispatch',
-      destination: 'github_actions',
-      payload_ref: `d1://attempts/${claims[0]?.attemptId}`,
-      dedupe_key: `execution-dispatch:${claims[0]?.attemptId}`,
+      outbox_id: `outbox-agent-${claims[0]?.attemptId}`,
+      kind: 'agent_execution_start',
+      destination: 'agent_executor',
+      payload_ref: `d1://attempt-executions/execution-work-${claims[0]?.attemptId}`,
+      dedupe_key: `agent-executor:execution-work-${claims[0]?.attemptId}`,
       delivery_state: 'pending',
+    });
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT execution_id, executor_profile_id, executor_route_version, status
+       FROM attempt_execution_instances WHERE attempt_id = ?`,
+    ).bind(claims[0]?.attemptId).first()).toEqual({
+      execution_id: `execution-work-${claims[0]?.attemptId}`,
+      executor_profile_id: EXECUTOR_PROFILE_ID,
+      executor_route_version: 1,
+      status: 'pending',
     });
   });
 
@@ -220,7 +277,7 @@ describe('Plan Item readiness and Attempt claims', () => {
       `UPDATE plan_item_progress SET status = 'ready', version = 1
        WHERE plan_id = ? AND item_id = 'change'`,
     ).bind(PLAN_ID).run();
-    const store = new PlanItemAttemptStore(env.DB_CONTROL);
+    const store = attemptStore();
     await expect(store.claimReadyItem(claimInput('change'), NOW)).rejects.toMatchObject({
       name: PlanItemAttemptError.name,
       code: 'dependency_incomplete',
@@ -231,7 +288,7 @@ describe('Plan Item readiness and Attempt claims', () => {
   });
 
   it('requires ready/current active context and rejects caller-supplied state mutations', async () => {
-    const store = new PlanItemAttemptStore(env.DB_CONTROL);
+    const store = attemptStore();
     await expect(store.claimReadyItem(claimInput(), NOW)).rejects.toMatchObject({
       code: 'item_not_ready',
     });
@@ -258,7 +315,7 @@ describe('Plan Item readiness and Attempt claims', () => {
   });
 
   it('does not promote downstream investigation or verification until every dependency passed', async () => {
-    const store = new PlanItemAttemptStore(env.DB_CONTROL);
+    const store = attemptStore();
     await store.promoteReadyItems(
       { runId: RUN_ID, expectedRunVersion: 4, planVersion: 1 },
       NOW,
@@ -344,7 +401,7 @@ describe('Plan Item readiness and Attempt claims', () => {
   });
 
   it('rejects an Agent completion request that tries to self-report Item passed', async () => {
-    const store = new PlanItemAttemptStore(env.DB_CONTROL);
+    const store = attemptStore();
     await store.promoteReadyItems(
       { runId: RUN_ID, expectedRunVersion: 4, planVersion: 1 },
       NOW,
