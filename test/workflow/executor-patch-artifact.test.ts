@@ -878,6 +878,28 @@ describe('executor patch R2 handoff', () => {
     expect(upstream[0]!.headers.get('authorization')).not.toContain('publisher-http-token');
     expect(upstream[1]!.headers.get('authorization')).toBe(basic);
     expect(upstream[2]!.headers.get('authorization')).toBe(basic);
+    // A shallow (`--depth=1`) checkout prefixes its push with one or more
+    // `shallow <oid>` pkt-lines before the ref-update command. The proxy must
+    // skip them and still accept the single authorized branch update.
+    const shallowLine = `shallow ${'d'.repeat(40)}\n`;
+    const shallowPacket =
+      `${(Buffer.byteLength(shallowLine) + 4).toString(16).padStart(4, '0')}${shallowLine}` +
+      `${(Buffer.byteLength(command) + 4).toString(16).padStart(4, '0')}${command}` +
+      '0000PACK';
+    const shallowPush = await api.fetch(new Request(
+      `https://control.test/v1/attempts/${ATTEMPT_ID}/executor-publisher/repository.git/` +
+        'git-receive-pack',
+      {
+        method: 'POST',
+        headers: {
+          authorization: basic,
+          'content-type': 'application/x-git-receive-pack-request',
+          'x-delivery-execution-id': scheduled.publisherExecutionId,
+        },
+        body: shallowPacket,
+      },
+    ), env);
+    expect(shallowPush.status).toBe(200);
     const wrongBranch = packet.replace(
       `refs/heads/${scheduled.targetBranch}`,
       'refs/heads/agent/other/branch',
@@ -896,7 +918,9 @@ describe('executor patch R2 handoff', () => {
       },
     ), env);
     expect(rejectedPush.status).toBe(400);
-    expect(upstream).toHaveLength(3);
+    // 3 original forwards + the shallow-prefixed push (the wrong-branch push is
+    // rejected before any upstream forward).
+    expect(upstream).toHaveLength(4);
 
     const head = await api.fetch(new Request(
       `https://control.test/v1/attempts/${ATTEMPT_ID}/executor-publisher/head`,

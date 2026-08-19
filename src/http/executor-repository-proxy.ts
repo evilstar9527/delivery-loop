@@ -114,40 +114,70 @@ export function publisherGitToken(authorization: string | undefined): string | n
     : null;
 }
 
+const SHALLOW_LINE = /^shallow [0-9a-f]{40}$/;
+
+/**
+ * Validate a git receive-pack request restricts the push to exactly the one
+ * authorized branch update. The publisher checks out with `--depth=1`, so a
+ * shallow clone prefixes its update with one or more `shallow <oid>` pkt-lines
+ * before the ref-update command; those are legitimate protocol and must be
+ * skipped, but everything else (exactly one command, to the authorized ref,
+ * from the expected old-oid, terminated by a flush) stays strict.
+ */
 function assertPublisherReceivePack(
   body: ArrayBuffer,
   authorization: ExecutorPublisherRepositoryAuthorization,
 ): void {
   const bytes = new Uint8Array(body);
-  if (bytes.byteLength < 4) throw new ExecutorRepositoryProxyError('invalid_request');
-  const header = new TextDecoder('ascii', { fatal: true }).decode(bytes.slice(0, 4));
-  if (!/^[0-9a-f]{4}$/.test(header)) {
-    throw new ExecutorRepositoryProxyError('invalid_request');
-  }
-  const packetLength = Number.parseInt(header, 16);
-  if (packetLength < 4 || packetLength > bytes.byteLength) {
-    throw new ExecutorRepositoryProxyError('invalid_request');
-  }
-  let command: string;
-  try {
-    command = new TextDecoder('utf-8', { fatal: true })
-      .decode(bytes.slice(4, packetLength))
-      .split('\0', 1)[0]!
-      .trimEnd();
-  } catch {
-    throw new ExecutorRepositoryProxyError('invalid_request');
-  }
-  const fields = command.split(' ');
   const zero = '0'.repeat(40);
   const expectedOld = authorization.targetBranchMode === 'new'
     ? zero
     : authorization.checkoutSha;
+  let offset = 0;
+  let command: string | null = null;
+  // Parse pkt-lines up to the first flush (0000). Skip leading shallow lines;
+  // the first non-shallow line must be the sole ref-update command.
+  for (;;) {
+    if (offset + 4 > bytes.byteLength) {
+      throw new ExecutorRepositoryProxyError('invalid_request');
+    }
+    let header: string;
+    try {
+      header = new TextDecoder('ascii', { fatal: true }).decode(bytes.slice(offset, offset + 4));
+    } catch {
+      throw new ExecutorRepositoryProxyError('invalid_request');
+    }
+    if (!/^[0-9a-f]{4}$/.test(header)) {
+      throw new ExecutorRepositoryProxyError('invalid_request');
+    }
+    const packetLength = Number.parseInt(header, 16);
+    if (packetLength === 0) break; // flush-pkt terminates the command list
+    if (packetLength < 4 || offset + packetLength > bytes.byteLength) {
+      throw new ExecutorRepositoryProxyError('invalid_request');
+    }
+    let line: string;
+    try {
+      line = new TextDecoder('utf-8', { fatal: true })
+        .decode(bytes.slice(offset + 4, offset + packetLength))
+        .split('\0', 1)[0]!
+        .trimEnd();
+    } catch {
+      throw new ExecutorRepositoryProxyError('invalid_request');
+    }
+    offset += packetLength;
+    if (SHALLOW_LINE.test(line)) continue;
+    if (command !== null) {
+      // A second non-shallow command means more than one ref update.
+      throw new ExecutorRepositoryProxyError('invalid_request');
+    }
+    command = line;
+  }
+  if (command === null) throw new ExecutorRepositoryProxyError('invalid_request');
+  const fields = command.split(' ');
   if (
     fields.length !== 3 || fields[0] !== expectedOld ||
     !/^[a-f0-9]{40}$/.test(fields[1] ?? '') || fields[1] === zero ||
-    fields[2] !== `refs/heads/${authorization.targetBranch}` ||
-    packetLength + 4 > bytes.byteLength ||
-    new TextDecoder('ascii').decode(bytes.slice(packetLength, packetLength + 4)) !== '0000'
+    fields[2] !== `refs/heads/${authorization.targetBranch}`
   ) throw new ExecutorRepositoryProxyError('invalid_request');
 }
 
