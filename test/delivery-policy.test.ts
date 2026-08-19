@@ -83,7 +83,7 @@ describe('delivery.yaml v1', () => {
     expect(deliveryPolicyCommandRefs(parsed.policy)).toEqual([
       'setup:install',
       'test:typecheck',
-      'verify:lint',
+      'verify:typecheck',
       'acceptance:smoke',
     ]);
     expect(ANALYSIS_PILOT_CHANGE_COMMAND_REFS).toEqual(
@@ -94,21 +94,21 @@ describe('delivery.yaml v1', () => {
     );
     const request = resolveDeliveryCommand(
       parsed.policy,
-      'verify:lint',
+      'verify:typecheck',
       '/trusted/repository',
     );
     expect(request).toEqual({
-      ref: 'verify:lint',
+      ref: 'verify:typecheck',
       category: 'verify',
       command: 'pnpm',
-      args: ['run', 'lint'],
+      args: ['run', 'typecheck'],
       cwd: '/trusted/repository',
       stdin: '',
       timeoutMs: 300_000,
     });
     request.args.push('MUTATION');
-    expect(resolveDeliveryCommand(parsed.policy, 'verify:lint', '/trusted/repository').args)
-      .toEqual(['run', 'lint']);
+    expect(resolveDeliveryCommand(parsed.policy, 'verify:typecheck', '/trusted/repository').args)
+      .toEqual(['run', 'typecheck']);
     expect(resolveDeliveryCommand(
       parsed.policy,
       'acceptance:smoke',
