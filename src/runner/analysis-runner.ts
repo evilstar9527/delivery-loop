@@ -59,6 +59,10 @@ import {
   TRIAGE_TOOL_ACTIONS,
   isExactTriageToolActions,
 } from '../domain/tool-bridge.js';
+import {
+  DirectToolBridgeDiagnosticClient,
+  DirectToolBridgeError,
+} from './direct-tool-bridge.js';
 import { isSensitiveFieldName, SecretScanner } from '../security/redaction.js';
 import type { CodexModelUsage } from '../domain/quota.js';
 import { executorModelProviderBaseUrl } from '../agent/provider-base-url.js';
@@ -202,6 +206,28 @@ const ToolCallResponseSchema = z.object({
   traceId: z.string().regex(ID_PATTERN),
   result: z.unknown(),
 }).strict();
+const DirectToolAuthorizationResponseSchema = z.object({
+  authorized: z.literal(true),
+  traceId: z.string().regex(ID_PATTERN),
+  toolPath: z.string().min(1).max(200),
+  action: z.string().min(1).max(100),
+  effect: z.literal('read'),
+}).strict();
+const DirectToolObservationResponseSchema = z.object({
+  accepted: z.literal(true),
+  traceId: z.string().regex(ID_PATTERN),
+  disposition: z.enum(['created', 'existing']),
+}).strict();
+const DirectLogResultSchema = z.object({
+  schemaVersion: z.literal('1'),
+  requestIds: z.array(z.string().regex(ID_PATTERN)).min(1).max(20),
+  result: z.unknown(),
+}).strict();
+const DirectTraceResultSchema = z.object({
+  schemaVersion: z.literal('1'),
+  requestId: z.string().regex(ID_PATTERN),
+  result: z.unknown(),
+}).strict();
 const DiagnosticEvidenceResponseSchema = z.object({
   evidenceId: z.string().regex(ID_PATTERN),
   evidenceRef: z.string().regex(/^d1:\/\/evidence\/[A-Za-z0-9][A-Za-z0-9_-]{0,255}$/),
@@ -225,6 +251,12 @@ interface RunnerConfiguration {
   oidcRequestToken?: string;
   workspacePath: string;
   runnerTempPath: string;
+  directToolBridge?: {
+    baseUrl: string;
+    sk: string;
+    logstore: string;
+    environment: 'prod' | 'test';
+  };
 }
 
 interface MutableFencing {
@@ -364,6 +396,30 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
       : 'DELIVERY_REPOSITORY_PATH',
   ));
   const runnerTempPath = resolve(requiredEnvironment(environment, 'RUNNER_TEMP'));
+  const directToolBridgeValues = [
+    environment.DELIVERY_TOOL_BRIDGE_BASE_URL,
+    environment.DELIVERY_TOOL_BRIDGE_SK,
+    environment.DELIVERY_TOOL_BRIDGE_SLS_LOGSTORE,
+    environment.DELIVERY_TOOL_BRIDGE_SLS_ENVIRONMENT,
+  ];
+  const hasDirectToolBridgeConfiguration = directToolBridgeValues.some(
+    (value) => value !== undefined,
+  );
+  if (executorIdentity && !directToolBridgeValues.every((value) => value !== undefined)) {
+    throw new AnalysisRunnerError('analysis Runner Tool Bridge configuration is incomplete');
+  }
+  if (!executorIdentity && hasDirectToolBridgeConfiguration) {
+    throw new AnalysisRunnerError('analysis Runner Tool Bridge configuration is not allowed');
+  }
+  const directToolBridge = executorIdentity
+    ? {
+        baseUrl: requiredEnvironment(environment, 'DELIVERY_TOOL_BRIDGE_BASE_URL'),
+        sk: requiredEnvironment(environment, 'DELIVERY_TOOL_BRIDGE_SK'),
+        logstore: requiredEnvironment(environment, 'DELIVERY_TOOL_BRIDGE_SLS_LOGSTORE'),
+        environment: requiredEnvironment(environment, 'DELIVERY_TOOL_BRIDGE_SLS_ENVIRONMENT') as
+          'prod' | 'test',
+      }
+    : undefined;
   if (
     schemaVersion !== '1' ||
     !ID_PATTERN.test(attemptId) ||
@@ -374,6 +430,8 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
     mode !== 'analysis' ||
     (modelProfileId !== undefined && !ID_PATTERN.test(modelProfileId)) ||
     (executorIdentity && (executionId === undefined || !ID_PATTERN.test(executionId))) ||
+    (directToolBridge !== undefined &&
+      !['prod', 'test'].includes(directToolBridge.environment)) ||
     isWithin(workspacePath, runnerTempPath)
   ) {
     throw new AnalysisRunnerError('analysis Runner configuration is invalid');
@@ -395,6 +453,7 @@ function configuration(environment: NodeJS.ProcessEnv): RunnerConfiguration {
     }),
     workspacePath,
     runnerTempPath,
+    ...(directToolBridge === undefined ? {} : { directToolBridge }),
   };
 }
 
@@ -777,6 +836,7 @@ class ControlledDiagnosticMediation implements DiagnosticAnalysisMediation {
   private logTraceId: string | null = null;
   private requestTraceId: string | null = null;
   private rootCause: z.infer<typeof DiagnosticRootCauseV1Schema> | null = null;
+  private readonly directClient: DirectToolBridgeDiagnosticClient | null;
 
   constructor(
     private readonly fetchImplementation: typeof globalThis.fetch,
@@ -784,7 +844,19 @@ class ControlledDiagnosticMediation implements DiagnosticAnalysisMediation {
     private readonly fencing: MutableFencing,
     private readonly runtimeSecrets: Set<string>,
     private readonly requestLock: FencingRequestLock,
-  ) {}
+  ) {
+    this.directClient = config.directToolBridge === undefined
+      ? null
+      : new DirectToolBridgeDiagnosticClient({
+          baseUrl: config.directToolBridge.baseUrl,
+          sk: config.directToolBridge.sk,
+          logstore: config.directToolBridge.logstore,
+          environment: config.directToolBridge.environment,
+          fetch: fetchImplementation,
+          timeoutMs: DIAGNOSTIC_TOOL_TIMEOUT_MS,
+        });
+    if (this.directClient !== null) runtimeSecrets.add(config.directToolBridge!.sk);
+  }
 
   agentInterface(): DiagnosticAnalysisMediation {
     return Object.freeze({
@@ -914,6 +986,7 @@ class ControlledDiagnosticMediation implements DiagnosticAnalysisMediation {
     toolPath: 'logs/search' | 'traces/get',
     argumentsValue: Record<string, unknown>,
   ): Promise<z.infer<typeof ToolCallResponseSchema>> {
+    if (this.directClient !== null) return await this.callDirectTool(toolPath, argumentsValue);
     let response: Response;
     try {
       response = await this.requestLock.run(async () =>
@@ -964,6 +1037,107 @@ class ControlledDiagnosticMediation implements DiagnosticAnalysisMediation {
       throw diagnosticToolFailure(toolPath, 'tool_unavailable');
     }
     return parsed.data;
+  }
+
+  private async callDirectTool(
+    toolPath: 'logs/search' | 'traces/get',
+    argumentsValue: Record<string, unknown>,
+  ): Promise<z.infer<typeof ToolCallResponseSchema>> {
+    const startedAt = Date.now();
+    const authorized = await this.requestLock.run(async () => {
+      let response: Response;
+      try {
+        response = await this.fetchImplementation(
+          `${this.config.controlPlaneUrl}/v1/attempts/${this.config.attemptId}/tools/authorize`,
+          {
+            method: 'POST',
+            headers: {
+              accept: 'application/json',
+              authorization: `Bearer ${this.fencing.toolToken}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ toolPath }),
+            signal: AbortSignal.timeout(DIAGNOSTIC_TOOL_TIMEOUT_MS),
+          },
+        );
+      } catch {
+        throw diagnosticToolFailure(toolPath, 'tool_unavailable');
+      }
+      if (response.status !== 200) {
+        await response.body?.cancel();
+        throw diagnosticToolFailure(
+          toolPath,
+          response.status === 403 ? 'tool_policy_denied' : 'tool_unavailable',
+        );
+      }
+      const raw = await readJsonResponse(response, [200], 'direct Tool Bridge authorization');
+      const parsed = DirectToolAuthorizationResponseSchema.safeParse(raw);
+      if (!parsed.success || parsed.data.toolPath !== toolPath) {
+        throw diagnosticToolFailure(toolPath, 'tool_unavailable');
+      }
+      return parsed.data;
+    });
+
+    let result: unknown;
+    let resultCategory: 'success' | 'upstream_error' | 'timeout' | 'unavailable' | 'invalid_response';
+    try {
+      if (toolPath === 'logs/search') {
+        const raw = DirectLogResultSchema.parse(await this.directClient!.searchLogs(argumentsValue));
+        result = raw.result;
+      } else {
+        const raw = DirectTraceResultSchema.parse(await this.directClient!.getTrace(argumentsValue));
+        result = raw.result;
+      }
+      this.assertSafe(
+        result,
+        toolPath === 'logs/search' ? ['log_query'] : ['log_query', 'trace_query'],
+        toolPath,
+      );
+      resultCategory = 'success';
+    } catch (error) {
+      resultCategory = error instanceof DirectToolBridgeError ? error.category : 'invalid_response';
+    }
+
+    const durationMs = Math.min(60_000, Math.max(0, Date.now() - startedAt));
+    await this.requestLock.run(async () => {
+      let response: Response;
+      try {
+        response = await this.fetchImplementation(
+          `${this.config.controlPlaneUrl}/v1/attempts/${this.config.attemptId}/tools/observe`,
+          {
+            method: 'POST',
+            headers: {
+              accept: 'application/json',
+              authorization: `Bearer ${this.fencing.toolToken}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+              traceId: authorized.traceId,
+              toolPath,
+              durationMs,
+              resultCategory,
+              occurredAt: new Date().toISOString(),
+            }),
+            signal: AbortSignal.timeout(DIAGNOSTIC_TOOL_TIMEOUT_MS),
+          },
+        );
+      } catch {
+        throw diagnosticToolFailure(toolPath, 'tool_unavailable');
+      }
+      if (response.status !== 200) {
+        await response.body?.cancel();
+        throw diagnosticToolFailure(toolPath, 'tool_unavailable');
+      }
+      const raw = await readJsonResponse(response, [200], 'direct Tool Bridge observation');
+      const parsed = DirectToolObservationResponseSchema.safeParse(raw);
+      if (!parsed.success || parsed.data.traceId !== authorized.traceId) {
+        throw diagnosticToolFailure(toolPath, 'tool_unavailable');
+      }
+    });
+    if (resultCategory !== 'success') {
+      throw diagnosticToolFailure(toolPath, 'tool_unavailable');
+    }
+    return { ok: true, traceId: authorized.traceId, result };
   }
 
   private assertSafe(

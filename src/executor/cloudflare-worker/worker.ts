@@ -32,6 +32,8 @@ const EXECUTION_GRANT_PATH = '/workspace/.delivery-loop/execution-grant.json';
 const EXECUTION_COMMAND =
   '/opt/delivery-agent/bin/run-execution /workspace/.delivery-loop/execution.json';
 const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
+const TOOL_BRIDGE_ORIGIN = 'https://tool-bridge.fantacy.live';
+const TOOL_BRIDGE_HOST = 'tool-bridge.fantacy.live';
 const executorErrorLog = secureStructuredLogSink({
   component: 'agent_executor',
   level: 'error',
@@ -55,6 +57,10 @@ interface AgentExecutorEnv {
   EXECUTOR_CALLBACK_TOKEN?: string;
   EXECUTOR_IMAGE_REF?: string;
   EXECUTOR_IMAGE_DIGEST?: string;
+  TOOL_BRIDGE_BASE_URL?: string;
+  TOOL_BRIDGE_SK?: string;
+  TOOL_BRIDGE_SLS_LOGSTORE?: string;
+  TOOL_BRIDGE_SLS_ENVIRONMENT?: string;
 }
 
 interface StoredExecution {
@@ -84,6 +90,10 @@ function validExecutorConfiguration(env: AgentExecutorEnv): env is AgentExecutor
   EXECUTOR_CALLBACK_TOKEN: string;
   EXECUTOR_IMAGE_REF: string;
   EXECUTOR_IMAGE_DIGEST: string;
+  TOOL_BRIDGE_BASE_URL: string;
+  TOOL_BRIDGE_SK: string;
+  TOOL_BRIDGE_SLS_LOGSTORE: string;
+  TOOL_BRIDGE_SLS_ENVIRONMENT: 'prod' | 'test';
 } {
   return (
     typeof env.EXECUTOR_CONTROL_TOKEN === 'string' &&
@@ -93,7 +103,16 @@ function validExecutorConfiguration(env: AgentExecutorEnv): env is AgentExecutor
     typeof env.EXECUTOR_IMAGE_REF === 'string' &&
     env.EXECUTOR_IMAGE_REF.length > 0 &&
     typeof env.EXECUTOR_IMAGE_DIGEST === 'string' &&
-    DIGEST_PATTERN.test(env.EXECUTOR_IMAGE_DIGEST)
+    DIGEST_PATTERN.test(env.EXECUTOR_IMAGE_DIGEST) &&
+    env.TOOL_BRIDGE_BASE_URL === TOOL_BRIDGE_ORIGIN &&
+    typeof env.TOOL_BRIDGE_SK === 'string' &&
+    env.TOOL_BRIDGE_SK.length >= 16 &&
+    env.TOOL_BRIDGE_SK.length <= 4_096 &&
+    !/[\0\r\n]/.test(env.TOOL_BRIDGE_SK) &&
+    typeof env.TOOL_BRIDGE_SLS_LOGSTORE === 'string' &&
+    /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(env.TOOL_BRIDGE_SLS_LOGSTORE) &&
+    (env.TOOL_BRIDGE_SLS_ENVIRONMENT === 'prod' ||
+      env.TOOL_BRIDGE_SLS_ENVIRONMENT === 'test')
   );
 }
 
@@ -110,11 +129,11 @@ function terminal(status: ExecutorStatus): boolean {
 }
 
 /**
- * One immutable execution per Sandbox Durable Object. Internet is disabled;
- * only the exact control-plane host is intercepted by the trusted Worker.
+ * One immutable execution per Sandbox Durable Object. Internet is enabled only
+ * for the exact Tool Bridge host; the control-plane host remains a Worker proxy.
  */
 export class DeliveryAgentSandbox extends Sandbox<AgentExecutorEnv> {
-  override enableInternet = false;
+  override enableInternet = true;
   override allowedHosts: string[] = [];
 
   private async destroyContainer(
@@ -179,7 +198,7 @@ export class DeliveryAgentSandbox extends Sandbox<AgentExecutorEnv> {
         if (!terminal(record.providerStatus)) {
           const controlPlaneOrigin = new URL(request.controlPlaneUrl).origin;
           stage = 'network_policy_allowlist';
-          await this.setAllowedHosts(['control.delivery-loop.internal']);
+          await this.setAllowedHosts(['control.delivery-loop.internal', TOOL_BRIDGE_HOST]);
           stage = 'network_policy_proxy';
           await this.setOutboundByHost('control.delivery-loop.internal', 'controlPlaneProxy', {
             controlPlaneOrigin,
@@ -204,6 +223,12 @@ export class DeliveryAgentSandbox extends Sandbox<AgentExecutorEnv> {
               processId,
               autoCleanup: false,
               cwd: '/workspace',
+              env: {
+                DELIVERY_TOOL_BRIDGE_BASE_URL: this.env.TOOL_BRIDGE_BASE_URL,
+                DELIVERY_TOOL_BRIDGE_SK: this.env.TOOL_BRIDGE_SK,
+                DELIVERY_TOOL_BRIDGE_SLS_LOGSTORE: this.env.TOOL_BRIDGE_SLS_LOGSTORE,
+                DELIVERY_TOOL_BRIDGE_SLS_ENVIRONMENT: this.env.TOOL_BRIDGE_SLS_ENVIRONMENT,
+              },
             });
           }
           stage = 'placement';

@@ -783,6 +783,8 @@ type RetryRunAccepted = {
 | `GET /v1/attempts/:id/context` | 用 attempt token 获取当前 analysis Attempt 的 digest-verified Task/context 与 Plan policy |
 | `POST /v1/attempts/:id/plan` | 只提交 Agent-controlled Plan content；控制面注入 identity/digest 并持久化 validated Plan |
 | `POST /v1/attempts/:id/tools/call` | 以 active attempt token 调用受信目录中的只读 tool-bridge 路径并写 metadata-only trace |
+| `POST /v1/attempts/:id/tools/authorize` | executor direct call前以tool token完成scope/effect/quota admission，返回server trace ID，不接收arguments |
+| `POST /v1/attempts/:id/tools/observe` | executor direct call后只写path/duration/result category/time metadata，不接收result或error正文 |
 | `POST /v1/attempts/:id/model-reservations` | 用active Attempt fencing在模型进程前预留受信profile的最大token与micro-USD |
 | `POST /v1/attempts/:id/model-usage` | 用同一fencing把官方JSONL usage结算为一次append-only模型调用 |
 | `POST /v1/attempts/:id/heartbeat` | 以version/generation CAS延长租约、轮换token并追加安全receipt |
@@ -817,7 +819,7 @@ Phase 1/4 exchange 约束：
 - `repository`匹配`workflow_ref`解析出的集中executor repository；`job_workflow_ref ?? workflow_ref`、`sha`、`run_id`必须与D1 Attempt的可信执行绑定完全一致。`Attempt.repository`仍是业务目标，必须由后续context/write边界独立核对。其中`sha`只匹配dispatcher从Actions run列表观察并与run ID原子冻结的`githubHeadSha`，不能匹配caller输入或Plan的`baseSha`；`baseSha`继续只表示Agent checkout/代码证据真源，两者可以不同。Attempt 只允许 `analysis/implement/review_fix + starting/running + active lease`，未同时绑定GitHub run ID与合法run head时fail-closed，`deploy`仍使用独立Phase 5凭证路径；
 - 同一 `attempt + leaseGeneration` 只允许一次交换。一次响应生成互不相同的 opaque `attemptToken` 与 `grant.toolBridgeToken`；OIDC JWT 和两个 token 均只保存 SHA-256 digest，D1 还约束两个 digest 不可相同；
 - 两个 token 共用 `expiresAt = min(now + 5 分钟, attempt lease expiry)`，响应 `Cache-Control: no-store`。20 路相同交换只能一个请求获得明文 credential pair，其余返回 conflict；
-- `attemptToken` 只用于 context/heartbeat/Plan/checkpoint/artifact/event/complete；`toolBridgeToken` 只用于本控制面的 `/tools/call` PEP。run token 不能调用工具，tool token 不能读取 Task/context或推进 Attempt；上游 tool-bridge 的 internal/Admin Secret 永不返回 Runner；
+- `attemptToken` 只用于 context/heartbeat/Plan/checkpoint/artifact/event/complete；`toolBridgeToken` 只用于`/tools/authorize|observe`或GitHub兼容`/tools/call` PEP。run token 不能调用工具，tool token不能读取Task/context或推进Attempt。Tool Bridge SK只由executor runtime secret channel交给trusted Runner，不由exchange API返回，也不进入模型进程；
 - analysis/triage grant固定且顺序规范化为`repo:read`、`logs:read`、`trace:read`、`k8s:read`、`database:diagnostic`。write/destructive scope不从JWT claim、请求body或Agent输出推导；数据库只开放受控diagnostic path，不下发DSN或任意SQL能力。
 - implement/review_fix的run/tool grant只在上述read/diagnostic集合后增加`checkpoint:write`与`artifact:write`，仍不包含`repo:write`。前者只发布结构化恢复点，后者只写专用加密raw bucket；仓库写能力必须从独立GitHub credential endpoint按approval实时换取，不能通过OIDC claim或污染`scopes_json`获得；
 - dispatcher 创建的 `starting` Attempt 在 exchange 与 token 持久化同一 D1 batch 中 CAS 为 `running`、version +1 并写首个 heartbeat；响应同时返回 `attemptVersion + leaseGeneration`，Runner 不能猜 heartbeat fencing 值。
@@ -892,7 +894,7 @@ Tool-bridge call 约束：
 - triage allowlist只有`repo/read→repo:read`、`logs/search→logs:read`、`traces/get→trace:read`、`k8s/diagnose→k8s:read`、`database/diagnose→database:diagnostic`，五条均是POST call但effect固定为`read`。未知path在进入trace/upstream前拒绝；
 - catalog另显式识别`repo/write`、`k8s/apply`、`database/execute`、`shell/exec`作为write/destructive能力。即使D1 scope被污染为包含对应action，effect gate仍写`policy_denied` metadata trace并保持零upstream call；caller自报scope/action/effect或多余字段由strict schema拒绝；
 - Worker adapter 通过 service binding 向 Watt-compatible `/htbp/<toolPath>` 发送 `{arguments}` envelope；内部 Authorization 只能来自 Worker Secret binding。请求参数、header、响应正文和错误正文都不进入 D1 trace；
-- 当前试点的`delivery-loop-tool-bridge`独立Worker只实现`logs/search`与`traces/get`：前者只接受Task中已有的`uid/cid/path`，固定调用组织Tool Bridge的Tipsy `sls_query_logs`，provider配置固定为`tipsy-chat + prod + 14天 + 20条`，并从有界结果提取至多20个真实`trace_id`；后者只接受其中一个exact trace ID并再次调用同一固定SLS工具重建链路。BaseURL、upstream path、logstore、environment、window、limit和只读SK均由Worker配置固定，Agent不能选择；HTTP、schema、trace identity、Secret或超256 KiB响应漂移全部固定503且不返回上游错误正文；
+- Cloudflare/E2B direct runtime只实现`logs/search`与`traces/get`的executor-neutral client：前者只接受Task中已有的`uid/cid/path`，直接调用组织Tool Bridge exact `/mcp/tipsy/tipsy-analytics__sls_query_logs`，固定`tipsy-chat + prod + 14天 + 20条`并提取至多20个长度至少16的真实`trace_id`；后者只接受其中一个exact ID并再次调用同一工具。Tool response不经过控制面。GitHub Runner暂由`delivery-loop-tool-bridge` Worker提供相同逻辑的兼容`/tools/call` lane；
 - `tool_call_traces` 只保存 `traceId/runId/attemptId/toolPath/action/effect/durationMs/resultCategory/occurredAt`。结果类别固定为 `success/policy_denied/upstream_error/timeout/unavailable/invalid_response`，duration 为非负整数并在 60 秒饱和；
 - 上游非 2xx 不读取或转发错误正文，transport/parse 异常也只返回固定错误。成功结果只回给已授权 Runner且 `Cache-Control: no-store`，不写 D1、Workflow history、日志或 artifact；service 调用默认 15 秒 timeout、响应上限 256 KiB。
 - 在任何upstream请求前，控制面以自己生成的trace ID和接收时间执行四scope `tool_call` admission；同trace重放只计一次。超额返回429且写run/attempt/resource/scope type/scope key digest/limit/requested units/reason digest，不保存path arguments、result或upstream error。
@@ -1266,7 +1268,7 @@ type AttemptExchangeResponseV1 = {
   attemptVersion: number;
   leaseGeneration: number;
   grant: {
-    toolBridgeToken: string; // /v1/attempts/:id/tools/call 专用
+    toolBridgeToken: string; // direct authorize/observe或GitHub兼容tools/call专用；不是upstream SK
     expiresAt: string;       // 与本次 attemptToken 相同，且不晚于 lease
     scopes: string[];        // 固定五项triage action，不含write/destructive
   };

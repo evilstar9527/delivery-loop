@@ -82,6 +82,14 @@ const script = spec.role === 'publisher'
   : spec.mode === 'analysis'
     ? 'scripts/run-analysis-attempt.ts'
     : 'scripts/run-execution-attempt.ts';
+const directToolBridgeEnvironment = spec.role === 'work'
+  ? {
+      DELIVERY_TOOL_BRIDGE_BASE_URL: process.env.DELIVERY_TOOL_BRIDGE_BASE_URL,
+      DELIVERY_TOOL_BRIDGE_SK: process.env.DELIVERY_TOOL_BRIDGE_SK,
+      DELIVERY_TOOL_BRIDGE_SLS_LOGSTORE: process.env.DELIVERY_TOOL_BRIDGE_SLS_LOGSTORE,
+      DELIVERY_TOOL_BRIDGE_SLS_ENVIRONMENT: process.env.DELIVERY_TOOL_BRIDGE_SLS_ENVIRONMENT,
+    }
+  : {};
 const child = spawn('pnpm', ['exec', 'tsx', script], {
   cwd: '/opt/delivery-agent',
   stdio: 'inherit',
@@ -110,6 +118,7 @@ const child = spawn('pnpm', ['exec', 'tsx', script], {
     ...(spec.modelProfileId === undefined
       ? {}
       : { DELIVERY_MODEL_PROFILE_ID: spec.modelProfileId }),
+    ...directToolBridgeEnvironment,
   },
 });
 child.once('error', () => fail('runner_start_failed'));

@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   CODEX_RELAY_PROVIDER_ID,
   CODEX_RELAY_REASONING_EFFORT,
@@ -59,6 +59,18 @@ describe('Codex relay provider profile', () => {
     grant = 'executor-model-grant-second';
     expect(codexProviderEnvironment(source)?.CODEX_API_KEY).toBe(grant);
     expect(process.env.CODEX_API_KEY).not.toBe(grant);
+  });
+
+  it('never passes Tool Bridge credentials to the Codex child process', () => {
+    vi.stubEnv('DELIVERY_TOOL_BRIDGE_SK', 'tb-admin-secret-never-model');
+    vi.stubEnv('TB_SK', 'tb-profile-secret-never-model');
+    try {
+      const environment = codexProviderEnvironment('executor-model-grant');
+      expect(environment).not.toHaveProperty('DELIVERY_TOOL_BRIDGE_SK');
+      expect(environment).not.toHaveProperty('TB_SK');
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('allows a bounded preflight to override reasoning without changing the production default', () => {

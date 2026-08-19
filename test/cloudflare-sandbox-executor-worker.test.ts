@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { describe, expect, it, vi } from 'vitest';
 import {
   CloudflareExecutorBackendError,
@@ -74,6 +75,19 @@ function backend(): CloudflareSandboxExecutorBackend {
 }
 
 describe('Cloudflare Sandbox executor Worker API', () => {
+  it('allows only the exact Tool Bridge host and injects its credential into trusted work runners', async () => {
+    const source = await readFile(
+      new URL('../src/executor/cloudflare-worker/worker.ts', import.meta.url),
+      'utf8',
+    );
+    expect(source).toContain("override enableInternet = true");
+    expect(source).toContain("await this.setAllowedHosts(['control.delivery-loop.internal', TOOL_BRIDGE_HOST])");
+    expect(source).toContain('DELIVERY_TOOL_BRIDGE_BASE_URL: this.env.TOOL_BRIDGE_BASE_URL');
+    expect(source).toContain('DELIVERY_TOOL_BRIDGE_SK: this.env.TOOL_BRIDGE_SK');
+    expect(source).toContain("const TOOL_BRIDGE_HOST = 'tool-bridge.fantacy.live'");
+    expect(source).toContain("env.TOOL_BRIDGE_BASE_URL === TOOL_BRIDGE_ORIGIN");
+  });
+
   it('derives deterministic Sandbox SDK identifiers within the DNS limit', async () => {
     const first = await sandboxIdFor('execution-worker-1');
     expect(first).toMatch(/^executor-[a-f0-9]+$/);

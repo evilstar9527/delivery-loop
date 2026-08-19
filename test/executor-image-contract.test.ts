@@ -16,4 +16,16 @@ describe('executor image command contract', () => {
     expect(dockerfile).toContain(`test -x ${EXECUTOR_CODEX_COMMAND}`);
     expect(dockerfile).toContain(`${EXECUTOR_CODEX_COMMAND} --version`);
   });
+
+  it('passes Tool Bridge credentials only to trusted work runners', async () => {
+    const script = await readFile(
+      new URL('../executor-image/run-execution.mjs', import.meta.url),
+      'utf8',
+    );
+    expect(script).toContain("const directToolBridgeEnvironment = spec.role === 'work'");
+    expect(script).toContain('DELIVERY_TOOL_BRIDGE_BASE_URL');
+    expect(script).toContain('DELIVERY_TOOL_BRIDGE_SK');
+    expect(script).toContain('DELIVERY_TOOL_BRIDGE_SLS_LOGSTORE');
+    expect(script).toContain('DELIVERY_TOOL_BRIDGE_SLS_ENVIRONMENT');
+  });
 });

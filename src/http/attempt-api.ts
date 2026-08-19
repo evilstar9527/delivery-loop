@@ -14,6 +14,7 @@ import {
 import { ExecutionPlanValidationError } from '../domain/plan.js';
 import {
   boundedToolCallDuration,
+  TOOL_CALL_RESULT_CATEGORIES,
   toolActionFor,
   trustedToolSpec,
   type ToolCallResultCategory,
@@ -65,7 +66,10 @@ import {
   RunnerAttemptError,
   RunnerAttemptStore,
 } from '../storage/runner-attempt-store.js';
-import { ToolCallTraceStore } from '../storage/tool-call-trace-store.js';
+import {
+  ToolCallTraceStore,
+  ToolCallTraceStoreError,
+} from '../storage/tool-call-trace-store.js';
 import {
   DiagnosticEvidenceError,
   DiagnosticEvidenceStore,
@@ -287,16 +291,38 @@ const CheckpointBodySchema = z
   })
   .strict();
 
+const ToolPathSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/);
+
 const ToolCallBodySchema = z
   .object({
-    toolPath: z
-      .string()
-      .min(1)
-      .max(200)
-      .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*$/),
+    toolPath: ToolPathSchema,
     arguments: z.record(z.string(), z.unknown()),
   })
   .strict();
+
+const ToolAuthorizationBodySchema = z.object({
+  toolPath: ToolPathSchema,
+}).strict();
+
+const ToolObservationBodySchema = z.object({
+  traceId: z.string().regex(ATTEMPT_ID_PATTERN),
+  toolPath: ToolPathSchema,
+  durationMs: z.number().int().min(0).max(60_000),
+  resultCategory: z.enum(TOOL_CALL_RESULT_CATEGORIES),
+  occurredAt: z.iso.datetime({ offset: true }),
+}).strict();
+
+function directToolTraceId(toolPath: string): string {
+  return `tooltrace_${toolPath.replaceAll('/', '_')}_${crypto.randomUUID()}`;
+}
+
+function directToolTraceMatches(traceId: string, toolPath: string): boolean {
+  return traceId.startsWith(`tooltrace_${toolPath.replaceAll('/', '_')}_`);
+}
 
 function runnerToken(authorization: string | undefined): string | null {
   if (
@@ -1199,6 +1225,119 @@ export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bi
           return errorResponse(c, 404, 'not_found', 'base rebase Attempt not found', false);
         }
         return errorResponse(c, 409, 'conflict', 'base rebase state changed', false);
+      }
+      throw error;
+    }
+  });
+
+  app.post('/v1/attempts/:attemptId/tools/authorize', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    const token = runnerToken(c.req.header('authorization'));
+    if (token === null) {
+      return errorResponse(c, 401, 'unauthenticated', 'tool token required', false);
+    }
+    let body: unknown;
+    try {
+      body = await runnerBody(c, MAX_TOOL_CALL_BODY_LENGTH);
+    } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid tool authorization body', false);
+    }
+    const parsed = ToolAuthorizationBodySchema.safeParse(body);
+    if (!parsed.success) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid tool authorization body', false);
+    }
+    try {
+      const authorization = await new RunnerAttemptStore(c.env.DB_CONTROL).authorizeTool(
+        attemptId,
+        token,
+      );
+      const spec = trustedToolSpec(parsed.data.toolPath);
+      if (spec === null) {
+        return errorResponse(c, 403, 'policy_denied', 'tool path denied', false);
+      }
+      const action = toolActionFor(spec.scope);
+      if (!authorization.scopes.includes(action) || spec.effect !== 'read') {
+        return errorResponse(c, 403, 'policy_denied', 'tool call scope denied', false);
+      }
+      const traceId = directToolTraceId(spec.path);
+      await new QuotaControlStore(c.env.DB_CONTROL).admitToolCall({
+        traceId,
+        attemptId: authorization.attemptId,
+        occurredAt: (options.now?.() ?? new Date()).toISOString(),
+      });
+      c.header('cache-control', 'no-store');
+      return c.json({
+        authorized: true,
+        traceId,
+        toolPath: spec.path,
+        action,
+        effect: spec.effect,
+      });
+    } catch (error) {
+      if (error instanceof RunnerAttemptError) return runnerError(c, error);
+      if (error instanceof QuotaControlError && error.code === 'quota_exceeded') {
+        c.header('cache-control', 'no-store');
+        return errorResponse(c, 429, 'rate_limited', 'tool call quota exceeded', true);
+      }
+      throw error;
+    }
+  });
+
+  app.post('/v1/attempts/:attemptId/tools/observe', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    const token = runnerToken(c.req.header('authorization'));
+    if (token === null) {
+      return errorResponse(c, 401, 'unauthenticated', 'tool token required', false);
+    }
+    let body: unknown;
+    try {
+      body = await runnerBody(c, MAX_TOOL_CALL_BODY_LENGTH);
+    } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid tool observation body', false);
+    }
+    const parsed = ToolObservationBodySchema.safeParse(body);
+    if (!parsed.success) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid tool observation body', false);
+    }
+    try {
+      const authorization = await new RunnerAttemptStore(c.env.DB_CONTROL).authorizeTool(
+        attemptId,
+        token,
+      );
+      const spec = trustedToolSpec(parsed.data.toolPath);
+      if (spec === null) {
+        return errorResponse(c, 403, 'policy_denied', 'tool path denied', false);
+      }
+      if (!directToolTraceMatches(parsed.data.traceId, spec.path)) {
+        return errorResponse(c, 409, 'conflict', 'tool observation state changed', false);
+      }
+      const action = toolActionFor(spec.scope);
+      if (!authorization.scopes.includes(action) || spec.effect !== 'read') {
+        return errorResponse(c, 403, 'policy_denied', 'tool call scope denied', false);
+      }
+      const disposition = await new ToolCallTraceStore(c.env.DB_CONTROL).writeAuthorized({
+        traceId: parsed.data.traceId,
+        runId: authorization.runId,
+        attemptId: authorization.attemptId,
+        toolPath: spec.path,
+        action,
+        effect: spec.effect,
+        durationMs: parsed.data.durationMs,
+        resultCategory: parsed.data.resultCategory,
+        occurredAt: parsed.data.occurredAt,
+      });
+      c.header('cache-control', 'no-store');
+      return c.json({ accepted: true, traceId: parsed.data.traceId, disposition });
+    } catch (error) {
+      if (error instanceof RunnerAttemptError) return runnerError(c, error);
+      if (error instanceof ToolCallTraceStoreError) {
+        return errorResponse(c, 409, 'conflict', 'tool observation state changed', false);
       }
       throw error;
     }
