@@ -1,3 +1,4 @@
+<!-- delivery-loop e2e validated -->
 # delivery-loop
 
 delivery-loop 是一个以飞书/Meegle 为任务入口、以 GitHub Actions 为弹性 Agent 运行环境、以 tool-bridge 提供受控上下文的端到端软件交付控制面。
