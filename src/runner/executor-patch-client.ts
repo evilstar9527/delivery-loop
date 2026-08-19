@@ -18,6 +18,14 @@ const UploadResponseSchema = z.object({
   changedPathsDigest: z.string().regex(DIGEST_PATTERN),
   byteLength: z.number().int().positive().max(1_048_576),
   created: z.boolean(),
+  // The control plane's upload response also carries the scheduled publisher
+  // handoff identifiers. The credential-free work lane does not consume them,
+  // but the schema must accept them or a successful upload is misread as a
+  // failure (stranding the publisher and blocking the run).
+  publicationId: z.string().regex(ID_PATTERN).optional(),
+  publisherExecutionId: z.string().regex(ID_PATTERN).optional(),
+  publisherOutboxId: z.string().regex(ID_PATTERN).optional(),
+  targetBranch: z.string().min(1).max(255).optional(),
 }).strict();
 
 const PublisherResponseSchema = z.object({
