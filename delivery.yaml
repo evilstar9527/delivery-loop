@@ -5,17 +5,21 @@ commands:
       argv: [pnpm, install, --frozen-lockfile]
       timeoutSeconds: 600
   # In-sandbox verification stays lightweight: the executor runs on a small
-  # (0.5 vCPU) Cloudflare sandbox where the full unit/verify suites time out.
-  # These fast checks catch broken agent output before patch upload; the
-  # authoritative full `pnpm run verify` runs as the target repository's
-  # pull_request CI (the required merge check), which is the real final gate.
+  # Cloudflare sandbox where the full unit/verify suites — and type-aware
+  # `eslint .` (which loads the whole TypeScript program and OOMs/hangs the
+  # sandbox before it can post a result) — do not complete. Both the fast
+  # targeted check and the required publisher verify therefore run
+  # `tsc --noEmit`, which finishes in seconds and catches broken agent output.
+  # The authoritative full `pnpm run verify` (lint + the entire test suite)
+  # runs as the target repository's pull_request CI, the required merge check
+  # and real final gate.
   targeted:
     typecheck:
       argv: [pnpm, run, typecheck]
       timeoutSeconds: 300
   verify:
-    lint:
-      argv: [pnpm, run, lint]
+    typecheck:
+      argv: [pnpm, run, typecheck]
       timeoutSeconds: 300
   acceptance:
     smoke:

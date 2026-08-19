@@ -11,9 +11,9 @@ describe('deriveAnalysisPlanPolicy', () => {
       expect(policy.requiresTestDeployment).toBe(false);
       expect(policy.allowedEffects).toContain('repo_write');
       expect(policy.allowedCommandRefs).toEqual(
-        expect.arrayContaining(['test:typecheck', 'verify:lint']),
+        expect.arrayContaining(['test:typecheck', 'verify:typecheck']),
       );
-      expect(policy.verificationCommandRefs).toEqual(['verify:lint']);
+      expect(policy.verificationCommandRefs).toEqual(['verify:typecheck']);
     },
   );
 
