@@ -556,6 +556,18 @@ describe('bounded verification repair loop', () => {
       `SELECT COUNT(*) AS count FROM outbox
        WHERE run_id = ? AND kind = 'execution_dispatch'`,
     ).bind(RUN_ID).first()).toEqual({ count: 0 });
+    // No-hang guarantee: with no repairable failed-suite authority and no
+    // blocker yet, the item must be released back to 'ready' with a null
+    // active_attempt_id so a fresh attempt can be claimed instead of the run
+    // hanging in 'executing' pinned to this dead failed attempt.
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status, active_attempt_id, version FROM plan_item_progress
+       WHERE plan_id = ? AND item_id = ?`,
+    ).bind(PLAN_ID, ITEM_ID).first()).toEqual({
+      status: 'ready',
+      active_attempt_id: null,
+      version: 3,
+    });
   });
 
   it('turns one trusted failed suite into one same-head review_fix dispatch', async () => {

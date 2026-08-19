@@ -69,7 +69,7 @@ function writablePlanContent(): Record<string, unknown> {
           'Targeted and required verification pass on the committed head.',
         ],
         verification: {
-          commandRefs: ['test:unit', 'verify:all'],
+          commandRefs: ['test:typecheck', 'verify:lint'],
           evidenceKinds: ['commit', 'test'],
         },
         effects: ['repo_write'],
@@ -366,10 +366,10 @@ describe('attempt-scoped analysis context and Plan proposal API', () => {
         allowedCommandRefs: [
           'policy:inspect',
           'policy:diagnose',
-          'test:unit',
-          'verify:all',
+          'test:typecheck',
+          'verify:lint',
         ],
-        verificationCommandRefs: ['verify:all'],
+        verificationCommandRefs: ['verify:lint'],
         requiresRepositoryChange: true,
       },
     });

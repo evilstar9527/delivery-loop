@@ -879,6 +879,52 @@ export class AttemptFailureStore {
       );
     }
 
+    // No-hang guarantee: a failure that neither schedules a repair (it produced
+    // no immutable failed-suite authority, e.g. a pre-commit verification
+    // failure in the credential-free work lane) nor trips a blocker would
+    // otherwise leave plan_item_progress pinned to this dead failed attempt,
+    // and ExecutionProgressReconciler only claims items whose active_attempt_id
+    // IS NULL. Release the item back to 'ready' so a fresh attempt is claimed;
+    // the attempt-budget/repeated-fingerprint blocker still fires on later
+    // failures, so this cannot loop forever.
+    // A failed review_fix attempt whose failure landed at the repo_snapshot
+    // stage is recovered by reconcilePreVerificationRepairs, which relies on the
+    // item staying pinned to the failed attempt — do not release those. The
+    // hang only affects a failed implement attempt that produced no repairable
+    // authority (no failed suite/Evidence), so scope the release to that case.
+    const releaseStuckItem =
+      repairIdentity === null &&
+      blockerReason === null &&
+      verificationFact === null &&
+      candidate.mode === 'implement';
+    if (releaseStuckItem) {
+      statements.push(
+        this.db
+          .prepare(
+            `UPDATE plan_item_progress
+             SET status = 'ready', active_attempt_id = NULL,
+                 version = version + 1, updated_at = ?
+             WHERE plan_id = ? AND item_id = ? AND status = 'in_progress'
+               AND active_attempt_id = ?
+               AND EXISTS (
+                 SELECT 1 FROM attempts
+                 WHERE attempt_id = ? AND run_id = ? AND status = 'failed'
+                   AND version = ? AND lease_generation = ?
+               )`,
+          )
+          .bind(
+            nowIso,
+            candidate.plan_id,
+            candidate.plan_item_id,
+            candidate.attempt_id,
+            candidate.attempt_id,
+            candidate.run_id,
+            report.expectedVersion + 1,
+            report.leaseGeneration + 1,
+          ),
+      );
+    }
+
     if (blockerReason !== null) {
       const blockerDigest = await canonicalSha256({
         runId: candidate.run_id,
