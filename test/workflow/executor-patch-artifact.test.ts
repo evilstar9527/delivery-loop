@@ -661,21 +661,52 @@ describe('executor patch R2 handoff', () => {
       repository: REPOSITORY,
       providerSubject: 'cloudflare-sandbox:container-publisher',
     };
-    let providerReferenceEffects = 0;
+    // A provider-reference (PAT) provider must issue a publisher credential the
+    // same way the App path does: mint the reference token, persist it
+    // encrypted, and let the push proxy authorize with it. The credential-free
+    // work lane already supports PAT this way, and the publisher lane must too
+    // or a PAT-configured deployment can never open a pull request.
+    let providerReferenceIssued = 0;
     const providerReferenceStore = new ExecutorPublisherCredentialStore(env.DB_CONTROL, {
       writeCredentialPersistence: 'provider_reference',
-      async issueWriteCredential() {
-        providerReferenceEffects += 1;
-        throw new Error('must not issue');
+      async issueWriteCredential(repository) {
+        expect(repository).toBe(REPOSITORY);
+        providerReferenceIssued += 1;
+        return { token: 'publisher-pat-reference', expiresAt: '2026-08-17T05:08:00.000Z' };
       },
-      async revokeWriteCredential() { providerReferenceEffects += 1; },
-    }, { encryptionKey: btoa('0123456789abcdef0123456789abcdef') });
-    await expect(providerReferenceStore.issue(identity, scheduled.publicationId, NOW))
-      .rejects.toMatchObject({ code: 'policy_denied' });
-    expect(providerReferenceEffects).toBe(0);
-    expect(await env.DB_CONTROL.prepare(
-      `SELECT COUNT(*) AS count FROM executor_publisher_write_credentials`,
-    ).first()).toEqual({ count: 0 });
+      async revokeWriteCredential() { /* PAT reference is not revocable */ },
+    }, {
+      encryptionKey: btoa('0123456789abcdef0123456789abcdef'),
+      generateLeaseToken: () => 'publisher-pat-lease',
+    });
+    const referenceCredential = await providerReferenceStore.issue(
+      identity, scheduled.publicationId, NOW,
+    );
+    expect(referenceCredential).toMatchObject({
+      created: true,
+      token: 'publisher-pat-reference',
+      targetBranch: scheduled.targetBranch,
+      publisherExecutionId: scheduled.publisherExecutionId,
+    });
+    expect(providerReferenceIssued).toBe(1);
+    await expect(providerReferenceStore.authorizePush({
+      attemptId: ATTEMPT_ID,
+      publisherExecutionId: scheduled.publisherExecutionId,
+      rawToken: 'publisher-pat-reference',
+      now: NOW,
+    })).resolves.toMatchObject({ repository: REPOSITORY, targetBranch: scheduled.targetBranch });
+    // The persisted reference must never store the raw token in plaintext.
+    expect(JSON.stringify(await env.DB_CONTROL.prepare(
+      `SELECT token_digest, token_ciphertext, token_iv
+       FROM executor_publisher_write_credentials`,
+    ).first())).not.toContain('publisher-pat-reference');
+    // Clean up so the App-path assertions below start from an empty table.
+    await providerReferenceStore.revoke(
+      scheduled.publicationId, scheduled.publisherExecutionId, NOW,
+    );
+    await env.DB_CONTROL.prepare(
+      `DELETE FROM executor_publisher_write_credentials`,
+    ).run();
     const settled = await Promise.allSettled(Array.from({ length: 20 }, async () =>
       await store.issue(identity, scheduled.publicationId, NOW)));
     expect(settled.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
