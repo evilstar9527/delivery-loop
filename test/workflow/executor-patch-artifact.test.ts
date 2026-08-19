@@ -1008,6 +1008,20 @@ describe('executor patch R2 handoff', () => {
     expect(await env.DB_CONTROL.prepare(
       `SELECT status FROM attempt_execution_instances WHERE execution_id = ?`,
     ).bind(scheduled.publisherExecutionId).first()).toEqual({ status: 'succeeded' });
+    // The credential-free publisher is the completion authority in the executor
+    // model: a verified publication marks the implement Attempt completed so the
+    // downstream completion reconciler can open the pull request. Without this,
+    // the attempt stays 'running' (github_status NULL) and the run never leaves
+    // executing, because verifyCompletedAttempts gates on github_status.
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT github_status, github_conclusion, head_sha, head_branch
+       FROM attempts WHERE attempt_id = ?`,
+    ).bind(ATTEMPT_ID).first()).toEqual({
+      github_status: 'completed',
+      github_conclusion: 'success',
+      head_sha: headSha,
+      head_branch: scheduled.targetBranch,
+    });
   });
 
   it('relays only the D1-reserved exact model without exposing provider credentials', async () => {

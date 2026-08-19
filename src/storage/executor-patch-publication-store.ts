@@ -846,6 +846,23 @@ export class ExecutorPatchPublicationStore {
     if (terminal.meta.changes !== 1) {
       throw new ExecutorPatchPublicationError('publication_conflict');
     }
+    // The credential-free publisher is the completion authority in the executor
+    // model — there is no GitHub Actions run to project. Record the successful
+    // publication as the attempt's completion (mirroring a completed/success
+    // Action) so the execution-progress reconciler's verifyCompletedAttempts,
+    // which gates on github_status='completed', can close the plan item and open
+    // the pull request. Idempotent: re-completion leaves the same terminal
+    // markers in place, and head_sha/head_branch were already validated above.
+    await this.db.prepare(
+      `UPDATE attempts
+       SET github_status = 'completed', github_conclusion = 'success',
+           github_external_updated_at = COALESCE(github_external_updated_at, ?),
+           updated_at = ?
+       WHERE attempt_id = ? AND head_sha = ? AND head_branch = ?
+         AND mode IN ('implement', 'review_fix')
+         AND status = 'running'
+         AND (github_status IS NULL OR github_status = 'completed')`,
+    ).bind(nowIso, nowIso, row.attempt_id, input.headSha, input.branch).run();
   }
 
   private async patch(patchId: string): Promise<PatchRow> {
