@@ -998,7 +998,7 @@ describe('GitHub base observation reconciliation', () => {
         acceptanceCriteriaIndexes: [0],
         doneWhen: ['The carried root cause is repaired and trusted verification passes.'],
         verification: {
-          commandRefs: ['test:typecheck', 'verify:typecheck'],
+          commandRefs: ['test:smoke', 'verify:smoke'],
           evidenceKinds: ['commit', 'test'],
         },
         effects: ['logs_read', 'repo_write'],
@@ -1023,7 +1023,7 @@ describe('GitHub base observation reconciliation', () => {
           ...item,
           effects: ['repo_write'],
           verification: {
-            commandRefs: ['test:typecheck', 'verify:typecheck'],
+            commandRefs: ['test:smoke', 'verify:smoke'],
             evidenceKinds: ['commit', 'test'],
           },
         })),
