@@ -19,6 +19,9 @@ function before(seconds: number, offsetMs = 0): string {
 
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
+    env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_routes'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_profiles'),
     env.DB_CONTROL.prepare('DELETE FROM run_stuck_incidents'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
     env.DB_CONTROL.prepare('DELETE FROM verification_suite_commands'),
@@ -407,6 +410,95 @@ describe('multi-state durable stuck detector', () => {
     expect(await env.DB_CONTROL.prepare(
       `SELECT state, version FROM runs WHERE run_id = ?`,
     ).bind(runId).first()).toEqual({ state: 'executing', version: 1 });
+  });
+
+  it('does not fence a running Attempt while its publisher execution is still active', async () => {
+    const runId = 'run-stuck-active-publisher';
+    const attemptId = 'attempt-stuck-active-publisher';
+    const nowIso = NOW.toISOString();
+    await seedRun(runId, 'executing', before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running));
+    // A running implement Attempt whose heartbeat has gone stale past the
+    // threshold: the credential-free work lane finished and stopped
+    // heartbeating, and the publisher execution (which does the heavy
+    // install + verify) is legitimately still running. It must not be fenced.
+    await env.DB_CONTROL.batch([
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, version, lease_generation, lease_token_digest,
+           lease_expires_at, heartbeat_at, created_at, updated_at
+         ) VALUES (?, ?, 1, 'implement', 'running', ?, 'example/delivery-target',
+                   'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                   3, 1, ?, ?, ?, ?, ?)`,
+      ).bind(
+        attemptId,
+        runId,
+        BASE_SHA,
+        `sha256:${'c'.repeat(64)}`,
+        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
+        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
+        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
+        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO executor_profiles (
+           profile_id, schema_version, provider_kind, plugin_schema_version,
+           release_digest, configuration_json, capabilities_json, status,
+           created_at, activated_at
+         ) VALUES ('publisher-profile-active', '1', 'cloudflare_sandbox', '1',
+                   ?, '{}', '{}', 'active', ?, ?)`,
+      ).bind(`sha256:${'b'.repeat(64)}`, nowIso, nowIso),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO executor_routes (
+           route_id, repository, attempt_mode, execution_role, profile_id,
+           route_version, status, created_at, updated_at
+         ) VALUES ('publisher-route-active', 'example/delivery-target',
+                   'implement', 'publisher', 'publisher-profile-active', 5,
+                   'active', ?, ?)`,
+      ).bind(nowIso, nowIso),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO outbox (
+           outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
+           delivery_state, created_at, updated_at
+         ) VALUES (?, ?, 'agent_execution_start', 'agent_executor', ?, ?,
+                   'pending', ?, ?)`,
+      ).bind(
+        `outbox-publisher-${attemptId}`,
+        runId,
+        `d1://executions/execution-publisher-${attemptId}`,
+        `publisher-dispatch:${attemptId}`,
+        nowIso,
+        nowIso,
+      ),
+      env.DB_CONTROL.prepare(
+        `INSERT INTO attempt_execution_instances (
+           execution_id, attempt_id, attempt_version, lease_generation,
+           execution_role, executor_profile_id, executor_route_version,
+           spec_digest, spec_json, release_digest, provider_kind,
+           plugin_schema_version, status, outbox_id, created_at, updated_at
+         ) VALUES (?, ?, 3, 1, 'publisher',
+                   'publisher-profile-active', 5,
+                   ?, '{}', ?, 'cloudflare_sandbox', '1', 'running', ?, ?, ?)`,
+      ).bind(
+        `execution-publisher-${attemptId}`,
+        attemptId,
+        `sha256:${'a'.repeat(64)}`,
+        `sha256:${'b'.repeat(64)}`,
+        `outbox-publisher-${attemptId}`,
+        nowIso,
+        nowIso,
+      ),
+    ]);
+
+    const scans = await Promise.all(Array.from({ length: 5 }, async () =>
+      await new RunStuckDetector(env.DB_CONTROL, {
+        now: () => NOW,
+        sink: () => undefined,
+      }).scan()));
+    expect(scans.flatMap((scan) => scan.detected)).toEqual([]);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status FROM attempts WHERE attempt_id = ?`,
+    ).bind(attemptId).first()).toEqual({ status: 'running' });
   });
 
   it('does not trust GitHub success without the matching completion facts', async () => {

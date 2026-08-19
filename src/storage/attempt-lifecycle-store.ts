@@ -91,6 +91,21 @@ const SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL = `NOT (
   )
 )`;
 
+// The credential-free publisher runs as a separate execution under the same
+// implement/review_fix Attempt, after the work lane stopped heartbeating. Its
+// setup:install + verify legitimately runs for several minutes with no Attempt
+// heartbeat, so the running-threshold watchdog would otherwise fence a live
+// publisher as lost and tear its container down mid-verification. Do not fence
+// an Attempt while it still has a publisher execution that is starting or
+// running; if that execution actually dies, the executor reconciler marks it
+// failed/lost, which clears this guard and lets the watchdog fence normally.
+const NO_ACTIVE_PUBLISHER_EXECUTION_SQL = `NOT EXISTS (
+  SELECT 1 FROM attempt_execution_instances AS publisher_execution
+  WHERE publisher_execution.attempt_id = attempts.attempt_id
+    AND publisher_execution.execution_role = 'publisher'
+    AND publisher_execution.status IN ('pending', 'starting', 'running')
+)`;
+
 export class AttemptLifecycleStore {
   constructor(private readonly db: D1Database) {}
 
@@ -305,6 +320,7 @@ export class AttemptStuckDetector {
            AND attempts.result_event_id IS NULL
            AND attempts.lease_expires_at IS NOT NULL
            AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
+           AND ${NO_ACTIVE_PUBLISHER_EXECUTION_SQL}
            AND runs.state IN (
              'triaging', 'awaiting_approval', 'planning', 'executing',
              'verifying', 'awaiting_review', 'deploying'
@@ -355,6 +371,7 @@ export class AttemptStuckDetector {
              AND attempts.lease_generation = ? AND attempts.result_event_id IS NULL
              AND attempts.lease_expires_at IS NOT NULL
              AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
+             AND ${NO_ACTIVE_PUBLISHER_EXECUTION_SQL}
              AND runs.state = ? AND runs.version = ?
              AND (
                attempts.lease_expires_at <= ?
@@ -386,6 +403,7 @@ export class AttemptStuckDetector {
            WHERE attempt_id = ? AND run_id = ? AND status = ? AND version = ?
              AND lease_generation = ? AND lease_expires_at IS NOT NULL
              AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
+             AND ${NO_ACTIVE_PUBLISHER_EXECUTION_SQL}
              AND (
                lease_expires_at <= ? OR COALESCE(heartbeat_at, updated_at) <= ?
              )
