@@ -8,9 +8,16 @@ export const ANALYSIS_READ_EFFECTS = [
 
 export const ANALYSIS_READ_COMMAND_REFS = ['policy:inspect', 'policy:diagnose'] as const;
 
-/** Current pilot repository refs, frozen from the trusted delivery.yaml contract. */
-export const ANALYSIS_PILOT_CHANGE_COMMAND_REFS = ['test:unit', 'verify:all'] as const;
-export const ANALYSIS_PILOT_VERIFICATION_COMMAND_REFS = ['verify:all'] as const;
+/**
+ * Current pilot repository refs, frozen from the trusted delivery.yaml contract.
+ * These are the in-sandbox verification commands the analysis agent may attach
+ * to a self-verifying change Item, so they must stay lightweight enough to run
+ * on the small executor sandbox (0.5 vCPU). The authoritative full suite
+ * (`pnpm run verify`) runs as the target repository's pull_request CI, which is
+ * the enforced merge gate — not inside the sandbox.
+ */
+export const ANALYSIS_PILOT_CHANGE_COMMAND_REFS = ['test:typecheck', 'verify:lint'] as const;
+export const ANALYSIS_PILOT_VERIFICATION_COMMAND_REFS = ['verify:lint'] as const;
 
 export interface AnalysisPlanPolicy {
   allowedEffects: readonly PlanEffect[];

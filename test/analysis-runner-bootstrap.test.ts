@@ -115,7 +115,7 @@ function unboundWritableDiagnosticPlanContent(): Record<string, unknown> {
         acceptanceCriteriaIndexes: [0],
         doneWhen: ['The failure is fixed in one commit and trusted verification passes.'],
         verification: {
-          commandRefs: ['test:unit', 'verify:all'],
+          commandRefs: ['test:typecheck', 'verify:lint'],
           evidenceKinds: ['commit', 'test'],
         },
         effects: ['repo_read', 'repo_write'],
@@ -165,7 +165,7 @@ function writablePlanContent(path = 'src/request.ts'): Record<string, unknown> {
         acceptanceCriteriaIndexes: [0],
         doneWhen: ['The committed change passes targeted and required verification.'],
         verification: {
-          commandRefs: ['test:unit', 'verify:all'],
+          commandRefs: ['test:typecheck', 'verify:lint'],
           evidenceKinds: ['commit', 'test'],
         },
         effects: ['repo_write'],
@@ -1172,7 +1172,7 @@ describe('analysis Runner bootstrap', () => {
         ...(unboundWritableDiagnosticPlanContent().items as Array<Record<string, unknown>>)[0],
         effects: ['repo_read', 'logs_read', 'repo_write'],
         verification: {
-          commandRefs: ['test:unit', 'verify:all'],
+          commandRefs: ['test:typecheck', 'verify:lint'],
           evidenceKinds: ['commit', 'test'],
         },
       }],
@@ -1230,8 +1230,8 @@ describe('analysis Runner bootstrap', () => {
           planPolicy: {
             version: 1,
             allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write'],
-            allowedCommandRefs: ['policy:inspect', 'policy:diagnose', 'test:unit', 'verify:all'],
-            verificationCommandRefs: ['verify:all'],
+            allowedCommandRefs: ['policy:inspect', 'policy:diagnose', 'test:typecheck', 'verify:lint'],
+            verificationCommandRefs: ['verify:lint'],
             requiresRepositoryChange: true,
           },
         });
@@ -1632,9 +1632,9 @@ describe('analysis Runner bootstrap', () => {
               ? ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write']
               : ['repo_read', 'logs_read'],
             allowedCommandRefs: testCase.writable
-              ? ['policy:inspect', 'policy:diagnose', 'test:unit', 'verify:all']
+              ? ['policy:inspect', 'policy:diagnose', 'test:typecheck', 'verify:lint']
               : ['policy:diagnose'],
-            verificationCommandRefs: testCase.writable ? ['verify:all'] : [],
+            verificationCommandRefs: testCase.writable ? ['verify:lint'] : [],
             requiresRepositoryChange: testCase.writable,
           },
         });
@@ -2120,9 +2120,9 @@ describe('analysis Runner bootstrap', () => {
                   'repo_read', 'logs_read', 'database_diagnostic', 'repo_write',
                 ],
                 allowedCommandRefs: [
-                  'policy:inspect', 'policy:diagnose', 'test:unit', 'verify:all',
+                  'policy:inspect', 'policy:diagnose', 'test:typecheck', 'verify:lint',
                 ],
-                verificationCommandRefs: ['verify:all'],
+                verificationCommandRefs: ['verify:lint'],
                 requiresRepositoryChange: true,
               }
             : {

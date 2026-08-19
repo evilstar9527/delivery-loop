@@ -82,8 +82,8 @@ describe('delivery.yaml v1', () => {
     expect(Object.isFrozen(parsed.policy.commands.verify.all?.argv)).toBe(true);
     expect(deliveryPolicyCommandRefs(parsed.policy)).toEqual([
       'setup:install',
-      'test:unit',
-      'verify:all',
+      'test:typecheck',
+      'verify:lint',
       'acceptance:smoke',
     ]);
     expect(ANALYSIS_PILOT_CHANGE_COMMAND_REFS).toEqual(
@@ -94,21 +94,21 @@ describe('delivery.yaml v1', () => {
     );
     const request = resolveDeliveryCommand(
       parsed.policy,
-      'verify:all',
+      'verify:lint',
       '/trusted/repository',
     );
     expect(request).toEqual({
-      ref: 'verify:all',
+      ref: 'verify:lint',
       category: 'verify',
       command: 'pnpm',
-      args: ['run', 'verify'],
+      args: ['run', 'lint'],
       cwd: '/trusted/repository',
       stdin: '',
-      timeoutMs: 1_200_000,
+      timeoutMs: 300_000,
     });
     request.args.push('MUTATION');
-    expect(resolveDeliveryCommand(parsed.policy, 'verify:all', '/trusted/repository').args)
-      .toEqual(['run', 'verify']);
+    expect(resolveDeliveryCommand(parsed.policy, 'verify:lint', '/trusted/repository').args)
+      .toEqual(['run', 'lint']);
     expect(resolveDeliveryCommand(
       parsed.policy,
       'acceptance:smoke',
@@ -117,7 +117,7 @@ describe('delivery.yaml v1', () => {
       ref: 'acceptance:smoke',
       category: 'acceptance',
       command: 'pnpm',
-      args: ['run', 'test:unit'],
+      args: ['run', 'typecheck'],
       cwd: '/trusted/repository',
       stdin: '',
       timeoutMs: 300_000,

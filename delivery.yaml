@@ -4,17 +4,22 @@ commands:
     install:
       argv: [pnpm, install, --frozen-lockfile]
       timeoutSeconds: 600
+  # In-sandbox verification stays lightweight: the executor runs on a small
+  # (0.5 vCPU) Cloudflare sandbox where the full unit/verify suites time out.
+  # These fast checks catch broken agent output before patch upload; the
+  # authoritative full `pnpm run verify` runs as the target repository's
+  # pull_request CI (the required merge check), which is the real final gate.
   targeted:
-    unit:
-      argv: [pnpm, run, test:unit]
+    typecheck:
+      argv: [pnpm, run, typecheck]
       timeoutSeconds: 300
   verify:
-    all:
-      argv: [pnpm, run, verify]
-      timeoutSeconds: 1200
+    lint:
+      argv: [pnpm, run, lint]
+      timeoutSeconds: 300
   acceptance:
     smoke:
-      argv: [pnpm, run, test:unit]
+      argv: [pnpm, run, typecheck]
       timeoutSeconds: 300
 protectedPaths:
   - delivery.yaml
