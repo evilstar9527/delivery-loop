@@ -16,8 +16,8 @@ export const ANALYSIS_READ_COMMAND_REFS = ['policy:inspect', 'policy:diagnose'] 
  * (`pnpm run verify`) runs as the target repository's pull_request CI, which is
  * the enforced merge gate — not inside the sandbox.
  */
-export const ANALYSIS_PILOT_CHANGE_COMMAND_REFS = ['test:typecheck', 'verify:typecheck'] as const;
-export const ANALYSIS_PILOT_VERIFICATION_COMMAND_REFS = ['verify:typecheck'] as const;
+export const ANALYSIS_PILOT_CHANGE_COMMAND_REFS = ['test:smoke', 'verify:smoke'] as const;
+export const ANALYSIS_PILOT_VERIFICATION_COMMAND_REFS = ['verify:smoke'] as const;
 
 export interface AnalysisPlanPolicy {
   allowedEffects: readonly PlanEffect[];

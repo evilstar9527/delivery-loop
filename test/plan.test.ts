@@ -120,9 +120,9 @@ describe('ExecutionPlan v1 validation', () => {
     expect(deriveAnalysisPlanPolicy('requirement', true)).toEqual({
       allowedEffects: ['repo_read', 'logs_read', 'database_diagnostic', 'repo_write'],
       allowedCommandRefs: [
-        'policy:inspect', 'policy:diagnose', 'test:typecheck', 'verify:typecheck',
+        'policy:inspect', 'policy:diagnose', 'test:smoke', 'verify:smoke',
       ],
-      verificationCommandRefs: ['verify:typecheck'],
+      verificationCommandRefs: ['verify:smoke'],
       requiresRepositoryChange: true,
       requiresTestDeployment: false,
     });

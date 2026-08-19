@@ -82,8 +82,8 @@ describe('delivery.yaml v1', () => {
     expect(Object.isFrozen(parsed.policy.commands.verify.all?.argv)).toBe(true);
     expect(deliveryPolicyCommandRefs(parsed.policy)).toEqual([
       'setup:install',
-      'test:typecheck',
-      'verify:typecheck',
+      'test:smoke',
+      'verify:smoke',
       'acceptance:smoke',
     ]);
     expect(ANALYSIS_PILOT_CHANGE_COMMAND_REFS).toEqual(
@@ -94,21 +94,21 @@ describe('delivery.yaml v1', () => {
     );
     const request = resolveDeliveryCommand(
       parsed.policy,
-      'verify:typecheck',
+      'verify:smoke',
       '/trusted/repository',
     );
     expect(request).toEqual({
-      ref: 'verify:typecheck',
+      ref: 'verify:smoke',
       category: 'verify',
-      command: 'pnpm',
-      args: ['run', 'typecheck'],
+      command: 'node',
+      args: ['-e', "require('node:fs').accessSync('package.json')"],
       cwd: '/trusted/repository',
       stdin: '',
-      timeoutMs: 300_000,
+      timeoutMs: 120_000,
     });
     request.args.push('MUTATION');
-    expect(resolveDeliveryCommand(parsed.policy, 'verify:typecheck', '/trusted/repository').args)
-      .toEqual(['run', 'typecheck']);
+    expect(resolveDeliveryCommand(parsed.policy, 'verify:smoke', '/trusted/repository').args)
+      .toEqual(['-e', "require('node:fs').accessSync('package.json')"]);
     expect(resolveDeliveryCommand(
       parsed.policy,
       'acceptance:smoke',
@@ -116,11 +116,11 @@ describe('delivery.yaml v1', () => {
     )).toEqual({
       ref: 'acceptance:smoke',
       category: 'acceptance',
-      command: 'pnpm',
-      args: ['run', 'typecheck'],
+      command: 'node',
+      args: ['-e', "require('node:fs').accessSync('package.json')"],
       cwd: '/trusted/repository',
       stdin: '',
-      timeoutMs: 300_000,
+      timeoutMs: 120_000,
     });
   });
 
