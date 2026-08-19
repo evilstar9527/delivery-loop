@@ -49,6 +49,8 @@ describe('executor patch runtime client', () => {
       const request = new Request(input, init);
       requests.push(request);
       if (request.method === 'POST') {
+        // Mirror the control plane's real 201 body, which also carries the
+        // scheduled publisher handoff fields. The client must accept these.
         return Response.json({
           schemaVersion: '1',
           patchId: 'patch-client-1',
@@ -58,6 +60,10 @@ describe('executor patch runtime client', () => {
           changedPathsDigest: `sha256:${'2'.repeat(64)}`,
           byteLength: 100,
           created: true,
+          publicationId: 'publication-client-1',
+          publisherExecutionId: 'execution-publisher-1',
+          publisherOutboxId: 'outbox-publisher-1',
+          targetBranch: 'agent/task/attempt',
         }, { status: 201 });
       }
       return Response.json(await publisherResponse());
