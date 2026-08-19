@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "delivery-loop-control-plane",
-  "account_id": "b8488957e88658039d2a38fb8f160514",
+  "account_id": "041d4868e5611b45f9959f4f58c1e4c7",
   "send_metrics": false,
   "main": "src/worker.ts",
   "compatibility_date": "2026-07-01",
@@ -12,9 +12,9 @@
     "GITHUB_AGENT_EXECUTOR_REPOSITORY": "evilstar9527/delivery-loop",
     "GITHUB_AGENT_EXECUTOR_REF": "refs/heads/main",
     "GITHUB_OIDC_AUDIENCE": "delivery-loop-control-plane",
-    "CONTROL_PLANE_URL": "https://delivery-loop-control-plane.eve55265.workers.dev",
+    "CONTROL_PLANE_URL": "https://delivery-loop.fantacy.live",
     "CODEX_MODEL_PROFILE_ID": "codex-gpt-5p6-terra-medium-tool-loop-20260811",
-    "AGENT_EXECUTOR_URL": "https://delivery-loop-agent-executor.heco.workers.dev",
+    "AGENT_EXECUTOR_URL": "https://agent-executor.fantacy.live",
     "EXECUTOR_MODEL_PROVIDER": "delivery_loop_relay",
     "EXECUTOR_MODEL_BASE_URL": "https://openrouter.ai/api/v1",
     "EXECUTOR_MODEL_UPSTREAM_MODEL": "openai/gpt-5.6-terra",
@@ -42,14 +42,14 @@
     {
       "binding": "DB_CONTROL",
       "database_name": "delivery-loop-control",
-      "database_id": "8cd2d08d-1db1-4cd8-8598-caaca308c7fd",
+      "database_id": "a5dc485e-1ae6-4635-a2c8-f922d6ea7079",
       "migrations_dir": "migrations"
     }
   ],
   "services": [
     {
       "binding": "TOOL_BRIDGE",
-      "service": "delivery-loop-tool-bridge"
+      "service": "tb-gateway"
     }
   ],
   "r2_buckets": [
