@@ -349,6 +349,10 @@ describe('analysis Runner bootstrap', () => {
     environment.DELIVERY_EXECUTION_ID = 'execution-analysis-proxy-1';
     environment.DELIVERY_MODEL_PROFILE_ID = 'profile-analysis-proxy';
     environment.DELIVERY_CONTROL_PLANE_URL = 'http://control.delivery-loop.internal';
+    environment.DELIVERY_TOOL_BRIDGE_BASE_URL = 'https://tool-bridge.fantacy.live';
+    environment.DELIVERY_TOOL_BRIDGE_SK = 'tb-runtime-test-secret-value';
+    environment.DELIVERY_TOOL_BRIDGE_SLS_LOGSTORE = 'tipsy-chat';
+    environment.DELIVERY_TOOL_BRIDGE_SLS_ENVIRONMENT = 'prod';
     const requests: Array<{ url: string; authorization: string | null }> = [];
     let checkoutInput: unknown;
     const fetchImplementation: typeof fetch = async (input, init) => {
@@ -452,6 +456,167 @@ describe('analysis Runner bootstrap', () => {
       attemptToken: INITIAL_TOKEN,
       checkoutSha: BASE_SHA,
     });
+  });
+
+  it('authorizes, calls Tool Bridge directly, and records only metadata from an executor', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'delivery-loop-direct-tool-bridge-'));
+    const environment = await runnerEnvironment(root);
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(environment.GITHUB_WORKSPACE!, { recursive: true });
+    await mkdir(environment.RUNNER_TEMP!, { recursive: true });
+    delete environment.ACTIONS_ID_TOKEN_REQUEST_URL;
+    delete environment.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+    environment.DELIVERY_EXECUTOR_IDENTITY_KIND = 'cloudflare_sandbox_proxy';
+    environment.DELIVERY_EXECUTION_ID = 'execution-direct-tool-bridge-1';
+    environment.DELIVERY_CONTROL_PLANE_URL = 'http://control.delivery-loop.internal';
+    environment.DELIVERY_TOOL_BRIDGE_BASE_URL = 'https://tool-bridge.fantacy.live';
+    environment.DELIVERY_TOOL_BRIDGE_SK = 'tb-direct-runtime-secret-value';
+    environment.DELIVERY_TOOL_BRIDGE_SLS_LOGSTORE = 'tipsy-chat';
+    environment.DELIVERY_TOOL_BRIDGE_SLS_ENVIRONMENT = 'prod';
+    const bugTask = taskEnvelope('bug');
+    environment.DELIVERY_TASK_DIGEST = await taskRevisionDigest(bugTask);
+    const evidenceRef = 'd1://evidence/diagnostic_direct_tool_bridge';
+    const expectedPlan = await responsePlan(diagnosticPlanContent([evidenceRef]));
+    const requestId = '2085560401799000064';
+    const directBodies: unknown[] = [];
+    const observations: Array<Record<string, unknown>> = [];
+    let authorizationCount = 0;
+    let evidenceBody: DiagnosticEvidenceV1 | undefined;
+
+    const fetchImplementation: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const authorization = new Headers(init?.headers).get('authorization');
+      if (url.endsWith('/executor-exchange')) {
+        return Response.json({
+          attemptToken: INITIAL_TOKEN,
+          expiresAt: '2026-07-25T00:05:00.000Z',
+          attemptVersion: 7,
+          leaseGeneration: 3,
+          grant: {
+            toolBridgeToken: INITIAL_TOOL_TOKEN,
+            expiresAt: '2026-07-25T00:05:00.000Z',
+            scopes: [...TRIAGE_TOOL_ACTIONS],
+          },
+        });
+      }
+      if (url.endsWith('/context')) {
+        return Response.json({
+          schemaVersion: '1',
+          attempt: {
+            id: ATTEMPT_ID, runId: RUN_ID, mode: 'analysis', version: 7,
+            leaseGeneration: 3, baseSha: BASE_SHA,
+          },
+          task: bugTask,
+          planPolicy: {
+            version: 1,
+            allowedEffects: ['repo_read', 'logs_read'],
+            allowedCommandRefs: ['policy:inspect', 'policy:diagnose'],
+          },
+        });
+      }
+      if (url.endsWith('/tools/authorize')) {
+        expect(authorization).toBe(`Bearer ${INITIAL_TOOL_TOKEN}`);
+        authorizationCount += 1;
+        const body = JSON.parse(String(init?.body)) as { toolPath: string };
+        return Response.json({
+          authorized: true,
+          traceId: `tooltrace_${body.toolPath.replace('/', '_')}_direct${authorizationCount}`,
+          toolPath: body.toolPath,
+          action: body.toolPath === 'logs/search' ? 'logs:read' : 'trace:read',
+          effect: 'read',
+        });
+      }
+      if (url === 'https://tool-bridge.fantacy.live/mcp/tipsy/tipsy-analytics__sls_query_logs') {
+        expect(authorization).toBe('Bearer tb-direct-runtime-secret-value');
+        directBodies.push(JSON.parse(String(init?.body)) as unknown);
+        return Response.json(`trace_id:${requestId} service=chat-api outcome=stale-cache`);
+      }
+      if (url.endsWith('/tools/observe')) {
+        expect(authorization).toBe(`Bearer ${INITIAL_TOOL_TOKEN}`);
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        observations.push(body);
+        return Response.json({
+          accepted: true,
+          traceId: body.traceId,
+          disposition: 'created',
+        });
+      }
+      if (url.endsWith('/diagnostic-evidence')) {
+        evidenceBody = JSON.parse(String(init?.body)) as DiagnosticEvidenceV1;
+        return Response.json({
+          evidenceId: 'diagnostic_direct_tool_bridge',
+          evidenceRef,
+          evidenceDigest: await computeDiagnosticEvidenceDigest(evidenceBody),
+          rootCauseDigest: await computeDiagnosticRootCauseDigest(evidenceBody.rootCause),
+          created: true,
+        }, { status: 201 });
+      }
+      if (url.endsWith('/plan')) {
+        return Response.json({
+          planId: expectedPlan.planId,
+          version: 1,
+          digest: expectedPlan.digest,
+          status: 'validated',
+          payloadRef: expectedPlan.payloadRef,
+        }, { status: 201 });
+      }
+      if (url.endsWith('/complete')) {
+        return Response.json({
+          accepted: true,
+          signalId: 'signal-direct-tool-bridge',
+          outboxId: 'outbox-direct-tool-bridge',
+        }, { status: 202 });
+      }
+      if (url.endsWith('/events')) {
+        return Response.json({ accepted: true }, { status: 202 });
+      }
+      throw new Error(`unexpected direct Tool Bridge request: ${url}`);
+    };
+
+    const result = await runAnalysisAttempt({
+      environment,
+      fetch: fetchImplementation,
+      agent: {
+        usesMeteredModel: false,
+        async start(input) {
+          const logs = await input.diagnostic!.mediation.searchLogs({
+            schemaVersion: '1',
+            locatorKinds: ['cid'],
+            arguments: { cid: '1780446342879247552' },
+          });
+          expect(String(logs)).toContain(requestId);
+          const trace = await input.diagnostic!.mediation.getTrace({
+            schemaVersion: '1',
+            arguments: { requestId },
+          });
+          expect(String(trace)).toContain('stale-cache');
+          await input.diagnostic!.mediation.finish({
+            summary: 'A stale cache branch returns the wrong character name.',
+            confidence: 'high',
+            codeRefs: [{ path: 'src/cache.ts', line: 42 }],
+          });
+          return await proposedPlan(input, diagnosticPlanContent());
+        },
+      },
+      heartbeatIntervalMs: 60_000,
+      snapshotWorkspace: async () => 'clean',
+      checkoutRepository: async () => undefined,
+    });
+
+    expect(result).toMatchObject({ planId: expectedPlan.planId, digest: expectedPlan.digest });
+    expect(directBodies).toEqual([
+      expect.objectContaining({ query: '1780446342879247552' }),
+      expect.objectContaining({ query: requestId }),
+    ]);
+    expect(observations).toEqual([
+      expect.objectContaining({ toolPath: 'logs/search', resultCategory: 'success' }),
+      expect.objectContaining({ toolPath: 'traces/get', resultCategory: 'success' }),
+    ]);
+    expect(observations.every((body) => !('arguments' in body) && !('result' in body))).toBe(true);
+    expect(evidenceBody?.sourceTraceIds).toEqual([
+      'tooltrace_logs_search_direct1',
+      'tooltrace_traces_get_direct2',
+    ]);
   });
 
   it('keeps trusted context readable inside the read-only workspace and removes it before the final snapshot', async () => {

@@ -110,6 +110,26 @@ async function callTool(
   );
 }
 
+async function directRuntimeRequest(
+  operation: 'authorize' | 'observe',
+  body: unknown,
+  token = RAW_TOOL_TOKEN,
+): Promise<Response> {
+  const app = toolApp(new FakeToolBridgeClient());
+  return await app.request(
+    `${BASE_URL}/v1/attempts/${ATTEMPT_ID}/tools/${operation}`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    },
+    env,
+  );
+}
+
 async function traces(): Promise<Array<Record<string, unknown>>> {
   const rows = await env.DB_CONTROL.prepare(
     `SELECT trace_id, run_id, attempt_id, tool_path, action, effect,
@@ -133,6 +153,85 @@ beforeEach(async () => {
 });
 
 describe('attempt-scoped tool-bridge proxy and trace', () => {
+  it('separates direct-runtime authorization from metadata-only observation', async () => {
+    const authorization = await directRuntimeRequest('authorize', { toolPath: 'logs/search' });
+    expect(authorization.status).toBe(200);
+    expect(authorization.headers.get('cache-control')).toBe('no-store');
+    const grant = await authorization.json<{
+      traceId: string;
+      toolPath: string;
+      action: string;
+      effect: string;
+    }>();
+    expect(grant).toMatchObject({
+      traceId: expect.stringMatching(/^tooltrace_logs_search_/),
+      toolPath: 'logs/search',
+      action: 'logs:read',
+      effect: 'read',
+    });
+    expect(await traces()).toEqual([]);
+
+    const occurredAt = new Date().toISOString();
+    const observation = {
+      traceId: grant.traceId,
+      toolPath: 'logs/search',
+      durationMs: 7677,
+      resultCategory: 'success',
+      occurredAt,
+    };
+    const first = await directRuntimeRequest('observe', observation);
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({
+      accepted: true,
+      traceId: grant.traceId,
+      disposition: 'created',
+    });
+    const replay = await directRuntimeRequest('observe', observation);
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual({
+      accepted: true,
+      traceId: grant.traceId,
+      disposition: 'existing',
+    });
+    expect(await traces()).toEqual([
+      expect.objectContaining({
+        trace_id: grant.traceId,
+        run_id: RUN_ID,
+        attempt_id: ATTEMPT_ID,
+        tool_path: 'logs/search',
+        action: 'logs:read',
+        effect: 'read',
+        duration_ms: 7677,
+        result_category: 'success',
+        occurred_at: occurredAt,
+      }),
+    ]);
+  });
+
+  it('rejects direct observations without a matching pre-call admission or with drift', async () => {
+    const occurredAt = new Date().toISOString();
+    const missing = await directRuntimeRequest('observe', {
+      traceId: 'tooltrace_missing_admission',
+      toolPath: 'logs/search',
+      durationMs: 1,
+      resultCategory: 'success',
+      occurredAt,
+    });
+    expect(missing.status).toBe(409);
+
+    const authorization = await directRuntimeRequest('authorize', { toolPath: 'logs/search' });
+    const grant = await authorization.json<{ traceId: string }>();
+    const drift = await directRuntimeRequest('observe', {
+      traceId: grant.traceId,
+      toolPath: 'traces/get',
+      durationMs: 1,
+      resultCategory: 'success',
+      occurredAt,
+    });
+    expect(drift.status).toBe(409);
+    expect(await traces()).toEqual([]);
+  });
+
   it('allows only the five bounded triage read/diagnostic paths', async () => {
     const client = new FakeToolBridgeClient();
     const allowed = [

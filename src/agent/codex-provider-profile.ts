@@ -58,6 +58,11 @@ export function codexProviderEnvironment(
   const environment: NodeJS.ProcessEnv = { ...process.env };
   delete environment.OPENAI_API_KEY;
   delete environment.CODEX_API_KEY;
+  // Tool Bridge is a trusted runner capability, never a model capability.
+  // Remove both the executor-injected names and the local CLI profile alias
+  // before spawning Codex, even when the provider grant is refreshed.
+  delete environment.DELIVERY_TOOL_BRIDGE_SK;
+  delete environment.TB_SK;
   environment.CODEX_API_KEY = apiKey;
   return environment;
 }

@@ -8,7 +8,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "EXECUTOR_IMAGE_REF": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:6eb5753350278abfda7c9a6ff8efa7eca2be30ce118fe622de295caffd79c268",
-    "EXECUTOR_IMAGE_DIGEST": "sha256:6eb5753350278abfda7c9a6ff8efa7eca2be30ce118fe622de295caffd79c268"
+    "EXECUTOR_IMAGE_DIGEST": "sha256:6eb5753350278abfda7c9a6ff8efa7eca2be30ce118fe622de295caffd79c268",
+    "TOOL_BRIDGE_BASE_URL": "https://tool-bridge.fantacy.live",
+    "TOOL_BRIDGE_SLS_LOGSTORE": "tipsy-chat",
+    "TOOL_BRIDGE_SLS_ENVIRONMENT": "prod"
   },
   "observability": {
     "enabled": true,
