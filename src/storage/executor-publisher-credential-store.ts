@@ -127,9 +127,13 @@ export class ExecutorPublisherCredentialStore {
       identity.role !== 'publisher' || !ID_PATTERN.test(publicationId) ||
       !Number.isFinite(now.getTime())
     ) throw new ExecutorPublisherCredentialError('invalid_request');
-    if (this.provider.writeCredentialPersistence === 'provider_reference') {
-      throw new ExecutorPublisherCredentialError('policy_denied');
-    }
+    // A provider-reference (PAT) provider is supported the same way the
+    // credential-free work lane supports it: the reserve -> issueReserved flow
+    // mints the reference token via issueWriteCredential, persists it
+    // encrypted, and the push proxy authorizes with it. GitHub App providers
+    // mint short-lived installation tokens through the same path. Denying
+    // provider_reference here would leave a PAT-configured deployment unable to
+    // ever open a pull request even though the work lane already pushes with it.
     const context = await this.context(identity, publicationId, now);
     const approval = await this.approval(context, now);
     const digest = await canonicalSha256({ schemaVersion: '1', publicationId });
