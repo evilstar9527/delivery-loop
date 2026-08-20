@@ -8,7 +8,7 @@ import { case8AuditApi } from './http/case8-audit-api.js';
 import { approvalApi } from './http/approval-api.js';
 import { attemptApi } from './http/attempt-api.js';
 import { correlationApi } from './http/correlation-api.js';
-import { dashboardApi } from './http/dashboard-api.js';
+import { dashboardApi } from './dashboard/dashboard-api.js';
 import { deadLetterApi } from './http/dead-letter-api.js';
 import { dataRetentionApi } from './http/data-retention-api.js';
 import { diagnosticEvidenceApi } from './http/diagnostic-evidence-api.js';

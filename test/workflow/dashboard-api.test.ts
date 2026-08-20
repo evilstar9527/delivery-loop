@@ -65,7 +65,8 @@ describe('dashboard overview api', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
     const html = await res.text();
-    expect(html).toContain('Delivery Loop Board');
+    expect(html).toContain('Delivery Loop');
+    expect(html).toContain('Active sandboxes');
     expect(html).toContain('/v1/dashboard/overview');
   });
 
