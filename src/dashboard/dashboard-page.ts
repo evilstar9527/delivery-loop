@@ -112,9 +112,13 @@ window.approveRun = approveRun;
 // A card click navigates to the run's detail page, unless the click landed on
 // an inner control (copy-id, approve, PR link) which have their own behavior.
 function onTaskClick(event, runId) {
-  // The select checkbox lives inside the card, so ticking it must not also open
-  // the detail panel.
-  if (event.target.closest('button, a, input')) return;
+  // Controls inside the card claim their own clicks via stopPropagation, so
+  // anything reaching here is a click on the card surface itself.
+  //
+  // This deliberately does NOT test event.target.closest('button,...'): a
+  // handler that rewrites its own button label detaches the clicked node, and
+  // closest() on a detached node returns null, which used to let the detail
+  // panel open behind an in-flight removal.
   openDetail(runId);
 }
 window.onTaskClick = onTaskClick;
@@ -237,7 +241,7 @@ function renderDetail(d) {
     'record, plan and PR are kept and stay auditable. A running sandbox is only ' +
     'destroyed after you confirm.</p>' +
     '<button type="button" class="task-del" onclick="deleteRun(this,\'' + esc(d.runId) +
-    '\')">Remove from board</button></section>';
+    '\')"><span>Remove from board</span></button></section>';
 
   $('detail').innerHTML = detailShell(html);
   startSession(d.runId);
@@ -508,18 +512,21 @@ function taskCard(t) {
   const picked = selectedRuns.has(t.runId);
   // Both controls sit in one top-right cluster and stay invisible until hover,
   // so a read-only board looks unchanged. A ticked box stays visible.
+  // stopPropagation on the label keeps the card's open-detail handler out of it;
+  // the inner input gets the same guard because a label click re-dispatches
+  // there and that second event bubbles independently.
   const pick = '<label class="pick"' + (picked ? ' data-on="1"' : '') +
-    ' title="Select for removal">' +
+    ' title="Select for removal" onclick="event.stopPropagation()">' +
     '<input type="checkbox"' + (picked ? ' checked' : '') +
     ' aria-label="Select task for removal"' +
-    ' onclick="toggleSelect(this,\'' + esc(t.runId) + '\')" />' +
+    ' onclick="event.stopPropagation();toggleSelect(this,\'' + esc(t.runId) + '\')" />' +
     '<span class="pick-box">' +
     '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">' +
     '<path fill="currentColor" d="M13.5 3.5 6 11 2.5 7.5 3.5 6.5 6 9l6.5-6.5z"/></svg>' +
     '</span></label>';
   const trash = '<button type="button" class="card-del" title="Remove this task"' +
     ' aria-label="Remove this task"' +
-    ' onclick="deleteRun(this,\'' + esc(t.runId) + '\')">' +
+    ' onclick="event.stopPropagation();deleteRun(this,\'' + esc(t.runId) + '\')">' +
     '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">' +
     '<path fill="currentColor" d="M6.5 1h3a1 1 0 0 1 1 1v.5H13a.5.5 0 0 1 0 1h-.55l-.6 8.6A2 2 0 0 1 9.86 14H6.14a2 2 0 0 1-2-1.9l-.59-8.6H3a.5.5 0 0 1 0-1h2.5V2a1 1 0 0 1 1-1m0 1.5h3V2h-3zM4.55 3.5l.59 8.53a1 1 0 0 0 1 .97h3.72a1 1 0 0 0 1-.97l.59-8.53zM6.5 5a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5m3 0a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5"/></svg>' +
     '</button>';
@@ -637,13 +644,15 @@ async function deleteRuns(runIds, btn) {
   const url = many
     ? '/v1/dashboard/runs/delete'
     : '/v1/dashboard/runs/' + encodeURIComponent(runIds[0]) + '/delete';
-  const original = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Removing…'; }
+  // Signal "busy" without touching children. Rewriting textContent would remove
+  // the icon node that was just clicked, and an icon-only card button would lose
+  // its glyph entirely.
+  if (btn) { btn.disabled = true; btn.setAttribute('data-busy', '1'); }
   try {
     let result = await postDelete(url, many ? runIds : null, false);
     if (result.status === 409 && result.payload && result.payload.status === 'sandbox_active') {
       if (!confirm(cascadePrompt(result.payload.blocked || [], runIds.length))) {
-        if (btn) { btn.disabled = false; btn.textContent = original; }
+        if (btn) { btn.disabled = false; btn.removeAttribute('data-busy'); }
         return;
       }
       result = await postDelete(url, many ? runIds : null, true);
@@ -657,7 +666,7 @@ async function deleteRuns(runIds, btn) {
     setStatus(n === 1 ? 'Task removed' : n + ' tasks removed', 'ok');
     load();
   } catch (e) {
-    if (btn) { btn.disabled = false; btn.textContent = original; }
+    if (btn) { btn.disabled = false; btn.removeAttribute('data-busy'); }
     alert('Remove failed: ' + e.message);
   }
 }
@@ -897,6 +906,10 @@ button.ghost.on{border-color:var(--clay);color:var(--clay)}
   border:1px solid rgba(215,86,68,.4);transition:border-color .15s,color .15s,background .15s}
 .task-del:hover{background:rgba(215,86,68,.12);border-color:#d75644;color:#f0a99a}
 .task-del:disabled{cursor:default;opacity:.6}
+/* Busy state swaps the label via CSS instead of rewriting textContent, which
+   would detach the clicked child node and break click bookkeeping. */
+.task-del[data-busy] span,.bulk-del[data-busy] span{display:none}
+.task-del[data-busy]::after,.bulk-del[data-busy]::after{content:'Removing…'}
 /* ---- detail page (full screen route) ---- */
 .detail-page{min-height:100vh;background:var(--bg)}
 .detail-bar{position:sticky;top:0;z-index:2;background:var(--bg);
