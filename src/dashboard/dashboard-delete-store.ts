@@ -143,7 +143,18 @@ export class DashboardDeleteStore {
   private async terminateSandboxes(
     sandboxes: readonly DeleteBlockingSandbox[],
   ): Promise<string[]> {
-    const effects = cloudflareSandboxEffectsFromEnv(this.env);
+    // Resolving the executor transport can throw on partially configured
+    // environments: AGENT_EXECUTOR_URL ships as a plain var while the control
+    // token is a secret, so a deployment holding only the var raises rather
+    // than returning null. The run is already cancelled and dismissed by now,
+    // so an unreachable executor must leave the removal successful and the
+    // container reapable, never fail the request.
+    let effects;
+    try {
+      effects = cloudflareSandboxEffectsFromEnv(this.env);
+    } catch {
+      return [];
+    }
     const origin = this.env.AGENT_EXECUTOR_URL;
     if (effects === null || origin === undefined) return [];
     const terminated: string[] = [];

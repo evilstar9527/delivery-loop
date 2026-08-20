@@ -340,4 +340,38 @@ describe('dashboard task delete API', () => {
     expect(afterBody.activeSandboxes.some((s) => s.sandboxId === 'executor-del-overview'))
       .toBe(true);
   });
+
+  it('still removes the run when the executor transport is only half configured', async () => {
+    // AGENT_EXECUTOR_URL ships as a plain var in wrangler.jsonc while the
+    // control token is a secret, so any environment holding the var without the
+    // secret makes transport resolution throw instead of returning null. CI runs
+    // in exactly that shape, and the throw used to escape as a 500 that failed
+    // the removal after the run had already been cancelled and dismissed.
+    const runId = await seedRun('halfconf', {
+      runState: 'executing',
+      executionStatus: 'running',
+      sandboxId: 'executor-del-halfconf',
+    });
+    const original = env.AGENT_EXECUTOR_CONTROL_TOKEN;
+    // Reproduce a deployment that has the URL var but not the secret.
+    delete env.AGENT_EXECUTOR_CONTROL_TOKEN;
+    try {
+      const res = await SELF.fetch(`${BASE}/v1/dashboard/runs/${runId}/delete`, {
+        method: 'POST',
+        headers: JSON_AUTH,
+        body: JSON.stringify({ cascadeSandboxes: true }),
+      });
+      expect(res.status).toBe(200);
+      // The single-run route returns the outcome directly; only the batch route
+      // wraps outcomes in `results`.
+      const body = await res.json() as { status: string; terminatedSandboxes: string[] };
+      expect(body.status).toBe('deleted');
+      // Nothing could be terminated, so the container must stay reapable.
+      expect(body.terminatedSandboxes).toEqual([]);
+      expect((await runRow(runId))?.state).toBe('cancelled');
+      expect(await dismissed(runId)).toBe(true);
+    } finally {
+      if (original !== undefined) env.AGENT_EXECUTOR_CONTROL_TOKEN = original;
+    }
+  });
 });
