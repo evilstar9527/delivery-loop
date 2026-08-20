@@ -13,6 +13,7 @@ import {
   createCloudflareSandboxExecutorHandler,
   sandboxRpcFailure,
   type CloudflareSandboxExecutorBackend,
+  type CloudflareSandboxLogs,
 } from './executor-api.js';
 import type {
   CloudflareSandboxProviderFact,
@@ -126,6 +127,20 @@ function providerStatus(process: Process): ExecutorStatus {
 
 function terminal(status: ExecutorStatus): boolean {
   return status === 'succeeded' || status === 'failed' || status === 'cancelled';
+}
+
+/** Per-stream cap for log tails, keeping a Worker response comfortably small. */
+const MAX_LOG_TAIL_BYTES = 64 * 1024;
+
+/**
+ * Keeps the most recent slice of a stream. Cuts on the first newline after the
+ * budget so the caller never has to parse a half-written JSON line.
+ */
+function tail(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MAX_LOG_TAIL_BYTES) return { text, truncated: false };
+  const cut = text.slice(text.length - MAX_LOG_TAIL_BYTES);
+  const newline = cut.indexOf('\n');
+  return { text: newline === -1 ? cut : cut.slice(newline + 1), truncated: true };
 }
 
 /**
@@ -329,6 +344,44 @@ export class DeliveryAgentSandbox extends Sandbox<AgentExecutorEnv> {
     return fact;
   }
 
+  /**
+   * Read-only log tail. Deliberately does NOT take the storage write lock and
+   * never destroys the container: observing for liveness is `observeExecution`'s
+   * job, and a board operator reading logs must not be able to change execution
+   * state or reap a container as a side effect.
+   *
+   * Output is tail-truncated because a Worker response must stay small and the
+   * operator only needs the recent frontier.
+   */
+  async executionLogs(): Promise<CloudflareSandboxLogs> {
+    const record = await this.ctx.storage.get<StoredExecution>('execution');
+    if (record === undefined) {
+      throw new CloudflareExecutorBackendError('execution_not_found');
+    }
+    const process = await this.getProcess(record.processId);
+    if (process === null) {
+      // The process is gone but the record survives (container recycled). Report
+      // the last known state rather than failing the read.
+      return {
+        status: record.providerStatus,
+        exitCode: record.exitCode,
+        stdout: '',
+        stderr: '',
+        truncated: false,
+      };
+    }
+    const logs = await process.getLogs();
+    const stdout = tail(logs.stdout);
+    const stderr = tail(logs.stderr);
+    return {
+      status: record.providerStatus,
+      exitCode: record.exitCode,
+      stdout: stdout.text,
+      stderr: stderr.text,
+      truncated: stdout.truncated || stderr.truncated,
+    };
+  }
+
   async cancelExecution(
     reason: ExecutorCancelReason,
   ): Promise<'cancelled' | 'already_terminal'> {
@@ -340,7 +393,18 @@ export class DeliveryAgentSandbox extends Sandbox<AgentExecutorEnv> {
       }
       if (terminal(record.providerStatus)) return 'already_terminal';
       const process = await this.getProcess(record.processId);
-      if (process !== null) await this.killProcess(record.processId, 'SIGTERM');
+      if (process !== null) {
+        // A recycled container can leave a stale process handle behind: the
+        // record still names a process the sandbox no longer knows, and the kill
+        // throws CommandNotFoundError. That must not abort the cancel — an
+        // already-gone process is the outcome we wanted, and letting the error
+        // escape skips destroyContainer below, leaking the container forever.
+        try {
+          await this.killProcess(record.processId, 'SIGTERM');
+        } catch {
+          executorErrorLog({ event: 'sandbox_cancel_kill_skipped' });
+        }
+      }
       record = {
         ...record,
         processStatus: 'killed',
@@ -353,6 +417,16 @@ export class DeliveryAgentSandbox extends Sandbox<AgentExecutorEnv> {
     });
     await this.destroyContainer('terminal_cancel');
     return disposition;
+  }
+
+  /**
+   * Reaps a container whose execution record is missing or unusable. Cancel is
+   * the operator's escape hatch for a leaked sandbox, so it must be able to
+   * destroy the container without depending on recorded state being intact.
+   */
+  async forceDestroy(): Promise<'destroyed'> {
+    await this.destroyContainer('terminal_cancel');
+    return 'destroyed';
   }
 }
 
@@ -389,15 +463,34 @@ class SandboxBackend implements CloudflareSandboxExecutorBackend {
     ).observeExecution();
   }
 
-  async cancel(
-    sandboxId: string,
-    reason: ExecutorCancelReason,
-  ): Promise<'cancelled' | 'already_terminal'> {
+  async logs(sandboxId: string): Promise<CloudflareSandboxLogs> {
     return await getSandbox(
       this.env.EXECUTOR_SANDBOX,
       sandboxId,
       { keepAlive: true, enableDefaultSession: false, normalizeId: true },
-    ).cancelExecution(reason);
+    ).executionLogs();
+  }
+
+  async cancel(
+    sandboxId: string,
+    reason: ExecutorCancelReason,
+  ): Promise<'cancelled' | 'already_terminal'> {
+    const sandbox = getSandbox(
+      this.env.EXECUTOR_SANDBOX,
+      sandboxId,
+      { keepAlive: true, enableDefaultSession: false, normalizeId: true },
+    );
+    try {
+      return await sandbox.cancelExecution(reason);
+    } catch (cause) {
+      // The graceful path could not complete (stale process handle, unusable
+      // record). Still reap the container: leaving it running holds an instance
+      // slot indefinitely and nothing else in the system will collect it.
+      executorErrorLog({ event: 'sandbox_cancel_forced' });
+      await sandbox.forceDestroy();
+      void cause;
+      return 'already_terminal';
+    }
   }
 }
 

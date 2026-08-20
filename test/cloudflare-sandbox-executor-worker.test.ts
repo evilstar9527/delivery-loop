@@ -70,6 +70,13 @@ function backend(): CloudflareSandboxExecutorBackend {
       exitCode: null,
       imageDigest: `sha256:${'e'.repeat(64)}`,
     })),
+    logs: vi.fn(async () => ({
+      status: 'running' as const,
+      exitCode: null,
+      stdout: '{"event":"execution_agent_activity"}\n',
+      stderr: '',
+      truncated: false,
+    })),
     cancel: vi.fn(async () => 'cancelled' as const),
   };
 }
@@ -440,6 +447,7 @@ describe('Cloudflare Sandbox executor Worker API', () => {
           throw new CloudflareExecutorBackendError('sandbox_process_start_unavailable');
         }),
         observe: vi.fn(),
+        logs: vi.fn(),
         cancel: vi.fn(),
       },
     });

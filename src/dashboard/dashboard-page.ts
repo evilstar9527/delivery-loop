@@ -7,15 +7,29 @@
 
 const DASHBOARD_SCRIPT = String.raw`
 const LANES = [
-  { key: 'in_progress', label: 'In progress', cls: 'in' },
-  { key: 'unfinished', label: 'Unfinished', cls: 'un' },
+  { key: 'running', label: 'Running', cls: 'run' },
+  { key: 'pending', label: 'Pending', cls: 'pend' },
+  { key: 'blocked', label: 'Blocked', cls: 'blk' },
   { key: 'completed', label: 'Completed', cls: 'done' },
 ];
+// The board shows one lane at a time; the sidebar stat tiles double as the
+// lane filter. 'all' is the default and lists every task.
+let activeFilter = 'all';
+let lastData = null;
+// Runs the operator approved this session. Approval is consumed asynchronously
+// by a reconciler (up to ~60s), so a run stays in awaiting_approval across the
+// next few snapshots. We keep the button in an "Approved" disabled state for
+// these until the run actually leaves awaiting_approval, so repeated snapshots
+// don't re-arm a clickable button.
+const approvedRuns = new Set();
+// Runs ticked for batch removal. Held only for this session; pruned in
+// renderBoard() as runs leave the snapshot so it cannot grow unbounded.
+const selectedRuns = new Set();
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
 ));
-const laneCls = (lane) => ({ in_progress: 'in', unfinished: 'un', completed: 'done' }[lane] || 'in');
+const laneCls = (lane) => ({ running: 'run', pending: 'pend', blocked: 'blk', completed: 'done' }[lane] || 'run');
 const rel = (iso) => {
   if (!iso) return '';
   const d = (Date.now() - Date.parse(iso)) / 1000;
@@ -29,6 +43,330 @@ const shortSandbox = (id) => {
   const s = String(id || '');
   return s.length > 22 ? s.slice(0, 14) + '…' + s.slice(-6) : s;
 };
+// Task ids are long; show a truncated head so the row stays compact, but keep
+// the full value on the element for copy + tooltip.
+const shortId = (id) => {
+  const s = String(id || '');
+  return s.length > 12 ? s.slice(0, 10) + '…' : s;
+};
+async function copyId(el, value) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = value; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    el.classList.add('copied');
+    const prev = el.getAttribute('data-label') || '';
+    el.querySelector('.id-text').textContent = 'copied';
+    setTimeout(() => {
+      el.classList.remove('copied');
+      el.querySelector('.id-text').textContent = prev;
+    }, 1100);
+  } catch (e) {}
+}
+window.copyId = copyId;
+
+// Approve the repo_write gate for a run stuck in awaiting_approval. The server
+// derives the plan key from live state; we only send the run id. On success we
+// reload so the card moves to its new lane on the next snapshot.
+async function approveRun(btn, runId) {
+  const tok = token();
+  if (!tok) { setStatus('Enter your operations token to approve', 'warn'); return; }
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const label = btn.querySelector('.appr-text');
+  const prev = label ? label.textContent : '';
+  if (label) label.textContent = 'Approving…';
+  try {
+    const res = await fetch('/v1/dashboard/runs/' + encodeURIComponent(runId) + '/approve', {
+      method: 'POST', headers: { authorization: 'Bearer ' + tok }, cache: 'no-store',
+    });
+    if (res.ok) {
+      // Remember it so re-renders keep the button disabled until the run
+      // actually advances, even though it lingers in awaiting_approval.
+      approvedRuns.add(runId);
+      if (label) label.textContent = 'Approved';
+      btn.classList.add('done');
+      btn.disabled = true;
+      setStatus('Approved — run will start executing shortly', 'ok');
+      setTimeout(load, 800);
+      return;
+    }
+    if (res.status === 401) { setStatus('Unauthorized — check the token', 'err'); }
+    else if (res.status === 409) {
+      // Already advanced or no longer approvable — treat as done, don't re-arm.
+      approvedRuns.add(runId);
+      setStatus('Run is no longer awaiting approval', 'warn'); setTimeout(load, 400);
+    }
+    else { setStatus('Approve failed (' + res.status + ')', 'err'); }
+  } catch (e) { setStatus('Network error', 'err'); }
+  btn.disabled = false;
+  if (label) label.textContent = prev;
+}
+window.approveRun = approveRun;
+
+// A card click navigates to the run's detail page, unless the click landed on
+// an inner control (copy-id, approve, PR link) which have their own behavior.
+function onTaskClick(event, runId) {
+  // The select checkbox lives inside the card, so ticking it must not also open
+  // the detail panel.
+  if (event.target.closest('button, a, input')) return;
+  openDetail(runId);
+}
+window.onTaskClick = onTaskClick;
+
+// openDetail just changes the URL hash; the hashchange router renders the page.
+// This gives real, shareable, refreshable URLs (#/run/<id>) and a working Back
+// button instead of a floating layer.
+function openDetail(runId) { location.hash = '#/run/' + encodeURIComponent(runId); }
+window.openDetail = openDetail;
+// Sandbox cards address a run too, so they reuse the same navigation.
+window.openRun = openDetail;
+
+// goBack returns to the board. Prefer real history back so the browser restores
+// scroll/filter; fall back to clearing the hash when we opened detail directly.
+function goBack() {
+  if (history.length > 1 && document.referrer !== '' || navEnteredBoard) { history.back(); }
+  else { location.hash = ''; }
+}
+window.goBack = goBack;
+
+let detailRun = null;
+let navEnteredBoard = false; // true once the user has seen the board this session
+
+// Show either the board or the detail page based on the current hash.
+async function route() {
+  const m = location.hash.match(/^#\/run\/(.+)$/);
+  const shell = $('shell'), page = $('detail');
+  stopSession(); // never leave a poll running for a page we navigated away from
+  if (!m) {
+    detailRun = null;
+    page.hidden = true; page.setAttribute('aria-hidden', 'true');
+    shell.hidden = false;
+    navEnteredBoard = true;
+    return;
+  }
+  const runId = decodeURIComponent(m[1]);
+  detailRun = runId;
+  shell.hidden = true;
+  page.hidden = false; page.setAttribute('aria-hidden', 'false');
+  page.scrollTop = 0;
+  page.innerHTML = detailShell('<div class="detail-load">Loading…</div>');
+  const tok = token();
+  if (!tok) { page.innerHTML = detailShell('<div class="detail-load">Enter your operations token on the board first, then reopen this run.</div>'); return; }
+  try {
+    const res = await fetch('/v1/dashboard/runs/' + encodeURIComponent(runId), {
+      headers: { authorization: 'Bearer ' + tok }, cache: 'no-store',
+    });
+    if (res.status === 404) { page.innerHTML = detailShell('<div class="detail-load">Run not found.</div>'); return; }
+    if (!res.ok) { page.innerHTML = detailShell('<div class="detail-load">Error ' + res.status + '</div>'); return; }
+    const d = await res.json();
+    if (detailRun !== runId) return; // a newer navigation superseded this fetch
+    renderDetail(d);
+  } catch (e) { page.innerHTML = detailShell('<div class="detail-load">Network error</div>'); }
+}
+window.addEventListener('hashchange', route);
+
+// The detail page's sticky top bar: a Back button (no more close-X overlay).
+function detailShell(inner) {
+  return '<div class="detail-bar"><button type="button" class="detail-back" onclick="goBack()">' +
+    '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="currentColor" ' +
+    'd="M10 13 5 8l5-5 1 1-4 4 4 4z"/></svg> Back to board</button></div>' +
+    '<div class="detail-inner">' + inner + '</div>';
+}
+
+function renderDetail(d) {
+  const pct = d.plan && d.plan.totalCount ? Math.round(100 * d.plan.doneCount / d.plan.totalCount) : 0;
+  let html = '<div class="d-head">' +
+    '<span class="state ' + laneCls(d.lane) + '">' + esc(d.state) + '</span>' +
+    '<span class="d-pri">' + esc(d.priority) + '</span>' +
+    '<span class="d-kind">' + esc(d.intentKind) + '</span></div>';
+  html += '<h2 class="d-title">' + esc(d.title) + '</h2>';
+  html += '<div class="d-repo">' + esc(d.repository) + ' · ' + esc(d.baseBranch) +
+    (d.prNumber ? ' · <a href="' + esc(d.prUrl) + '" target="_blank" rel="noopener">PR #' + esc(d.prNumber) + '</a>' : '') + '</div>';
+
+  // Approve inline when the run is parked at the gate.
+  if (d.approvable) {
+    const done = approvedRuns.has(d.runId);
+    html += '<div class="d-approve">' + (done
+      ? '<button type="button" class="approve done" disabled>Approved</button>'
+      : '<button type="button" class="approve" onclick="approveRun(this,\'' + esc(d.runId) + '\')"><span class="appr-text">Approve</span></button>') +
+      '<span class="d-approve-note">This run is waiting for approval to begin repository changes.</span></div>';
+  }
+
+  // Original request (from meego/feishu PRD etc.)
+  html += '<section class="d-sec"><h3>Original request</h3>';
+  if (d.origin) {
+    html += '<div class="d-src">source: ' + esc(d.origin.sourceSystem) +
+      (d.origin.sourceUrl ? ' · <a href="' + esc(d.origin.sourceUrl) + '" target="_blank" rel="noopener">open PRD</a>' : '') + '</div>';
+    if (d.origin.description) html += '<div class="d-desc">' + esc(d.origin.description) + '</div>';
+    if (d.origin.acceptanceCriteria && d.origin.acceptanceCriteria.length) {
+      html += '<h4>Acceptance criteria</h4><ul class="d-ac">' +
+        d.origin.acceptanceCriteria.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>';
+    }
+  } else {
+    html += '<div class="d-empty">Original description is unavailable.</div>';
+  }
+  html += '</section>';
+
+  // Agent-produced DOD plan + progress
+  html += '<section class="d-sec"><h3>DOD plan &amp; progress</h3>';
+  if (d.plan) {
+    html += '<div class="d-plan-obj">' + esc(d.plan.objective) + '</div>';
+    html += '<div class="d-prog"><div class="d-prog-bar"><span style="width:' + pct + '%"></span></div>' +
+      '<span class="d-prog-txt">' + d.plan.doneCount + ' / ' + d.plan.totalCount + ' done · plan v' + esc(d.plan.planVersion) + ' (' + esc(d.plan.status) + ')</span></div>';
+    html += '<ol class="d-items">' + d.plan.items.map(planItemRow).join('') + '</ol>';
+  } else {
+    html += '<div class="d-empty">No plan has been produced yet.</div>';
+  }
+  html += '</section>';
+
+  // Live sandbox session. Filled in by the poll below; hidden until we know
+  // whether this run actually has a sandbox.
+  html += '<section class="d-sec" id="d-session" hidden><h3>Live session</h3>' +
+    '<div id="d-session-body"></div></section>';
+
+  // Removal lives at the end, away from the read-only body, and states plainly
+  // that the record survives.
+  html += '<section class="d-sec d-danger"><h3>Remove task</h3>' +
+    '<p class="d-danger-note">Cancels the run and hides it from the board. The task ' +
+    'record, plan and PR are kept and stay auditable. A running sandbox is only ' +
+    'destroyed after you confirm.</p>' +
+    '<button type="button" class="task-del" onclick="deleteRun(this,\'' + esc(d.runId) +
+    '\')">Remove from board</button></section>';
+
+  $('detail').innerHTML = detailShell(html);
+  startSession(d.runId);
+}
+
+// ---- live session ----
+// The runner writes counter-only activity records to the container's stdout:
+// command text, file paths and agent messages are discarded upstream by design,
+// so this shows progress evidence and diagnostics, never conversation content.
+let sessionTimer = null;
+let sessionRun = null;
+
+function stopSession() {
+  if (sessionTimer) { clearInterval(sessionTimer); sessionTimer = null; }
+  sessionRun = null;
+}
+
+function startSession(runId) {
+  stopSession();
+  sessionRun = runId;
+  pollSession();
+  // 3s is frequent enough to feel live without hammering the container; the
+  // interval exists only while this detail page is open.
+  sessionTimer = setInterval(pollSession, 3000);
+}
+
+async function pollSession() {
+  const runId = sessionRun;
+  if (!runId || detailRun !== runId) { stopSession(); return; }
+  const sec = $('d-session'), body = $('d-session-body');
+  if (!sec || !body) { stopSession(); return; }
+  try {
+    const res = await fetch('/v1/dashboard/runs/' + encodeURIComponent(runId) + '/session', {
+      headers: { authorization: 'Bearer ' + token() }, cache: 'no-store',
+    });
+    if (detailRun !== runId) return;
+    if (res.status === 404) {
+      // No sandbox for this run: stop polling rather than retrying forever.
+      sec.hidden = true;
+      stopSession();
+      return;
+    }
+    if (!res.ok) { sec.hidden = false; body.innerHTML = '<div class="d-empty">Session unavailable (' + res.status + ')</div>'; return; }
+    const s = await res.json();
+    sec.hidden = false;
+    body.innerHTML = sessionHtml(s);
+  } catch (e) {
+    if (detailRun !== runId) return;
+    sec.hidden = false;
+    body.innerHTML = '<div class="d-empty">Network error reading session.</div>';
+  }
+}
+
+function sessionHtml(s) {
+  let h = '<div class="sess-head">' +
+    '<code class="sbx-id" title="' + esc(s.sandboxId) + '">' + esc(shortSandbox(s.sandboxId)) + '</code>' +
+    '<span class="role ' + esc(s.role) + '">' + esc(s.role) + '</span>' +
+    '<span class="sess-st">' + esc(s.liveStatus || s.recordedStatus) + '</span>' +
+    (s.startedAt ? '<span class="ago">' + rel(s.startedAt) + '</span>' : '') +
+    '<button type="button" class="sbx-kill" onclick="killSandbox(this,\'' + esc(s.sandboxId) +
+      '\')">Terminate sandbox</button></div>';
+  if (s.unreachable) {
+    // Be explicit: an empty session and a wedged container look identical
+    // otherwise, and that difference is what an operator needs to know.
+    h += '<div class="sess-warn">The container is not answering log reads. ' +
+      'It may be wedged — terminating it frees the instance slot; the task can be retried.</div>';
+  }
+  if (!s.events.length && !s.unreachable) {
+    h += '<div class="d-empty">The process has produced no output yet.</div>';
+  }
+  if (s.events.length) {
+    if (s.truncated) h += '<div class="sess-trunc">Showing the most recent output only.</div>';
+    h += '<ol class="sess-list">' + s.events.map(sessionRow).join('') + '</ol>';
+  }
+  if (s.stderr) {
+    h += '<details class="sess-err"><summary>stderr</summary><pre>' + esc(s.stderr) + '</pre></details>';
+  }
+  return h;
+}
+
+function sessionRow(e) {
+  if (e.raw !== null && e.raw !== undefined) {
+    return '<li class="sess-row raw"><pre>' + esc(e.raw) + '</pre></li>';
+  }
+  const keys = Object.keys(e.fields || {});
+  const fields = keys.length
+    ? '<span class="sess-fields">' + keys.map((k) =>
+        '<span class="sess-f"><b>' + esc(k) + '</b> ' + esc(fmtField(e.fields[k])) + '</span>').join('') +
+      '</span>'
+    : '';
+  return '<li class="sess-row">' +
+    '<span class="sess-ev">' + esc(e.event) + '</span>' +
+    (e.observedAt ? '<span class="sess-at">' + esc(clock(e.observedAt)) + '</span>' : '') +
+    fields + '</li>';
+}
+
+function fmtField(v) {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+
+function clock(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toTimeString().slice(0, 8);
+}
+
+const PROGRESS_LABEL = {
+  pending: 'pending', ready: 'ready', in_progress: 'in progress',
+  passed: 'passed', failed: 'failed', blocked: 'blocked', skipped: 'skipped',
+};
+function planItemRow(it) {
+  const cls = ({ passed: 'done', skipped: 'done', failed: 'blk', blocked: 'blk',
+    in_progress: 'run', ready: 'run' }[it.progress]) || 'pend';
+  const effects = (it.effects || []).length
+    ? '<span class="d-eff">' + it.effects.map((e) => esc(e)).join(', ') + '</span>' : '';
+  const dw = (it.doneWhen || []).length
+    ? '<ul class="d-dw">' + it.doneWhen.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul>' : '';
+  return '<li class="d-item">' +
+    '<div class="d-item-head"><span class="d-item-st ' + cls + '">' +
+      esc(PROGRESS_LABEL[it.progress] || it.progress) + '</span>' +
+    '<span class="d-item-kind">' + esc(it.kind) + '</span>' +
+    (it.required ? '' : '<span class="d-opt">optional</span>') + effects + '</div>' +
+    '<div class="d-item-title">' + esc(it.title) + '</div>' +
+    '<div class="d-item-obj">' + esc(it.objective) + '</div>' + dw + '</li>';
+}
+
+// Esc closes the drawer.
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && detailRun) goBack(); });
 
 let timer = null;
 function token() { return $('token').value.trim(); }
@@ -56,23 +394,22 @@ async function load() {
 }
 
 function render(data) {
+  lastData = data;
   const counts = data.laneCounts || {};
-  $('stats').innerHTML = LANES.map((l) =>
-    '<div class="stat ' + l.cls + '"><span class="stat-n">' + (counts[l.key] || 0) +
-    '</span><span class="stat-l">' + l.label + '</span></div>'
+  const total = LANES.reduce((n, l) => n + (counts[l.key] || 0), 0);
+  // Stat tiles act as the lane filter. "All" leads, then the three lanes.
+  const tiles = [{ key: 'all', label: 'All tasks', cls: 'all', n: total }]
+    .concat(LANES.map((l) => ({ key: l.key, label: l.label, cls: l.cls, n: counts[l.key] || 0 })));
+  $('stats').innerHTML = tiles.map((t) =>
+    '<button type="button" class="stat ' + t.cls + (activeFilter === t.key ? ' active' : '') +
+    '" data-filter="' + t.key + '"><span class="stat-n">' + t.n +
+    '</span><span class="stat-l">' + esc(t.label) + '</span></button>'
   ).join('');
+  for (const btn of $('stats').querySelectorAll('.stat')) {
+    btn.addEventListener('click', () => { activeFilter = btn.getAttribute('data-filter'); renderBoard(); });
+  }
 
-  const byLane = { in_progress: [], unfinished: [], completed: [] };
-  for (const t of (data.tasks || [])) (byLane[t.lane] || byLane.in_progress).push(t);
-  $('board').innerHTML = LANES.map((l) => {
-    const items = byLane[l.key] || [];
-    const body = items.length ? items.map(taskCard).join('')
-      : '<div class="empty">No tasks</div>';
-    return '<section class="lane ' + l.cls + '">' +
-      '<header class="lane-head"><span class="dot"></span><h2>' + l.label + '</h2>' +
-      '<span class="pill">' + items.length + '</span></header>' +
-      '<div class="lane-body">' + body + '</div></section>';
-  }).join('');
+  renderBoard();
 
   const sb = data.activeSandboxes || [];
   $('sbx-count').textContent = sb.length;
@@ -83,18 +420,123 @@ function render(data) {
   $('clock').textContent = 'Snapshot ' + stamp.toLocaleTimeString();
 }
 
+// Render the task list for the active filter as a single column. Keeping stats
+// and sandboxes untouched lets filter clicks re-render without a refetch.
+function renderBoard() {
+  if (!lastData) return;
+  const tasks = lastData.tasks || [];
+  // Drop approved flags for runs that have actually left awaiting_approval, so
+  // the set doesn't grow unbounded and a genuine re-entry can be approved again.
+  if (approvedRuns.size) {
+    const stillWaiting = new Set(
+      tasks.filter((t) => t.state === 'awaiting_approval').map((t) => t.runId),
+    );
+    for (const id of Array.from(approvedRuns)) {
+      if (!stillWaiting.has(id)) approvedRuns.delete(id);
+    }
+  }
+  // Drop selections for runs that have left the snapshot (removed, or aged out
+  // of the limit), so a stale id can never be submitted for removal.
+  if (selectedRuns.size) {
+    const present = new Set(tasks.map((t) => t.runId));
+    for (const id of Array.from(selectedRuns)) {
+      if (!present.has(id)) selectedRuns.delete(id);
+    }
+  }
+  const shown = activeFilter === 'all' ? tasks : tasks.filter((t) => t.lane === activeFilter);
+  for (const btn of $('stats').querySelectorAll('.stat')) {
+    btn.classList.toggle('active', btn.getAttribute('data-filter') === activeFilter);
+  }
+  const meta = LANES.find((l) => l.key === activeFilter);
+  const label = activeFilter === 'all' ? 'All tasks' : (meta ? meta.label : activeFilter);
+  const cls = activeFilter === 'all' ? 'all' : (meta ? meta.cls : 'in');
+  const body = shown.length ? shown.map(taskCard).join('')
+    : '<div class="empty">No tasks</div>';
+  $('board').innerHTML =
+    '<section class="lane ' + cls + '">' +
+    '<header class="lane-head"><span class="dot"></span><h2>' + esc(label) + '</h2>' +
+    '<span class="pill">' + shown.length + '</span></header>' +
+    '<div class="lane-list">' + body + '</div></section>';
+  renderBulkBar();
+}
+
+// The batch action bar only exists while something is ticked, so the board stays
+// unchanged for read-only use.
+function renderBulkBar() {
+  const bar = $('bulk');
+  if (!bar) return;
+  const n = selectedRuns.size;
+  if (n === 0) {
+    bar.hidden = true;
+    bar.innerHTML = '';
+    return;
+  }
+  bar.hidden = false;
+  // One action only. Deselecting is what the card checkboxes already do, so a
+  // separate Clear button was redundant.
+  bar.innerHTML = '<span class="bulk-n">' + n + (n === 1 ? ' task selected' : ' tasks selected') +
+    '</span>' +
+    '<button type="button" class="bulk-del" onclick="deleteSelected(this)">' +
+    '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">' +
+    '<path fill="currentColor" d="M6.5 1h3a1 1 0 0 1 1 1v.5H13a.5.5 0 0 1 0 1h-.55l-.6 8.6A2 2 0 0 1 9.86 14H6.14a2 2 0 0 1-2-1.9l-.59-8.6H3a.5.5 0 0 1 0-1h2.5V2a1 1 0 0 1 1-1m0 1.5h3V2h-3zM4.55 3.5l.59 8.53a1 1 0 0 0 1 .97h3.72a1 1 0 0 0 1-.97l.59-8.53zM6.5 5a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5m3 0a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5"/></svg>' +
+    '<span>Remove</span></button>';
+}
+
 function taskCard(t) {
   const pr = t.prNumber
     ? '<a class="pr" href="' + esc(t.prUrl) + '" target="_blank" rel="noopener">PR #' + esc(t.prNumber) + '</a>'
     : '';
-  return '<article class="task">' +
+  const id = t.taskId || '';
+  const idChip = id
+    ? '<button type="button" class="id-chip" data-label="' + esc(shortId(id)) + '"' +
+        ' title="' + esc(id) + ' — click to copy"' +
+        ' onclick="copyId(this,\'' + esc(id) + '\')">' +
+        '<svg class="id-ico" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">' +
+        '<path fill="currentColor" d="M10 1H4a2 2 0 0 0-2 2v7h1.5V3A.5.5 0 0 1 4 2.5h6zM12 4H7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2m.5 9a.5.5 0 0 1-.5.5H7a.5.5 0 0 1-.5-.5V6a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5z"/></svg>' +
+        '<span class="id-text">' + esc(shortId(id)) + '</span></button>'
+    : '';
+  const check = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">' +
+    '<path fill="currentColor" d="M13.5 3.5 6 11 2.5 7.5 3.5 6.5 6 9l6.5-6.5z"/></svg>';
+  let approve = '';
+  if (t.state === 'awaiting_approval') {
+    approve = approvedRuns.has(t.runId)
+      ? '<button type="button" class="approve done" disabled>' + check +
+          '<span class="appr-text">Approved</span></button>'
+      : '<button type="button" class="approve" onclick="approveRun(this,\'' + esc(t.runId) + '\')">' +
+          check + '<span class="appr-text">Approve</span></button>';
+  }
+  const picked = selectedRuns.has(t.runId);
+  // Both controls sit in one top-right cluster and stay invisible until hover,
+  // so a read-only board looks unchanged. A ticked box stays visible.
+  const pick = '<label class="pick"' + (picked ? ' data-on="1"' : '') +
+    ' title="Select for removal">' +
+    '<input type="checkbox"' + (picked ? ' checked' : '') +
+    ' aria-label="Select task for removal"' +
+    ' onclick="toggleSelect(this,\'' + esc(t.runId) + '\')" />' +
+    '<span class="pick-box">' +
+    '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">' +
+    '<path fill="currentColor" d="M13.5 3.5 6 11 2.5 7.5 3.5 6.5 6 9l6.5-6.5z"/></svg>' +
+    '</span></label>';
+  const trash = '<button type="button" class="card-del" title="Remove this task"' +
+    ' aria-label="Remove this task"' +
+    ' onclick="deleteRun(this,\'' + esc(t.runId) + '\')">' +
+    '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">' +
+    '<path fill="currentColor" d="M6.5 1h3a1 1 0 0 1 1 1v.5H13a.5.5 0 0 1 0 1h-.55l-.6 8.6A2 2 0 0 1 9.86 14H6.14a2 2 0 0 1-2-1.9l-.59-8.6H3a.5.5 0 0 1 0-1h2.5V2a1 1 0 0 1 1-1m0 1.5h3V2h-3zM4.55 3.5l.59 8.53a1 1 0 0 0 1 .97h3.72a1 1 0 0 0 1-.97l.59-8.53zM6.5 5a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5m3 0a.5.5 0 0 1 .5.5v5a.5.5 0 0 1-1 0v-5a.5.5 0 0 1 .5-.5"/></svg>' +
+    '</button>';
+  const actions = '<div class="task-actions">' + pick + trash + '</div>';
+  return '<article class="task' + (picked ? ' picked' : '') +
+    '" tabindex="0" role="button" data-run="' + esc(t.runId) + '"' +
+    ' onclick="onTaskClick(event,\'' + esc(t.runId) + '\')"' +
+    ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openDetail(\'' + esc(t.runId) + '\')}">' +
+    actions +
     '<div class="task-title">' + esc(t.title) + '</div>' +
     '<div class="task-meta">' +
       '<span class="state ' + laneCls(t.lane) + '">' + esc(t.state) + '</span>' +
       '<span class="repo">' + esc(t.repository) + '</span>' +
     '</div>' +
-    '<div class="task-foot"><span class="kind">' + esc(t.intentKind) + '</span>' +
+    '<div class="task-foot"><span class="kind">' + esc(t.intentKind) + '</span>' + idChip +
       '<span class="ago">' + rel(t.updatedAt) + '</span>' + pr + '</div>' +
+    approve +
     '</article>';
 }
 
@@ -109,8 +551,136 @@ function sandboxCard(s) {
       '<div class="sbx-sub"><span class="role ' + esc(s.role) + '">' + esc(s.role) + '</span>' +
         '<span class="sbx-task">' + esc(s.taskTitle) + '</span>' +
         '<span class="ago">' + rel(s.startedAt || s.updatedAt) + '</span></div>' +
+      '<div class="sbx-actions">' +
+        '<button type="button" class="sbx-open" onclick="openRun(\'' + esc(s.runId) +
+          '\')">Session</button>' +
+        '<button type="button" class="sbx-kill" onclick="killSandbox(this,\'' +
+          esc(s.sandboxId) + '\')">Terminate</button>' +
+      '</div>' +
     '</div></article>';
 }
+
+// Graceful sandbox termination. Irreversible for the container (the process is
+// SIGTERMed and the container destroyed), so it always asks first. The run,
+// its plan and any PR are left untouched, so the task can be retried.
+async function killSandbox(btn, sandboxId) {
+  if (!confirm('Terminate this sandbox?\n\n' + sandboxId +
+    '\n\nThe container process is killed and the container destroyed. ' +
+    'The task record, plan and PR are kept — the run can be retried.')) return;
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Terminating…';
+  try {
+    const res = await fetch('/v1/dashboard/sandboxes/' + encodeURIComponent(sandboxId) + '/cancel', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + $('token').value.trim() },
+    });
+    if (!res.ok) throw new Error('http ' + res.status);
+    const body = await res.json();
+    btn.textContent = body.disposition === 'cancelled' ? 'Terminated' : 'Already gone';
+    setTimeout(load, 800);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = original;
+    alert('Terminate failed: ' + e.message);
+  }
+}
+window.killSandbox = killSandbox;
+
+// Removal is a two-phase confirm. The first request never authorises container
+// destruction; if the server answers 409 sandbox_active we show exactly which
+// tasks are still running and how many containers would die, and only a second
+// explicit confirmation retries with cascadeSandboxes.
+async function postDelete(url, runIds, cascade) {
+  const body = {};
+  if (runIds !== null) body.runIds = runIds;
+  if (cascade) body.cascadeSandboxes = true;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      authorization: 'Bearer ' + $('token').value.trim(),
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  let payload = null;
+  try { payload = await res.json(); } catch (e) { payload = null; }
+  return { ok: res.ok, status: res.status, payload };
+}
+
+function cascadePrompt(blocked, taskCount) {
+  const titles = new Map((lastData && lastData.tasks ? lastData.tasks : [])
+    .map((t) => [t.runId, t.title]));
+  const containers = blocked.reduce((n, b) => n + (b.sandboxes || []).length, 0);
+  const lines = blocked.map((b) => {
+    const n = (b.sandboxes || []).length;
+    return '  · ' + (titles.get(b.runId) || b.runId) + ' (' + n +
+      (n === 1 ? ' container)' : ' containers)');
+  }).join('\n');
+  return (taskCount === 1 ? 'This task still has a sandbox running.' :
+    blocked.length + ' of ' + taskCount + ' tasks still have sandboxes running.') +
+    '\n\n' + lines + '\n\nContinuing cancels the run and destroys ' +
+    (containers === 1 ? 'this container' : 'these ' + containers + ' containers') +
+    '.\nThe task record, plan and PR are kept and stay auditable.\n\nProceed?';
+}
+
+async function deleteRuns(runIds, btn) {
+  const many = runIds.length > 1;
+  if (!$('token').value.trim()) {
+    setStatus('Enter your operations token to remove tasks', 'warn');
+    return;
+  }
+  if (!confirm((many ? 'Remove these ' + runIds.length + ' tasks' : 'Remove this task') +
+    ' from the board?\n\nThe run is cancelled and hidden. Its record, plan and PR are ' +
+    'kept — nothing is erased from the audit trail.')) return;
+
+  const url = many
+    ? '/v1/dashboard/runs/delete'
+    : '/v1/dashboard/runs/' + encodeURIComponent(runIds[0]) + '/delete';
+  const original = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Removing…'; }
+  try {
+    let result = await postDelete(url, many ? runIds : null, false);
+    if (result.status === 409 && result.payload && result.payload.status === 'sandbox_active') {
+      if (!confirm(cascadePrompt(result.payload.blocked || [], runIds.length))) {
+        if (btn) { btn.disabled = false; btn.textContent = original; }
+        return;
+      }
+      result = await postDelete(url, many ? runIds : null, true);
+    }
+    if (!result.ok) {
+      const code = result.payload && result.payload.error ? result.payload.error.message : null;
+      throw new Error(code || 'http ' + result.status);
+    }
+    for (const id of runIds) selectedRuns.delete(id);
+    const n = many && result.payload ? result.payload.deleted : 1;
+    setStatus(n === 1 ? 'Task removed' : n + ' tasks removed', 'ok');
+    load();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = original; }
+    alert('Remove failed: ' + e.message);
+  }
+}
+
+function deleteRun(btn, runId) { deleteRuns([runId], btn); }
+function deleteSelected(btn) { deleteRuns(Array.from(selectedRuns), btn); }
+function toggleSelect(cb, runId) {
+  if (cb.checked) selectedRuns.add(runId); else selectedRuns.delete(runId);
+  // Reflect the outline immediately; a full re-render would fight the snapshot
+  // poll and is unnecessary for a local class toggle.
+  const card = cb.closest('.task');
+  if (card) card.classList.toggle('picked', cb.checked);
+  const label = cb.closest('.pick');
+  // Keeps a ticked box visible after the pointer leaves the card.
+  if (label) {
+    if (cb.checked) label.setAttribute('data-on', '1');
+    else label.removeAttribute('data-on');
+  }
+  renderBulkBar();
+}
+window.deleteRun = deleteRun;
+window.deleteSelected = deleteSelected;
+window.toggleSelect = toggleSelect;
 
 function toggleAuto() {
   const btn = $('auto');
@@ -126,6 +696,9 @@ $('token').addEventListener('keydown', (e) => { if (e.key === 'Enter') load(); }
     const saved = localStorage.getItem('dl_ops_token');
     if (saved) { $('token').value = saved; $('remember').checked = true; load(); }
   } catch (e) {}
+  // Render whatever the current URL points at: board (empty hash) or a run page
+  // (#/run/<id>) reached by refresh or a shared link.
+  route();
 })();
 `;
 
@@ -138,9 +711,11 @@ const DASHBOARD_STYLE = String.raw`
   /* Warm Claude dark palette */
   --bg:#1f1e1c; --bg-2:#26241f; --panel:#2a2724; --panel-2:#322e29;
   --border:#3a352f; --border-soft:#332f2a;
-  --text:#f3efe6; --muted:#a8a096; --faint:#6f675d;
+  --text:#f3efe6; --text-2:#d8d2c6; --muted:#a8a096; --faint:#6f675d;
   --clay:#d97757;
   --in:#c98a4b; --un:#cd6f5a; --done:#8a9a6b; --live:#d97757;
+  /* lane accents: running=green, pending=amber, blocked=red */
+  --run:#6f9f5b; --pend:#d0a24a; --blk:#cd6f5a;
   --radius:14px; --radius-sm:10px;
   --sidebar-w:280px;
   --font:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -148,6 +723,15 @@ const DASHBOARD_STYLE = String.raw`
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
+
+/* ---- scrollbars: thin, palette-matched, only on hover-ish contrast ---- */
+*{scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#453f38;border-radius:8px;
+  border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:#554d44;background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}
 body{background:var(--bg);color:var(--text);font-family:var(--font);
   font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility}
@@ -156,6 +740,7 @@ a:hover{text-decoration:underline}
 code{font-family:var(--mono)}
 
 /* ---- shell: sidebar + main ---- */
+[hidden]{display:none!important}
 .shell{display:flex;min-height:100vh}
 .sidebar{width:var(--sidebar-w);flex:0 0 var(--sidebar-w);position:sticky;top:0;
   height:100vh;background:var(--bg-2);border-right:1px solid var(--border);
@@ -176,12 +761,18 @@ code{font-family:var(--mono)}
 .brand .tag{font-size:11.5px;color:var(--faint);margin-top:1px}
 
 /* ---- sidebar stats ---- */
-.stats{display:flex;flex-direction:column;gap:10px}
-.stat{display:flex;align-items:baseline;gap:10px;padding:13px 15px;border-radius:var(--radius-sm);
-  background:var(--panel);border:1px solid var(--border-soft)}
-.stat-n{font-size:26px;font-weight:650;line-height:1;font-variant-numeric:tabular-nums}
+.stats{display:flex;flex-direction:column;gap:8px}
+.stat{display:flex;align-items:baseline;gap:10px;padding:12px 15px;border-radius:var(--radius-sm);
+  background:var(--panel);border:1px solid var(--border-soft);width:100%;text-align:left;
+  cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s}
+.stat:hover{border-color:var(--border);background:var(--panel-2)}
+.stat.active{border-color:var(--clay);background:var(--panel-2);
+  box-shadow:inset 2px 0 0 var(--clay)}
+.stat-n{font-size:24px;font-weight:650;line-height:1;font-variant-numeric:tabular-nums}
 .stat-l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
-.stat.in .stat-n{color:var(--in)} .stat.un .stat-n{color:var(--un)} .stat.done .stat-n{color:var(--done)}
+.stat.run .stat-n{color:var(--run)} .stat.pend .stat-n{color:var(--pend)}
+.stat.blk .stat-n{color:var(--blk)} .stat.done .stat-n{color:var(--done)}
+.stat.all .stat-n{color:var(--text)}
 
 /* ---- sidebar controls ---- */
 .controls{display:flex;flex-direction:column;gap:10px;margin-top:auto}
@@ -229,20 +820,21 @@ button.ghost.on{border-color:var(--clay);color:var(--clay)}
   font-size:11.5px;color:var(--muted)}
 .sbx-task{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px}
 
-/* ---- board: three lanes ---- */
-.board{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:start}
-@media (max-width:1100px){.board{grid-template-columns:1fr}}
+/* ---- board: single filtered lane ---- */
+.board{display:block}
 .lane{background:var(--panel);border:1px solid var(--border-soft);border-radius:var(--radius);
   display:flex;flex-direction:column;overflow:hidden}
 .lane-head{display:flex;align-items:center;gap:9px;padding:15px 18px;
   border-bottom:1px solid var(--border-soft)}
 .lane-head h2{font-size:13px;font-weight:600;margin:0;text-transform:uppercase;letter-spacing:.6px}
-.lane-head .dot{width:8px;height:8px;border-radius:50%}
-.lane.in .dot{background:var(--in)} .lane.un .dot{background:var(--un)} .lane.done .dot{background:var(--done)}
+.lane-head .dot{width:8px;height:8px;border-radius:50%;background:var(--clay)}
+.lane.run .dot{background:var(--run)} .lane.pend .dot{background:var(--pend)}
+.lane.blk .dot{background:var(--blk)} .lane.done .dot{background:var(--done)}
 .lane-head .pill{margin-left:auto;background:var(--panel-2);border:1px solid var(--border);
   border-radius:20px;font-size:12px;padding:1px 10px;color:var(--muted);font-variant-numeric:tabular-nums}
-.lane-body{padding:12px;display:flex;flex-direction:column;gap:10px;
-  max-height:calc(100vh - 220px);overflow-y:auto}
+/* One column, but wrap into responsive columns when the list is long/wide. */
+.lane-list{padding:14px;display:grid;gap:10px;
+  grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
 
 /* ---- task cards ---- */
 .task{background:var(--panel-2);border:1px solid var(--border-soft);border-radius:var(--radius-sm);
@@ -251,15 +843,168 @@ button.ghost.on{border-color:var(--clay);color:var(--clay)}
 .task-title{font-weight:550;font-size:13.5px;line-height:1.4;margin-bottom:9px;word-break:break-word}
 .task-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}
 .state{font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px;text-transform:lowercase}
-.state.in{color:var(--in);background:rgba(201,138,75,.13)}
-.state.un{color:var(--un);background:rgba(205,111,90,.13)}
+.state.run{color:var(--run);background:rgba(111,159,91,.14)}
+.state.pend{color:var(--pend);background:rgba(208,162,74,.14)}
+.state.blk{color:var(--blk);background:rgba(205,111,90,.13)}
 .state.done{color:var(--done);background:rgba(138,154,107,.15)}
+/* ---- task card is clickable ---- */
+.task{cursor:pointer;position:relative}
+.task:hover{border-color:var(--border)}
+.task:focus-visible{outline:2px solid var(--clay);outline-offset:2px}
+/* ---- selection for batch removal ---- */
+/* Select + remove cluster, top-right of a card. Hidden until hover so the board
+   reads the same as before when nobody is editing. */
+.task-actions{position:absolute;top:10px;right:10px;display:flex;align-items:center;gap:4px}
+.task-actions .pick,.card-del{opacity:0;transition:opacity .15s,color .15s,background .15s,
+  border-color .15s}
+.task:hover .task-actions .pick,.task:hover .card-del,
+.task-actions .pick[data-on],.task:focus-within .task-actions .pick,
+.task:focus-within .card-del{opacity:1}
+/* The native control is replaced: its OS accent colour (blue/orange) clashes
+   with the warm palette. The input stays for semantics and keyboard focus. */
+.task-actions .pick{display:inline-flex;cursor:pointer;padding:3px;border-radius:5px}
+.task-actions .pick input{position:absolute;width:1px;height:1px;opacity:0;margin:0;
+  pointer-events:none}
+.pick-box{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
+  border:1px solid var(--muted);border-radius:4px;background:transparent;color:transparent;
+  transition:border-color .15s,background .15s,color .15s}
+.task-actions .pick:hover .pick-box{border-color:var(--clay)}
+.task-actions .pick input:checked + .pick-box{background:var(--clay);border-color:var(--clay);
+  color:#1f1e1c}
+.task-actions .pick input:focus-visible + .pick-box{outline:2px solid var(--clay);
+  outline-offset:2px}
+.card-del{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;
+  padding:0;border:0;border-radius:5px;background:transparent;color:var(--faint);cursor:pointer}
+.card-del:hover{background:rgba(215,86,68,.14);color:#f0a99a}
+.card-del:focus-visible{outline:2px solid var(--clay);outline-offset:1px;opacity:1}
+.card-del:disabled{cursor:default;opacity:.5}
+.task.picked{border-color:var(--clay)}
+.task-title{padding-right:52px}
+.bulk{display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:10px 14px;
+  background:var(--panel-2);border:1px solid var(--border);border-radius:var(--radius-sm)}
+.bulk-n{font-size:12.5px;font-weight:600;color:var(--text);margin-right:auto}
+.bulk-del{display:inline-flex;align-items:center;gap:6px;font-family:inherit;font-size:11.5px;
+  font-weight:600;padding:5px 11px;border-radius:7px;cursor:pointer;background:transparent;
+  color:#d98b7a;border:1px solid rgba(215,86,68,.4);
+  transition:border-color .15s,color .15s,background .15s}
+.bulk-del:hover{background:rgba(215,86,68,.12);border-color:#d75644;color:#f0a99a}
+.bulk-del:disabled{cursor:default;opacity:.6}
+/* ---- remove task (detail) ---- */
+.d-danger{border-top:1px solid var(--border-soft);padding-top:16px}
+.d-danger-note{font-size:12.5px;color:var(--muted);line-height:1.55;margin:0 0 11px}
+.task-del{font-family:inherit;font-size:12px;font-weight:600;padding:7px 13px;
+  border-radius:8px;cursor:pointer;background:transparent;color:#d98b7a;
+  border:1px solid rgba(215,86,68,.4);transition:border-color .15s,color .15s,background .15s}
+.task-del:hover{background:rgba(215,86,68,.12);border-color:#d75644;color:#f0a99a}
+.task-del:disabled{cursor:default;opacity:.6}
+/* ---- detail page (full screen route) ---- */
+.detail-page{min-height:100vh;background:var(--bg)}
+.detail-bar{position:sticky;top:0;z-index:2;background:var(--bg);
+  border-bottom:1px solid var(--border-soft);padding:14px 40px}
+.detail-back{display:inline-flex;align-items:center;gap:7px;background:transparent;
+  border:1px solid var(--border);color:var(--text-2);font-family:inherit;font-size:13px;
+  font-weight:550;padding:7px 13px;border-radius:9px;cursor:pointer;transition:border-color .15s,color .15s}
+.detail-back:hover{color:var(--text);border-color:var(--muted)}
+.detail-back svg{flex:0 0 auto}
+.detail-inner{max-width:860px;margin:0 auto;padding:30px 40px 80px}
+.detail-load{color:var(--muted);padding:40px 4px}
+.d-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:8px}
+.d-pri,.d-kind{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;
+  border:1px solid var(--border);border-radius:20px;padding:2px 9px}
+.d-title{font-size:26px;font-weight:650;margin:2px 0 7px;line-height:1.25}
+.d-repo{font-size:12.5px;color:var(--muted);font-family:var(--mono);margin-bottom:16px}
+.d-approve{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:13px 15px;margin-bottom:18px;
+  background:rgba(208,162,74,.08);border:1px solid rgba(208,162,74,.3);border-radius:var(--radius-sm)}
+.d-approve .approve{width:auto;margin:0}
+.d-approve-note{font-size:12.5px;color:var(--muted)}
+.d-sec{border-top:1px solid var(--border-soft);padding-top:16px;margin-top:18px}
+.d-sec h3{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;
+  color:var(--muted);margin:0 0 10px}
+.d-sec h4{font-size:12px;font-weight:600;margin:14px 0 6px;color:var(--text-2)}
+.d-src{font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:10px}
+.d-desc{font-size:14px;line-height:1.6;white-space:pre-wrap;color:var(--text-2)}
+.d-ac{margin:4px 0 0;padding-left:20px;font-size:13.5px;line-height:1.55;color:var(--text-2)}
+.d-ac li{margin:3px 0}
+.d-empty{font-size:13px;color:var(--muted);font-style:italic}
+.d-plan-obj{font-size:14px;line-height:1.55;color:var(--text-2);margin-bottom:12px}
+.d-prog{display:flex;align-items:center;gap:11px;margin-bottom:16px}
+.d-prog-bar{flex:1;height:7px;border-radius:4px;background:var(--panel-2);overflow:hidden}
+.d-prog-bar span{display:block;height:100%;background:var(--run);border-radius:4px;transition:width .2s}
+.d-prog-txt{font-size:12px;color:var(--muted);white-space:nowrap}
+.d-items{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.d-item{background:var(--panel);border:1px solid var(--border-soft);border-radius:var(--radius-sm);padding:12px 14px}
+.d-item-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px}
+.d-item-st{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:12px;text-transform:uppercase;letter-spacing:.4px}
+.d-item-st.done{color:var(--run);background:rgba(111,159,91,.14)}
+.d-item-st.run{color:var(--pend);background:rgba(208,162,74,.14)}
+.d-item-st.blk{color:var(--blk);background:rgba(205,111,90,.14)}
+.d-item-st.pend{color:var(--muted);background:var(--panel-2)}
+.d-item-kind{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.d-opt{font-size:10.5px;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:1px 7px}
+.d-eff{font-size:10.5px;color:var(--muted);font-family:var(--mono);margin-left:auto}
+.d-item-title{font-size:14px;font-weight:600;margin-bottom:3px}
+.d-item-obj{font-size:13px;color:var(--text-2);line-height:1.5}
+.d-dw{margin:7px 0 0;padding-left:18px;font-size:12.5px;color:var(--muted);line-height:1.5}
 .repo{font-family:var(--mono);font-size:11px;color:var(--muted)}
 .task-foot{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:11px;color:var(--faint)}
 .kind{border:1px solid var(--border);border-radius:5px;padding:1px 7px;color:var(--muted)}
 .ago{color:var(--faint)}
 .pr{margin-left:auto;font-weight:600}
 .pr:hover{text-decoration:underline}
+/* copyable task id */
+.id-chip{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);
+  font-size:10.5px;line-height:1;color:var(--muted);background:var(--panel);
+  border:1px solid var(--border);border-radius:5px;padding:2px 7px;cursor:pointer;
+  transition:border-color .15s,color .15s}
+.id-chip:hover{border-color:var(--clay);color:var(--text)}
+.id-chip.copied{border-color:var(--done);color:var(--done)}
+.id-ico{flex:0 0 auto;opacity:.8}
+/* approve action on awaiting_approval cards */
+.approve{display:inline-flex;align-items:center;gap:6px;margin-top:11px;width:100%;
+  justify-content:center;font-family:inherit;font-size:12.5px;font-weight:600;
+  padding:8px 12px;border-radius:8px;cursor:pointer;
+  background:var(--clay);border:1px solid var(--clay);color:#2a1a12;
+  transition:background .15s,border-color .15s,opacity .15s}
+.approve:hover{background:#e08863}
+.approve:disabled{cursor:default;opacity:.7}
+.approve.done{background:transparent;border-color:var(--done);color:var(--done)}
+.approve svg{flex:0 0 auto}
+
+/* ---- sandbox card actions ---- */
+.sbx-actions{display:flex;gap:7px;margin-top:11px}
+.sbx-open,.sbx-kill{font-family:inherit;font-size:11.5px;font-weight:600;padding:5px 11px;
+  border-radius:7px;cursor:pointer;background:transparent;color:var(--muted);
+  border:1px solid var(--border);transition:border-color .15s,color .15s,background .15s}
+.sbx-open:hover{border-color:var(--clay);color:var(--text)}
+.sbx-kill{color:#d98b7a;border-color:rgba(215,86,68,.4)}
+.sbx-kill:hover{background:rgba(215,86,68,.12);border-color:#d75644;color:#f0a99a}
+.sbx-kill:disabled,.sbx-open:disabled{cursor:default;opacity:.6}
+
+/* ---- live session ---- */
+.sess-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px}
+.sess-st{font-size:11px;color:var(--muted);border:1px solid var(--border);
+  border-radius:5px;padding:2px 8px}
+.sess-head .sbx-kill{margin-left:auto}
+.sess-warn{font-size:12.5px;color:#f0a99a;background:rgba(215,86,68,.1);
+  border:1px solid rgba(215,86,68,.34);border-radius:8px;padding:10px 12px;margin-bottom:11px}
+.sess-trunc{font-size:11.5px;color:var(--faint);font-style:italic;margin-bottom:7px}
+.sess-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;
+  max-height:340px;overflow-y:auto}
+.sess-row{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;font-size:12px;
+  padding:6px 10px;border-radius:6px;background:var(--panel);border:1px solid var(--border-soft)}
+.sess-row.raw{display:block}
+.sess-row.raw pre{margin:0;font-size:11.5px;color:var(--muted);white-space:pre-wrap;
+  word-break:break-word}
+.sess-ev{font-weight:600;color:var(--text)}
+.sess-at{font-family:var(--mono,ui-monospace,monospace);font-size:11px;color:var(--faint)}
+.sess-fields{display:flex;gap:11px;flex-wrap:wrap}
+.sess-f{font-size:11.5px;color:var(--muted)}
+.sess-f b{font-weight:500;color:var(--faint)}
+.sess-err{margin-top:11px}
+.sess-err summary{cursor:pointer;font-size:12px;color:var(--muted)}
+.sess-err pre{margin:8px 0 0;font-size:11.5px;color:#e0a99a;white-space:pre-wrap;
+  word-break:break-word;max-height:220px;overflow-y:auto;background:var(--panel);
+  border:1px solid var(--border-soft);border-radius:6px;padding:10px}
 
 /* ---- pulse + empty ---- */
 .pulse{width:9px;height:9px;margin-top:5px;border-radius:50%;flex:0 0 9px;background:var(--live);
@@ -276,6 +1021,7 @@ export const DASHBOARD_HTML = String.raw`<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="robots" content="noindex, nofollow" />
 <title>Delivery Loop</title>
+<link rel="icon" type="image/png" href="` + DASHBOARD_LOGO + String.raw`" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet"
@@ -285,7 +1031,7 @@ export const DASHBOARD_HTML = String.raw`<!doctype html>
 </style>
 </head>
 <body>
-<div class="shell">
+<div class="shell" id="shell">
   <aside class="sidebar">
     <div class="brand">
       <img class="logo" alt="Delivery Loop" src="` + DASHBOARD_LOGO + String.raw`" />
@@ -320,9 +1066,11 @@ export const DASHBOARD_HTML = String.raw`<!doctype html>
       <p class="desc">Sandboxes currently running and the repository each one is modifying.</p>
       <div class="sbx-grid" id="sandboxes"></div>
     </section>
+    <div class="bulk" id="bulk" hidden></div>
     <div class="board" id="board"></div>
   </main>
 </div>
+<main class="detail-page" id="detail" hidden aria-hidden="true"></main>
 <script>
 ` + DASHBOARD_SCRIPT + String.raw`
 </script>

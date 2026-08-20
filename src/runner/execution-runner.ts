@@ -310,12 +310,22 @@ class RawTranscriptBuffer {
   }
 }
 
+/**
+ * Shortest gap between progress activity snapshots. An Agent turn can run for
+ * minutes without producing a terminal record, and a session view that stays
+ * empty for that long is indistinguishable from a wedged container. Throttling
+ * keeps the counter-only projection useful as a liveness signal without
+ * emitting a log line per transcript event.
+ */
+const ACTIVITY_PROGRESS_INTERVAL_MS = 5_000;
+
 export interface RawTranscriptArtifactAgentOptions {
   agent: ExecutionAgent;
   runtimeSecrets: ReadonlySet<string>;
   persist(content: string): Promise<void>;
   onActivity?(activity: CodexExecutionActivity): void;
   validateDecision?(decision: ExecutionAgentDecision): ExecutionAgentDecision;
+  now?: () => number;
 }
 
 /**
@@ -331,12 +341,29 @@ export function createRawTranscriptArtifactAgent(
       : { usesMeteredModel: options.agent.usesMeteredModel }),
     apply: async (input) => {
       const transcript = new RawTranscriptBuffer(new Set(options.runtimeSecrets));
+      const now = options.now ?? Date.now;
       let decision: ExecutionAgentDecision | undefined;
       let agentFailure: unknown;
+      let lastActivityAt = now();
+      let lastActivityCount = 0;
       try {
         const applied = await options.agent.apply({
           ...input,
-          onTranscriptLine: (line) => { transcript.accept(line); },
+          onTranscriptLine: (line) => {
+            transcript.accept(line);
+            const at = now();
+            if (at - lastActivityAt < ACTIVITY_PROGRESS_INTERVAL_MS) return;
+            const summary = transcript.activitySummary();
+            // A snapshot identical to the last one carries no new evidence.
+            if (summary.jsonlEventCount === lastActivityCount) return;
+            lastActivityAt = at;
+            lastActivityCount = summary.jsonlEventCount;
+            try {
+              options.onActivity?.(summary);
+            } catch {
+              // Diagnostic logging cannot change the delivery Attempt outcome.
+            }
+          },
         });
         decision = options.validateDecision?.(applied) ?? applied;
       } catch (error) {
