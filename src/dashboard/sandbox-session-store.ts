@@ -1,7 +1,5 @@
 import type { Bindings } from '../env.js';
-import {
-  cloudflareSandboxEffectsFromEnv,
-} from '../executor/plugins/cloudflare-sandbox/cloudflare-sandbox-runtime.js';
+import { dashboardExecutorTransport } from './executor-transport.js';
 
 /**
  * One parsed line of the sandbox process's stdout.
@@ -81,8 +79,7 @@ export class SandboxSessionStore {
   async session(runId: string): Promise<SandboxSession | null> {
     const row = await this.activeExecution(runId);
     if (row === null) return null;
-    const effects = cloudflareSandboxEffectsFromEnv(this.env);
-    const origin = this.env.AGENT_EXECUTOR_URL;
+    const transport = dashboardExecutorTransport(this.env);
     const base = {
       sandboxId: row.provider_external_id,
       executionId: row.execution_id,
@@ -90,7 +87,7 @@ export class SandboxSessionStore {
       recordedStatus: row.status,
       startedAt: row.started_at,
     };
-    if (effects === null || origin === undefined) {
+    if (transport === null) {
       // No executor transport configured: report the recorded state honestly
       // rather than pretending the session is empty.
       return {
@@ -104,7 +101,10 @@ export class SandboxSessionStore {
       };
     }
     try {
-      const tail = await effects.logsSandbox(origin, row.provider_external_id);
+      const tail = await transport.effects.logsSandbox(
+        transport.origin,
+        row.provider_external_id,
+      );
       return {
         ...base,
         liveStatus: tail.status,

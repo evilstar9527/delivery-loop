@@ -3,9 +3,7 @@ import {
   AttemptLifecycleError,
   AttemptLifecycleStore,
 } from '../storage/attempt-lifecycle-store.js';
-import {
-  cloudflareSandboxEffectsFromEnv,
-} from '../executor/plugins/cloudflare-sandbox/cloudflare-sandbox-runtime.js';
+import { dashboardExecutorTransport } from './executor-transport.js';
 
 /**
  * Board-level task removal.
@@ -143,24 +141,15 @@ export class DashboardDeleteStore {
   private async terminateSandboxes(
     sandboxes: readonly DeleteBlockingSandbox[],
   ): Promise<string[]> {
-    // Resolving the executor transport can throw on partially configured
-    // environments: AGENT_EXECUTOR_URL ships as a plain var while the control
-    // token is a secret, so a deployment holding only the var raises rather
-    // than returning null. The run is already cancelled and dismissed by now,
-    // so an unreachable executor must leave the removal successful and the
+    // The run is already cancelled and dismissed by now, so an executor that is
+    // unconfigured or unreachable must leave the removal successful and the
     // container reapable, never fail the request.
-    let effects;
-    try {
-      effects = cloudflareSandboxEffectsFromEnv(this.env);
-    } catch {
-      return [];
-    }
-    const origin = this.env.AGENT_EXECUTOR_URL;
-    if (effects === null || origin === undefined) return [];
+    const transport = dashboardExecutorTransport(this.env);
+    if (transport === null) return [];
     const terminated: string[] = [];
     for (const sandbox of sandboxes) {
       try {
-        await effects.cancelSandbox(origin, sandbox.sandboxId, 'run_cancelled');
+        await transport.effects.cancelSandbox(transport.origin, sandbox.sandboxId, 'run_cancelled');
         terminated.push(sandbox.sandboxId);
       } catch {
         // The run is already cancelled and hidden; a container that refuses to

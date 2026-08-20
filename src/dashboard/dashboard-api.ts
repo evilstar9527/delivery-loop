@@ -11,9 +11,7 @@ import {
   DashboardDeleteStore,
   type DeleteRunOutcome,
 } from './dashboard-delete-store.js';
-import {
-  cloudflareSandboxEffectsFromEnv,
-} from '../executor/plugins/cloudflare-sandbox/cloudflare-sandbox-runtime.js';
+import { dashboardExecutorTransport } from './executor-transport.js';
 
 const RUN_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 const SANDBOX_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/;
@@ -230,13 +228,16 @@ export function dashboardApi(now: () => Date = () => new Date()): Hono<{ Binding
     if (!SANDBOX_ID_PATTERN.test(sandboxId)) {
       return errorResponse(c, 400, 'invalid_argument', 'invalid sandbox id', false);
     }
-    const effects = cloudflareSandboxEffectsFromEnv(c.env);
-    const origin = c.env.AGENT_EXECUTOR_URL;
-    if (effects === null || origin === undefined) {
+    const transport = dashboardExecutorTransport(c.env);
+    if (transport === null) {
       return errorResponse(c, 503, 'unavailable', 'executor transport unconfigured', true);
     }
     try {
-      const disposition = await effects.cancelSandbox(origin, sandboxId, 'run_cancelled');
+      const disposition = await transport.effects.cancelSandbox(
+        transport.origin,
+        sandboxId,
+        'run_cancelled',
+      );
       return c.json({ sandboxId, disposition });
     } catch {
       return errorResponse(c, 502, 'upstream_error', 'sandbox cancel failed', true);
