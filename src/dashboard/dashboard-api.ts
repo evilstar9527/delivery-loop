@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import type { Bindings } from '../env.js';
-import { DashboardOverviewStore } from '../storage/dashboard-overview-store.js';
+import { errorResponse } from '../http/errors.js';
+import { operationsAuthenticated } from '../http/operations-auth.js';
 import { DASHBOARD_HTML } from './dashboard-page.js';
-import { errorResponse } from './errors.js';
-import { operationsAuthenticated } from './operations-auth.js';
+import { DashboardOverviewStore } from './overview-store.js';
 
 export function dashboardApi(now: () => Date = () => new Date()): Hono<{ Bindings: Bindings }> {
   const app = new Hono<{ Bindings: Bindings }>();
