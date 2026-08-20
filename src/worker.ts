@@ -8,6 +8,7 @@ import { case8AuditApi } from './http/case8-audit-api.js';
 import { approvalApi } from './http/approval-api.js';
 import { attemptApi } from './http/attempt-api.js';
 import { correlationApi } from './http/correlation-api.js';
+import { dashboardApi } from './http/dashboard-api.js';
 import { deadLetterApi } from './http/dead-letter-api.js';
 import { dataRetentionApi } from './http/data-retention-api.js';
 import { diagnosticEvidenceApi } from './http/diagnostic-evidence-api.js';
@@ -147,6 +148,7 @@ app.use('*', async (c, next) => {
 app.get('/healthz', (c) => c.json({ ok: true, service: 'delivery-loop-control-plane' }));
 app.route('/', backupApi());
 app.route('/', case8AuditApi());
+app.route('/', dashboardApi());
 app.route('/', approvalApi());
 app.route('/', attemptApi());
 app.route('/', correlationApi());
