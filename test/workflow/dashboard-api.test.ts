@@ -70,8 +70,9 @@ describe('dashboard overview api', () => {
     expect(html).toContain('/v1/dashboard/overview');
   });
 
-  it('classifies runs into in-progress, unfinished, and completed lanes', async () => {
+  it('classifies runs into running, pending, blocked, and completed lanes', async () => {
     await seedTaskRun('inprog', 'executing', 'acme/api', 'Add pagination');
+    await seedTaskRun('pend', 'awaiting_approval', 'acme/api', 'Await gate');
     await seedTaskRun('blocked', 'blocked', 'acme/web', 'Fix login');
     await seedTaskRun('done', 'succeeded', 'acme/api', 'Ship docs');
 
@@ -81,15 +82,16 @@ describe('dashboard overview api', () => {
       laneCounts: Record<string, number>;
       tasks: Array<{ runId: string; lane: string; state: string; repository: string }>;
     };
-    // laneCounts always equals the sum across the three lanes for whatever runs
-    // exist; assert it stays internally consistent with the returned tasks
-    // rather than an absolute total (the shared pool DB may hold other rows).
-    const tallied = { in_progress: 0, unfinished: 0, completed: 0 };
+    // laneCounts always equals the sum across the lanes for whatever runs exist;
+    // assert it stays internally consistent with the returned tasks rather than
+    // an absolute total (the shared pool DB may hold other rows).
+    const tallied = { running: 0, pending: 0, blocked: 0, completed: 0 };
     for (const t of data.tasks) tallied[t.lane as keyof typeof tallied] += 1;
     expect(data.laneCounts).toEqual(tallied);
     const lane = (id: string) => data.tasks.find((t) => t.runId === id)?.lane;
-    expect(lane('run_dashbd_inprog')).toBe('in_progress');
-    expect(lane('run_dashbd_blocked')).toBe('unfinished');
+    expect(lane('run_dashbd_inprog')).toBe('running');
+    expect(lane('run_dashbd_pend')).toBe('pending');
+    expect(lane('run_dashbd_blocked')).toBe('blocked');
     expect(lane('run_dashbd_done')).toBe('completed');
   });
 

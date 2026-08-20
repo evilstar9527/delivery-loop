@@ -40,6 +40,17 @@ const CancelResultSchema = z.object({
   disposition: z.enum(['cancelled', 'already_terminal']),
 }).strict();
 
+const LogsResultSchema = z.object({
+  schemaVersion: z.literal('1'),
+  status: z.enum(['requested', 'queued', 'running', 'succeeded', 'failed', 'cancelled']),
+  exitCode: z.number().int().nullable(),
+  stdout: z.string(),
+  stderr: z.string(),
+  truncated: z.boolean(),
+}).strict();
+
+export type CloudflareSandboxLogTail = Omit<z.infer<typeof LogsResultSchema>, 'schemaVersion'>;
+
 function httpsOrigin(value: string): string {
   let url: URL;
   try {
@@ -178,6 +189,28 @@ export class CloudflareSandboxWorkerEffects implements CloudflareSandboxExecutor
       externalUpdatedAt: parsed.data.externalUpdatedAt,
       exitCode: parsed.data.exitCode,
       imageDigest: parsed.data.imageDigest,
+    };
+  }
+
+  /** Reads the sandbox process's captured output tail. Never mutates state. */
+  async logsSandbox(
+    workerOrigin: string,
+    sandboxId: string,
+  ): Promise<CloudflareSandboxLogTail> {
+    if (!ID_PATTERN.test(sandboxId)) throw new Error('executor request identity is invalid');
+    const response = await this.request(
+      workerOrigin,
+      `/v1/executions/${encodeURIComponent(sandboxId)}/logs`,
+      { method: 'GET' },
+    );
+    const parsed = LogsResultSchema.safeParse(response);
+    if (!parsed.success) throw new Error('executor response is invalid');
+    return {
+      status: parsed.data.status,
+      exitCode: parsed.data.exitCode,
+      stdout: parsed.data.stdout,
+      stderr: parsed.data.stderr,
+      truncated: parsed.data.truncated,
     };
   }
 

@@ -59,9 +59,26 @@ const ProviderFactSchema: z.ZodType<CloudflareSandboxProviderFact> = z.object({
   imageDigest: z.string().regex(DIGEST_PATTERN),
 }).strict();
 
+/**
+ * Read-only tail of a sandbox process's captured output. The runner writes
+ * counter-only activity records to stdout (command text, paths and agent
+ * messages are discarded upstream by design), so this carries progress
+ * evidence and diagnostics — never conversation content.
+ */
+export const SandboxLogsSchema = z.object({
+  status: z.enum(['requested', 'queued', 'running', 'succeeded', 'failed', 'cancelled']),
+  exitCode: z.number().int().nullable(),
+  stdout: z.string(),
+  stderr: z.string(),
+  truncated: z.boolean(),
+}).strict();
+
+export type CloudflareSandboxLogs = z.infer<typeof SandboxLogsSchema>;
+
 export interface CloudflareSandboxExecutorBackend {
   ensure(request: CloudflareSandboxStartRequest): Promise<CloudflareSandboxStartResult>;
   observe(sandboxId: string): Promise<CloudflareSandboxProviderFact>;
+  logs(sandboxId: string): Promise<CloudflareSandboxLogs>;
   cancel(
     sandboxId: string,
     reason: ExecutorCancelReason,
@@ -242,9 +259,10 @@ export function createCloudflareSandboxExecutorHandler(
         }
       }
 
-      const match = /^\/v1\/executions\/([A-Za-z0-9][A-Za-z0-9_.:-]{0,255})\/(observe|cancel)$/.exec(
-        url.pathname,
-      );
+      const match =
+        /^\/v1\/executions\/([A-Za-z0-9][A-Za-z0-9_.:-]{0,255})\/(observe|cancel|logs)$/.exec(
+          url.pathname,
+        );
       if (match === null) return error('not_found', 404);
       const sandboxId = match[1];
       const operation = match[2];
@@ -254,6 +272,12 @@ export function createCloudflareSandboxExecutorHandler(
           const fact = ProviderFactSchema.safeParse(await options.backend.observe(sandboxId));
           return fact.success
             ? json({ schemaVersion: '1', ...fact.data })
+            : error('sandbox_unavailable', 503);
+        }
+        if (operation === 'logs' && request.method === 'GET') {
+          const logs = SandboxLogsSchema.safeParse(await options.backend.logs(sandboxId));
+          return logs.success
+            ? json({ schemaVersion: '1', ...logs.data })
             : error('sandbox_unavailable', 503);
         }
         if (operation === 'cancel' && request.method === 'POST') {

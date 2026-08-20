@@ -108,4 +108,74 @@ describe('execution raw transcript artifact Agent', () => {
     });
     expect(persisted).toBe(false);
   });
+
+  it('reports progress activity while a long turn is still streaming', async () => {
+    const activity: { jsonlEventCount: number }[] = [];
+    let clock = 0;
+    const agent = createRawTranscriptArtifactAgent({
+      agent: {
+        usesMeteredModel: true,
+        apply: async (input) => {
+          // Three lines spaced past the throttle window, then one inside it.
+          clock += 6_000;
+          input.onTranscriptLine?.(TRANSCRIPT_LINE);
+          clock += 6_000;
+          input.onTranscriptLine?.(TRANSCRIPT_LINE);
+          clock += 10;
+          input.onTranscriptLine?.(TRANSCRIPT_LINE);
+          return { schemaVersion: '1', action: 'apply_fix' };
+        },
+      },
+      runtimeSecrets: new Set(),
+      persist: async () => {},
+      onActivity: (value) => { activity.push({ jsonlEventCount: value.jsonlEventCount }); },
+      now: () => clock,
+    });
+
+    await expect(agent.apply(INPUT)).resolves.toMatchObject({ action: 'apply_fix' });
+    // Two throttled progress snapshots, then the terminal one covering all 3.
+    expect(activity.map((value) => value.jsonlEventCount)).toEqual([1, 2, 3]);
+  });
+
+  it('suppresses a progress snapshot that repeats the previous counters', async () => {
+    const activity: unknown[] = [];
+    const agent = createRawTranscriptArtifactAgent({
+      agent: {
+        usesMeteredModel: true,
+        apply: async (input) => {
+          input.onTranscriptLine?.(TRANSCRIPT_LINE);
+          return { schemaVersion: '1', action: 'apply_fix' };
+        },
+      },
+      runtimeSecrets: new Set(),
+      persist: async () => {},
+      onActivity: (value) => { activity.push(value); },
+      // A clock always past the window would emit on every line; only the
+      // count guard keeps the single line from being reported twice.
+      now: () => 1_000_000,
+    });
+
+    await expect(agent.apply(INPUT)).resolves.toMatchObject({ action: 'apply_fix' });
+    expect(activity).toEqual([expect.objectContaining({ jsonlEventCount: 1 })]);
+  });
+
+  it('keeps the Attempt outcome when a progress activity observer throws', async () => {
+    let clock = 0;
+    const agent = createRawTranscriptArtifactAgent({
+      agent: {
+        usesMeteredModel: true,
+        apply: async (input) => {
+          clock += 6_000;
+          input.onTranscriptLine?.(TRANSCRIPT_LINE);
+          return { schemaVersion: '1', action: 'apply_fix' };
+        },
+      },
+      runtimeSecrets: new Set(),
+      persist: async () => {},
+      onActivity: () => { throw new Error('diagnostic sink failed'); },
+      now: () => clock,
+    });
+
+    await expect(agent.apply(INPUT)).resolves.toMatchObject({ action: 'apply_fix' });
+  });
 });
