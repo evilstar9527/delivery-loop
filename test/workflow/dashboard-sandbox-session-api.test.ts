@@ -144,6 +144,27 @@ describe('dashboard sandbox session API', () => {
     expect(body.liveStatus).toBeNull();
     expect(body.events).toEqual([]);
   });
+
+  it('reports an unreachable session when the transport is only half configured', async () => {
+    // AGENT_EXECUTOR_URL is a plain var in wrangler.jsonc while the control
+    // token is a secret, so an environment can hold one without the other. That
+    // partial shape makes transport resolution throw rather than report absence,
+    // which used to surface as a 500 instead of an honest unreachable session.
+    const runId = await seedSandboxRun('halfconf', 'running', 'executor-sess-halfconf');
+    const original = env.AGENT_EXECUTOR_CONTROL_TOKEN;
+    delete env.AGENT_EXECUTOR_CONTROL_TOKEN;
+    try {
+      const res = await SELF.fetch(`${BASE}/v1/dashboard/runs/${runId}/session`, { headers: AUTH });
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.sandboxId).toBe('executor-sess-halfconf');
+      expect(body.recordedStatus).toBe('running');
+      expect(body.unreachable).toBe(true);
+      expect(body.liveStatus).toBeNull();
+    } finally {
+      if (original !== undefined) env.AGENT_EXECUTOR_CONTROL_TOKEN = original;
+    }
+  });
 });
 
 describe('sandbox session stdout parsing', () => {
