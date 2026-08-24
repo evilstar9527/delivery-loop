@@ -49,4 +49,49 @@ describe('deriveAnalysisPlanPolicy', () => {
     expect(policy.allowedEffects).not.toContain('test_deploy');
     expect(policy.requiresTestDeployment).toBe(false);
   });
+
+  // In-sandbox refs are resolved against the target repository's own
+  // delivery.yaml, and resolveDeliveryCommand throws 'untrusted_command' for an
+  // id that contract does not declare. A single hardcoded set therefore only
+  // works for one repository: tipsy-backend declares setup:modules / test:unit /
+  // verify:all and would have failed at plan time against 'smoke'.
+  it('offers the Go pilot repository only its affordable verification ref', () => {
+    // Measured on a standard-4 sandbox against a real checkout: the contract's
+    // `test:unit` was still linking past 540s (its budget is 600s, and module
+    // download already costs ~100s of that), while the smoketest build finished
+    // in 114s. Offering test:unit would guarantee a timeout kill, so the plan
+    // ceiling must not include it.
+    const policy = deriveAnalysisPlanPolicy(
+      'bug', true, false, 'none', 'lightspeed-intelligence/tipsy-backend',
+    );
+
+    expect(policy.verificationCommandRefs).toEqual(['verify:smoke']);
+    expect(policy.allowedCommandRefs).not.toContain('test:unit');
+    expect(policy.allowedCommandRefs).not.toContain('verify:all');
+    // The Node pilot's targeted ref must not leak into a Go repository's plan.
+    expect(policy.allowedCommandRefs).not.toContain('test:smoke');
+  });
+
+  it('keeps the default refs for a repository with no explicit mapping', () => {
+    const policy = deriveAnalysisPlanPolicy(
+      'bug', true, false, 'none', 'evilstar9527/delivery-loop',
+    );
+
+    expect(policy.verificationCommandRefs).toEqual(['verify:smoke']);
+  });
+
+  it('keeps the default refs when no repository is supplied', () => {
+    // Existing callers that predate per-repository refs must not change shape.
+    expect(deriveAnalysisPlanPolicy('bug', true).verificationCommandRefs)
+      .toEqual(['verify:smoke']);
+  });
+
+  it('grants no command refs to a read-only intake regardless of repository', () => {
+    const policy = deriveAnalysisPlanPolicy(
+      'bug', false, false, 'none', 'lightspeed-intelligence/tipsy-backend',
+    );
+
+    expect(policy.verificationCommandRefs).toEqual([]);
+    expect(policy.allowedCommandRefs).not.toContain('test:unit');
+  });
 });

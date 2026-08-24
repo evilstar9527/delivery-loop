@@ -206,6 +206,7 @@ export class AnalysisAttemptContextStore {
       row.allow_repository_write === 1,
       row.allow_test_deploy === 1,
       row.target_environment,
+      row.target_repository,
     );
     return {
       schemaVersion: '1',
@@ -656,6 +657,7 @@ export class AnalysisPlanProposalStore {
       row.allow_repository_write === 1,
       row.allow_test_deploy === 1,
       row.target_environment,
+      row.target_repository,
     );
     const context = {
       runId: row.run_id,

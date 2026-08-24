@@ -1872,6 +1872,7 @@ export async function runAnalysisAttempt(
       context.task.policy.allowRepositoryWrite,
       context.task.policy.allowTestDeploy,
       context.task.target.environment,
+      `${context.task.target.owner}/${context.task.target.repo}`,
     );
     const isUniqueSubset = (actual: readonly string[], trusted: readonly string[]): boolean =>
       new Set(actual).size === actual.length && actual.every((value) => trusted.includes(value));
