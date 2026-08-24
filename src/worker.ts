@@ -105,6 +105,7 @@ import { PlanRevisionAnalysisReconciler } from
   './reconciliation/plan-revision-analysis-reconciler.js';
 import { revokeRepoWriteCredentialsFromEnv } from './reconciliation/repo-write-credential-runtime.js';
 import { RunStuckDetector } from './reconciliation/run-stuck-detector.js';
+import { DispatchStallDetector } from './reconciliation/dispatch-stall-detector.js';
 import { reconcileWorkflowInstancesFromEnv } from './reconciliation/workflow-instance-reconciler.js';
 import { QuotaControlStore } from './storage/quota-control-store.js';
 import { BackupRestoreCoordinator } from './storage/backup-restore-store.js';
@@ -401,6 +402,18 @@ export default {
         now: scheduledNow,
         sink: secureStructuredLogSink({
           component: 'run_stuck',
+          secrets: configuredSecrets(env),
+        }),
+      }).scan(5);
+      // Runs stranded behind a dead-lettered dispatch cannot recover on their
+      // own: the outbox claim statement skips open dead letters by design, so
+      // nothing retries them. Cancel them after the relay and stuck detector
+      // above have had their chance, so a dispatch that could still land is
+      // never cancelled out from under itself.
+      await new DispatchStallDetector(env.DB_CONTROL, {
+        now: scheduledNow,
+        sink: secureStructuredLogSink({
+          component: 'dispatch_stall',
           secrets: configuredSecrets(env),
         }),
       }).scan(5);
