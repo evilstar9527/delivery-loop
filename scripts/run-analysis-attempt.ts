@@ -18,6 +18,7 @@ try {
     classification?.kind,
     classification?.stage,
     classification?.providerFailureCode,
+    classification?.planIssueCodes,
   );
   process.exitCode = 1;
 }

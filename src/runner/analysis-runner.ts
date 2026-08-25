@@ -318,6 +318,7 @@ export interface AnalysisFailureClassification {
   kind: CodexAnalysisFailureKind;
   stage: CodexAnalysisFailureStage;
   providerFailureCode?: AnalysisProviderProcessFailureCode;
+  planIssueCodes?: readonly ExecutionPlanValidationIssueCode[];
 }
 
 export class AnalysisRunnerError extends Error {
@@ -2065,9 +2066,16 @@ export async function runAnalysisAttempt(
             ...(agentError.providerFailureCode === undefined
               ? {}
               : { providerFailureCode: agentError.providerFailureCode }),
+            ...(agentError.planIssueCodes === undefined
+              ? {}
+              : { planIssueCodes: agentError.planIssueCodes }),
           }
         : agentError instanceof ExecutionPlanValidationError
-          ? { kind: 'plan_validation_failed', stage: 'plan_validation' }
+          ? {
+              kind: 'plan_validation_failed',
+              stage: 'plan_validation',
+              planIssueCodes: [...new Set(agentError.issues.map((issue) => issue.code))].sort(),
+            }
           : undefined);
     }
     if (validatedLocalPlan === undefined) {

@@ -175,6 +175,9 @@ export class CodexAnalysisAdapterError extends Error {
     readonly kind: CodexAnalysisFailureKind,
     readonly stage: CodexAnalysisFailureStage,
     readonly providerFailureCode?: AnalysisProviderProcessFailureCode,
+    // Diagnostic only: which plan-validation rules the model's Plan tripped.
+    // Enum-like codes, no content. Populated for plan_validation_failed.
+    readonly planIssueCodes?: readonly ExecutionPlanValidationIssueCode[],
   ) {
     if (
       (kind === 'process_nonzero_exit') !== (providerFailureCode !== undefined)
@@ -597,12 +600,17 @@ export class CodexAnalysisAdapter {
       try {
         return await validateExecutionPlanProposal(proposal, input.validation);
       } catch (error) {
+        const planIssueCodes = error instanceof ExecutionPlanValidationError
+          ? [...new Set(error.issues.map((issue) => issue.code))].sort()
+          : undefined;
         if (
           pass !== 1 || input.diagnostic !== undefined ||
           input.correctionIssueCodes !== undefined || input.onPlanCorrection === undefined ||
           !(error instanceof ExecutionPlanValidationError)
         ) {
-          throw new CodexAnalysisAdapterError('plan_validation_failed', 'plan_validation');
+          throw new CodexAnalysisAdapterError(
+            'plan_validation_failed', 'plan_validation', undefined, planIssueCodes,
+          );
         }
         const issueCodes = [...new Set(error.issues.map((issue) => issue.code))].sort();
         await input.onPlanCorrection(issueCodes);
