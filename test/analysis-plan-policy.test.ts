@@ -55,21 +55,26 @@ describe('deriveAnalysisPlanPolicy', () => {
   // id that contract does not declare. A single hardcoded set therefore only
   // works for one repository: tipsy-backend declares setup:modules / test:unit /
   // verify:all and would have failed at plan time against 'smoke'.
-  it('offers the Go pilot repository only its affordable verification ref', () => {
+  it('offers the Go pilot repository the affordable smoke refs for a self-verifying plan', () => {
     // Measured on a standard-4 sandbox against a real checkout: the contract's
     // `test:unit` was still linking past 540s (its budget is 600s, and module
     // download already costs ~100s of that), while the smoketest build finished
-    // in 114s. Offering test:unit would guarantee a timeout kill, so the plan
-    // ceiling must not include it.
+    // in 114s. test:unit would guarantee a timeout kill, so it stays excluded.
+    //
+    // The smoketest build is declared under BOTH test:smoke and verify:smoke in
+    // delivery.yaml. Both are required: a self-verifying change item — the only
+    // shape that satisfies requiresRepositoryChange — needs one test:* ref and
+    // one verify:* ref. Offering only verify:smoke made every plan impossible.
     const policy = deriveAnalysisPlanPolicy(
       'bug', true, false, 'none', 'lightspeed-intelligence/tipsy-backend',
     );
 
     expect(policy.verificationCommandRefs).toEqual(['verify:smoke']);
+    expect(policy.allowedCommandRefs).toEqual(
+      expect.arrayContaining(['test:smoke', 'verify:smoke']),
+    );
     expect(policy.allowedCommandRefs).not.toContain('test:unit');
     expect(policy.allowedCommandRefs).not.toContain('verify:all');
-    // The Node pilot's targeted ref must not leak into a Go repository's plan.
-    expect(policy.allowedCommandRefs).not.toContain('test:smoke');
   });
 
   it('keeps the default refs for a repository with no explicit mapping', () => {

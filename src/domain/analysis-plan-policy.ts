@@ -57,12 +57,18 @@ const PILOT_COMMAND_REFS_BY_REPOSITORY: Readonly<Record<string, PilotCommandRefs
   // actually matters here.
   //
   // The ref category must be one of setup|test|verify|acceptance
-  // (COMMAND_REF_PATTERN), so the build check is declared as `verify:smoke` in
-  // the repository's delivery.yaml rather than a `build:` category that would
-  // never parse. Until that entry lands, resolution fails closed with
-  // `untrusted_command` instead of running the wrong command.
+  // (COMMAND_REF_PATTERN). The affordable smoketest build is declared in the
+  // repository's delivery.yaml under BOTH `targeted.smoke` (test:smoke) and
+  // `verify.smoke` (verify:smoke) — the same `go build ./cmd/smoketest/...`,
+  // 114s cold / 1s warm — because a self-verifying change item requires one
+  // test:* ref AND one verify:* ref (commit + test evidence). Offering only
+  // verify:smoke made every plan impossible: selfVerifying (the sole way to
+  // satisfy requiresRepositoryChange) demands a test:* ref, so the model either
+  // added an out-of-allowlist test:* (command_ref_not_allowed) or omitted it
+  // (repository_change_required). test:smoke here is the Go smoketest build, not
+  // test:unit — the latter still exceeds its 600s budget and stays excluded.
   'lightspeed-intelligence/tipsy-backend': {
-    change: ['verify:smoke'],
+    change: ['test:smoke', 'verify:smoke'],
     verification: ['verify:smoke'],
   },
 };
