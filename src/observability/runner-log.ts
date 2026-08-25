@@ -67,6 +67,7 @@ export function writeRunnerStructuredLog(
   failureKind?: RunnerExecutionFailureKind | CodexAnalysisFailureKind,
   failureStage?: CodexAnalysisFailureStage | RepositoryCommitFailureStage,
   providerFailureCode?: AnalysisProviderProcessFailureCode,
+  planIssueCodes?: readonly string[],
 ): void {
   const validExecutionFailure = event === 'execution_attempt_result' &&
     outcome === 'failed' &&
@@ -115,6 +116,9 @@ export function writeRunnerStructuredLog(
     ...(failureKind === undefined ? {} : { failureKind }),
     ...(failureStage === undefined ? {} : { failureStage }),
     ...(providerFailureCode === undefined ? {} : { providerFailureCode }),
+    ...(planIssueCodes === undefined || planIssueCodes.length === 0
+      ? {}
+      : { planIssueCodes: [...planIssueCodes].slice(0, 30) }),
     ...(ID_PATTERN.test(environment.DELIVERY_ATTEMPT_ID ?? '')
       ? { attemptId: environment.DELIVERY_ATTEMPT_ID }
       : {}),
