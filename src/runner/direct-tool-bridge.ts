@@ -6,7 +6,17 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 const QUERY_WINDOW_MINUTES = 14 * 24 * 60;
 const QUERY_LIMIT = 20;
 const SLS_TOOL_PATH = '/mcp/tipsy/tipsy-analytics__sls_query_logs';
+// Extraction guard for trace ids pulled out of raw log text: the >=16-char
+// floor drops short false positives like `trace_id:3`.
 const TRACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{15,199}$/;
+// Validation for the requestId the agent supplies. It must match — not exceed —
+// the agent-facing output schema (DIAGNOSTIC_TRACE_REQUEST_V1_JSON_SCHEMA:
+// `^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$`). A stricter floor here rejected every id
+// the schema lets the agent emit but that is shorter than 16 chars — e.g. one
+// the model extracted imperfectly from the raw log text — as invalid_response,
+// before the query could run. A short or unmatched id now runs and, finding no
+// trace, resolves to a valid empty result rather than a hard tool failure.
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
 
 // The agent supplies a free-form arguments record (its keys are its own
 // choice, already bounded by the runner's agent-facing schema). This client's
@@ -23,7 +33,7 @@ const LocatorArgumentsSchema = z.object({
 }).refine((value) => value.uid !== '' || value.cid !== '' || value.path !== '');
 
 const TraceArgumentsSchema = z.object({
-  requestId: z.string().regex(TRACE_ID_PATTERN),
+  requestId: z.string().regex(REQUEST_ID_PATTERN),
 });
 
 export type DirectToolBridgeFailureCategory =
