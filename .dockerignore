@@ -1,0 +1,13 @@
+# Deny-all with an allowlist that mirrors exactly what executor-image/Dockerfile
+# copies. An ignore-list would silently grow stale as the repository does: the
+# build context was 7.1 GB, almost all of it `.claude/worktree` checkouts and
+# `node_modules` that the image rebuilds from the lockfile anyway, and it also
+# carried `.env` to the daemon even though no COPY references it.
+*
+
+!package.json
+!pnpm-lock.yaml
+!tsconfig.json
+!src
+!scripts
+!executor-image
