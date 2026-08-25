@@ -70,6 +70,37 @@ describe('direct executor Tool Bridge runtime', () => {
     expect(queries).toEqual([TRACE_ID]);
   });
 
+  it('ignores extra agent-supplied keys and maps only the field each tool needs', async () => {
+    // The agent picks its own arguments keys; a trace request commonly also
+    // echoes the uid/cid/path locator keys it used for logs/search. The client
+    // must extract requestId (or the locator) and ignore the rest, not reject
+    // the whole call — a strict schema here turned every such request into
+    // invalid_response. A request missing the required field still fails closed.
+    const queries: string[] = [];
+    const client = new DirectToolBridgeDiagnosticClient({
+      baseUrl: 'https://tool-bridge.example',
+      sk: SK,
+      logstore: 'tipsy-chat',
+      environment: 'prod',
+      fetch: async (_input, init) => {
+        queries.push(String(JSON.parse(String(init?.body)).query));
+        return Response.json(result(TRACE_ID));
+      },
+    });
+
+    await expect(client.getTrace({
+      requestId: TRACE_ID, uid: '', cid: '1780446342879247552', path: '',
+    })).resolves.toMatchObject({ requestId: TRACE_ID });
+    await expect(client.searchLogs({
+      uid: '1770369991319196871', cid: '', path: '', requestId: TRACE_ID,
+    })).resolves.toMatchObject({ requestIds: [TRACE_ID] });
+    expect(queries).toEqual([TRACE_ID, '1770369991319196871']);
+
+    // Missing the required field still fails closed.
+    await expect(client.getTrace({ requestTraceId: TRACE_ID }))
+      .rejects.toMatchObject({ category: 'invalid_response' });
+  });
+
   it('returns a valid empty result when the locator or trace is outside the query window', async () => {
     // A real bug's conversation is usually older than log retention, so a
     // locator that matches no in-window trace — or a getTrace whose id is
