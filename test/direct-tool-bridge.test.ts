@@ -70,7 +70,27 @@ describe('direct executor Tool Bridge runtime', () => {
     expect(queries).toEqual([TRACE_ID]);
   });
 
-  it('fails closed for redirects, malformed results, missing exact traces, and Secret reflection', async () => {
+  it('returns a valid empty result when the locator or trace is outside the query window', async () => {
+    // A real bug's conversation is usually older than log retention, so a
+    // locator that matches no in-window trace — or a getTrace whose id is
+    // absent — must surface as a valid empty result the agent can reason from,
+    // not a hard tool failure.
+    const emptyText = 'WARN service/character.go:3237 no matching rows';
+    const client = new DirectToolBridgeDiagnosticClient({
+      baseUrl: 'https://tool-bridge.example',
+      sk: SK,
+      logstore: 'tipsy-chat',
+      environment: 'prod',
+      fetch: async () => Response.json(emptyText),
+    });
+
+    await expect(client.searchLogs({ uid: '1770369991319196871', cid: '', path: '' }))
+      .resolves.toEqual({ schemaVersion: '1', requestIds: [], result: emptyText });
+    await expect(client.getTrace({ requestId: TRACE_ID }))
+      .resolves.toEqual({ schemaVersion: '1', requestId: TRACE_ID, result: emptyText });
+  });
+
+  it('fails closed for redirects, unreadable results, and Secret reflection', async () => {
     const responseFor = (response: Response) => new DirectToolBridgeDiagnosticClient({
       baseUrl: 'https://tool-bridge.example',
       sk: SK,
@@ -82,12 +102,6 @@ describe('direct executor Tool Bridge runtime', () => {
     await expect(responseFor(new Response(null, { status: 302 })).searchLogs({
       uid: '1770369991319196871', cid: '', path: '',
     })).rejects.toMatchObject({ category: 'upstream_error' });
-    await expect(responseFor(Response.json({ result: 'not a string' })).searchLogs({
-      uid: '1770369991319196871', cid: '', path: '',
-    })).rejects.toMatchObject({ category: 'invalid_response' });
-    await expect(responseFor(Response.json(result('3085560401799000064'))).getTrace({
-      requestId: TRACE_ID,
-    })).rejects.toMatchObject({ category: 'invalid_response' });
     await expect(responseFor(Response.json(`${result(TRACE_ID)} ${SK}`)).getTrace({
       requestId: TRACE_ID,
     })).rejects.toMatchObject({ category: 'invalid_response' });

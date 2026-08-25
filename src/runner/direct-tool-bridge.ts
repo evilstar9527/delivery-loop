@@ -133,18 +133,24 @@ export class DirectToolBridgeDiagnosticClient {
       .filter((value) => value !== '')
       .join(' AND ');
     const result = await this.query(query);
-    const requestIds = traceIds(result);
-    if (requestIds.length === 0) throw new DirectToolBridgeError('invalid_response');
-    return { schemaVersion: '1', requestIds, result };
+    // Zero matching trace ids is a valid empty locator result, not a tool
+    // failure: the referenced conversation may simply predate the query window,
+    // and the raw text ("返回 0 行") still lets the agent conclude that. Only a
+    // response that is unreadable, oversized, or reflects the Secret — all
+    // rejected in query() — is treated as invalid_response.
+    return { schemaVersion: '1', requestIds: traceIds(result), result };
   }
 
   async getTrace(argumentsValue: Record<string, unknown>): Promise<unknown> {
     const parsed = TraceArgumentsSchema.safeParse(argumentsValue);
     if (!parsed.success) throw new DirectToolBridgeError('invalid_response');
     const result = await this.query(parsed.data.requestId);
-    if (!traceIds(result).includes(parsed.data.requestId)) {
-      throw new DirectToolBridgeError('invalid_response');
-    }
+    // A trace that is absent from the bounded query window is a valid
+    // "not found", not a tool failure — a real bug's conversation is usually
+    // older than log retention. The exact-id query means any returned rows
+    // full-text match that id, and query() already fails closed on Secret
+    // reflection, so handing the result back is safe; the agent reads whether
+    // the trace was present and reasons from there.
     return { schemaVersion: '1', requestId: parsed.data.requestId, result };
   }
 
