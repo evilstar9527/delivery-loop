@@ -78,7 +78,7 @@ describe('guarded Task intake workflow', () => {
         DELIVERY_LOOP_GUARDED_TASK_INTAKE: '1',
         GUARDED_TASK_INTAKE_CONTROL_PLANE_URL: 'https://delivery-loop.fantacy.live',
         GUARDED_TASK_INTAKE_ALLOWED_TARGETS_JSON:
-          '[{"repository":"evilstar9527/delivery-loop","baseBranch":"main","environment":"none","allowTestDeploy":false},{"repository":"lightspeed-intelligence/tipsy-backend","baseBranch":"dev","environment":"test","allowTestDeploy":true}]',
+          '[{"repository":"evilstar9527/delivery-loop","baseBranch":"main","environment":"none","allowTestDeploy":false},{"repository":"lightspeed-intelligence/tipsy-backend","baseBranch":"dev","environment":"test","allowTestDeploy":true},{"repository":"lightspeed-intelligence/tipsy-backend","baseBranch":"dev","environment":"none","allowTestDeploy":false}]',
         GUARDED_TASK_INTAKE_TASK_TOKEN: '${{ secrets.TASK_INTAKE_TOKEN }}',
         GUARDED_TASK_INTAKE_GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
       },
