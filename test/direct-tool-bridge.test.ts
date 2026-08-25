@@ -101,6 +101,32 @@ describe('direct executor Tool Bridge runtime', () => {
       .rejects.toMatchObject({ category: 'invalid_response' });
   });
 
+  it('accepts any requestId the agent-facing schema permits, down to one char', async () => {
+    // The agent's output schema allows requestId `^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$`
+    // (as short as one char), because the model extracts it from raw log text and
+    // may do so imperfectly. The client must not impose a stricter floor — that
+    // rejected valid-per-schema ids as invalid_response before the query ran.
+    // A short or unmatched id runs and, per the empty-result contract, resolves.
+    const queries: string[] = [];
+    const client = new DirectToolBridgeDiagnosticClient({
+      baseUrl: 'https://tool-bridge.example',
+      sk: SK,
+      logstore: 'tipsy-chat',
+      environment: 'prod',
+      fetch: async (_input, init) => {
+        queries.push(String(JSON.parse(String(init?.body)).query));
+        return Response.json('WARN service/character.go:1 no matching rows');
+      },
+    });
+
+    await expect(client.getTrace({ requestId: '12345' }))
+      .resolves.toMatchObject({ requestId: '12345' });
+    expect(queries).toEqual(['12345']);
+    // An empty id carries no locator at all and still fails closed.
+    await expect(client.getTrace({ requestId: '' }))
+      .rejects.toMatchObject({ category: 'invalid_response' });
+  });
+
   it('returns a valid empty result when the locator or trace is outside the query window', async () => {
     // A real bug's conversation is usually older than log retention, so a
     // locator that matches no in-window trace — or a getTrace whose id is
