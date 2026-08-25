@@ -8,15 +8,23 @@ const QUERY_LIMIT = 20;
 const SLS_TOOL_PATH = '/mcp/tipsy/tipsy-analytics__sls_query_logs';
 const TRACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{15,199}$/;
 
+// The agent supplies a free-form arguments record (its keys are its own
+// choice, already bounded by the runner's agent-facing schema). This client's
+// job is to map those arguments to the fixed SLS tool call, not to re-police
+// key hygiene: reject only when the field this tool needs is absent or
+// malformed, and ignore any extra keys the agent carried along — e.g. a trace
+// request that also echoes the uid/cid/path locator keys. A strict schema here
+// turned every such request into invalid_response even though a well-formed
+// requestId was present.
 const LocatorArgumentsSchema = z.object({
   uid: z.string().max(200).default(''),
   cid: z.string().max(200).default(''),
   path: z.string().max(200).default(''),
-}).strict().refine((value) => value.uid !== '' || value.cid !== '' || value.path !== '');
+}).refine((value) => value.uid !== '' || value.cid !== '' || value.path !== '');
 
 const TraceArgumentsSchema = z.object({
   requestId: z.string().regex(TRACE_ID_PATTERN),
-}).strict();
+});
 
 export type DirectToolBridgeFailureCategory =
   | 'upstream_error'
