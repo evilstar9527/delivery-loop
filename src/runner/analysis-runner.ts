@@ -220,7 +220,9 @@ const DirectToolObservationResponseSchema = z.object({
 }).strict();
 const DirectLogResultSchema = z.object({
   schemaVersion: z.literal('1'),
-  requestIds: z.array(z.string().regex(ID_PATTERN)).min(1).max(20),
+  // May be empty: a locator that matches no in-window trace is a valid empty
+  // result, not a tool failure.
+  requestIds: z.array(z.string().regex(ID_PATTERN)).max(20),
   result: z.unknown(),
 }).strict();
 const DirectTraceResultSchema = z.object({
