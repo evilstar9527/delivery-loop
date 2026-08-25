@@ -7,8 +7,8 @@
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "EXECUTOR_IMAGE_REF": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:a206cfe7912ebe5702871d162beeaa91eca416272674b01c7d53f955f8858b1b",
-    "EXECUTOR_IMAGE_DIGEST": "sha256:a206cfe7912ebe5702871d162beeaa91eca416272674b01c7d53f955f8858b1b",
+    "EXECUTOR_IMAGE_REF": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:f53409339d86fed9c5edfa8f5d9dc0080b3a142ae3315d22c89d4ef89839dd03",
+    "EXECUTOR_IMAGE_DIGEST": "sha256:f53409339d86fed9c5edfa8f5d9dc0080b3a142ae3315d22c89d4ef89839dd03",
     "TOOL_BRIDGE_BASE_URL": "https://tool-bridge.fantacy.live",
     "TOOL_BRIDGE_SLS_LOGSTORE": "tipsy-chat",
     "TOOL_BRIDGE_SLS_ENVIRONMENT": "prod"
@@ -39,7 +39,7 @@
     {
       "name": "delivery-agent-sandbox",
       "class_name": "DeliveryAgentSandbox",
-      "image": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:a206cfe7912ebe5702871d162beeaa91eca416272674b01c7d53f955f8858b1b",
+      "image": "registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:f53409339d86fed9c5edfa8f5d9dc0080b3a142ae3315d22c89d4ef89839dd03",
       "max_instances": 10,
       "instance_type": "standard-4"
     }
