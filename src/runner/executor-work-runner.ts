@@ -319,6 +319,7 @@ export interface ExecutorWorkAttemptRunnerContext {
   repositoryPath: string;
   checkoutSha: string;
   targetedCommandRefs: readonly string[];
+  requiredVerifyCommandRefs: readonly string[];
   deliveryPolicy: ParsedDeliveryPolicy;
   runtimeSecrets: readonly string[];
   agent: Pick<ExecutionAgent, 'apply'>;
@@ -395,10 +396,16 @@ export class ExecutorWorkAttemptRunner {
     });
     let proposal = await capture();
     let proposalDigest = await canonicalSha256(proposal);
+    // Run only the plan-authorized verify refs, not every verify command in
+    // delivery.yaml. The plan policy deliberately limits these to what is
+    // affordable/meaningful in the sandbox (e.g. verify:smoke); running the full
+    // delivery.yaml set also pulled in verify:all (the whole go test suite, which
+    // needs infra the sandbox lacks) and failed every attempt before verify:smoke
+    // even ran. The refs are still resolved against the trusted delivery policy
+    // below, so only policy-defined commands can execute.
     const verificationRefs = [
       ...this.context.targetedCommandRefs,
-      ...Object.keys(this.context.deliveryPolicy.policy.commands.verify)
-        .sort().map((id) => `verify:${id}`),
+      ...[...this.context.requiredVerifyCommandRefs].sort(),
     ];
     for (const commandRef of verificationRefs) {
       await exactHead(this.context.repositoryPath, this.context.checkoutSha);
