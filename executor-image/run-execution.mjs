@@ -95,6 +95,22 @@ const child = spawn('pnpm', ['exec', 'tsx', script], {
   stdio: 'inherit',
   env: {
     PATH: process.env.PATH,
+    // Go toolchain environment baked into the image ENV must reach the runner's
+    // `go` subprocesses (setup:modules, verify/test builds). This restricted env
+    // otherwise drops them, so `go` ran with defaults: GOTOOLCHAIN unset (tries
+    // to fetch a toolchain over the network), GOPROXY=proxy.golang.org (IP
+    // rate-limited to 403), no GOMODCACHE (misses the baked cache), CGO_ENABLED=0
+    // (cgo packages fail). That made every implement/execution attempt die in
+    // setup while analysis — which runs no `go` — succeeded. Forward the values
+    // the image set, with safe fallbacks.
+    HOME: process.env.HOME ?? '/root',
+    GOPATH: process.env.GOPATH ?? '/root/go',
+    GOMODCACHE: process.env.GOMODCACHE ?? '/root/go/pkg/mod',
+    GOTOOLCHAIN: process.env.GOTOOLCHAIN ?? 'local',
+    GOFLAGS: process.env.GOFLAGS ?? '-mod=mod',
+    CGO_ENABLED: process.env.CGO_ENABLED ?? '1',
+    ...(process.env.GOPROXY === undefined ? {} : { GOPROXY: process.env.GOPROXY }),
+    ...(process.env.GOCACHE === undefined ? {} : { GOCACHE: process.env.GOCACHE }),
     DELIVERY_EXECUTION_SPEC_PATH: specPath,
     DELIVERY_EXECUTION_GRANT_PATH: grantPath,
     DELIVERY_EXECUTOR_IDENTITY_KIND: grant.identityKind,

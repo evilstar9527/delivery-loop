@@ -96,7 +96,15 @@ RUN go_url='https://go.dev/dl/go1.25.0.linux-amd64.tar.gz' \
 ENV PATH="/usr/local/go/bin:${PATH}" \
     GOTOOLCHAIN=local \
     GOFLAGS=-mod=mod \
-    CGO_ENABLED=1
+    CGO_ENABLED=1 \
+    GOPROXY=https://goproxy.cn,https://proxy.golang.org,direct
+
+# proxy.golang.org rate-limits by client IP and returns 403 to build hosts and
+# sandboxes that fetch too often, which left the warm cache incomplete and made
+# a cold sandbox's runtime `go mod download` fail mid-fetch. goproxy.cn is a
+# public mirror that does not IP-throttle this way; it is tried first, with the
+# canonical proxy and direct VCS as fallbacks. Set in the image so the warm step
+# below and any runtime delta fetch both use it.
 
 # Warm the Go module cache for the Go pilot repository.
 #
