@@ -319,6 +319,23 @@ export interface AnalysisFailureClassification {
   stage: CodexAnalysisFailureStage;
   providerFailureCode?: AnalysisProviderProcessFailureCode;
   planIssueCodes?: readonly ExecutionPlanValidationIssueCode[];
+  // Stable slug derived from the fixed runner-boundary error message (no free
+  // text, no interpolation), so an otherwise opaque runner_internal_failure
+  // says which boundary threw. Observability only.
+  boundaryReason?: string;
+}
+
+/**
+ * Turn a fixed AnalysisRunnerError message literal into a stable, bounded slug
+ * (lowercase, non-alphanumerics collapsed to underscores). The messages carry
+ * no interpolation, so the slug is a safe enum-like reason with no user data.
+ */
+function boundaryReasonSlug(message: string): string {
+  return message
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80);
 }
 
 export class AnalysisRunnerError extends Error {
@@ -686,12 +703,17 @@ const UNKNOWN_TERMINAL_FAILURE: AnalysisRunnerFailure = {
 
 function terminalAnalysisRunnerError(error: unknown): AnalysisRunnerError {
   if (error instanceof AnalysisRunnerError && error.failure !== undefined) return error;
+  const message = error instanceof AnalysisRunnerError ? error.message : 'analysis Runner failed';
   return new AnalysisRunnerError(
-    error instanceof AnalysisRunnerError ? error.message : 'analysis Runner failed',
+    message,
     UNKNOWN_TERMINAL_FAILURE,
     error instanceof AnalysisRunnerError && error.analysisFailure !== undefined
       ? error.analysisFailure
-      : { kind: 'runner_internal_failure', stage: 'runner_boundary' },
+      : {
+          kind: 'runner_internal_failure',
+          stage: 'runner_boundary',
+          boundaryReason: boundaryReasonSlug(message),
+        },
   );
 }
 

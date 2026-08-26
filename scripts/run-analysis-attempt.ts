@@ -19,6 +19,7 @@ try {
     classification?.stage,
     classification?.providerFailureCode,
     classification?.planIssueCodes,
+    classification?.boundaryReason,
   );
   process.exitCode = 1;
 }
