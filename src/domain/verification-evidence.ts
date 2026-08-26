@@ -37,6 +37,10 @@ export const VerificationCommandResultV1Schema = z
     exitCode: z.number().int().min(0).max(255),
     durationMs: z.number().int().nonnegative().max(3_600_000),
     headSha: z.string().regex(SHA_PATTERN),
+    // Optional bounded tail of a FAILED command's output (e.g. the `go build`
+    // compiler errors). Diagnostic only: lets an operator — and, later, a retry
+    // — see why verification failed instead of just its exit code.
+    outputTail: z.string().max(4000).optional(),
   })
   .strict()
   .superRefine((result, context) => {

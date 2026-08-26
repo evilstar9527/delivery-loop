@@ -272,9 +272,16 @@ export class VerificationEvidenceStore {
     }
 
     const evidenceStatus = result.exitCode === 0 ? 'passed' : 'failed';
-    const summary = result.phase === 'targeted'
+    const baseSummary = result.phase === 'targeted'
       ? `targeted verification command ${evidenceStatus}`
       : `required verification command ${evidenceStatus}`;
+    // On failure, append the bounded command output tail so the reason (e.g. the
+    // Go compiler error) is durably readable, not just the exit code. Kept within
+    // the summary TEXT column; no schema change.
+    const summary = result.exitCode !== 0 && typeof result.outputTail === 'string' &&
+        result.outputTail.length > 0
+      ? `${baseSummary}\n--- output tail ---\n${result.outputTail}`.slice(0, 8000)
+      : baseSummary;
     const commands = await this.db.batch([
       this.db
         .prepare(
