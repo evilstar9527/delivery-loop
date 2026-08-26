@@ -11,6 +11,7 @@ import {
   type VerificationSuiteManifestV1,
 } from '../domain/verification-evidence.js';
 import { DeliveryCommandRunner } from './delivery-command-runner.js';
+import { writeVerificationCommandFailure } from '../observability/runner-log.js';
 import {
   executeGitCommand,
   type GitCommandExecutor,
@@ -148,10 +149,16 @@ export class VerificationExecutionRunner {
       await this.assertHead();
       const startedAt = this.monotonicNow();
       let exitCode: number;
+      let commandStderr = '';
       try {
-        exitCode = (await commandRunner.run(command.commandRef)).exitCode;
+        const commandResult = await commandRunner.run(command.commandRef);
+        exitCode = commandResult.exitCode;
+        commandStderr = commandResult.stderr ?? '';
       } catch {
         exitCode = 127;
+      }
+      if (exitCode !== 0) {
+        writeVerificationCommandFailure(command.commandRef, exitCode, commandStderr);
       }
       const durationMs = this.duration(startedAt, this.monotonicNow());
       await this.assertHead();

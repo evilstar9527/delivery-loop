@@ -149,3 +149,32 @@ export function writeRunnerExecutionAgentActivity(
       : {}),
   });
 }
+
+/**
+ * Diagnostic projection of a failed verification command. The command's own
+ * stdout/stderr are otherwise dropped (only the exit code is kept), so a build
+ * or test failure is invisible. Emit a bounded, secret-scrubbed tail through the
+ * one permitted sink so an operator can see why `verify:smoke` (etc.) failed.
+ * Observability only; never used for control flow.
+ */
+export function writeVerificationCommandFailure(
+  commandRef: string,
+  exitCode: number,
+  outputTail: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): void {
+  secureStructuredLogSink({
+    component: 'runner',
+    level: 'error',
+    secrets: processSecrets(environment),
+    sink: (record) => process.stderr.write(`${JSON.stringify(record)}\n`),
+  })({
+    event: 'verification_command_failed',
+    commandRef: commandRef.slice(0, 80),
+    exitCode,
+    outputTail: outputTail.slice(-4000),
+    ...(ID_PATTERN.test(environment.DELIVERY_ATTEMPT_ID ?? '')
+      ? { attemptId: environment.DELIVERY_ATTEMPT_ID }
+      : {}),
+  });
+}
