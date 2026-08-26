@@ -25,6 +25,7 @@ import type {
 } from './execution-attempt-runner.js';
 import { DeliveryCommandRunner } from './delivery-command-runner.js';
 import { executeGitCommand } from './git-repository-writer.js';
+import { writeVerificationCommandFailure } from '../observability/runner-log.js';
 
 const execFileAsync = promisify(execFile);
 const SHA_PATTERN = /^[a-f0-9]{40}$/;
@@ -408,6 +409,10 @@ export class ExecutorWorkAttemptRunner {
       }
       if (result.exitCode !== 0) {
         const targeted = commandRef.startsWith('test:');
+        // Surface the failed command's output (e.g. Go compiler errors) — the
+        // failure report keeps only the classification. Sanctioned sink, bounded,
+        // secret-scrubbed. This is the executor-proxy work path the pilot uses.
+        writeVerificationCommandFailure(commandRef, result.exitCode, result.stderr ?? '');
         await this.context.failureReporter.report({
           failureCode: 'verification_nonzero_exit',
           failureSite: targeted ? 'targeted_verification' : 'full_verification',
