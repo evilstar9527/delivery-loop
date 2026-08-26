@@ -168,6 +168,9 @@ export class VerificationExecutionRunner {
         exitCode,
         durationMs,
         headSha: this.context.expectedHeadSha,
+        ...(exitCode !== 0 && commandStderr.length > 0
+          ? { outputTail: commandStderr.slice(-4000) }
+          : {}),
       });
       if (!parsedResult.success) throw new VerificationExecutionError('invalid_context');
       const result = parsedResult.data;
