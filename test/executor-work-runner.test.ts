@@ -104,6 +104,7 @@ deployment: { mode: none }
       repositoryPath: fixture.path,
       checkoutSha: fixture.checkoutSha,
       targetedCommandRefs: ['test:unit'],
+      requiredVerifyCommandRefs: ['verify:all'],
       deliveryPolicy: mutatingPolicy,
       runtimeSecrets: [],
       agent: {

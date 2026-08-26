@@ -951,6 +951,8 @@ export async function runExecutionAttempt(
     );
   }
   const targetedCommandRefs = context.item.commandRefs.filter((ref) => ref.startsWith('test:'));
+  const requiredVerifyCommandRefs = context.item.commandRefs.filter((ref) =>
+    ref.startsWith('verify:'));
   if (
     targetedCommandRefs.length === 0 ||
     !context.item.effects.includes('repo_write') ||
@@ -1255,6 +1257,7 @@ export async function runExecutionAttempt(
         repositoryPath: config.workspacePath,
         checkoutSha: config.checkoutSha,
         targetedCommandRefs,
+        requiredVerifyCommandRefs,
         deliveryPolicy: policy,
         runtimeSecrets: [...runtimeSecrets],
         agent: artifactAgent,
