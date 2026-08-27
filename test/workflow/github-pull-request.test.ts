@@ -29,7 +29,8 @@ const BASE_SHA = 'c'.repeat(40);
 const TASK_DIGEST = `sha256:${'d'.repeat(64)}`;
 const PLAN_DIGEST = `sha256:${'e'.repeat(64)}`;
 const BRANCH = `agent/${TASK_ID}/${ATTEMPT_ID}`;
-const TITLE = `Delivery Loop: ${TASK_ID}`;
+// PR title is now the task summary (tasks.title), not the opaque task id.
+const TITLE = 'Publish verified PR';
 const BODY = '# Delivery Loop Draft PR\n\nVerified body.\n';
 const NOW = '2026-07-25T17:00:00.000Z';
 
