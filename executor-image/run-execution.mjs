@@ -109,6 +109,15 @@ const child = spawn('pnpm', ['exec', 'tsx', script], {
     GOTOOLCHAIN: process.env.GOTOOLCHAIN ?? 'local',
     GOFLAGS: process.env.GOFLAGS ?? '-mod=mod',
     CGO_ENABLED: process.env.CGO_ENABLED ?? '1',
+    // Cap Go's CPU and memory so a heavy `go build`/`go test` cannot saturate the
+    // 4-vCPU / 12-GiB container. The runner's heartbeat timer shares this event
+    // loop; when Go pinned all cores the heartbeat POST was starved past the
+    // lease deadline and the attempt was marked `lost` even though the build
+    // finished (exit 0). GOMAXPROCS leaves a core for the runner; GOMEMLIMIT
+    // makes the Go GC reclaim before the cgroup OOMs. Overridable via the image
+    // ENV if a future instance type changes.
+    GOMAXPROCS: process.env.GOMAXPROCS ?? '3',
+    GOMEMLIMIT: process.env.GOMEMLIMIT ?? '9GiB',
     ...(process.env.GOPROXY === undefined ? {} : { GOPROXY: process.env.GOPROXY }),
     ...(process.env.GOCACHE === undefined ? {} : { GOCACHE: process.env.GOCACHE }),
     DELIVERY_EXECUTION_SPEC_PATH: specPath,
