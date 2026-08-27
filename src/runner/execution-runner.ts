@@ -2,7 +2,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
-import { writeHeartbeatDiagnostic } from '../observability/runner-log.js';
+import { writeHeartbeatDiagnostic, writeHeartbeatLifecycle } from '../observability/runner-log.js';
 import {
   CodexExecutionAdapter,
   CodexExecutionAdapterError,
@@ -725,6 +725,8 @@ async function heartbeatLoop(
   const RETRY_BACKOFF_MS = Math.min(intervalMs, 5_000);
   const MAX_CONSECUTIVE_FAILURES = 12;
   let consecutiveFailures = 0;
+  let iteration = 0;
+  writeHeartbeatLifecycle('launched');
   while (!signal.aborted) {
     try {
       await delay(consecutiveFailures === 0 ? intervalMs : RETRY_BACKOFF_MS, undefined, { signal });
@@ -733,6 +735,8 @@ async function heartbeatLoop(
       throw new ExecutionRunnerError('execution heartbeat wait failed');
     }
     if (signal.aborted) return;
+    iteration += 1;
+    writeHeartbeatLifecycle('iteration', { iteration });
     try {
       await fencing.withAuthorization(async (authorization) => {
         const parsed = HeartbeatResponseSchema.safeParse(await controlPlaneJson(
@@ -752,6 +756,7 @@ async function heartbeatLoop(
         }
         fencing.rotate(authorization, parsed.data);
       });
+      writeHeartbeatLifecycle('beat', { iteration });
       consecutiveFailures = 0;
     } catch (error) {
       const httpStatus = error instanceof ExecutionRunnerError ? error.httpStatus : undefined;

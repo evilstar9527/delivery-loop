@@ -207,3 +207,37 @@ export function writeHeartbeatDiagnostic(
       : {}),
   });
 }
+
+/**
+ * Lifecycle breadcrumb for the heartbeat loop, OFF unless
+ * `DELIVERY_HEARTBEAT_TRACE=1`. `writeHeartbeatDiagnostic` only fires on a POST
+ * failure, so a loop that never reaches the send — or never launches — leaves no
+ * trace and the attempt silently freezes (heartbeat_at stuck at its exchange
+ * value). This emits one bounded stderr line per phase so a frozen run's
+ * captured logs pinpoint the exact stall: `launched` (loop task started),
+ * `iteration` (past the interval wait, about to send), `beat` (a POST landed).
+ * Absent `launched` ⇒ a pre-loop await hung; `launched` without `iteration` ⇒
+ * stuck in the interval wait / lock; `iteration` without `beat` ⇒ the send
+ * itself hung or failed silently. Diagnostic only; gated so normal runs stay on
+ * the strict result/diagnostic contract.
+ */
+export function writeHeartbeatLifecycle(
+  phase: 'launched' | 'iteration' | 'beat',
+  detail: { iteration?: number | undefined } = {},
+  environment: NodeJS.ProcessEnv = process.env,
+): void {
+  if (environment.DELIVERY_HEARTBEAT_TRACE !== '1') return;
+  secureStructuredLogSink({
+    component: 'runner',
+    level: 'info',
+    secrets: processSecrets(environment),
+    sink: (record) => process.stderr.write(`${JSON.stringify(record)}\n`),
+  })({
+    event: 'heartbeat_lifecycle',
+    phase,
+    ...(detail.iteration === undefined ? {} : { iteration: detail.iteration }),
+    ...(ID_PATTERN.test(environment.DELIVERY_ATTEMPT_ID ?? '')
+      ? { attemptId: environment.DELIVERY_ATTEMPT_ID }
+      : {}),
+  });
+}
