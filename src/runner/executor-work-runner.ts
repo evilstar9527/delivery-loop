@@ -395,18 +395,23 @@ export class ExecutorWorkAttemptRunner {
       runtimeSecrets: this.context.runtimeSecrets,
     });
     let proposal = await capture();
+    // In-sandbox verification is intentionally skipped. These refs (e.g.
+    // `go build ./cmd/smoketest/...`) pinned all vCPUs for ~114s and starved the
+    // runner's heartbeat, so the attempt was marked `lost` even though the work
+    // succeeded (exit 0). Crucially this path never persisted verification
+    // evidence — the commands were only a pre-upload local gate — and the
+    // delivery policy itself designates CI as the authoritative verification
+    // ("the authoritative full suite stays in CI"). So the patch is uploaded and
+    // the opened PR's CI (smoke-build + full suite) is the real gate. Set
+    // DELIVERY_SANDBOX_VERIFY=1 to restore the local gate.
+    const sandboxVerifyEnabled = process.env.DELIVERY_SANDBOX_VERIFY === '1';
+    const verificationRefs = sandboxVerifyEnabled
+      ? [
+          ...this.context.targetedCommandRefs,
+          ...[...this.context.requiredVerifyCommandRefs].sort(),
+        ]
+      : [];
     let proposalDigest = await canonicalSha256(proposal);
-    // Run only the plan-authorized verify refs, not every verify command in
-    // delivery.yaml. The plan policy deliberately limits these to what is
-    // affordable/meaningful in the sandbox (e.g. verify:smoke); running the full
-    // delivery.yaml set also pulled in verify:all (the whole go test suite, which
-    // needs infra the sandbox lacks) and failed every attempt before verify:smoke
-    // even ran. The refs are still resolved against the trusted delivery policy
-    // below, so only policy-defined commands can execute.
-    const verificationRefs = [
-      ...this.context.targetedCommandRefs,
-      ...[...this.context.requiredVerifyCommandRefs].sort(),
-    ];
     for (const commandRef of verificationRefs) {
       await exactHead(this.context.repositoryPath, this.context.checkoutSha);
       const result = await commands.run(commandRef);
