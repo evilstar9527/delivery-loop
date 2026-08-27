@@ -11,7 +11,10 @@ import {
   ExecutorPublisherVerificationReporter,
   requestExecutorPublisherCredential,
 } from '../src/runner/executor-publisher-client.js';
-import { ExecutorPublisherRunner } from '../src/runner/executor-publisher-runner.js';
+import {
+  ExecutorPublisherRunner,
+  ExecutorPublisherRunnerError,
+} from '../src/runner/executor-publisher-runner.js';
 import { checkoutExecutorRepository } from '../src/runner/executor-repository-checkout.js';
 
 const PATCH_PATH = '/workspace/.delivery-loop/publisher-patch.json';
@@ -22,11 +25,28 @@ export class PublisherAttemptError extends Error {
     | 'publisher_configuration_invalid'
     | 'publisher_patch_unavailable'
     | 'publisher_patch_conflict'
-    | 'publisher_runtime_failed') {
-    super(`Publisher attempt failed: ${code}`);
+    | 'publisher_runtime_failed',
+    readonly runnerCode?: string) {
+    super(`Publisher attempt failed: ${code}${runnerCode === undefined ? '' : `:${runnerCode}`}`);
     this.name = 'PublisherAttemptError';
   }
 }
+
+// Distinct process exit codes per publisher failure step. The executor records
+// the container exit code in executor_observations (readable in D1), so a
+// non-zero code below tells an operator exactly which step failed without any
+// new reporting endpoint or relying on sandbox stderr.
+const PUBLISHER_EXIT_CODES: Record<string, number> = {
+  invalid_context: 10,
+  checkout_failed: 11,
+  setup_failed: 12,
+  patch_failed: 13,
+  commit_failed: 14,
+  push_failed: 15,
+  head_report_failed: 16,
+  verification_failed: 17,
+  completion_failed: 18,
+};
 
 function required(environment: NodeJS.ProcessEnv, key: string): string {
   const value = environment[key];
@@ -147,7 +167,16 @@ export async function runPublisherAttempt(
       evidenceReporter: new ExecutorPublisherVerificationReporter(context, fetcher),
       completionReporter: new ControlPlaneExecutorPublisherCompletionReporter(context, fetcher),
     }).run();
-  } catch {
+  } catch (error) {
+    // Preserve the specific publisher failure step. The generic
+    // 'publisher_runtime_failed' erased which step failed (checkout/setup/patch/
+    // commit/push/verification), and publisher stderr does not reach D1 — so the
+    // step was invisible. Carry the specific kind out to the exit handler, which
+    // maps it to a distinct process exit code the executor records in
+    // executor_observations (a readable D1 signal without a new endpoint).
+    if (error instanceof ExecutorPublisherRunnerError) {
+      throw new PublisherAttemptError('publisher_runtime_failed', error.code);
+    }
     throw new PublisherAttemptError('publisher_runtime_failed');
   }
 }
@@ -157,7 +186,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const code = error instanceof PublisherAttemptError
       ? error.code
       : 'publisher_patch_unavailable';
-    process.stderr.write(`delivery publisher failed: ${code}\n`);
-    process.exitCode = 1;
+    const runnerCode = error instanceof PublisherAttemptError ? error.runnerCode : undefined;
+    process.stderr.write(
+      `delivery publisher failed: ${code}${runnerCode === undefined ? '' : `:${runnerCode}`}\n`,
+    );
+    process.exitCode = runnerCode !== undefined && runnerCode in PUBLISHER_EXIT_CODES
+      ? PUBLISHER_EXIT_CODES[runnerCode]
+      : 1;
   });
 }
