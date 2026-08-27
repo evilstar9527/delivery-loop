@@ -56,6 +56,16 @@ export interface VerificationExecutionContext {
   expectedHeadSha: string;
   deliveryPolicy: ParsedDeliveryPolicy;
   targetedCommandRefs: readonly string[];
+  /**
+   * Plan-authorized required verify refs. When provided, only these run — the
+   * plan policy deliberately limits verification to what is affordable in the
+   * sandbox (e.g. verify:smoke) and excludes heavy suites (verify:all, the full
+   * go test suite that needs infra the sandbox lacks). When omitted, falls back
+   * to every verify command in the delivery policy (legacy behavior). Refs are
+   * still intersected with the trusted policy below, so only policy-defined
+   * commands can execute.
+   */
+  requiredVerifyCommandRefs?: readonly string[];
   reporter: VerificationEvidenceReporter;
 }
 
@@ -226,9 +236,19 @@ export class VerificationExecutionRunner {
     ) {
       throw new VerificationExecutionError('invalid_selection');
     }
-    const requiredVerifyCommandRefs = Object.keys(policy.data.commands.verify)
-      .sort()
-      .map((id) => `verify:${id}`);
+    const policyVerify = new Set(Object.keys(policy.data.commands.verify).map((id) => `verify:${id}`));
+    const requiredVerifyCommandRefs = this.context.requiredVerifyCommandRefs === undefined
+      ? [...policyVerify].sort()
+      : (() => {
+          const selectedVerify = [...this.context.requiredVerifyCommandRefs];
+          if (
+            new Set(selectedVerify).size !== selectedVerify.length ||
+            !selectedVerify.every((ref) => policyVerify.has(ref))
+          ) {
+            throw new VerificationExecutionError('invalid_selection');
+          }
+          return selectedVerify.sort();
+        })();
     const parsed = VerificationSuiteManifestV1Schema.safeParse({
       schemaVersion: '1',
       headSha: this.context.expectedHeadSha,

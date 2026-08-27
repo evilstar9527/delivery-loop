@@ -47,6 +47,7 @@ export interface ExecutorPublisherRunnerInput {
   planVersion: number;
   planItemId: string;
   targetedCommandRefs: readonly string[];
+  requiredVerifyCommandRefs: readonly string[];
   deliveryPolicy: ParsedDeliveryPolicy;
   proposal: PatchProposal;
   patchDigest: string;
@@ -199,6 +200,7 @@ export class ExecutorPublisherRunner {
         expectedHeadSha: commit.commitSha,
         deliveryPolicy: this.input.deliveryPolicy,
         targetedCommandRefs: this.input.targetedCommandRefs,
+        requiredVerifyCommandRefs: this.input.requiredVerifyCommandRefs,
         reporter: this.dependencies.evidenceReporter,
       }).run();
     } catch {

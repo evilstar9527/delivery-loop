@@ -43,6 +43,7 @@ const PublisherResponseSchema = z.object({
   planVersion: z.number().int().positive(),
   planItemId: z.string().regex(ATTEMPT_ID_PATTERN),
   targetedCommandRefs: z.array(z.string().regex(/^test:[A-Za-z0-9_-]{1,64}$/)).min(1).max(100),
+  requiredVerifyCommandRefs: z.array(z.string().regex(/^verify:[A-Za-z0-9_-]{1,64}$/)).max(100),
   patchDigest: z.string().regex(DIGEST_PATTERN),
   changedPathsDigest: z.string().regex(DIGEST_PATTERN),
   proposal: PatchProposalSchema,

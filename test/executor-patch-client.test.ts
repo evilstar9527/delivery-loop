@@ -33,6 +33,7 @@ async function publisherResponse(): Promise<Record<string, unknown>> {
     planVersion: 1,
     planItemId: 'change',
     targetedCommandRefs: ['test:unit'],
+    requiredVerifyCommandRefs: ['verify:smoke'],
     patchDigest: await sha256Bytes(new TextEncoder().encode(serialized)),
     changedPathsDigest: await canonicalSha256({
       schemaVersion: '1',
