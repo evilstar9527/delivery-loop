@@ -178,3 +178,32 @@ export function writeVerificationCommandFailure(
       : {}),
   });
 }
+
+/**
+ * Diagnostic projection of a heartbeat POST outcome. The heartbeat loop is the
+ * runner's only channel into the control plane, so when it fails there is no
+ * durable record of why — the attempt just silently ages into `lost`. Emit a
+ * bounded, secret-scrubbed record (retry attempts and the final give-up) so the
+ * cause of a heartbeat-timeout `lost` is observable. Observability only.
+ */
+export function writeHeartbeatDiagnostic(
+  outcome: 'retrying' | 'giving_up',
+  detail: { attempt: number; httpStatus?: number | undefined; message?: string | undefined },
+  environment: NodeJS.ProcessEnv = process.env,
+): void {
+  secureStructuredLogSink({
+    component: 'runner',
+    level: 'error',
+    secrets: processSecrets(environment),
+    sink: (record) => process.stderr.write(`${JSON.stringify(record)}\n`),
+  })({
+    event: 'heartbeat_delivery_failed',
+    outcome,
+    heartbeatAttempt: detail.attempt,
+    ...(detail.httpStatus === undefined ? {} : { httpStatus: detail.httpStatus }),
+    ...(detail.message === undefined ? {} : { message: detail.message.slice(0, 300) }),
+    ...(ID_PATTERN.test(environment.DELIVERY_ATTEMPT_ID ?? '')
+      ? { attemptId: environment.DELIVERY_ATTEMPT_ID }
+      : {}),
+  });
+}

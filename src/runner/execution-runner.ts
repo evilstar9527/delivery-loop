@@ -2,6 +2,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
+import { writeHeartbeatDiagnostic } from '../observability/runner-log.js';
 import {
   CodexExecutionAdapter,
   CodexExecutionAdapterError,
@@ -263,6 +264,13 @@ export class ExecutionRunnerError extends Error {
   constructor(
     message: string,
     readonly kind: ExecutionRunnerFailureKind = 'unknown',
+    /**
+     * HTTP status of the control-plane response that produced this error, when
+     * there was one. Absent for network/transport failures (no response).
+     * Lets the heartbeat loop tell a transient failure (retry) from a fencing
+     * conflict (stop immediately).
+     */
+    readonly httpStatus?: number,
   ) {
     super(message);
     this.name = 'ExecutionRunnerError';
@@ -518,7 +526,11 @@ async function responseJson(
 ): Promise<unknown> {
   if (!statuses.includes(response.status)) {
     await response.body?.cancel();
-    throw new ExecutionRunnerError(`${operation} failed with status ${response.status}`);
+    throw new ExecutionRunnerError(
+      `${operation} failed with status ${response.status}`,
+      'unknown',
+      response.status,
+    );
   }
   let text: string;
   try {
@@ -688,32 +700,63 @@ async function heartbeatLoop(
   intervalMs: number,
   signal: AbortSignal,
 ): Promise<void> {
+  // A single failed heartbeat POST used to reject the whole loop, so one
+  // transient blip (control-plane 5xx or a network hiccup) permanently stopped
+  // heartbeats and the attempt aged into `lost` at the 90s watchdog even though
+  // the work was still running. Tolerate transient failures by retrying on a
+  // short backoff; a 4xx is a fencing/lease conflict (the lease was revoked or
+  // superseded) and must stop immediately — retrying would fight fencing.
+  const RETRY_BACKOFF_MS = Math.min(intervalMs, 5_000);
+  const MAX_CONSECUTIVE_FAILURES = 12;
+  let consecutiveFailures = 0;
   while (!signal.aborted) {
     try {
-      await delay(intervalMs, undefined, { signal });
+      await delay(consecutiveFailures === 0 ? intervalMs : RETRY_BACKOFF_MS, undefined, { signal });
     } catch {
       if (signal.aborted) return;
       throw new ExecutionRunnerError('execution heartbeat wait failed');
     }
     if (signal.aborted) return;
-    await fencing.withAuthorization(async (authorization) => {
-      const parsed = HeartbeatResponseSchema.safeParse(await controlPlaneJson(
-        fetcher,
-        config,
-        `/v1/attempts/${config.attemptId}/heartbeat`,
-        authorization.attemptToken,
-        'attempt heartbeat',
-        [200],
-        {
-          expectedVersion: authorization.expectedVersion,
-          leaseGeneration: authorization.leaseGeneration,
-        },
-      ));
-      if (!parsed.success) {
-        throw new ExecutionRunnerError('attempt heartbeat response is invalid');
+    try {
+      await fencing.withAuthorization(async (authorization) => {
+        const parsed = HeartbeatResponseSchema.safeParse(await controlPlaneJson(
+          fetcher,
+          config,
+          `/v1/attempts/${config.attemptId}/heartbeat`,
+          authorization.attemptToken,
+          'attempt heartbeat',
+          [200],
+          {
+            expectedVersion: authorization.expectedVersion,
+            leaseGeneration: authorization.leaseGeneration,
+          },
+        ));
+        if (!parsed.success) {
+          throw new ExecutionRunnerError('attempt heartbeat response is invalid');
+        }
+        fencing.rotate(authorization, parsed.data);
+      });
+      consecutiveFailures = 0;
+    } catch (error) {
+      const httpStatus = error instanceof ExecutionRunnerError ? error.httpStatus : undefined;
+      const message = error instanceof Error ? error.message : undefined;
+      // Fencing conflict: the control plane rejected our lease/version. Stop now
+      // and let the attempt terminate; heartbeating past this is unsafe.
+      if (httpStatus !== undefined && httpStatus >= 400 && httpStatus < 500) {
+        writeHeartbeatDiagnostic('giving_up', { attempt: consecutiveFailures + 1, httpStatus, message });
+        throw error instanceof ExecutionRunnerError
+          ? error
+          : new ExecutionRunnerError('attempt heartbeat failed');
       }
-      fencing.rotate(authorization, parsed.data);
-    });
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        writeHeartbeatDiagnostic('giving_up', { attempt: consecutiveFailures, httpStatus, message });
+        throw error instanceof ExecutionRunnerError
+          ? error
+          : new ExecutionRunnerError('attempt heartbeat failed');
+      }
+      writeHeartbeatDiagnostic('retrying', { attempt: consecutiveFailures, httpStatus, message });
+    }
   }
 }
 
