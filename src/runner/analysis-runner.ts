@@ -3,6 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
+import { writeHeartbeatDiagnostic } from '../observability/runner-log.js';
 import {
   CodexAnalysisAdapter,
   CodexAnalysisAdapterError,
@@ -744,14 +745,23 @@ async function heartbeatLoop(
   runtimeSecrets: Set<string>,
   requestLock: FencingRequestLock,
 ): Promise<void> {
+  // A single failed heartbeat POST used to reject the whole loop, so one
+  // transient control-plane 5xx / network blip permanently stopped heartbeats
+  // and the analysis attempt hung until the 90s watchdog (or never, when the
+  // watchdog missed it). Tolerate transient failures with a short-backoff retry;
+  // a 4xx is a fencing/lease conflict and must stop immediately.
+  const RETRY_BACKOFF_MS = Math.min(intervalMs, 5_000);
+  const MAX_CONSECUTIVE_FAILURES = 12;
+  let consecutiveFailures = 0;
   while (!signal.aborted) {
     try {
-      await delay(intervalMs, undefined, { signal });
+      await delay(consecutiveFailures === 0 ? intervalMs : RETRY_BACKOFF_MS, undefined, { signal });
     } catch {
       if (signal.aborted) return;
       throw new AnalysisRunnerError('attempt heartbeat wait failed');
     }
     if (signal.aborted) return;
+    try {
     await requestLock.run(async () => {
       const raw = await controlPlaneJson(
         fetchImplementation,
@@ -780,6 +790,27 @@ async function heartbeatLoop(
       fencing.toolToken = parsed.data.toolBridgeToken;
       fencing.version = parsed.data.version;
     });
+    consecutiveFailures = 0;
+    } catch (error) {
+      const httpStatus = error instanceof ControlPlaneResponseError ? error.status : undefined;
+      const message = error instanceof Error ? error.message : undefined;
+      // Fencing conflict: the control plane rejected our lease/version. Stop now;
+      // heartbeating past this is unsafe.
+      if (httpStatus !== undefined && httpStatus >= 400 && httpStatus < 500) {
+        writeHeartbeatDiagnostic('giving_up', { attempt: consecutiveFailures + 1, httpStatus, message });
+        throw error instanceof AnalysisRunnerError
+          ? error
+          : new AnalysisRunnerError('attempt heartbeat failed');
+      }
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        writeHeartbeatDiagnostic('giving_up', { attempt: consecutiveFailures, httpStatus, message });
+        throw error instanceof AnalysisRunnerError
+          ? error
+          : new AnalysisRunnerError('attempt heartbeat failed');
+      }
+      writeHeartbeatDiagnostic('retrying', { attempt: consecutiveFailures, httpStatus, message });
+    }
   }
 }
 

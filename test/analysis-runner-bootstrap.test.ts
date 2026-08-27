@@ -631,6 +631,7 @@ describe('analysis Runner bootstrap', () => {
       heartbeatObserved = resolvePromise;
     });
     let heartbeatCount = 0;
+    let heartbeatTransientFailures = 0;
     let planBody: unknown;
     let completionBody: unknown;
     const requestLog: Array<{ url: string; authorization: string | null }> = [];
@@ -719,6 +720,12 @@ describe('analysis Runner bootstrap', () => {
         }, { status: 201 });
       }
       if (url.endsWith(`/v1/attempts/${ATTEMPT_ID}/heartbeat`)) {
+        // Inject one transient 503: the loop must retry (not die) and the attempt
+        // must still complete. Do not rotate the lease or observe on the failure.
+        if (heartbeatTransientFailures < 1) {
+          heartbeatTransientFailures += 1;
+          return Response.json({ error: 'unavailable' }, { status: 503 });
+        }
         heartbeatCount += 1;
         expect(authorization).toBe(`Bearer ${INITIAL_TOKEN}`);
         expect(JSON.parse(String(init?.body))).toEqual({
@@ -858,6 +865,7 @@ describe('analysis Runner bootstrap', () => {
       payloadRef: expectedPlan.payloadRef,
     });
     expect(heartbeatCount).toBe(1);
+    expect(heartbeatTransientFailures).toBe(1);
     expect(planBody).toEqual(planContent());
     expect(Object.keys(planBody as Record<string, unknown>)).not.toEqual(
       expect.arrayContaining([
