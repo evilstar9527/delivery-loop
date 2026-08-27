@@ -64,6 +64,11 @@ const HEARTBEAT_INTERVAL_MS = 45_000;
 // Heartbeats keep the Attempt lease live; the writer reauthorizes the same
 // repository token after the model turn and before any durable Git write.
 const AGENT_TIMEOUT_MS = 10 * 60_000;
+// Upper bound for any single control-plane HTTP request (heartbeat, model
+// reservation, evidence, etc.). Generous enough for a slow-but-alive control
+// plane, short enough that a hung connection cannot freeze the heartbeat loop
+// past the watchdog threshold.
+const CONTROL_PLANE_REQUEST_TIMEOUT_MS = 20_000;
 const MAX_RESPONSE_BYTES = 512 * 1_024;
 const MAX_RAW_TRANSCRIPT_BYTES = 512 * 1_024;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,199}$/;
@@ -557,7 +562,18 @@ async function fetchJson(
 ): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetcher(url, { ...init, redirect: 'error' });
+    // Every control-plane call MUST have a timeout. Without one, a single slow
+    // or half-open control-plane connection makes `await fetcher(...)` block
+    // forever — which silently froze the heartbeat loop (heartbeat_at stuck at
+    // 18+45*N) while the main work continued to exit 0, and the watchdog then
+    // fenced the attempt as `lost`. A hung POST never rejects, so the retry
+    // logic never engaged either. Bounding the request turns a hang into a
+    // rejection the caller (heartbeat loop) can retry.
+    response = await fetcher(url, {
+      ...init,
+      redirect: 'error',
+      signal: AbortSignal.timeout(CONTROL_PLANE_REQUEST_TIMEOUT_MS),
+    });
   } catch {
     throw new ExecutionRunnerError(`${operation} request failed`);
   }
