@@ -136,6 +136,7 @@ export async function runPublisherAttempt(
       planVersion: patch.planVersion,
       planItemId: patch.planItemId,
       targetedCommandRefs: patch.targetedCommandRefs,
+      requiredVerifyCommandRefs: patch.requiredVerifyCommandRefs,
       deliveryPolicy,
       proposal: patch.proposal,
       patchDigest: patch.patchDigest,

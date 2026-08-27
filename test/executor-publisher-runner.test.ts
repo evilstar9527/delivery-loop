@@ -112,6 +112,7 @@ async function input(repository: string, checkoutSha: string) {
     planVersion: 1,
     planItemId: 'change',
     targetedCommandRefs: ['test:unit'],
+    requiredVerifyCommandRefs: ['verify:all'],
     deliveryPolicy: policy,
     proposal,
     patchDigest: await sha256Bytes(new TextEncoder().encode(JSON.stringify(proposal))),

@@ -75,6 +75,7 @@ export interface LoadedExecutorPatchArtifact {
   planVersion: number;
   planItemId: string;
   targetedCommandRefs: string[];
+  requiredVerifyCommandRefs: string[];
   patchDigest: string;
   changedPathsDigest: string;
   proposal: PatchProposal;
@@ -365,6 +366,11 @@ export class ExecutorPatchArtifactStore {
       binding.plan_version,
       binding.plan_item_id,
     );
+    const requiredVerifyCommandRefs = await this.requiredVerifyCommandRefs(
+      binding.execution_attempt_id,
+      binding.plan_version,
+      binding.plan_item_id,
+    );
     const derivedBranch = `agent/${binding.task_id}/${binding.execution_attempt_id}`;
     const targetBranchMode = binding.target_branch === derivedBranch
       ? 'new' as const
@@ -384,6 +390,7 @@ export class ExecutorPatchArtifactStore {
       planVersion: binding.plan_version!,
       planItemId: binding.plan_item_id!,
       targetedCommandRefs,
+      requiredVerifyCommandRefs,
       patchDigest: binding.patch_digest,
       changedPathsDigest: binding.changed_paths_digest,
       proposal,
@@ -529,6 +536,36 @@ export class ExecutorPatchArtifactStore {
       !result.success || refs.length < 1 || refs.length > 100 ||
       new Set(refs).size !== refs.length ||
       !refs.every((ref) => /^test:[A-Za-z0-9_-]{1,64}$/.test(ref))
+    ) throw new ExecutorPatchArtifactError('state_conflict');
+    return refs;
+  }
+
+  // The plan-authorized required verify refs (e.g. verify:smoke). Deliberately
+  // may be empty: the plan policy limits verification to what is affordable in
+  // the sandbox and excludes heavy suites like verify:all (the full go test
+  // suite needing infra the sandbox lacks). The publisher runs only these; the
+  // authoritative full suite runs in CI on the opened PR.
+  private async requiredVerifyCommandRefs(
+    attemptId: string,
+    planVersion: number | null,
+    planItemId: string | null,
+  ): Promise<string[]> {
+    if (planVersion === null || planItemId === null) {
+      throw new ExecutorPatchArtifactError('state_conflict');
+    }
+    const result = await this.db.prepare(
+      `SELECT command_ref
+       FROM plan_item_command_refs
+       WHERE plan_id = (SELECT plan_id FROM attempts WHERE attempt_id = ?)
+         AND (SELECT plan_version FROM attempts WHERE attempt_id = ?) = ?
+         AND item_id = ? AND command_ref LIKE 'verify:%'
+       ORDER BY command_ref`,
+    ).bind(attemptId, attemptId, planVersion, planItemId).all<{ command_ref: string }>();
+    const refs = result.results.map((row) => row.command_ref);
+    if (
+      !result.success || refs.length > 100 ||
+      new Set(refs).size !== refs.length ||
+      !refs.every((ref) => /^verify:[A-Za-z0-9_-]{1,64}$/.test(ref))
     ) throw new ExecutorPatchArtifactError('state_conflict');
     return refs;
   }
