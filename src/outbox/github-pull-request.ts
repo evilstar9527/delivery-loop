@@ -210,6 +210,17 @@ function objectField(value: unknown, field: string): Record<string, unknown> | n
     : null;
 }
 
+// GitHub owner/repo names are case-insensitive and the API echoes the canonical
+// casing (e.g. "Lightspeed-Intelligence/tipsy-backend"), which can differ from
+// the casing configured in our routes ("lightspeed-intelligence/..."). A
+// case-sensitive compare made findExisting miss an already-created PR, so the
+// processor re-POSTed /pulls, GitHub returned 422 (PR exists), the delivery
+// threw, and the outbox retried until it dead-lettered — stranding the run in
+// `verifying`. Branch refs remain case-sensitive.
+function sameRepository(fullName: unknown, repository: string): boolean {
+  return typeof fullName === 'string' && fullName.toLowerCase() === repository.toLowerCase();
+}
+
 function identityMatches(response: PullRequestResponse, request: GitHubPullRequestRequest): boolean {
   const head = typeof response.head === 'object' && response.head !== null
     ? response.head as Record<string, unknown>
@@ -219,9 +230,9 @@ function identityMatches(response: PullRequestResponse, request: GitHubPullReque
     : null;
   return (
     head?.ref === request.headBranch &&
-    objectField(head, 'repo')?.full_name === request.repository &&
+    sameRepository(objectField(head, 'repo')?.full_name, request.repository) &&
     base?.ref === request.baseBranch &&
-    objectField(base, 'repo')?.full_name === request.repository
+    sameRepository(objectField(base, 'repo')?.full_name, request.repository)
   );
 }
 

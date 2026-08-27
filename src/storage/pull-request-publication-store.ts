@@ -63,6 +63,7 @@ interface DraftCandidateRow {
   active_plan_digest: string | null;
   repository: string;
   base_branch: string;
+  task_title: string;
   allow_repository_write: number;
   plan_status: string;
   plan_base_sha: string;
@@ -132,7 +133,13 @@ export class PullRequestPublicationStore {
     const suffix = identity.slice('sha256:'.length, 'sha256:'.length + 52);
     const publicationId = `pr_pub_${suffix}`;
     const outboxId = `outbox_pr_${suffix}`;
-    const title = `Delivery Loop: ${candidate.task_id}`;
+    // Title from the task summary (the bug/feature description) rather than the
+    // opaque task id. Fall back to the id if the task somehow has no title, and
+    // bound the length so the 256-char cap below never trips on long summaries.
+    const summary = candidate.task_title.trim().length > 0
+      ? candidate.task_title.trim()
+      : candidate.task_id;
+    const title = summary.length > 200 ? `${summary.slice(0, 197)}...` : summary;
     if (title.length > 256) throw new PullRequestPublicationError('state_conflict');
     const nowIso = now.toISOString();
     const results = await this.db.batch([
@@ -246,6 +253,7 @@ export class PullRequestPublicationStore {
               runs.active_plan_id, runs.active_plan_version, runs.active_plan_digest,
               tasks.target_repository AS repository,
               tasks.target_base_branch AS base_branch,
+              tasks.title AS task_title,
               tasks.allow_repository_write,
               execution_plans.status AS plan_status,
               execution_plans.base_sha AS plan_base_sha,
