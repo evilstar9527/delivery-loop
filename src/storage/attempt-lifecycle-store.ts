@@ -106,6 +106,23 @@ const NO_ACTIVE_PUBLISHER_EXECUTION_SQL = `NOT EXISTS (
     AND publisher_execution.status IN ('pending', 'starting', 'running')
 )`;
 
+// The work lane (implement/review_fix) legitimately runs for many minutes — a
+// cold `go mod`, an agent edit loop, verification — during which the Attempt
+// heartbeat can lapse (e.g. a transient control-plane blip stops the heartbeat
+// loop, or the runner is mid-operation). Fencing on the heartbeat threshold
+// alone tore down live work executions that had, in fact, already succeeded
+// (executor observed exitCode 0) — the heartbeat-timeout `lost`. Mirror the
+// publisher guard: do not fence an Attempt while it still has a work execution
+// that is pending/starting/running. The executor reconciler is the liveness
+// authority — when the work execution's container actually dies it is marked
+// failed/lost, which clears this guard and lets the watchdog fence normally.
+const NO_ACTIVE_WORK_EXECUTION_SQL = `NOT EXISTS (
+  SELECT 1 FROM attempt_execution_instances AS work_execution
+  WHERE work_execution.attempt_id = attempts.attempt_id
+    AND work_execution.execution_role = 'work'
+    AND work_execution.status IN ('pending', 'starting', 'running')
+)`;
+
 export class AttemptLifecycleStore {
   constructor(private readonly db: D1Database) {}
 
@@ -321,6 +338,7 @@ export class AttemptStuckDetector {
            AND attempts.lease_expires_at IS NOT NULL
            AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
            AND ${NO_ACTIVE_PUBLISHER_EXECUTION_SQL}
+           AND ${NO_ACTIVE_WORK_EXECUTION_SQL}
            AND runs.state IN (
              'triaging', 'awaiting_approval', 'planning', 'executing',
              'verifying', 'awaiting_review', 'deploying'
@@ -372,6 +390,7 @@ export class AttemptStuckDetector {
              AND attempts.lease_expires_at IS NOT NULL
              AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
              AND ${NO_ACTIVE_PUBLISHER_EXECUTION_SQL}
+             AND ${NO_ACTIVE_WORK_EXECUTION_SQL}
              AND runs.state = ? AND runs.version = ?
              AND (
                attempts.lease_expires_at <= ?
@@ -404,6 +423,7 @@ export class AttemptStuckDetector {
              AND lease_generation = ? AND lease_expires_at IS NOT NULL
              AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
              AND ${NO_ACTIVE_PUBLISHER_EXECUTION_SQL}
+             AND ${NO_ACTIVE_WORK_EXECUTION_SQL}
              AND (
                lease_expires_at <= ? OR COALESCE(heartbeat_at, updated_at) <= ?
              )
