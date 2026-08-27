@@ -86,6 +86,11 @@ describe('executor credential-free work runner', () => {
   });
 
   it('refuses upload when a verification command mutates the proposed tree', async () => {
+    // The mutation guard only applies when in-sandbox verification is enabled;
+    // it is opt-in (default skips verification, deferring to CI).
+    const priorVerify = process.env.DELIVERY_SANDBOX_VERIFY;
+    process.env.DELIVERY_SANDBOX_VERIFY = '1';
+    try {
     const fixture = await repository();
     const mutatingPolicy = await parseDeliveryPolicy(`
 schemaVersion: '1'
@@ -122,5 +127,9 @@ deployment: { mode: none }
       kind: 'patch_failed',
     } satisfies Partial<ExecutorWorkAttemptError>);
     expect(uploadPatch).not.toHaveBeenCalled();
+    } finally {
+      if (priorVerify === undefined) delete process.env.DELIVERY_SANDBOX_VERIFY;
+      else process.env.DELIVERY_SANDBOX_VERIFY = priorVerify;
+    }
   });
 });
