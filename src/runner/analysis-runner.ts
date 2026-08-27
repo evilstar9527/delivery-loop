@@ -87,6 +87,9 @@ const OIDC_AUDIENCE = 'delivery-loop-control-plane';
 const HEARTBEAT_INTERVAL_MS = 45_000;
 const ANALYSIS_TIMEOUT_MS = 50 * 60_000;
 const DIAGNOSTIC_TOOL_TIMEOUT_MS = 20_000;
+// Upper bound for any single control-plane HTTP request; prevents a hung
+// connection from freezing the heartbeat loop past the watchdog threshold.
+const CONTROL_PLANE_REQUEST_TIMEOUT_MS = 20_000;
 const MAX_DIAGNOSTIC_CONTEXT_BYTES = 256 * 1_024;
 const MAX_RESPONSE_BYTES = 512 * 1_024;
 const SHA256_DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/;
@@ -512,7 +515,13 @@ async function fetchJson(
 ): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetchImplementation(url, init);
+    // Bound every control-plane request. Without a timeout a hung connection
+    // blocks `await` forever, silently freezing the heartbeat loop until the
+    // watchdog fences the attempt. See execution-runner for the full rationale.
+    response = await fetchImplementation(url, {
+      ...init,
+      signal: AbortSignal.timeout(CONTROL_PLANE_REQUEST_TIMEOUT_MS),
+    });
   } catch {
     throw new AnalysisRunnerError(`${operation} request failed`);
   }
@@ -568,6 +577,7 @@ async function controlPlaneContextJson(
           accept: 'application/json',
           authorization: `Bearer ${token}`,
         },
+        signal: AbortSignal.timeout(CONTROL_PLANE_REQUEST_TIMEOUT_MS),
       });
     } catch {
       if (request === 3) throw new AnalysisRunnerError('analysis context request failed');
