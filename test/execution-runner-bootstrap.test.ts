@@ -705,6 +705,7 @@ describe('production execution Runner bootstrap', () => {
     const reservationIds: string[] = [];
     const usageReservations: string[] = [];
     let transientUsageFailureInjected = false;
+    let heartbeatTransientFailures = 0;
     const agentModels: string[] = [];
     let credentialRequests = 0;
     let agentInvocation = 0;
@@ -847,6 +848,13 @@ describe('production execution Runner bootstrap', () => {
           expectedVersion: version,
           leaseGeneration: generation,
         });
+        // Inject one transient (503) heartbeat failure: the loop must retry
+        // (not die) and the attempt must still pass. Do not rotate the lease or
+        // release the agent here — the retry re-sends with the same token.
+        if (heartbeatTransientFailures < 1) {
+          heartbeatTransientFailures += 1;
+          return Response.json({ error: 'unavailable' }, { status: 503 });
+        }
         heartbeatCount += 1;
         version += 1;
         activeToken = `CANARY_EXECUTION_ATTEMPT_TOKEN_${version}`;
@@ -1016,6 +1024,8 @@ describe('production execution Runner bootstrap', () => {
       evidenceIds: ['evidence-execution-bootstrap-0', 'evidence-execution-bootstrap-1'],
     });
     expect(heartbeatCount).toBeGreaterThanOrEqual(1);
+    // The injected 503 must have been retried rather than dooming the attempt.
+    expect(heartbeatTransientFailures).toBe(1);
     expect(reservationIds).toHaveLength(2);
     expect(new Set(reservationIds).size).toBe(2);
     expect(usageReservations).toEqual([reservationIds[0], ...reservationIds]);
