@@ -137,6 +137,41 @@ describe('Cloudflare Sandbox executor Worker API', () => {
     expect(sandboxProcessDiagnostic(
       'delivery-agent bootstrap failed: invalid_execution_spec',
     )).toEqual({ kind: 'bootstrap_failure', code: 'invalid_execution_spec' });
+    // Execution runner failures use the same failure vocabulary as analysis.
+    expect(sandboxProcessDiagnostic(JSON.stringify({
+      schemaVersion: '1',
+      component: 'runner',
+      event: 'execution_attempt_result',
+      outcome: 'failed',
+      failureKind: 'process_nonzero_exit',
+      failureStage: 'single_pass',
+    }))).toEqual({
+      kind: 'execution_failure',
+      failureKind: 'process_nonzero_exit',
+      failureStage: 'single_pass',
+    });
+    // Publisher failures arrive as a plain line with an optional runner step.
+    expect(sandboxProcessDiagnostic(
+      'delivery publisher failed: publisher_runtime_failed:patch_failed',
+    )).toEqual({
+      kind: 'publisher_failure',
+      publisherCode: 'publisher_runtime_failed',
+      publisherStep: 'patch_failed',
+    });
+    // A publisher failure with no classified runner step still projects the code.
+    expect(sandboxProcessDiagnostic(
+      'delivery publisher failed: publisher_patch_unavailable',
+    )).toEqual({
+      kind: 'publisher_failure',
+      publisherCode: 'publisher_patch_unavailable',
+    });
+    // An unknown runner step is dropped, not projected verbatim.
+    expect(sandboxProcessDiagnostic(
+      'delivery publisher failed: publisher_runtime_failed:not_a_real_step',
+    )).toEqual({
+      kind: 'publisher_failure',
+      publisherCode: 'publisher_runtime_failed',
+    });
   });
 
   it('keeps model grants separate from callback authority', async () => {

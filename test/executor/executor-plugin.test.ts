@@ -326,4 +326,54 @@ describe('executor plugin contract', () => {
     }]);
     expect(JSON.stringify(requests)).not.toMatch(/workflowFile|githubRunId|token|secret/i);
   });
+
+  it('surfaces a failed Cloudflare observation diagnostic into the fact facts', async () => {
+    const effects: CloudflareSandboxExecutorEffects = {
+      async ensureSandbox() {
+        return { disposition: 'created', sandboxId: 'sandbox-1', containerId: 'container-1' };
+      },
+      async observeSandbox() {
+        return {
+          status: 'failed',
+          externalUpdatedAt: '2026-08-14T01:00:00.000Z',
+          exitCode: 13,
+          imageDigest: `sha256:${'d'.repeat(64)}`,
+          diagnosticKind: 'publisher_failure',
+          diagnosticDetail: '{"kind":"publisher_failure","publisherStep":"patch_failed"}',
+        };
+      },
+      async cancelSandbox() {
+        return 'cancelled';
+      },
+      async verifySandboxIdentity(_profile, handle) {
+        return {
+          schemaVersion: '1',
+          kind: 'cloudflare_sandbox',
+          executionId: handle.executionId,
+          attemptId: handle.attemptId,
+          leaseGeneration: handle.leaseGeneration,
+          role: handle.role,
+          repository: handle.repository,
+          providerSubject: 'cloudflare-container:container-1',
+        };
+      },
+    };
+    const sandboxProfile = cloudflareSandboxExecutorProfile({
+      profileId: 'cloudflare-sandbox-v1',
+      workerOrigin: 'https://agent-executor.example.workers.dev',
+      imageRef: 'registry.example/delivery-agent@sha256:immutable',
+      releaseDigest: `sha256:${'e'.repeat(64)}`,
+    });
+    const registry = new ExecutorPluginRegistry([
+      new CloudflareSandboxExecutorPlugin(effects),
+    ]);
+    const started = await registry.ensureStarted(spec({ profile: sandboxProfile }));
+    const fact = await registry.observe(started.handle);
+    expect(fact.status).toBe('failed');
+    expect(fact.facts).toMatchObject({
+      exitCode: '13',
+      diagnosticKind: 'publisher_failure',
+      diagnosticDetail: '{"kind":"publisher_failure","publisherStep":"patch_failed"}',
+    });
+  });
 });

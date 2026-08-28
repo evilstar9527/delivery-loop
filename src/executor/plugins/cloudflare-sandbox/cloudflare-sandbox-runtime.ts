@@ -33,6 +33,8 @@ const ProviderFactSchema: z.ZodType<CloudflareSandboxProviderFact & { schemaVers
     externalUpdatedAt: z.string().datetime({ offset: true }),
     exitCode: z.number().int().nullable(),
     imageDigest: z.string().regex(DIGEST_PATTERN),
+    diagnosticKind: z.string().max(40).optional(),
+    diagnosticDetail: z.string().max(400).optional(),
   }).strict();
 
 const CancelResultSchema = z.object({
@@ -189,6 +191,12 @@ export class CloudflareSandboxWorkerEffects implements CloudflareSandboxExecutor
       externalUpdatedAt: parsed.data.externalUpdatedAt,
       exitCode: parsed.data.exitCode,
       imageDigest: parsed.data.imageDigest,
+      ...(parsed.data.diagnosticKind === undefined
+        ? {}
+        : { diagnosticKind: parsed.data.diagnosticKind }),
+      ...(parsed.data.diagnosticDetail === undefined
+        ? {}
+        : { diagnosticDetail: parsed.data.diagnosticDetail }),
     };
   }
 

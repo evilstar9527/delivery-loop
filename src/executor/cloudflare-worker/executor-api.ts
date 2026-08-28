@@ -57,6 +57,8 @@ const ProviderFactSchema: z.ZodType<CloudflareSandboxProviderFact> = z.object({
   externalUpdatedAt: z.string().datetime({ offset: true }),
   exitCode: z.number().int().nullable(),
   imageDigest: z.string().regex(DIGEST_PATTERN),
+  diagnosticKind: z.string().max(40).optional(),
+  diagnosticDetail: z.string().max(400).optional(),
 }).strict();
 
 /**
