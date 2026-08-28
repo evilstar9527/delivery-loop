@@ -35,21 +35,21 @@ delivery-loop 是端到端交付的控制面：
 
 ### Case 1：人工发起需求
 
-用户在飞书/Meegle 选择目标仓库并确认验收标准，控制面创建唯一任务。重复点击或事件重放不会创建第二个有效运行。
+控制面接收原始飞书或 Meegle PRD 和 BUG 输入，并路由到对应的 GitHub 仓库；用户确认验收标准后创建唯一任务。重复点击或事件重放不会创建第二个有效运行。
 
 ### Case 2：缺陷发现与证据化分诊
 
-监控或人工上报缺陷后，Agent 通过 tool-bridge 只读查询日志、trace、数据库和 K8s，产出根因假设、引用证据、影响面和版本化执行计划；没有足够证据时进入 `blocked`，而不是猜测修改。
+需求分析以仓库上下文和验收标准为依据；监控或人工上报缺陷后，缺陷分析则在需要时通过 tool-bridge 只读查询仓库上下文、日志、trace、数据库和 K8s，产出根因假设、引用证据、影响面和版本化执行计划；没有足够证据时进入 `blocked`，而不是猜测修改。
 
 缺陷分诊的根因引用不是Agent自由填写的字符串。控制面只接受同一active analysis Attempt中成功的`logs/search + traces/get` metadata，把locator值与脱敏根因分别摘要化后形成verified diagnostic Evidence；Plan声明`logs_read`时必须引用该Evidence。原始uid/cid/path、日志、trace和tool结果不进入D1安全投影，真实语义仍由Reviewer对原始平台事实与exact代码SHA核对。
 
 ### Case 3：代码执行与验证
 
-经授权后，Actions 为目标仓库创建隔离分支，Agent 只执行依赖已满足且已获 effect 授权的 DoD Item，实施最小改动，运行仓库约定的定向测试与回归，并创建包含逐项验收证据的 Draft PR。
+经授权后，Actions 为目标仓库创建隔离分支，Agent 按 DoD 执行依赖已满足且已获 effect 授权的 Item，实施最小改动，运行仓库约定的定向测试与回归，并创建包含逐项验收证据的 Draft PR。
 
 ### Case 4：评审修复循环
 
-PR review 或飞书补充信息触发新 attempt。新 Runner 能恢复原分支、任务、已完成步骤和失败证据，只修复未完成项，不从零重复探索。
+PR review 或飞书补充信息触发新 attempt；Agent 修复发现的问题后重新评审，直至不再存在 BLOCKER 或 MAJOR 问题。新 Runner 能恢复原分支、任务、已完成步骤和失败证据，只修复未完成项，不从零重复探索。
 
 ### Case 5：合并和部署
 
