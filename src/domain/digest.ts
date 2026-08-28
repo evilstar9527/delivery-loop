@@ -21,6 +21,10 @@ function canonicalJson(value: unknown): string {
   throw new Error(`canonical JSON does not support ${typeof value}`);
 }
 
+export function isCanonicalSha256Digest(value: string): boolean {
+  return /^sha256:[0-9a-f]{64}$/.test(value);
+}
+
 export async function canonicalSha256(value: unknown): Promise<string> {
   const bytes = new TextEncoder().encode(canonicalJson(value));
   return await sha256Bytes(bytes);
