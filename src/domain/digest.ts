@@ -1,3 +1,7 @@
+export function isSha256Digest(value: string): boolean {
+  return /^sha256:[0-9a-f]{64}$/.test(value);
+}
+
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value === 'boolean' || typeof value === 'string') {
     return JSON.stringify(value);
