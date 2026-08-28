@@ -3,7 +3,12 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
-import { writeHeartbeatDiagnostic, writeHeartbeatLifecycle } from '../observability/runner-log.js';
+import {
+  postRunnerStage,
+  writeHeartbeatDiagnostic,
+  writeHeartbeatLifecycle,
+  type RunnerStartupStage,
+} from '../observability/runner-log.js';
 import {
   CodexAnalysisAdapter,
   CodexAnalysisAdapterError,
@@ -1568,6 +1573,19 @@ export async function runAnalysisAttempt(
     ? await obtainGitHubOidcToken(fetchImplementation, config)
     : undefined;
   const fencing = await exchangeAttemptToken(fetchImplementation, config, identityToken);
+  // Fire-and-forget startup breadcrumb to the control plane. The token rotates
+  // on heartbeat, but startup stages all run before the first beat, so the
+  // exchange token is valid throughout; read fencing.token at call time anyway.
+  const reportStage = (stage: RunnerStartupStage): void => {
+    postRunnerStage({
+      fetchImplementation,
+      controlPlaneUrl: config.controlPlaneUrl,
+      attemptId: config.attemptId,
+      attemptToken: fencing.token,
+      stage,
+    });
+  };
+  reportStage('exchanged');
   const runtimeSecrets = new Set<string>([
     identityToken,
     fencing.token,
@@ -1590,7 +1608,9 @@ export async function runAnalysisAttempt(
         checkoutSha: config.baseSha,
         repositoryPath: config.workspacePath,
       });
+      reportStage('checked_out');
       beforeSnapshot = await snapshotWorkspace(config.workspacePath);
+      reportStage('snapshotted');
     } catch (error) {
       const terminalError = terminalAnalysisRunnerError(error);
       try {
@@ -1617,6 +1637,7 @@ export async function runAnalysisAttempt(
       config,
       fencing.token,
     );
+    reportStage('context_loaded');
   } catch (error) {
     const terminalError = terminalAnalysisRunnerError(error);
     try {
@@ -1683,6 +1704,7 @@ export async function runAnalysisAttempt(
       join(config.workspacePath, '.delivery-loop-analysis-context-'),
     );
     await chmod(workspaceContextRoot, 0o700);
+    reportStage('workspace_prepared');
   } catch (error) {
     if (workspaceContextRoot !== undefined) {
       await rm(workspaceContextRoot, { recursive: true, force: true });
@@ -1860,9 +1882,12 @@ export async function runAnalysisAttempt(
     if (usesMeteredModel && !admitsEachModelInvocation) {
       const invocationCount = diagnosticMediation === null ? 1 : 4;
       for (let invocation = 1; invocation <= invocationCount; invocation += 1) {
+        reportStage('reserving_model');
         await reserveModelInvocation(invocation);
+        reportStage('reserved_model');
       }
     }
+    reportStage('launching_heartbeat');
     heartbeatTask = heartbeatLoop(
       fetchImplementation,
       config,

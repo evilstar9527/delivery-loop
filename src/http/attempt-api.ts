@@ -67,6 +67,10 @@ import {
   RunnerAttemptStore,
 } from '../storage/runner-attempt-store.js';
 import {
+  RUNNER_STARTUP_STAGES,
+  RunnerStartupStageStore,
+} from '../storage/runner-startup-stage-store.js';
+import {
   ToolCallTraceStore,
   ToolCallTraceStoreError,
 } from '../storage/tool-call-trace-store.js';
@@ -197,6 +201,10 @@ const HeartbeatBodySchema = z
     expectedVersion: z.number().int().nonnegative(),
     leaseGeneration: z.number().int().positive(),
   })
+  .strict();
+
+const RunnerStageBodySchema = z
+  .object({ stage: z.enum(RUNNER_STARTUP_STAGES) })
   .strict();
 
 const CompletionBodySchema = z
@@ -1751,6 +1759,45 @@ export function attemptApi(options: AttemptApiOptions = {}): Hono<{ Bindings: Bi
       );
       c.header('cache-control', 'no-store');
       return c.json(result);
+    } catch (error) {
+      if (error instanceof RunnerAttemptError) return runnerError(c, error);
+      throw error;
+    }
+  });
+
+  // Diagnostic breadcrumb: the runner reports crossing each pre-heartbeat
+  // startup stage. Because the analysis runner's stderr is not captured by the
+  // sandbox logs, this control-plane row is the only durable signal of where an
+  // intermittent startup freeze stalls. Fire-and-forget from the runner; a 202
+  // acknowledges receipt without implying any state transition.
+  app.post('/v1/attempts/:attemptId/runner-stage', async (c) => {
+    const attemptId = c.req.param('attemptId');
+    if (!ATTEMPT_ID_PATTERN.test(attemptId)) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid attempt id', false);
+    }
+    const token = runnerToken(c.req.header('authorization'));
+    if (token === null) {
+      return errorResponse(c, 401, 'unauthenticated', 'attempt token required', false);
+    }
+    let body: unknown;
+    try {
+      body = await runnerBody(c);
+    } catch {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid runner stage body', false);
+    }
+    const parsed = RunnerStageBodySchema.safeParse(body);
+    if (!parsed.success) {
+      return errorResponse(c, 400, 'invalid_argument', 'invalid runner stage body', false);
+    }
+    try {
+      await new RunnerStartupStageStore(c.env.DB_CONTROL).record(
+        attemptId,
+        token,
+        parsed.data.stage,
+        options.now?.() ?? new Date(),
+      );
+      c.header('cache-control', 'no-store');
+      return c.body(null, 202);
     } catch (error) {
       if (error instanceof RunnerAttemptError) return runnerError(c, error);
       throw error;

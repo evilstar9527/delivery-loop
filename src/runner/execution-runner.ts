@@ -2,7 +2,12 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
-import { writeHeartbeatDiagnostic, writeHeartbeatLifecycle } from '../observability/runner-log.js';
+import {
+  postRunnerStage,
+  writeHeartbeatDiagnostic,
+  writeHeartbeatLifecycle,
+  type RunnerStartupStage,
+} from '../observability/runner-log.js';
 import {
   CodexExecutionAdapter,
   CodexExecutionAdapterError,
@@ -904,6 +909,18 @@ export async function runExecutionAttempt(
       'oidc_exchange_failed',
     );
   }
+  // Fire-and-forget startup breadcrumbs to the control plane (see
+  // migrations/0102). Not awaited, not lock-routed, self-bounded.
+  const reportStage = (stage: RunnerStartupStage): void => {
+    postRunnerStage({
+      fetchImplementation: fetcher,
+      controlPlaneUrl: config.controlPlaneUrl,
+      attemptId: config.attemptId,
+      attemptToken: exchanged.attemptToken,
+      stage,
+    });
+  };
+  reportStage('exchanged');
   if (config.identityKind === 'executor_proxy') {
     try {
       await (options.checkoutRepository ?? checkoutExecutorRepository)({
@@ -915,6 +932,7 @@ export async function runExecutionAttempt(
         repositoryPath: config.workspacePath,
       });
       await assertCheckout(config);
+      reportStage('checked_out');
     } catch {
       throw new ExecutionRunnerError(
         'execution repository checkout is unavailable',
@@ -950,6 +968,7 @@ export async function runExecutionAttempt(
         'execution context',
         [200],
       ));
+    reportStage('context_loaded');
   } catch {
     throw new ExecutionRunnerError('execution context is unavailable', 'context_invalid');
   }
@@ -1247,8 +1266,11 @@ export async function runExecutionAttempt(
       context.baseRebase === undefined &&
       attemptAgent.usesMeteredModel === true
     ) {
+      reportStage('reserving_model');
       await reserveModelInvocation(1);
+      reportStage('reserved_model');
     }
+    reportStage('launching_heartbeat');
     heartbeatTask = heartbeatLoop(
       fetcher,
       config,
