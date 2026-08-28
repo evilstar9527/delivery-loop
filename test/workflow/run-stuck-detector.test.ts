@@ -20,8 +20,6 @@ function before(seconds: number, offsetMs = 0): string {
 async function reset(): Promise<void> {
   await env.DB_CONTROL.batch([
     env.DB_CONTROL.prepare('DELETE FROM attempt_execution_instances'),
-    env.DB_CONTROL.prepare('DELETE FROM executor_routes'),
-    env.DB_CONTROL.prepare('DELETE FROM executor_profiles'),
     env.DB_CONTROL.prepare('DELETE FROM run_stuck_incidents'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_revocations'),
     env.DB_CONTROL.prepare('DELETE FROM verification_suite_commands'),
@@ -32,7 +30,11 @@ async function reset(): Promise<void> {
     env.DB_CONTROL.prepare('DELETE FROM execution_plans'),
     env.DB_CONTROL.prepare('DELETE FROM attempt_tokens'),
     env.DB_CONTROL.prepare('DELETE FROM outbox'),
+    // attempts references executor_profiles(profile_id); delete it before the
+    // profiles/routes it points at, or the FK check fails.
     env.DB_CONTROL.prepare('DELETE FROM attempts'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_routes'),
+    env.DB_CONTROL.prepare('DELETE FROM executor_profiles'),
     env.DB_CONTROL.prepare('DELETE FROM runs'),
     env.DB_CONTROL.prepare('DELETE FROM tasks'),
   ]);
@@ -501,38 +503,19 @@ describe('multi-state durable stuck detector', () => {
     ).bind(attemptId).first()).toEqual({ status: 'running' });
   });
 
-  // TODO(binding-seed): the src exemption (NO_ACTIVE_WORK_EXECUTION_SQL) is live
-  // and validated end-to-end; this test's seeding trips the
-  // attempt_execution_instances profile-binding trigger for a 'work' role.
-  // Re-enable once the seeding mirrors a valid work-execution binding.
-  it.skip('does not fence a running Attempt while its work execution is still active', async () => {
-    const runId = 'run-stuck-active-work';
-    const attemptId = 'attempt-stuck-active-work';
+  // Seeds a running implement Attempt plus a `work` execution instance whose
+  // binding satisfies the profile-binding trigger (the Attempt must carry the
+  // matching executor_profile_id + executor_route_version). `executionStartedAt`
+  // controls the execution's wall-clock age, which drives the ceiling guard.
+  async function seedActiveWorkExecution(
+    runId: string,
+    attemptId: string,
+    executionStartedAt: string,
+  ): Promise<void> {
     const nowIso = NOW.toISOString();
-    await seedRun(runId, 'executing', before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running));
-    // A running implement Attempt whose heartbeat has gone stale past the
-    // threshold: the credential-free work lane finished and stopped
-    // heartbeating, and the work execution (long edit/verify) is
-    // install + verify) is legitimately still running. It must not be fenced.
+    const staleHeartbeat = before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running);
+    await seedRun(runId, 'executing', staleHeartbeat);
     await env.DB_CONTROL.batch([
-      env.DB_CONTROL.prepare(
-        `INSERT INTO attempts (
-           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
-           workflow_ref, version, lease_generation, lease_token_digest,
-           lease_expires_at, heartbeat_at, created_at, updated_at
-         ) VALUES (?, ?, 1, 'implement', 'running', ?, 'example/delivery-target',
-                   'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
-                   3, 1, ?, ?, ?, ?, ?)`,
-      ).bind(
-        attemptId,
-        runId,
-        BASE_SHA,
-        `sha256:${'c'.repeat(64)}`,
-        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
-        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
-        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
-        before(DEFAULT_RUN_STUCK_THRESHOLDS_SECONDS.running),
-      ),
       env.DB_CONTROL.prepare(
         `INSERT INTO executor_profiles (
            profile_id, schema_version, provider_kind, plugin_schema_version,
@@ -550,6 +533,25 @@ describe('multi-state durable stuck detector', () => {
                    'active', ?, ?)`,
       ).bind(nowIso, nowIso),
       env.DB_CONTROL.prepare(
+        `INSERT INTO attempts (
+           attempt_id, run_id, ordinal, mode, status, base_sha, repository,
+           workflow_ref, version, lease_generation, lease_token_digest,
+           lease_expires_at, heartbeat_at, created_at, updated_at,
+           executor_profile_id, executor_route_version
+         ) VALUES (?, ?, 1, 'implement', 'running', ?, 'example/delivery-target',
+                   'example/delivery-target/.github/workflows/delivery-agent.yml@refs/heads/main',
+                   3, 1, ?, ?, ?, ?, ?, 'work-profile-active', 5)`,
+      ).bind(
+        attemptId,
+        runId,
+        BASE_SHA,
+        `sha256:${'c'.repeat(64)}`,
+        staleHeartbeat,
+        staleHeartbeat,
+        staleHeartbeat,
+        staleHeartbeat,
+      ),
+      env.DB_CONTROL.prepare(
         `INSERT INTO outbox (
            outbox_id, run_id, kind, destination, payload_ref, dedupe_key,
            delivery_state, created_at, updated_at
@@ -559,7 +561,7 @@ describe('multi-state durable stuck detector', () => {
         `outbox-work-${attemptId}`,
         runId,
         `d1://executions/execution-work-${attemptId}`,
-        `publisher-dispatch:${attemptId}`,
+        `work-dispatch:${attemptId}`,
         nowIso,
         nowIso,
       ),
@@ -568,20 +570,33 @@ describe('multi-state durable stuck detector', () => {
            execution_id, attempt_id, attempt_version, lease_generation,
            execution_role, executor_profile_id, executor_route_version,
            spec_digest, spec_json, release_digest, provider_kind,
-           plugin_schema_version, status, outbox_id, created_at, updated_at
+           plugin_schema_version, status, outbox_id, created_at, started_at,
+           updated_at
          ) VALUES (?, ?, 3, 1, 'work',
                    'work-profile-active', 5,
-                   ?, '{}', ?, 'cloudflare_sandbox', '1', 'running', ?, ?, ?)`,
+                   ?, '{}', ?, 'cloudflare_sandbox', '1', 'running', ?, ?, ?, ?)`,
       ).bind(
         `execution-work-${attemptId}`,
         attemptId,
         `sha256:${'a'.repeat(64)}`,
         `sha256:${'b'.repeat(64)}`,
         `outbox-work-${attemptId}`,
-        nowIso,
+        executionStartedAt,
+        executionStartedAt,
         nowIso,
       ),
     ]);
+  }
+
+  it('does not fence a running Attempt while its work execution is fresh', async () => {
+    // The work lane stopped heartbeating (stale past the running threshold) but
+    // its execution is still well within the wall-clock ceiling — a legitimately
+    // long edit/verify. It must not be fenced.
+    await seedActiveWorkExecution(
+      'run-stuck-active-work',
+      'attempt-stuck-active-work',
+      NOW.toISOString(),
+    );
 
     const scans = await Promise.all(Array.from({ length: 5 }, async () =>
       await new RunStuckDetector(env.DB_CONTROL, {
@@ -591,7 +606,34 @@ describe('multi-state durable stuck detector', () => {
     expect(scans.flatMap((scan) => scan.detected)).toEqual([]);
     expect(await env.DB_CONTROL.prepare(
       `SELECT status FROM attempts WHERE attempt_id = ?`,
-    ).bind(attemptId).first()).toEqual({ status: 'running' });
+    ).bind('attempt-stuck-active-work').first()).toEqual({ status: 'running' });
+  });
+
+  it('fences a running Attempt whose work execution has hung past the wall-clock ceiling', async () => {
+    // The work execution's container is alive-but-hung: still `running`, but it
+    // has exceeded the max wall-clock budget. The reconciler never marks a live
+    // container terminal, so without an age ceiling the Attempt is exempted
+    // forever and its lease expiry ignored. Past the ceiling the exemption must
+    // clear and the watchdog must fence the Attempt.
+    await seedActiveWorkExecution(
+      'run-stuck-hung-work',
+      'attempt-stuck-hung-work',
+      before(76 * 60), // 76 min old > 75 min ceiling
+    );
+
+    const scan = await new RunStuckDetector(env.DB_CONTROL, {
+      now: () => NOW,
+      sink: () => undefined,
+    }).scan();
+    expect(scan.detected).toEqual([
+      expect.objectContaining({
+        attemptId: 'attempt-stuck-hung-work',
+        action: 'fence_lost_attempt',
+      }),
+    ]);
+    expect(await env.DB_CONTROL.prepare(
+      `SELECT status FROM attempts WHERE attempt_id = ?`,
+    ).bind('attempt-stuck-hung-work').first()).toEqual({ status: 'lost' });
   });
 
   it('does not trust GitHub success without the matching completion facts', async () => {

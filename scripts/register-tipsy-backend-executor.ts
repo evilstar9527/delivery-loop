@@ -13,13 +13,13 @@ import type { CloudflareSandboxExecutorEffects } from '../src/executor/plugins/c
 
 const WORKER_ORIGIN = 'https://agent-executor.fantacy.live';
 const IMAGE_REF =
-  'registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:39c205cc9603f356bf0f3a76a499e52785c08edf3c13f1834d8dbdb9bde13614';
-const RELEASE_DIGEST = 'sha256:39c205cc9603f356bf0f3a76a499e52785c08edf3c13f1834d8dbdb9bde13614';
-const PROFILE_ID = 'cloudflare-sandbox-openrouter-http-tipsy-v4';
-const PRIOR_PROFILE_ID = 'cloudflare-sandbox-openrouter-http-tipsy-v3';
+  'registry.cloudflare.com/041d4868e5611b45f9959f4f58c1e4c7/delivery-agent-sandbox@sha256:230f858d02f2c739008638a7aecdcbaa71d5a37245a8568fd519858ccf0261c3';
+const RELEASE_DIGEST = 'sha256:230f858d02f2c739008638a7aecdcbaa71d5a37245a8568fd519858ccf0261c3';
+const PROFILE_ID = 'cloudflare-sandbox-openrouter-http-tipsy-v21';
+const PRIOR_PROFILE_ID = 'cloudflare-sandbox-openrouter-http-tipsy-v20';
 // Advances with the profile so each re-registration writes fresh route_ids and
 // route_version — see the route loop below for why both must move together.
-const ROUTE_GENERATION = 4;
+const ROUTE_GENERATION = 21;
 const REPOSITORY = 'lightspeed-intelligence/tipsy-backend';
 const NOW = new Date().toISOString();
 

@@ -127,6 +127,12 @@ const child = spawn('pnpm', ['exec', 'tsx', script], {
     DELIVERY_ATTEMPT_MODE: spec.mode,
     DELIVERY_TARGET_REPOSITORY: spec.repository,
     DELIVERY_CONTROL_PLANE_URL: grant.controlPlaneUrl,
+    // Diagnostic breadcrumb toggle (off unless the executor sets it). Forwarded
+    // here because this wrapper builds a clean env; without it the runner's
+    // heartbeat lifecycle trace never activates.
+    ...(process.env.DELIVERY_HEARTBEAT_TRACE === undefined
+      ? {}
+      : { DELIVERY_HEARTBEAT_TRACE: process.env.DELIVERY_HEARTBEAT_TRACE }),
     DELIVERY_REPOSITORY_PATH: '/workspace/repository',
     RUNNER_TEMP: '/workspace/.delivery-loop/tmp',
     ...(spec.planVersion === undefined ? {} : { DELIVERY_PLAN_VERSION: String(spec.planVersion) }),

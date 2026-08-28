@@ -91,37 +91,67 @@ const SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL = `NOT (
   )
 )`;
 
+// Upper bound on how long any single execution may sit in a non-terminal state
+// (pending/starting/running) before the watchdog stops exempting its Attempt.
+// The exemptions below hand liveness to the executor reconciler, but the
+// reconciler only marks an execution terminal when its CONTAINER dies — an
+// alive-but-hung container (e.g. a wedged agent subprocess that stops
+// heartbeating but never exits) satisfies neither authority, so the Attempt is
+// exempted forever and its lease expiry is ignored. A wall-clock ceiling closes
+// that loop: past it, an execution is definitively stuck rather than slow, and
+// the Attempt becomes fence-eligible again. Once the Attempt is fenced `lost`,
+// reconcileCancellations tears the container down. The ceiling must exceed the
+// largest legitimate in-container budget (analysis agent = 50 min) with margin;
+// 75 min is comfortably above that and far below "forever".
+const MAX_EXECUTION_WALLCLOCK_SECONDS = 75 * 60;
+
+// A cutoff-relative age guard, shared by both role exemptions: an execution
+// still counts as "active" (and keeps exempting its Attempt) only while it
+// started (or, if never observed as started, was created) after the cutoff.
+// `cutoffIso` is server-computed from the injectable clock and contains only
+// ISO-8601 characters, so inlining it as a literal carries no injection risk.
+function activeExecutionAgeGuard(alias: string, cutoffIso: string): string {
+  return `COALESCE(${alias}.started_at, ${alias}.created_at) > '${cutoffIso}'`;
+}
+
 // The credential-free publisher runs as a separate execution under the same
 // implement/review_fix Attempt, after the work lane stopped heartbeating. Its
 // setup:install + verify legitimately runs for several minutes with no Attempt
 // heartbeat, so the running-threshold watchdog would otherwise fence a live
 // publisher as lost and tear its container down mid-verification. Do not fence
 // an Attempt while it still has a publisher execution that is starting or
-// running; if that execution actually dies, the executor reconciler marks it
-// failed/lost, which clears this guard and lets the watchdog fence normally.
-const NO_ACTIVE_PUBLISHER_EXECUTION_SQL = `NOT EXISTS (
+// running AND within the wall-clock ceiling; if that execution actually dies —
+// or hangs past the ceiling — this guard clears and the watchdog fences it.
+function noActivePublisherExecutionSql(cutoffIso: string): string {
+  return `NOT EXISTS (
   SELECT 1 FROM attempt_execution_instances AS publisher_execution
   WHERE publisher_execution.attempt_id = attempts.attempt_id
     AND publisher_execution.execution_role = 'publisher'
     AND publisher_execution.status IN ('pending', 'starting', 'running')
+    AND ${activeExecutionAgeGuard('publisher_execution', cutoffIso)}
 )`;
+}
 
-// The work lane (implement/review_fix) legitimately runs for many minutes — a
-// cold `go mod`, an agent edit loop, verification — during which the Attempt
-// heartbeat can lapse (e.g. a transient control-plane blip stops the heartbeat
-// loop, or the runner is mid-operation). Fencing on the heartbeat threshold
-// alone tore down live work executions that had, in fact, already succeeded
-// (executor observed exitCode 0) — the heartbeat-timeout `lost`. Mirror the
-// publisher guard: do not fence an Attempt while it still has a work execution
-// that is pending/starting/running. The executor reconciler is the liveness
-// authority — when the work execution's container actually dies it is marked
-// failed/lost, which clears this guard and lets the watchdog fence normally.
-const NO_ACTIVE_WORK_EXECUTION_SQL = `NOT EXISTS (
+// The work lane (implement/review_fix/analysis) legitimately runs for many
+// minutes — a cold `go mod`, an agent edit loop, verification — during which the
+// Attempt heartbeat can lapse (e.g. a transient control-plane blip stops the
+// heartbeat loop, or the runner is mid-operation). Fencing on the heartbeat
+// threshold alone tore down live work executions that had, in fact, already
+// succeeded (executor observed exitCode 0) — the heartbeat-timeout `lost`.
+// Mirror the publisher guard: do not fence an Attempt while it still has a work
+// execution that is pending/starting/running AND within the wall-clock ceiling.
+// The executor reconciler is the liveness authority for container death, but a
+// hung container that never exits would otherwise exempt the Attempt forever;
+// the age ceiling makes the exemption self-clearing so the watchdog can fence.
+function noActiveWorkExecutionSql(cutoffIso: string): string {
+  return `NOT EXISTS (
   SELECT 1 FROM attempt_execution_instances AS work_execution
   WHERE work_execution.attempt_id = attempts.attempt_id
     AND work_execution.execution_role = 'work'
     AND work_execution.status IN ('pending', 'starting', 'running')
+    AND ${activeExecutionAgeGuard('work_execution', cutoffIso)}
 )`;
+}
 
 export class AttemptLifecycleStore {
   constructor(private readonly db: D1Database) {}
@@ -327,6 +357,9 @@ export class AttemptStuckDetector {
     const heartbeatCutoff = new Date(
       now.getTime() - this.runningThresholdSeconds * 1_000,
     ).toISOString();
+    const executionCutoff = new Date(
+      now.getTime() - MAX_EXECUTION_WALLCLOCK_SECONDS * 1_000,
+    ).toISOString();
     const candidates = await this.db
       .prepare(
         `SELECT attempts.attempt_id, attempts.run_id, attempts.status,
@@ -337,8 +370,8 @@ export class AttemptStuckDetector {
            AND attempts.result_event_id IS NULL
            AND attempts.lease_expires_at IS NOT NULL
            AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
-           AND ${NO_ACTIVE_PUBLISHER_EXECUTION_SQL}
-           AND ${NO_ACTIVE_WORK_EXECUTION_SQL}
+           AND ${noActivePublisherExecutionSql(executionCutoff)}
+           AND ${noActiveWorkExecutionSql(executionCutoff)}
            AND runs.state IN (
              'triaging', 'awaiting_approval', 'planning', 'executing',
              'verifying', 'awaiting_review', 'deploying'
@@ -354,7 +387,7 @@ export class AttemptStuckDetector {
       .all<ExpiredAttemptRow>();
     const results: StuckDetectionResult[] = [];
     for (const candidate of candidates.results) {
-      if (await this.markLost(candidate, nowIso, heartbeatCutoff)) {
+      if (await this.markLost(candidate, nowIso, heartbeatCutoff, executionCutoff)) {
         results.push({
           attemptId: candidate.attempt_id,
           runId: candidate.run_id,
@@ -369,6 +402,7 @@ export class AttemptStuckDetector {
     candidate: ExpiredAttemptRow,
     nowIso: string,
     heartbeatCutoff: string,
+    executionCutoff: string,
   ): Promise<boolean> {
     const outboxId = workflowCancelOutboxId(candidate.run_id);
     const incidentId =
@@ -389,8 +423,8 @@ export class AttemptStuckDetector {
              AND attempts.lease_generation = ? AND attempts.result_event_id IS NULL
              AND attempts.lease_expires_at IS NOT NULL
              AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
-             AND ${NO_ACTIVE_PUBLISHER_EXECUTION_SQL}
-             AND ${NO_ACTIVE_WORK_EXECUTION_SQL}
+             AND ${noActivePublisherExecutionSql(executionCutoff)}
+             AND ${noActiveWorkExecutionSql(executionCutoff)}
              AND runs.state = ? AND runs.version = ?
              AND (
                attempts.lease_expires_at <= ?
@@ -422,8 +456,8 @@ export class AttemptStuckDetector {
            WHERE attempt_id = ? AND run_id = ? AND status = ? AND version = ?
              AND lease_generation = ? AND lease_expires_at IS NOT NULL
              AND ${SUCCESSFUL_EXECUTION_AWAITS_COMPLETION_SQL}
-             AND ${NO_ACTIVE_PUBLISHER_EXECUTION_SQL}
-             AND ${NO_ACTIVE_WORK_EXECUTION_SQL}
+             AND ${noActivePublisherExecutionSql(executionCutoff)}
+             AND ${noActiveWorkExecutionSql(executionCutoff)}
              AND (
                lease_expires_at <= ? OR COALESCE(heartbeat_at, updated_at) <= ?
              )

@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
-import { writeHeartbeatDiagnostic } from '../observability/runner-log.js';
+import { writeHeartbeatDiagnostic, writeHeartbeatLifecycle } from '../observability/runner-log.js';
 import {
   CodexAnalysisAdapter,
   CodexAnalysisAdapterError,
@@ -763,6 +763,8 @@ async function heartbeatLoop(
   const RETRY_BACKOFF_MS = Math.min(intervalMs, 5_000);
   const MAX_CONSECUTIVE_FAILURES = 12;
   let consecutiveFailures = 0;
+  let iteration = 0;
+  writeHeartbeatLifecycle('launched');
   while (!signal.aborted) {
     try {
       await delay(consecutiveFailures === 0 ? intervalMs : RETRY_BACKOFF_MS, undefined, { signal });
@@ -771,6 +773,8 @@ async function heartbeatLoop(
       throw new AnalysisRunnerError('attempt heartbeat wait failed');
     }
     if (signal.aborted) return;
+    iteration += 1;
+    writeHeartbeatLifecycle('iteration', { iteration });
     try {
     await requestLock.run(async () => {
       const raw = await controlPlaneJson(
@@ -800,6 +804,7 @@ async function heartbeatLoop(
       fencing.toolToken = parsed.data.toolBridgeToken;
       fencing.version = parsed.data.version;
     });
+    writeHeartbeatLifecycle('beat', { iteration });
     consecutiveFailures = 0;
     } catch (error) {
       const httpStatus = error instanceof ControlPlaneResponseError ? error.status : undefined;

@@ -62,6 +62,10 @@ interface AgentExecutorEnv {
   TOOL_BRIDGE_SK?: string;
   TOOL_BRIDGE_SLS_LOGSTORE?: string;
   TOOL_BRIDGE_SLS_ENVIRONMENT?: string;
+  // Diagnostic only: when '1', the runner emits heartbeat-loop lifecycle
+  // breadcrumbs (launched/iteration/beat) so a frozen attempt's captured logs
+  // reveal the exact stall point. Off in normal operation.
+  DELIVERY_HEARTBEAT_TRACE?: string;
 }
 
 interface StoredExecution {
@@ -243,6 +247,9 @@ export class DeliveryAgentSandbox extends Sandbox<AgentExecutorEnv> {
                 DELIVERY_TOOL_BRIDGE_SK: this.env.TOOL_BRIDGE_SK,
                 DELIVERY_TOOL_BRIDGE_SLS_LOGSTORE: this.env.TOOL_BRIDGE_SLS_LOGSTORE,
                 DELIVERY_TOOL_BRIDGE_SLS_ENVIRONMENT: this.env.TOOL_BRIDGE_SLS_ENVIRONMENT,
+                ...(this.env.DELIVERY_HEARTBEAT_TRACE === undefined
+                  ? {}
+                  : { DELIVERY_HEARTBEAT_TRACE: this.env.DELIVERY_HEARTBEAT_TRACE }),
               },
             });
           }
