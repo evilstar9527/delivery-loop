@@ -733,21 +733,68 @@ function terminalAnalysisRunnerError(error: unknown): AnalysisRunnerError {
   );
 }
 
-class FencingRequestLock {
-  private tail: Promise<void> = Promise.resolve();
+/**
+ * Serializes every control-plane call that reads or rotates the fencing tokens.
+ * Mutual exclusion is mandatory, not incidental: a heartbeat REPLACES
+ * attempt_tokens.token_digest/tool_token_digest in place, so the previous token
+ * dies immediately and a tool call whose token rotated mid-flight would 401.
+ *
+ * The queue is priority-aware because a plain FIFO starved the heartbeat. The
+ * diagnostic mediation phase issues several tool calls back to back; each is
+ * individually bounded (~20s) but they serialize, so two or three queued ahead
+ * of the heartbeat exceed the 45s interval. The heartbeat then never landed a
+ * beat, heartbeat_at stalled at its previous value, and the 90s watchdog fenced
+ * the attempt as lost — the intermittent "analysis freeze". With a priority
+ * lane a due heartbeat waits for at most ONE in-flight operation instead of the
+ * whole backlog, which keeps it inside the interval.
+ */
+export class FencingRequestLock {
+  private held = false;
+  private readonly normalWaiters: Array<() => void> = [];
+  private readonly priorityWaiters: Array<() => void> = [];
 
+  /** Bulk work (tool calls, reservations, usage settlement). FIFO among itself. */
   async run<T>(operation: () => Promise<T>): Promise<T> {
-    const previous = this.tail;
-    let release!: () => void;
-    this.tail = new Promise<void>((resolvePromise) => {
-      release = resolvePromise;
-    });
-    await previous;
+    return await this.exclusive(operation, false);
+  }
+
+  /**
+   * The heartbeat lane. Served ahead of queued bulk work so a due beat cannot be
+   * starved by a tool-call backlog. Used only by heartbeatLoop; one short POST
+   * per interval, so it cannot starve bulk work in turn.
+   */
+  async runPriority<T>(operation: () => Promise<T>): Promise<T> {
+    return await this.exclusive(operation, true);
+  }
+
+  private async exclusive<T>(operation: () => Promise<T>, priority: boolean): Promise<T> {
+    await this.acquire(priority);
     try {
       return await operation();
     } finally {
-      release();
+      this.release();
     }
+  }
+
+  private async acquire(priority: boolean): Promise<void> {
+    if (!this.held) {
+      this.held = true;
+      return;
+    }
+    await new Promise<void>((resolvePromise) => {
+      (priority ? this.priorityWaiters : this.normalWaiters).push(resolvePromise);
+    });
+  }
+
+  private release(): void {
+    // Hand the lock directly to the next waiter (priority first) so there is no
+    // window in which two operations could observe it as free.
+    const next = this.priorityWaiters.shift() ?? this.normalWaiters.shift();
+    if (next === undefined) {
+      this.held = false;
+      return;
+    }
+    next();
   }
 }
 
@@ -781,7 +828,9 @@ async function heartbeatLoop(
     iteration += 1;
     writeHeartbeatLifecycle('iteration', { iteration });
     try {
-    await requestLock.run(async () => {
+    // Priority lane: a due beat must not queue behind a tool-call backlog, or
+    // heartbeat_at stalls past the watchdog threshold (the analysis freeze).
+    await requestLock.runPriority(async () => {
       const raw = await controlPlaneJson(
         fetchImplementation,
         config,
