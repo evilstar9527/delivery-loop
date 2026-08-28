@@ -227,6 +227,14 @@ export class CloudflareSandboxExecutorPlugin implements ExecutorPlugin {
         containerId: handle.attributes.containerId ?? '',
         exitCode: fact.exitCode === null ? 'none' : String(fact.exitCode),
         imageDigest: fact.imageDigest,
+        // Failure cause (present only on a failed observation), so it lands in
+        // executor_observations.facts_json and outlives the reaped container.
+        ...(fact.diagnosticKind === undefined
+          ? {}
+          : { diagnosticKind: fact.diagnosticKind }),
+        ...(fact.diagnosticDetail === undefined
+          ? {}
+          : { diagnosticDetail: fact.diagnosticDetail }),
       },
     };
   }

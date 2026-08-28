@@ -133,6 +133,15 @@ function terminal(status: ExecutorStatus): boolean {
   return status === 'succeeded' || status === 'failed' || status === 'cancelled';
 }
 
+// Cap on the failure-detail string carried in the provider fact. Matches the
+// provider-fact schema's diagnosticDetail max (400) so the value always parses.
+const MAX_DIAGNOSTIC_DETAIL_CHARS = 400;
+function boundedDetail(value: string): string {
+  return value.length <= MAX_DIAGNOSTIC_DETAIL_CHARS
+    ? value
+    : value.slice(0, MAX_DIAGNOSTIC_DETAIL_CHARS);
+}
+
 /** Per-stream cap for log tails, keeping a Worker response comfortably small. */
 const MAX_LOG_TAIL_BYTES = 64 * 1024;
 
@@ -323,21 +332,37 @@ export class DeliveryAgentSandbox extends Sandbox<AgentExecutorEnv> {
           await this.ctx.storage.put('execution', record);
         }
       }
+      let diagnosticKind: string | undefined;
+      let diagnosticDetail: string | undefined;
       if (record.providerStatus === 'failed') {
         process ??= await this.getProcess(record.processId);
         try {
-          const diagnostic = process === null
-            ? null
-            : sandboxProcessDiagnostic((await process.getLogs()).stderr);
+          const stderr = process === null ? '' : (await process.getLogs()).stderr;
+          const diagnostic = process === null ? null : sandboxProcessDiagnostic(stderr);
           executorErrorLog({
             event: 'sandbox_process_failed',
             diagnostic,
           });
+          // Carry the failure cause into the returned fact so it survives
+          // container reaping via executor_observations.facts_json (the
+          // container is destroyed right after this terminal observation, so
+          // /logs would otherwise return an empty fallback). A classified
+          // diagnostic gets its kind + compact JSON detail; an unclassified
+          // failure keeps a bounded raw stderr tail so exit-1 still leaves a clue.
+          if (diagnostic !== null) {
+            diagnosticKind = diagnostic.kind;
+            diagnosticDetail = boundedDetail(JSON.stringify(diagnostic));
+          } else {
+            diagnosticKind = 'unclassified';
+            const tail = stderr.trimEnd().split('\n').at(-1) ?? '';
+            if (tail.length > 0) diagnosticDetail = boundedDetail(tail);
+          }
         } catch {
           executorErrorLog({
             event: 'sandbox_process_failed',
             diagnostic: null,
           });
+          diagnosticKind = 'unclassified';
         }
       }
       return {
@@ -345,6 +370,8 @@ export class DeliveryAgentSandbox extends Sandbox<AgentExecutorEnv> {
         externalUpdatedAt: record.statusUpdatedAt,
         exitCode: record.exitCode,
         imageDigest: record.imageDigest,
+        ...(diagnosticKind === undefined ? {} : { diagnosticKind }),
+        ...(diagnosticDetail === undefined ? {} : { diagnosticDetail }),
       };
     });
     if (terminal(fact.status)) await this.destroyContainer('terminal_observation');

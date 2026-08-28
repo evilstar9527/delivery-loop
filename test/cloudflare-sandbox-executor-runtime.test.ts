@@ -101,6 +101,29 @@ describe('Cloudflare Sandbox control-plane effects', () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it('carries a failed observation diagnostic through the strict parse', async () => {
+    const fetcher = vi.fn<typeof fetch>(async () => json({
+      schemaVersion: '1',
+      status: 'failed',
+      externalUpdatedAt: '2026-08-17T06:00:00.000Z',
+      exitCode: 13,
+      imageDigest: `sha256:${'4'.repeat(64)}`,
+      diagnosticKind: 'publisher_failure',
+      diagnosticDetail: '{"kind":"publisher_failure","publisherStep":"patch_failed"}',
+    }));
+    const effects = new CloudflareSandboxWorkerEffects({
+      workerOrigin: ORIGIN,
+      controlToken: TOKEN,
+      fetch: fetcher,
+    });
+    await expect(effects.observeSandbox(ORIGIN, 'execution-1')).resolves.toMatchObject({
+      status: 'failed',
+      exitCode: 13,
+      diagnosticKind: 'publisher_failure',
+      diagnosticDetail: '{"kind":"publisher_failure","publisherStep":"patch_failed"}',
+    });
+  });
+
   it('calls the default Cloudflare fetch with the runtime global receiver', async () => {
     let receiverWasGlobal = false;
     vi.stubGlobal('fetch', function (this: unknown) {
