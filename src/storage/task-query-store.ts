@@ -1206,19 +1206,28 @@ export class TaskQueryStore {
   ): Promise<AutomatedReviewStatusView | null> {
     if (activePlanId === null || activePlanVersion === null) return null;
     const row = await this.db.prepare(
-      `SELECT reviews.iteration, reviews.status,
+      `WITH current_verified_publication AS (
+         SELECT publication_id, head_sha
+         FROM pull_request_publications
+         WHERE run_id = ? AND status = 'verified'
+         ORDER BY created_at DESC, publication_id DESC
+         LIMIT 1
+       )
+       SELECT reviews.iteration, reviews.status,
               reviews.blocking_finding_count, reviews.minor_finding_count
        FROM automated_reviews AS reviews
        JOIN pull_request_publications AS publications
          ON publications.publication_id = reviews.publication_id
         AND publications.run_id = reviews.run_id
+       JOIN current_verified_publication AS current
+         ON current.publication_id = publications.publication_id
+        AND current.head_sha = publications.head_sha
        WHERE reviews.run_id = ?
          AND reviews.plan_id = ?
          AND reviews.plan_version = ?
-         AND publications.status = 'verified'
        ORDER BY reviews.iteration DESC, reviews.created_at DESC, reviews.review_id DESC
        LIMIT 1`,
-    ).bind(runId, activePlanId, activePlanVersion).first<AutomatedReviewProjectionRow>();
+    ).bind(runId, runId, activePlanId, activePlanVersion).first<AutomatedReviewProjectionRow>();
     if (row === null) return null;
     if (
       !Number.isSafeInteger(row.iteration) || row.iteration < 1 || row.iteration > 3 ||
