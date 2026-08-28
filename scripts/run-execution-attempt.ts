@@ -1,8 +1,8 @@
+import { runExecutionAttempt } from '../src/runner/execution-runner.js';
 import {
-  ExecutionRunnerError,
-  runExecutionAttempt,
-} from '../src/runner/execution-runner.js';
-import { ExecutionAttemptError } from '../src/runner/execution-attempt-runner.js';
+  classifyExecutionAttemptError,
+  classifyExecutionAttemptResult,
+} from '../src/runner/execution-attempt-classification.js';
 import {
   writeRunnerExecutionAgentActivity,
   writeRunnerStructuredLog,
@@ -12,23 +12,25 @@ try {
   const result = await runExecutionAttempt({
     onAgentActivity: (activity) => { writeRunnerExecutionAgentActivity(activity); },
   });
+  const classification = classifyExecutionAttemptResult(result);
   writeRunnerStructuredLog(
     'execution_attempt_result',
-    result.status === 'passed'
-      ? 'passed'
-      : result.status === 'replanning'
-        ? 'replanning'
-        : result.status === 'blocked' ? 'blocked' : 'accepted',
+    classification.outcome,
+    process.env,
+    classification.failureKind,
+    classification.failureStage,
   );
+  // A returned `failed` result is a real failure: the process must exit nonzero
+  // so the sandbox does not observe a false success.
+  if (classification.outcome === 'failed') process.exitCode = 1;
 } catch (error) {
+  const classification = classifyExecutionAttemptError(error);
   writeRunnerStructuredLog(
     'execution_attempt_result',
     'failed',
     process.env,
-    error instanceof ExecutionAttemptError || error instanceof ExecutionRunnerError
-      ? error.kind
-      : undefined,
-    error instanceof ExecutionAttemptError ? error.failureStage : undefined,
+    classification.failureKind,
+    classification.failureStage,
   );
   process.exitCode = 1;
 }
