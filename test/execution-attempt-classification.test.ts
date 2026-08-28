@@ -27,11 +27,11 @@ describe('execution attempt classification', () => {
 
   it('passes an ExecutionAttemptError kind and stage through', () => {
     expect(classifyExecutionAttemptError(
-      new ExecutionAttemptError('repository_commit_failed', 'commit'),
+      new ExecutionAttemptError('repository_commit_failed', 'create_commit'),
     )).toEqual({
       outcome: 'failed',
       failureKind: 'repository_commit_failed',
-      failureStage: 'commit',
+      failureStage: 'create_commit',
     });
   });
 
