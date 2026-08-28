@@ -241,3 +241,57 @@ export function writeHeartbeatLifecycle(
       : {}),
   });
 }
+
+// Pre-heartbeat startup stages, in order, reported to the CONTROL PLANE (not
+// stderr, which the sandbox does not capture for analysis runs). See
+// migrations/0102 for why this channel exists.
+export const RUNNER_STARTUP_STAGES = [
+  'exchanged',
+  'checked_out',
+  'snapshotted',
+  'context_loaded',
+  'workspace_prepared',
+  'reserving_model',
+  'reserved_model',
+  'launching_heartbeat',
+] as const;
+
+export type RunnerStartupStage = (typeof RUNNER_STARTUP_STAGES)[number];
+
+const RUNNER_STAGE_POST_TIMEOUT_MS = 5_000;
+
+/**
+ * Fire-and-forget POST recording that the runner crossed a startup stage. This
+ * is deliberately NOT awaited by the caller, NOT routed through the runner's
+ * request lock, and bounded by its own short timeout — so it can neither be
+ * blocked by the freeze it diagnoses nor introduce a new hang. All errors are
+ * swallowed: a diagnostic must never affect the attempt. Returns immediately;
+ * the network call runs detached.
+ */
+export function postRunnerStage(input: {
+  fetchImplementation: typeof globalThis.fetch;
+  controlPlaneUrl: string;
+  attemptId: string;
+  attemptToken: string;
+  stage: RunnerStartupStage;
+}): void {
+  void (async () => {
+    try {
+      await input.fetchImplementation(
+        `${input.controlPlaneUrl}/v1/attempts/${input.attemptId}/runner-stage`,
+        {
+          method: 'POST',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+            authorization: `Bearer ${input.attemptToken}`,
+          },
+          body: JSON.stringify({ stage: input.stage }),
+          signal: AbortSignal.timeout(RUNNER_STAGE_POST_TIMEOUT_MS),
+        },
+      );
+    } catch {
+      // Best-effort diagnostic: never surface a failure to the attempt.
+    }
+  })();
+}

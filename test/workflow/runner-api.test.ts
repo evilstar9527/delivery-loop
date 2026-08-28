@@ -495,3 +495,53 @@ describe('authenticated Runner heartbeat and result API', () => {
     expect(expired.status).toBe(401);
   });
 });
+
+describe('runner startup stage diagnostic endpoint', () => {
+  it('records a stage row for a valid attempt token and returns 202', async () => {
+    const response = await runnerPost(
+      `/v1/attempts/${ATTEMPT_ID}/runner-stage`,
+      RAW_TOKEN,
+      { stage: 'reserving_model' },
+    );
+    expect(response.status).toBe(202);
+    const rows = await env.DB_CONTROL.prepare(
+      `SELECT stage FROM runner_startup_stages WHERE attempt_id = ? ORDER BY recorded_at`,
+    ).bind(ATTEMPT_ID).all<{ stage: string }>();
+    expect(rows.results.map((r) => r.stage)).toEqual(['reserving_model']);
+  });
+
+  it('keeps repeated stages as distinct ordered rows (per-invocation reserve loop)', async () => {
+    // Two reservations then launch — the shape a diagnosticMediation analysis
+    // attempt produces; a frozen one would stop before 'launching_heartbeat'.
+    for (const stage of ['reserving_model', 'reserved_model', 'reserving_model'] as const) {
+      const r = await runnerPost(`/v1/attempts/${ATTEMPT_ID}/runner-stage`, RAW_TOKEN, { stage });
+      expect(r.status).toBe(202);
+    }
+    const rows = await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS n FROM runner_startup_stages WHERE attempt_id = ?`,
+    ).bind(ATTEMPT_ID).first<{ n: number }>();
+    expect(rows?.n).toBe(3);
+  });
+
+  it('rejects an unknown attempt token with 401 and writes nothing', async () => {
+    const response = await runnerPost(
+      `/v1/attempts/${ATTEMPT_ID}/runner-stage`,
+      'not-a-real-token',
+      { stage: 'exchanged' },
+    );
+    expect(response.status).toBe(401);
+    const rows = await env.DB_CONTROL.prepare(
+      `SELECT COUNT(*) AS n FROM runner_startup_stages WHERE attempt_id = ?`,
+    ).bind(ATTEMPT_ID).first<{ n: number }>();
+    expect(rows?.n).toBe(0);
+  });
+
+  it('rejects an unknown stage value with 400', async () => {
+    const response = await runnerPost(
+      `/v1/attempts/${ATTEMPT_ID}/runner-stage`,
+      RAW_TOKEN,
+      { stage: 'not_a_stage' },
+    );
+    expect(response.status).toBe(400);
+  });
+});

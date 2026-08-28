@@ -252,12 +252,17 @@ describe('automated review Runner', () => {
     });
     expect(result).toEqual({ reviewId: 'review-runner', status: 'approved' });
     expect(submitted).toMatchObject({ verdict: 'approved', findings: [] });
-    expect(requestPaths).toEqual([
+    // The runner-stage diagnostic POSTs are fire-and-forget (not awaited), so
+    // their interleaving is non-deterministic; assert the functional request
+    // sequence with them filtered out, then confirm the diagnostic fired.
+    const stagePath = `/v1/attempts/${ATTEMPT_ID}/runner-stage`;
+    expect(requestPaths.filter((path) => path !== stagePath)).toEqual([
       '/token',
       `/v1/attempts/${ATTEMPT_ID}/exchange`,
       `/v1/attempts/${ATTEMPT_ID}/context`,
       `/v1/attempts/${ATTEMPT_ID}/automated-review-result`,
     ]);
+    expect(requestPaths).toContain(stagePath);
   });
 
   it('retries only the read-only context after an exchange consistency conflict', async () => {
